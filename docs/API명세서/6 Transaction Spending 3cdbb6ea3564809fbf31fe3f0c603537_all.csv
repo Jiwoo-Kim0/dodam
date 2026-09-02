@@ -1,0 +1,30 @@
+﻿API명,Endpoint,Method,Parameter,담당자,데이터/연동,인증 여부,제한사항,진행상태
+전체 거래 조회,/api/v1/transactions,GET,"Query: startDate?, endDate?, category?,
+paymentMethod?, page?, size?",,SSAFY 데이터 통합,O,"본인 리소스만 접근; page≥0, size 1~100 (도담 정책); 시작일≤종료일; 조회기간 정책 제한; SSAFY
+키·userKey 서버 관리; 호출별 거래고유번호 신규 생성",시작 전
+거래 상세,/api/v1/transactions/{transactionId},GET,Path: transactionId,,SSAFY + 자체,O,본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성,시작 전
+소비 카테고리 수정,/api/v1/transactions/{transactionId}/category,PATCH,Path: transactionId / Body: categoryId,,자체 DB,O,본인 리소스만 접근; 입력값/상태 전이 검증; 중복 요청 방지,시작 전
+거래 메모 수정,/api/v1/transactions/{transactionId}/memo,PATCH,Path: transactionId / Body: memo,,SSAFY,O,"본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 입력값/상태 전
+이 검증; 중복 요청 방지; 메모 길이/금칙문자 검증",시작 전
+월 소비 요약,/api/v1/spending/monthly-summary,GET,Query: yearMonth?,,자체 계산,O,본인 리소스만 접근; YYYY-MM 형식,시작 전
+소비 및 저축 비율,/api/v1/spending/saving-ratio,GET,Query: yearMonth?,,자체 계산,O,본인 리소스만 접근; YYYY-MM 형식,시작 전
+결제수단별 소비,/api/v1/spending/payment-methods,GET,Query: yearMonth?,,자체 집계,O,본인 리소스만 접근; YYYY-MM 형식,시작 전
+소비 급증 조회,/api/v1/spending/anomalies,GET,"Query: startMonth?, endMonth?, category?",,자체 탐지,O,본인 리소스만 접근; 시작월≤종료월,시작 전
+소비목표 비교,/api/v1/spending/goal-comparison,GET,"Query: goalId?, yearMonth?",,자체 계산,O,본인 리소스만 접근; YYYY-MM 형식,시작 전
+월 누적 소비,/api/v1/spending/progress,GET,Query: yearMonth?,,자체 계산,O,본인 리소스만 접근; YYYY-MM 형식,시작 전
+변동지출,/api/v1/spending/variable,GET,"Query: startMonth?, endMonth?",,자체 분류,O,본인 리소스만 접근; 시작월≤종료월,시작 전
+고정지출,/api/v1/spending/fixed,GET,"Query: startMonth?, endMonth?",,자체 분류,O,본인 리소스만 접근; 시작월≤종료월,시작 전
+카테고리 소비 추이,/api/v1/spending/categories/trend,GET,"Query: startMonth?, endMonth?, category?",,자체 계산,O,본인 리소스만 접근; 시작월≤종료월,시작 전
+카테고리별 소비,/api/v1/spending/categories,GET,Query: yearMonth?,,자체 계산,O,본인 리소스만 접근; YYYY-MM 형식,시작 전
+일별 소비,/api/v1/spending/daily,GET,"Query: startDate?, endDate?",,자체 계산,O,본인 리소스만 접근; 시작일≤종료일; 조회기간 정책 제한,시작 전
+거래내역 숨김 상태 변경,/api/v1/transactions/{transactionId}/visibility,PATCH,Path: transactionId / Body: hidden,,자체 DB,O,본인 리소스만 접근; 숨김 상태 전이 검증; 중복 요청 방지,시작 전
+수동 거래 등록,/api/v1/transactions,POST,"Body: transactionDate, transactionType, amount, merchantName?, categoryId?, paymentMethod?, memo?",,자체 DB에 수동 거래 생성,O,"
+본인 리소스만 접근; amount > 0; 거래일 형식 검증; 거래유형 유효성 검증; 존재하는 categoryId만 허용; 메모/가맹점명 길이 제한
+
+",시작 전
+수동 거래 수정,/api/v1/transactions/{transactionId},PUT,"Path: transactionId / Body: transactionDate?, transactionType?, amount?, merchantName?, categoryId?, paymentMethod?, memo?",,수동 생성 거래만 수정,O,"
+본인 리소스만 접근; MANUAL 거래만 수정 가능; 입력된 필드만 변경; amount > 0; 날짜/카테고리 유효성 검증
+
+",시작 전
+수동 거래 삭제,/api/v1/transactions/{transactionId},DELETE,Path: transactionId,,수동 생성 거래만 삭제,O,"
+본인 리소스만 접근; MANUAL 거래만 삭제 가능; 존재하는 거래만 삭제; 소유권 확인 후 처리",시작 전

@@ -1,0 +1,10 @@
+﻿진행상태,담당자,API명,Method,Endpoint,인증 여부,데이터/연동,Parameter,제한사항
+시작 전,,메인 대시보드,GET,/api/v1/dashboard,O,SSAFY + 자체 집계,Query: baseDate?,본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성
+시작 전,,자산 요약,GET,/api/v1/dashboard/assets,O,자체,없음,본인 리소스만 접근
+시작 전,,소비 요약,GET,/api/v1/dashboard/spending,O,자체,Query: yearMonth?,본인 리소스만 접근; YYYY-MM 형식
+시작 전,,부채 요약,GET,/api/v1/dashboard/debts,O,자체,없음,본인 리소스만 접근
+시작 전,,저축 요약,GET,/api/v1/dashboard/savings,O,자체,없음,본인 리소스만 접근
+시작 전,,목표 요약,GET,/api/v1/dashboard/goals,O,자체,없음,본인 리소스만 접근
+시작 전,,예정 금융일정,GET,/api/v1/dashboard/upcoming,O,자체,"Query: fromDate?, toDate?",본인 리소스만 접근; 시작일≤종료일; 조회기간 정책 제한
+시작 전,,주요 위험 요약,GET,/api/v1/dashboard/risks,O,자체,없음,본인 리소스만 접근
+시작 전,,추천 행동 요약,GET,/api/v1/dashboard/recommendations,O,자체,없음,본인 리소스만 접근

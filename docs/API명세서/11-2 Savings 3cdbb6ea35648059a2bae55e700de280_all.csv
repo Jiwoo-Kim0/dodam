@@ -1,0 +1,10 @@
+﻿API명,Endpoint,Method,Parameter,담당자,데이터/연동,인증 여부,제한사항,진행상태
+적금 상세,/api/v1/savings/{accountNo},GET,Path: accountNo,,SSAFY,O,본인 리소스만 접근; SSAFY 키-userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시연 데이터 범위 내,시작 전
+납입내역,/api/v1/savings/{accountNo}/payments,GET,"Path: accountNo / Query: startDate?, endDate?, page?, size?",,SSAFY,O,"본인 리소스만 접근; page≥0, size 1~100; 날짜 시작일≤종료일; 조회기간 정책 제한; SSAFY 키-userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시연 데이터 범위 내",시작 전
+월 납입 예정,/api/v1/savings/payment-schedules,GET,"Query: startDate?, endDate?",,자체,O,본인 리소스만 접근; 시작일≤종료일; 조회기간 정책 제한,시작 전
+적금 만기 예상금액,/api/v1/savings/{accountNo}/maturity-forecast,GET,Path: accountNo,,SSAFY,O,본인 리소스만 접근; SSAFY 키-userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시연 데이터 범위 내,시작 전
+적금 중도해지 예상금액,/api/v1/savings/{accountNo}/early-termination,GET,Path: accountNo,,SSAFY,O,본인 리소스만 접근; SSAFY 키-userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시연 데이터 범위 내,시작 전
+적금 시장금리 비교,/api/v1/savings/{accountNo}/rate-comparison,GET,"Path: accountNo / Query: term?, industry?, topN?",,상품DB,O,본인 리소스만 접근; DB 최신 동기화 시점 기준; 실시간 상품정보 아님; 동일/유사 적금상품 기준으로 비교,시작 전
+월 저축액,/api/v1/savings/monthly-amount,GET,Query: yearMonth?,,자체,O,본인 리소스만 접근; YYYY-MM 형식,시작 전
+저축 후 가용금액,/api/v1/savings/disposable-balance,GET,Query: baseDate?,,자체,O,본인 리소스만 접근,시작 전
+현금흐름 부담,/api/v1/savings/cashflow-burden,GET,Query: yearMonth?,,자체,O,본인 리소스만 접근; YYYY-MM 형식; 예정 이벤트 중복 반영 금지,시작 전

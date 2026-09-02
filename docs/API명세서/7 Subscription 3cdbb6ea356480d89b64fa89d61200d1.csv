@@ -1,0 +1,22 @@
+﻿진행상태,담당자,API명,Method,Endpoint,인증 여부,데이터/연동,Parameter,제한사항
+시작 전,,정기결제 목록,GET,/api/v1/subscriptions,O,SSAFY,"Query: status?, category?, page?, size?","본인 리소스만 접근; page≥0, size 1~100 (도담 정책); SSAFY 키·userKey 서버 관리; 호출별 거래
+고유번호 신규 생성; 사전 생성된 시연 데이터 범위 내"
+시작 전,,미등록 반복결제 탐지,GET,/api/v1/subscriptions/candidates,O,자체 탐지,"Query: minOccurrences?, lookbackMonths?",본인 리소스만 접근
+시작 전,,정지/재개,PATCH,/api/v1/subscriptions/{subscriptionId}/status,O,SSAFY,Path: subscriptionId / Body: status|action,"본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
+연 데이터 범위 내; 입력값/상태 전이 검증; 중복 요청 방지"
+시작 전,,정기결제 취소,DELETE,/api/v1/subscriptions/{subscriptionId},O,SSAFY,Path: subscriptionId,"본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
+연 데이터 범위 내; 존재·소유권 확인 후 처리"
+시작 전,,정기결제 수정,PATCH,/api/v1/subscriptions/{subscriptionId},O,SSAFY,"Path: subscriptionId / Body: paymentAmount?,
+paymentDay?, endDate?, status?","본인 리소스만 접근; 시작일≤종료일; 조회기간 정책 제한; SSAFY 키·userKey 서버 관리; 호출별 거
+래고유번호 신규 생성; 사전 생성된 시연 데이터 범위 내; 입력값/상태 전이 검증; 중복 요청 방지"
+시작 전,,정기결제 카테고리,GET,/api/v1/subscriptions/categories,O,SSAFY,없음,"본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
+연 데이터 범위 내"
+시작 전,,정기결제 서비스 목록,GET,/api/v1/subscriptions/services,O,SSAFY,"Query: category?, page?, size?","본인 리소스만 접근; page≥0, size 1~100 (도담 정책); SSAFY 키·userKey 서버 관리; 호출별 거래
+고유번호 신규 생성; 사전 생성된 시연 데이터 범위 내"
+시작 전,,정기결제 요약,GET,/api/v1/subscriptions/summary,O,SSAFY,없음,"본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
+연 데이터 범위 내"
+시작 전,,정기결제 이력,GET,/api/v1/subscriptions/{subscriptionId}/history,O,SSAFY,"Path: subscriptionId / Query: startDate?, endDate?,
+page?, size?","본인 리소스만 접근; page≥0, size 1~100 (도담 정책); 시작일≤종료일; 조회기간 정책 제한; SSAFY
+키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시연 데이터 범위 내"
+시작 전,,정기결제 상세,GET,/api/v1/subscriptions/{subscriptionId},O,SSAFY + 집계,Path: subscriptionId,"본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
+연 데이터 범위 내"

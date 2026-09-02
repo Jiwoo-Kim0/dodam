@@ -1,0 +1,6 @@
+﻿진행상태,담당자,API명,Method,Endpoint,인증 여부,데이터/연동,Parameter,제한사항
+시작 전,,사용자 패턴 분석 실행,POST,/api/v1/patterns/analyze,O,자체 계산 + 자체 DB,"Body: forceRefresh?, analysisMode?(RULE_ONLY|HYBRID)",본인 리소스만 접근; 금융 데이터 연동 완료 필요; 중복 분석 요청 방지; analysisMode 기본값 HYBRID; 군집 표본 부족·모델 실패 시 RULE_ONLY 자동 전환
+시작 전,,사용자 패턴 분석 결과 조회,GET,/api/v1/patterns/me,O,자체 DB,X,본인 리소스만 접근; 분석 결과가 존재해야 함; 응답에 clusterProfile 선택 필드 포함(군집 라벨·기준 범위·표본 수·모델 버전 / 조건 미충족 시 null)
+시작 전,,소비 패턴 조회,GET,/api/v1/patterns/me/spending,O,자체 계산,Query: months?,본인 리소스만 접근; 분석 가능 거래 데이터가 존재해야 함; 응답에 clusterProfile 선택 필드 포함(조건 미충족 시 null)
+시작 전,,자금운용 패턴 조회,GET,/api/v1/patterns/me/cashflow,O,자체 계산,Query: months?,본인 리소스만 접근; 분석 가능 금융 데이터가 존재해야 함
+시작 전,,추천 우선순위 프로필 조회,GET,/api/v1/patterns/me/priority-profile,O,자체 계산,X,본인 리소스만 접근

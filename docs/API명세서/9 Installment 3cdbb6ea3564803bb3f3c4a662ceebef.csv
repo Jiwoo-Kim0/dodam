@@ -1,0 +1,6 @@
+﻿진행상태,담당자,API명,Method,Endpoint,인증 여부,데이터/연동,Parameter,제한사항
+시작 전,,할부 목록,GET,/api/v1/installments,O,자체/더미,"Query: cardId?, status?, page?, size?","본인 리소스만 접근; page≥0, size 1~100 (도담 정책)"
+시작 전,,할부 상세,GET,/api/v1/installments/{installmentId},O,자체/더미,Path: installmentId,본인 리소스만 접근
+시작 전,,월별 할부 예정액,GET,/api/v1/installments/monthly-schedule,O,자체 계산,"Query: startMonth?, endMonth?",본인 리소스만 접근; 시작월≤종료월
+시작 전,,할부 부담률,GET,/api/v1/installments/burden,O,자체 계산,Query: yearMonth?,본인 리소스만 접근; YYYY-MM 형식
+시작 전,,향후 할부 부담 예측,GET,/api/v1/installments/forecast,O,자체 계산,Query: months?,본인 리소스만 접근

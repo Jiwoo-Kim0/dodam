@@ -1,0 +1,20 @@
+﻿진행상태,담당자,API명,Method,Endpoint,인증 여부,데이터/연동,Parameter,제한사항
+시작 전,,소비 감소 시뮬레이션,POST,/api/v1/simulations/spending,O,자체,"Body: category?, monthlyReduction, durationMonths?",본인 리소스만 접근; 입력값 검증; 중복 요청 방지
+시작 전,,저축액 변경 시뮬레이션,POST,/api/v1/simulations/saving,O,자체,"Body: accountNo?, monthlySavingAmount, durationMonths?",본인 리소스만 접근; 입력값 검증; 중복 요청 방지
+시작 전,,예적금 신규가입 시뮬레이션,POST,/api/v1/simulations/saving-product,O,상품 DB + 자체,"Body: productId, monthlyAmount, term",DB 최신 동기화 시점 기준; 실시간 상품정보 아님; 입력값 검증
+시작 전,,대출 추가상환 시뮬레이션,POST,/api/v1/simulations/loan/prepayment,O,SSAFY + 자체,"Body: accountNo, prepaymentAmount, paymentDate?",사전 생성된 SSAFY 금융데이터 기준; 입력값 검증
+시작 전,,대환 시뮬레이션,POST,/api/v1/simulations/loan/refinance,O,상품 DB + 자체,"Body: accountNo, targetProductId, refinanceAmount?",DB 최신 동기화 시점 기준; 실시간 상품정보 아님
+시작 전,,신규 대출 시뮬레이션,POST,/api/v1/simulations/loan/new,O,상품 DB + 자체,"Body: productId, principal, term, repaymentType?",DB 최신 동기화 시점 기준; 입력값 검증
+시작 전,,할부 시뮬레이션,POST,/api/v1/simulations/installment,O,자체,"Body: purchaseAmount, months, feeRate?",입력값 검증; 중복 요청 방지
+시작 전,,리볼빙 시뮬레이션,POST,/api/v1/simulations/revolving,O,자체,"Body: cardId?, balance, paymentRatio, rate",입력값 검증; 중복 요청 방지
+시작 전,,현금서비스 시뮬레이션,POST,/api/v1/simulations/cash-advance,O,자체,"Body: amount, rate, repaymentMonths?",입력값 검증; 중복 요청 방지
+시작 전,,복합 시뮬레이션,POST,/api/v1/simulations/combined,O,자체,Body: scenarios[],시나리오 수 정책 제한; 순환 의존 금지
+시작 전,,시뮬레이션 이력 조회,GET,/api/v1/simulations,O,자체,"Query: type?, page?, size?","본인 리소스만 접근; page ≥ 0, size 1~100"
+시작 전,,시뮬레이션 결과 조회,GET,/api/v1/simulations/{simulationId},O,자체,Path: simulationId,본인 리소스만 접근
+시작 전,,전후 비교 조회,GET,/api/v1/simulations/{simulationId}/comparison,O,자체,Path: simulationId,본인 리소스만 접근
+시작 전,,현금흐름 변화 조회,GET,/api/v1/simulations/{simulationId}/cashflow,O,자체,Path: simulationId,본인 리소스만 접근; 예정 이벤트 중복 반영 금지
+시작 전,,목표달성일 변화 조회,GET,/api/v1/simulations/{simulationId}/goal-impact,O,자체,Path: simulationId,본인 리소스만 접근
+시작 전,,자산 변화 조회,GET,/api/v1/simulations/{simulationId}/assets,O,자체,"Path: simulationId / Query: page?, size?","본인 리소스만 접근; page ≥ 0, size 1~100"
+시작 전,,부채 변화 조회,GET,/api/v1/simulations/{simulationId}/debts,O,자체,"Path: simulationId / Query: page?, size?","본인 리소스만 접근; page ≥ 0, size 1~100"
+시작 전,,금융비용 변화 조회,GET,/api/v1/simulations/{simulationId}/costs,O,자체,"Path: simulationId / Query: page?, size?","본인 리소스만 접근; page ≥ 0, size 1~100"
+시작 전,,시뮬레이션 삭제,DELETE,/api/v1/simulations/{simulationId},O,자체,Path: simulationId,본인 리소스만 접근; 존재·소유권 확인 후 처리

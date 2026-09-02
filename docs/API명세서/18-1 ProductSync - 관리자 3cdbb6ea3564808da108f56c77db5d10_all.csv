@@ -1,0 +1,7 @@
+﻿API명,Endpoint,Method,Parameter,담당자,데이터/연동,인증 여부,제한사항,진행상태
+금융상품 전체 동기화,/api/v1/admin/products/sync,POST,Body: force?,,금융상품한눈에 → DB,O,관리자 권한 필수; 외부 API 장애 시 기존 정상 데이터 유지; 동시 Sync 방지,시작 전
+정기예금 동기화,/api/v1/admin/products/sync/deposits,POST,Body: force?,,금융상품한눈에 → DB,O,관리자 권한 필수; 외부 API 장애 시 기존 정상 데이터 유지; 동시 Sync 방지,시작 전
+적금 동기화,/api/v1/admin/products/sync/savings,POST,Body: force?,,금융상품한눈에 → DB,O,관리자 권한 필수; 외부 API 장애 시 기존 정상 데이터 유지; 동시 Sync 방지,시작 전
+대출 동기화,/api/v1/admin/products/sync/loans,POST,Body: force?,,금융상품한눈에 → DB,O,관리자 권한 필수; 외부 API 장애 시 기존 정상 데이터 유지; 동시 Sync 방지,시작 전
+동기화 상태 조회,/api/v1/admin/products/sync/status,GET,Query: syncType?,,자체,O,관리자 권한 필수,시작 전
+동기화 이력 조회,/api/v1/admin/products/sync/history,GET,"Query: syncType?, result?, page?, size?",,자체,O,"관리자 권한 필수; page ≥ 0, size 1~100",시작 전

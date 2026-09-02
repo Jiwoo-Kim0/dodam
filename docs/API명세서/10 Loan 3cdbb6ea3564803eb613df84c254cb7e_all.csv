@@ -1,0 +1,19 @@
+﻿API명,Endpoint,Method,Parameter,담당자,데이터/연동,인증 여부,제한사항,진행상태
+보유 대출 조회,/api/v1/loans,GET,"Query: status?, loanType?",,SSAFY,O,"본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
+연 데이터 범위 내",시작 전
+상환 우선순위,/api/v1/loans/repayment-priority,GET,Query: goalId?,,자체,O,본인 리소스만 접근,시작 전
+금융비용 비교,/api/v1/loans/cost-comparison,GET,Query: months?,,자체,O,본인 리소스만 접근,시작 전
+시장금리 비교,/api/v1/loans/{accountNo}/rate-comparison,GET,"Path: accountNo / Query: term?, industry?, topN?",,상품 DB,O,"본인 리소스만 접근; DB 최신 동기화 시점 기준; 실시간 상품정보 아님; 동일/유사 상품군 기준으로 비
+교",시작 전
+고금리 대출,/api/v1/loans/high-interest,GET,"Query: loanType?, industry?, thresholdMode?",,자체,O,본인 리소스만 접근; 단순 전체평균 비교 금지; 상품군/업권 기준 적용,시작 전
+전체 이자비용,/api/v1/loans/interest-summary,GET,Query: months?,,자체,O,본인 리소스만 접근,시작 전
+예상 이자비용,/api/v1/loans/{accountNo}/interest-forecast,GET,Path: accountNo,,자체,O,본인 리소스만 접근,시작 전
+상환 부담률,/api/v1/loans/repayment-burden,GET,Query: yearMonth?,,자체,O,본인 리소스만 접근; YYYY-MM 형식,시작 전
+월 상환액,/api/v1/loans/monthly-repayments,GET,"Query: startMonth?, endMonth?",,자체,O,본인 리소스만 접근; 시작월≤종료월,시작 전
+상환일정,/api/v1/loans/{accountNo}/repayment-schedule,GET,Path: accountNo,,자체,O,본인 리소스만 접근,시작 전
+상환내역,/api/v1/loans/{accountNo}/repayments,GET,"Path: accountNo / Query: startDate?, endDate?,
+page?, size?",,SSAFY,O,"본인 리소스만 접근; page≥0, size 1~100 (도담 정책); 시작일≤종료일; 조회기간 정책 제한; SSAFY
+키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시연 데이터 범위 내",시작 전
+대출 상세,/api/v1/loans/{accountNo},GET,Path: accountNo,,SSAFY,O,"본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
+연 데이터 범위 내",시작 전
+대출 요약,/api/v1/loans/summary,GET,없음,,자체,O,본인 리소스만 접근,시작 전

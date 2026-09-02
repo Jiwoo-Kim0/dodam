@@ -1,0 +1,12 @@
+﻿API명,Endpoint,Method,Parameter,담당자,데이터/연동,인증 여부,제한사항,진행상태
+개선 결과 요약,/api/v1/improvements/summary,GET,없음,,자체,O,본인 리소스만 접근,시작 전
+개선 행동 이력,/api/v1/improvements/actions,GET,"Query: status?, startDate?, endDate?, page?, size?",,자체,O,"page ≥ 0, size 1~100; 시작일 ≤ 종료일",시작 전
+개선 행동 상세,/api/v1/improvements/actions/{actionId},GET,Path: actionId,,자체,O,본인 리소스만 접근,시작 전
+실행 전후 비교,/api/v1/improvements/actions/{actionId}/comparison,GET,Path: actionId,,자체,O,본인 리소스만 접근,시작 전
+절감금액 조회,/api/v1/improvements/savings,GET,없음,,자체,O,본인 리소스만 접근,시작 전
+부채감소액 조회,/api/v1/improvements/debt-reduction,GET,없음,,자체,O,본인 리소스만 접근,시작 전
+소비감소액 조회,/api/v1/improvements/spending-reduction,GET,없음,,자체,O,본인 리소스만 접근,시작 전
+저축증가액 조회,/api/v1/improvements/saving-increase,GET,없음,,자체,O,본인 리소스만 접근,시작 전
+목표달성일 개선 조회,/api/v1/improvements/goal-impact,GET,없음,,자체,O,본인 리소스만 접근,시작 전
+월별 개선추이,/api/v1/improvements/monthly-trend,GET,"Query: startMonth?, endMonth?",,자체,O,시작월 ≤ 종료월,시작 전
+재진단 요청,/api/v1/improvements/rediagnose,POST,Body: goalId?,,자체,O,본인 리소스만 접근; 중복 요청 방지,시작 전

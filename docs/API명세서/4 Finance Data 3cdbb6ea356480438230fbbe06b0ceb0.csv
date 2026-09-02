@@ -1,0 +1,11 @@
+﻿진행상태,담당자,API명,Method,Endpoint,인증 여부,데이터/연동,Parameter,제한사항
+시작 전,,금융망 연동 상태 조회,GET,/api/v1/finance-data/connection,O,자체,X,본인 리소스만 접근
+시작 전,,금융망 사용자 등록,POST,/api/v1/finance-data/connection,O,SSAFY,"X ",본인 리소스만 접근; SSAFY 키 · userKey 서버 관리; 호출별 거래고유번호 신규 생성; 입력값/상태 전이 검증; 중복 요청 방지
+시작 전,,금융망 사용자 조회,GET,/api/v1/finance-data/member,O,SSAFY,X,본인 리소스만 접근; SSAFY 키 · userKey 서버 관리; 호출별 거래고유번호 신규 생성
+시작 전,,금융망 연동 해제,DELETE,/api/v1/finance-data/connection,O,자체,X,본인 리소스만 접근; 존재 · 소유권 확인 후 처리
+시작 전,,금융 데이터 전체 갱신,POST,/api/v1/finance-data/sync,O,SSAFY,Body: scope? (ALL/ACCOUNT/CARD/LOAN/SAVING),본인 리소스만 접근; SSAFY 키 · userKey 서버 관리; 호출별 거래고유번호 신규 생성; 입력값/상태 전이 검증; 중복 요청 방지; 동시 Sync 중복 실행 방지
+시작 전,,갱신 상태 조회,GET,/api/v1/finance-data/sync/status,O,자체,X,본인 리소스만 접근; 동시 Sync 중복 실행 방지
+시작 전,,마지막 갱신 시간 조회,GET,/api/v1/finance-data/sync/latest,O,자체,X,본인 리소스만 접근; 동시 Sync 중복 실행 방지
+시작 전,,금융 데이터 통합 요약,GET,/api/v1/finance-data/summary,O,자체 집계,X,본인 리소스만 접근
+시작 전,,신용 등급 조회,GET,/api/v1/finance-data/credit-rating,O,SSAFY,X,본인 리소스만 접근; SSAFY 키 · userKey 서버 관리; 호출별 거래고유번호 신규 생성
+시작 전,,신용 등급 기준 조회,GET,/api/v1/finance-data/credit-rating/criteria,O,SSAFY,X,본인 리소스만 접근; SSAFY 키 · userKey 서버 관리; 호출별 거래고유번호 신규 생성

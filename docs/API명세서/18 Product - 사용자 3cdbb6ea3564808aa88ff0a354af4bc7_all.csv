@@ -1,0 +1,16 @@
+﻿API명,Endpoint,Method,Parameter,담당자,데이터/연동,인증 여부,제한사항,진행상태
+금융회사 조회,/api/v1/products/companies,GET,"Query: name?, page?, size?",,상품 DB,O,"page ≥ 0, size 1~100; DB 최신 동기화 시점 기준",시작 전
+정기예금 조회,/api/v1/products/deposits,GET,"Query: companyId?, term?, minRate?, page?, size?",,상품 DB,O,실시간 상품정보 아님; DB 최신 동기화 시점 기준,시작 전
+정기예금 상세,/api/v1/products/deposits/{productId},GET,Path: productId,,상품 DB,O,DB 최신 동기화 시점 기준,시작 전
+적금 조회,/api/v1/products/savings,GET,"Query: companyId?, term?, minRate?, savingType?, page?, size?",,상품 DB,O,실시간 상품정보 아님; DB 최신 동기화 시점 기준,시작 전
+적금 상세,/api/v1/products/savings/{productId},GET,Path: productId,,상품 DB,O,DB 최신 동기화 시점 기준,시작 전
+예적금 비교,/api/v1/products/deposit-savings/compare,POST,Body: productIds[],,상품 DB + 자체,O,비교 대상 2~5개 권장; 상품 DB 기준,시작 전
+주택담보대출 조회,/api/v1/products/loans/mortgage,GET,"Query: companyId?, mortgageType?, repaymentType?, page?, size?",,상품 DB,O,실시간 상품정보 아님,시작 전
+개인신용대출 조회,/api/v1/products/loans/personal,GET,"Query: companyId?, rateType?, minRate?, maxRate?, page?, size?",,상품 DB,O,실시간 상품정보 아님,시작 전
+전세자금대출 조회,/api/v1/products/loans/jeonse,GET,"Query: companyId?, repaymentType?, page?, size?",,상품 DB,O,실시간 상품정보 아님,시작 전
+대출상품 상세,/api/v1/products/loans/{productId},GET,Path: productId,,상품 DB,O,DB 최신 동기화 시점 기준,시작 전
+대출상품 비교,/api/v1/products/loans/compare,POST,Body: productIds[],,상품 DB + 자체,O,비교 대상 2~5개 권장; 상품 DB 기준,시작 전
+카드상품 조회,/api/v1/products/cards,GET,"Query: issuerCode?, category?, page?, size?",,SSAFY / 자체 DB,O,사전 생성된 시연 데이터 범위,시작 전
+카드상품 상세,/api/v1/products/cards/{productId},GET,Path: productId,,SSAFY / 자체 DB,O,사전 생성된 시연 데이터 범위,시작 전
+카드상품 비교,/api/v1/products/cards/compare,POST,Body: productIds[],,자체,O,비교 대상 2~5개 권장,시작 전
+소비기반 카드 추천,/api/v1/products/cards/recommended,GET,"Query: topN?, yearMonth?",,자체,O,yearMonth은 YYYY-MM 형식,시작 전

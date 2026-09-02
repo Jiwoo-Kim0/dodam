@@ -1,0 +1,8 @@
+﻿API명,Endpoint,Method,Parameter,담당자,데이터/연동,인증 여부,제한사항,진행상태
+내 정보 조회,/api/v1/users/me,GET,X,,자체 DB,O,본인 리소스만 접근,시작 전
+내 정보 수정,/api/v1/users/me,PATCH,Body: 수정 허용 프로필 필드,,자체 DB,O,본인 리소스만 접근; 입력값/상태 전이 검증; 중복 요청 방지,시작 전
+회원 탈퇴,/api/v1/users/me,DELETE,X,,자체 DB,O,본인 리소스만 접근; 존재 · 소유권 확인 후 처리,시작 전
+사용자 설정 조회,/api/v1/users/me/settings,GET,X,,자체 DB,O,본인 리소스만 접근,시작 전
+사용자 설정 수정,/api/v1/users/me/settings,PATCH,Body: notificationEnabled: Boolean; dailyBriefingEnabled:Boolean; monthlyReportEnabled: Boolean         모두 선택 사항,,자체 DB,O,본인 리소스만 접근; 입력값/상태 전이 검증; 중복 요청 방지,시작 전
+금융 기본정보 조회,/api/v1/users/me/financial-profile,GET,X,,자체 DB,O,본인 리소스만 접근,시작 전
+금융 기본정보 수정,/api/v1/users/me/financial-profile,PATCH,"Body: 월소득?, 연소득?, 급여일?, 고정지출?, 비상자금 기준? 등",,자체 DB,O,본인 리소스만 접근; 입력값/상태 전이 검증; 중복 요청 방지,시작 전

@@ -1,0 +1,30 @@
+﻿진행상태,담당자,API명,Method,Endpoint,인증 여부,데이터/연동,Parameter,제한사항
+시작 전,,전체 거래 조회,GET,/api/v1/transactions,O,SSAFY 데이터 통합,"Query: startDate?, endDate?, category?,
+paymentMethod?, page?, size?","본인 리소스만 접근; page≥0, size 1~100 (도담 정책); 시작일≤종료일; 조회기간 정책 제한; SSAFY
+키·userKey 서버 관리; 호출별 거래고유번호 신규 생성"
+시작 전,,거래 메모 수정,PATCH,/api/v1/transactions/{transactionId}/memo,O,SSAFY,Path: transactionId / Body: memo,"본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 입력값/상태 전
+이 검증; 중복 요청 방지; 메모 길이/금칙문자 검증"
+시작 전,,소비 카테고리 수정,PATCH,/api/v1/transactions/{transactionId}/category,O,자체 DB,Path: transactionId / Body: categoryId,본인 리소스만 접근; 입력값/상태 전이 검증; 중복 요청 방지
+시작 전,,거래 상세,GET,/api/v1/transactions/{transactionId},O,SSAFY + 자체,Path: transactionId,본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성
+시작 전,,거래내역 숨김 상태 변경,PATCH,/api/v1/transactions/{transactionId}/visibility,O,자체 DB,Path: transactionId / Body: hidden,본인 리소스만 접근; 숨김 상태 전이 검증; 중복 요청 방지
+시작 전,,월 소비 요약,GET,/api/v1/spending/monthly-summary,O,자체 계산,Query: yearMonth?,본인 리소스만 접근; YYYY-MM 형식
+시작 전,,일별 소비,GET,/api/v1/spending/daily,O,자체 계산,"Query: startDate?, endDate?",본인 리소스만 접근; 시작일≤종료일; 조회기간 정책 제한
+시작 전,,카테고리별 소비,GET,/api/v1/spending/categories,O,자체 계산,Query: yearMonth?,본인 리소스만 접근; YYYY-MM 형식
+시작 전,,카테고리 소비 추이,GET,/api/v1/spending/categories/trend,O,자체 계산,"Query: startMonth?, endMonth?, category?",본인 리소스만 접근; 시작월≤종료월
+시작 전,,고정지출,GET,/api/v1/spending/fixed,O,자체 분류,"Query: startMonth?, endMonth?",본인 리소스만 접근; 시작월≤종료월
+시작 전,,변동지출,GET,/api/v1/spending/variable,O,자체 분류,"Query: startMonth?, endMonth?",본인 리소스만 접근; 시작월≤종료월
+시작 전,,월 누적 소비,GET,/api/v1/spending/progress,O,자체 계산,Query: yearMonth?,본인 리소스만 접근; YYYY-MM 형식
+시작 전,,소비목표 비교,GET,/api/v1/spending/goal-comparison,O,자체 계산,"Query: goalId?, yearMonth?",본인 리소스만 접근; YYYY-MM 형식
+시작 전,,소비 급증 조회,GET,/api/v1/spending/anomalies,O,자체 탐지,"Query: startMonth?, endMonth?, category?",본인 리소스만 접근; 시작월≤종료월
+시작 전,,결제수단별 소비,GET,/api/v1/spending/payment-methods,O,자체 집계,Query: yearMonth?,본인 리소스만 접근; YYYY-MM 형식
+시작 전,,소비 및 저축 비율,GET,/api/v1/spending/saving-ratio,O,자체 계산,Query: yearMonth?,본인 리소스만 접근; YYYY-MM 형식
+시작 전,,수동 거래 등록,POST,/api/v1/transactions,O,자체 DB에 수동 거래 생성,"Body: transactionDate, transactionType, amount, merchantName?, categoryId?, paymentMethod?, memo?","
+본인 리소스만 접근; amount > 0; 거래일 형식 검증; 거래유형 유효성 검증; 존재하는 categoryId만 허용; 메모/가맹점명 길이 제한
+
+"
+시작 전,,수동 거래 수정,PUT,/api/v1/transactions/{transactionId},O,수동 생성 거래만 수정,"Path: transactionId / Body: transactionDate?, transactionType?, amount?, merchantName?, categoryId?, paymentMethod?, memo?","
+본인 리소스만 접근; MANUAL 거래만 수정 가능; 입력된 필드만 변경; amount > 0; 날짜/카테고리 유효성 검증
+
+"
+시작 전,,수동 거래 삭제,DELETE,/api/v1/transactions/{transactionId},O,수동 생성 거래만 삭제,Path: transactionId,"
+본인 리소스만 접근; MANUAL 거래만 삭제 가능; 존재하는 거래만 삭제; 소유권 확인 후 처리"

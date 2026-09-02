@@ -1,0 +1,9 @@
+﻿진행상태,담당자,API명,Method,Endpoint,인증 여부,데이터/연동,Parameter,제한사항
+시작 전,,데일리 브리핑,GET,/api/v1/reports/daily,O,자체,Query: date?,본인 리소스만 접근
+시작 전,,월간 리포트,GET,/api/v1/reports/monthly,O,자체,Query: yearMonth?,YYYY-MM 형식
+시작 전,,리포트 목록,GET,/api/v1/reports,O,자체,"Query: type?, fromDate?, toDate?, page?, size?","page ≥ 0, size 1~100; 시작일 ≤ 종료일"
+시작 전,,리포트 상세,GET,/api/v1/reports/{reportId},O,자체,Path: reportId,본인 리소스만 접근
+시작 전,,월간 소비패턴,GET,/api/v1/reports/monthly/spending-pattern,O,자체,Query: yearMonth?,YYYY-MM 형식
+시작 전,,다음달 예정비용,GET,/api/v1/reports/monthly/upcoming-expenses,O,자체,Query: yearMonth?,YYYY-MM 형식
+시작 전,,월간 목표변화,GET,/api/v1/reports/monthly/goal-impact,O,자체,"Query: yearMonth?, goalId?",YYYY-MM 형식
+시작 전,,월간 개선행동 요약,GET,/api/v1/reports/monthly/improvements,O,자체,Query: yearMonth?,YYYY-MM 형식

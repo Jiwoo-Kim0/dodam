@@ -1,0 +1,7 @@
+﻿API명,Endpoint,Method,Parameter,담당자,데이터/연동,인증 여부,제한사항,진행상태
+회원가입,/api/v1/auth/signup,POST,"Body: email, password, name",,자체 회원 + SSAFY 금융망 사용자,X,SSAFY 키 · userKey 서버 관리; 호출별 거래고유번호 신규 생성; 입력값/상태 전이 검증; 중복 요청 방지,시작 전
+로그인,/api/v1/auth/login,POST,"Body: email, password",,자체 DB,X,입력값/상태 전이 검증; 중복 요청 방지,시작 전
+로그아웃,/api/v1/auth/logout,POST,X (인증 세션 기준),,자체 DB,O,본인 리소스만 접근; 입력값/상태 전이 검증; 중복 요청 방지,시작 전
+Access Token 재발급,/api/v1/auth/refresh,POST,Body/Cookie: refresh Token,,자체 DB,X,입력값/상태 전이 검증; 중복 요청 방지,시작 전
+로그인 상태 조회,/api/v1/auth/session,GET,X,,자체 DB,O,본인 리소스만 접근,시작 전
+세션 삭제,/api/v1/auth/session,DELETE,X,,자체 DB,O,본인 리소스만 접근; 존재 · 소유권 확인 후 처리,시작 전

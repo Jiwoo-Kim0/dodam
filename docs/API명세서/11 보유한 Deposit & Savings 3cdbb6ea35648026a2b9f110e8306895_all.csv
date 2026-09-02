@@ -1,0 +1,5 @@
+﻿API명,Endpoint,Method,Parameter,담당자,데이터/연동,인증 여부,제한사항,진행상태
+보유 예·적금,/api/v1/deposit-savings,GET,"Query: type? (DEPOSIT/SAVINGS), status?",,SSAFY,O,본인 리소스만 접근; SSAFY 키-userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시연 데이터 범위 내,시작 전
+예·적금 요약,/api/v1/deposit-savings/summary,GET,없음,,자체,O,본인 리소스만 접근,시작 전
+만기 예정,/api/v1/deposit-savings/maturities,GET,Query: withinDays?,,자체,O,본인 리소스만 접근; 조회 기준일 이후 만기 상품 대상,시작 전
+저축률,/api/v1/deposit-savings/rate,GET,Query: yearMonth?,,자체,O,본인 리소스만 접근; YYYY-MM 형식,시작 전

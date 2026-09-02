@@ -1,0 +1,5 @@
+﻿진행상태,담당자,API명,Method,Endpoint,인증 여부,데이터/연동,Parameter,제한사항
+시작 전,,예금 시장금리 비교,GET,/api/v1/deposits/{accountNo}/rate-comparison,O,상품DB,"Path: accountNo / Query: term?, industry?, topN?",본인 리소스만 접근; DB 최신 동기화 시점 기준; 실시간 상품정보 아님; 동일/유사 예금상품 기준으로 비교
+시작 전,,예금 중도해지 예상금액,GET,/api/v1/deposits/{accountNo}/early-termination,O,SSAFY,Path: accountNo,본인 리소스만 접근; SSAFY 키-userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시연 데이터 범위 내
+시작 전,,예금 만기 예상금액,GET,/api/v1/deposits/{accountNo}/maturity-forecast,O,SSAFY,Path: accountNo,본인 리소스만 접근; SSAFY 키-userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시연 데이터 범위 내
+시작 전,,예금 상세,GET,/api/v1/deposits/{accountNo},O,SSAFY,Path: accountNo,본인 리소스만 접근; SSAFY 키-userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시연 데이터 범위 내

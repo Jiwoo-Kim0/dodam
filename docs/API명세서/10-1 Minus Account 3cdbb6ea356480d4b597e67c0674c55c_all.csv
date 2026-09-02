@@ -1,0 +1,22 @@
+﻿API명,Endpoint,Method,Parameter,담당자,데이터/연동,인증 여부,제한사항,진행상태
+마이너스통장 목록,/api/v1/loans/minus-accounts,GET,Query: status?,,SSAFY,O,"본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
+연 데이터 범위 내",시작 전
+마이너스통장 이자 납부,"/api/v1/loans/minus-accounts/{accountNo}/
+interest-payments",POST,"Path: accountNo / Body: amount?,
+paymentAccountNo?",,SSAFY,O,"본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
+연 데이터 범위 내; 입력값/상태 전이 검증; 중복 요청 방지",시작 전
+마이너스통장 원금 상환,"/api/v1/loans/minus-accounts/{accountNo}/
+repayments",POST,"Path: accountNo / Body: amount, repayAccountNo?",,SSAFY,O,"본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
+연 데이터 범위 내; 입력값/상태 전이 검증; 중복 요청 방지",시작 전
+마이너스통장 알림,"/api/v1/loans/minus-accounts/{accountNo}/
+alerts",GET,"Path: accountNo / Query: unreadOnly?, page?, size?",,SSAFY,O,"본인 리소스만 접근; page≥0, size 1~100 (도담 정책); SSAFY 키·userKey 서버 관리; 호출별 거래
+고유번호 신규 생성; 사전 생성된 시연 데이터 범위 내",시작 전
+마이너스통장 거래내역,"/api/v1/loans/minus-accounts/{accountNo}/
+transactions",GET,"Path: accountNo / Query: startDate?, endDate?,
+page?, size?",,SSAFY,O,"본인 리소스만 접근; page≥0, size 1~100 (도담 정책); 시작일≤종료일; 조회기간 정책 제한; SSAFY
+키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시연 데이터 범위 내",시작 전
+마이너스통장 이자,"/api/v1/loans/minus-accounts/{accountNo}/
+interest",GET,Path: accountNo,,SSAFY,O,"본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
+연 데이터 범위 내",시작 전
+마이너스통장 상세,/api/v1/loans/minus-accounts/{accountNo},GET,Path: accountNo,,SSAFY,O,"본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
+연 데이터 범위 내",시작 전
