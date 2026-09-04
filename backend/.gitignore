@@ -1,0 +1,25 @@
+# Gradle
+.gradle/
+build/
+out/
+
+# IDE
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+.vscode/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+application-*-secret.yml
+application-*-private.yml
+
+# Logs and OS files
+*.log
+logs/
+.DS_Store
+Thumbs.db
