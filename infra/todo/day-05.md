@@ -44,7 +44,24 @@
   - Jenkins 생성 → 복구력은 좋지만 Jenkins가 단일 실패점이 되고 설정이 복잡해짐
 - [ ] 어느 쪽이든 **`.env` 백업 절차**는 반드시 만들 것 (Day 4의 DB 백업과 함께)
 
-### 3. 배포 안정화
+### 3. 컨테이너 하드닝 ★보안 (상세: [[security.md]] R3)
+현재 `backend` 컨테이너가 **root(`uid=0`)로 실행 중**이다 (`docker exec backend id`로 확인).
+- [ ] `backend/Dockerfile` 런타임 스테이지에 비루트 유저 추가
+  ```dockerfile
+  RUN useradd -r -u 10001 -g root dodam
+  USER 10001
+  ```
+  - 8080은 1024 이상 포트라 비루트로도 바인딩 가능 (문제없음)
+- [ ] compose에 `security_opt: ["no-new-privileges:true"]`, `cap_drop: [ALL]` 적용 검토
+- [ ] jenkins 컨테이너는 docker.sock이 필요해 하드닝에 한계가 있음 → **Day 3에서 노출면을 없애는 방식으로 대응**했음을 문서에 명시
+
+### 4. 배포 승인 게이트 ★보안 (상세: [[security.md]] R4)
+현재 `develop`에 push되면 그대로 프로덕션에 배포된다. 승인 단계가 없다.
+- [ ] GitLab에서 `develop`을 **Protected branch**로 설정 (**사용자 액션**)
+  - 직접 push 금지, MR 머지만 허용 → 최소 1인 리뷰가 배포 전 게이트가 됨
+  - 팀이 이미 MR 흐름을 쓰고 있어 추가 부담이 거의 없음
+
+### 5. 배포 안정화
 - [ ] **JVM 메모리 옵션** — 현재 제한 없음. 16GB 중 MySQL/Redis/Jenkins/모니터링 몫을 남기고 `-Xmx` 지정 (예: 2~3GB)
       Day 6 모니터링 스택이 올라오면 메모리가 빠듯해질 수 있으므로 이번 Day에 미리 잡아둘 것
 - [ ] **배포 실패 시 롤백** — 현재는 헬스체크 실패 시 로그만 남기고 끝나며, **깨진 컨테이너가 그대로 떠 있는다**
@@ -52,10 +69,11 @@
 - [ ] **헬스체크 엔드포인트 일원화** — 지금 컨테이너 HEALTHCHECK와 `deploy.sh`는 `/api/health`를 쓰고, `/actuator/health`도 별도로 열려 있다. 모니터링(Day 6)은 actuator를 쓸 예정이므로 역할을 정리해 문서화
 - [ ] 컨테이너 리소스 제한(`mem_limit`) 검토 — 한 서비스가 폭주해도 다른 서비스를 굶기지 않도록
 
-### 4. 검증
+### 6. 검증
 - [ ] 컨테이너 강제 종료(`docker kill backend`) → `restart` 정책으로 자동 복구되는지
 - [ ] 일부러 테스트를 깨뜨린 커밋을 push → **빌드에서 멈추고 배포되지 않는지** (Day 2에서 구조는 만들었으나 실제로 확인한 적 없음)
 - [ ] EC2 재부팅 후 전체 스택이 자동으로 올라오는지 (`restart: unless-stopped` 검증)
+- [ ] 비루트 전환 후 backend가 정상 기동/로그 기록되는지 (`docker exec backend id`로 uid 확인)
 
 ## 산출물
 - 시크릿 목록/보관/백업 방식 문서화 (실제 값 제외)

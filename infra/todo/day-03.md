@@ -43,17 +43,41 @@
   - 앱만 한다 → `/`는 간단한 상태 페이지나 404로 정리
 - [ ] Day 6에서 붙일 `/grafana/` 서브패스 자리 예약 (설정 스켈레톤만)
 
-### 5. 관리 도구 접근 보호
-- [ ] `/jenkins/`에 `auth_basic` 추가 여부 결정
-  - Jenkins 자체 로그인이 이미 있으므로 이중 인증이 됨. HTTPS가 붙으면 굳이 필요 없을 수도 있어 **HTTPS 적용 후 판단**
-  - Basic Auth를 걸면 **GitLab webhook 요청도 막히므로**, 건다면 `/jenkins/project/` 경로는 예외 처리 필수 (Day 2 파이프라인이 죽는 사고 방지)
+### 5. Jenkins 노출 축소 ★보안 최우선 (상세: [[security.md]] R1)
+Jenkins 컨테이너는 `docker` 그룹에 속해 호스트 Docker 데몬을 조작할 수 있다. **Jenkins가 뚫리면 호스트 루트가 넘어가고 DB·`.env`·암호화 키까지 전부 털린다.** 공개 인터넷에 UI를 열어둘 이유가 없다.
 
-### 6. 검증
+- [ ] nginx에서 **웹훅 경로만 공개**하고 나머지 UI는 차단
+  - `/jenkins/project/` → jenkins 프록시 유지 (GitLab webhook 수신용)
+  - 그 외 `/jenkins/*` → `403` 차단
+- [ ] Jenkins를 **호스트 루프백에만 바인딩** — compose에 `ports: ["127.0.0.1:8080:8080"]` 추가 (외부에서는 접근 불가)
+- [ ] UI는 SSH 터널로 접근하고, 방법을 `infra/README.md`에 기록
+  ```bash
+  ssh -L 8080:127.0.0.1:8080 ssafy-ec2
+  # 브라우저: http://localhost:8080/jenkins/
+  ```
+- [ ] 차단 후 **웹훅이 여전히 동작하는지 반드시 확인** (develop에 push해서 빌드가 도는지)
+
+### 6. 시크릿 로테이션 (HTTPS 적용 직후 — [[security.md]] R2)
+지금까지 평문 HTTP로 오간 값들은 노출된 것으로 간주한다.
+- [ ] Jenkins admin 비밀번호 변경
+- [ ] webhook secret 재생성 → Jenkins job config와 GitLab webhook **양쪽** 갱신
+- [ ] GitLab PAT 재발급 검토
+
+### 7. 저비용 방어 ([[security.md]] R6)
+- [ ] 보안 헤더: `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`
+- [ ] `server_tokens off;` (nginx 버전 숨김)
+- [ ] `limit_req`로 `/api/` 레이트 리밋 — 로그인/회원가입 경로는 더 엄격하게
+- [ ] `/actuator/`가 외부로 노출되지 않도록 nginx에서 차단 (Day 6 Prometheus는 컨테이너 네트워크로만 접근)
+- [ ] fail2ban 설치해 SSH 무차별 대입 차단
+
+### 8. 검증
 - [ ] `https://j15D105.p.ssafy.io/api/health` → 200 (실제 백엔드 응답)
 - [ ] `http://` 접근이 `https://`로 리다이렉트되는지
 - [ ] 인증서 만료일 확인, 갱신 dry-run (`certbot renew --dry-run`)
-- [ ] **HTTPS 전환 후 CI/CD가 여전히 도는지** — develop에 커밋 하나 push해서 빌드 성공까지 확인
-      (webhook URL/SSL 검증 설정을 바꿨으므로 여기서 깨지기 쉬움)
+- [ ] **외부에서 `https://.../jenkins/`가 403인지** (UI 차단 확인)
+- [ ] **SSH 터널로는 Jenkins UI에 접속되는지**
+- [ ] **HTTPS 전환 + Jenkins 차단 후에도 CI/CD가 여전히 도는지** — develop에 커밋 하나 push해서 빌드 성공까지 확인
+      (webhook URL/SSL 검증/경로 차단을 한꺼번에 바꾸므로 여기서 깨지기 가장 쉬움. 하나씩 바꾸고 그때마다 확인할 것)
 
 ## 산출물
 - `j15D105.p.ssafy.io`가 HTTPS로 서비스되고, 인증서 자동 갱신이 걸려 있음
