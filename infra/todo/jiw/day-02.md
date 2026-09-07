@@ -170,6 +170,63 @@
 - 커밋 전 검증: 백엔드 소스+Dockerfile을 EC2 `/tmp/bt`에 복사해 **`DOCKER_BUILDKIT=0`(classic builder)로 직접 빌드 → 성공** 확인 후 테스트 아티팩트 정리
 - 부수 확인: 실패 로그의 `docker compose ps`상 backend는 `Up (healthy)` — 앞서 수동 배포한 컨테이너가 계속 정상 서비스 중이었음 (파이프라인 실패가 서비스 중단으로 이어지지 않음)
 
+### 파이프라인 구조적 결함 2건 수정
+빌드 #1 수정사항을 반영하기 전에, 코드를 다시 보다가 두 가지 구조적 문제를 발견해 먼저 고침.
+1. **자기 자신을 재시작하는 배포**: `deploy.sh`의 `compose up -d --build`가 서비스 지정 없이 전체를 대상으로 해서, **Jenkins 컨테이너 안에서 실행되는 배포가 jenkins 서비스까지 재빌드/재시작** → 배포 도중 자기 빌드를 죽이게 됨. 마침 `infra/jenkins/Dockerfile`(buildx 추가)을 바꾼 직후라 실제로 터질 상황이었음
+   - 수정: `DEPLOY_SERVICES="mysql redis backend nginx"`를 도입해 up 대상에서 jenkins 제외. jenkins 이미지 변경은 호스트에서 수동 재빌드
+2. **직전 배포 코드로 테스트**: `Build & Test`가 `$APP_DIR`의 compose로 빌드하는데, `$APP_DIR` 동기화는 그 다음 `Deploy` 단계의 deploy.sh에서 일어남 → 새로 push한 코드가 아니라 **이전 배포 코드로 테스트**하고 있었음
+   - 수정: `Build & Test`를 `$WORKSPACE`의 compose 기준으로 변경 (방금 체크아웃한 코드로 테스트, 실패 시 배포 진입 안 함)
+   - 추가로 `deploy.sh`를 `$APP_DIR`이 아닌 `$WORKSPACE` 사본으로 실행하도록 변경 — deploy.sh가 `$APP_DIR`을 `git reset --hard`로 덮어쓰기 때문에 **실행 중인 스크립트 파일이 도중에 교체되는** 위험을 회피
+- Jenkins 이미지를 buildx 포함 버전으로 재빌드 (`docker compose up -d --build jenkins`) → `buildx v0.37.0` 확인, **job/자격증명 모두 보존**됨 (`jenkins_home`이 named volume)
+
+### 빌드 #2: Build & Test 통과, Deploy에서 git 인증 실패
+- `Finished: FAILURE`, 그러나 **Build & Test 단계는 통과** → jar COPY 수정이 실제로 동작함을 확인
+- 실패 지점: `deploy.sh`의 소스 동기화
+  ```
+  [deploy] 소스 동기화
+  fatal: could not read Username for 'https://lab.ssafy.com': No such device or address
+  ```
+- 원인: `git fetch`가 **Jenkins 컨테이너 안**에서 실행되는데, 자격증명은 호스트의 `~/.git-credentials`에만 저장돼 있어 컨테이너에서는 보이지 않음
+- 수정
+  - `Jenkinsfile`: Deploy 단계를 `withCredentials(gitlab-https)`로 감싸 `GIT_USER`/`GIT_TOKEN` 주입
+  - `deploy.sh`: 두 변수가 있으면 인라인 git credential helper로 인증 (토큰을 디스크에 쓰지 않고 helper 표준출력으로만 전달, 기존 `credential.helper`는 빈 값으로 먼저 덮어 간섭 차단). 없으면 호스트 수동 실행으로 간주해 저장된 helper 사용
+  - 커밋 전 `git credential fill`로 helper가 주입된 값을 올바르게 반환하는지 검증
+
+### 웹훅이 수신은 되는데 트리거가 안 되는 문제
+- 증상: GitLab에서 웹훅은 계속 도착(`WebHook called` 로그)하는데 `triggered for push` 로그가 없고 빌드도 안 생김. 반면 Claude가 만든 테스트 페이로드는 정상 트리거됨
+- 진단: **잘못된 secret으로 일부러 POST해보니 로그 패턴이 GitLab 웹훅과 완전히 동일**(`WebHook called`만 찍히고 트리거 없음)했고 응답은 **401**
+  - 즉 secret 불일치 시 플러그인이 조용히 401만 반환하고 별도 경고 로그를 남기지 않음 → 이 패턴이 곧 secret 불일치의 지문
+- 사용자가 GitLab webhook의 Secret token을 `~/.jenkins-webhook-secret` 값으로 다시 정확히 입력 → 해결
+- 참고: 사용자가 "webhook secret에 Jenkins initial admin password를 넣는 것이냐"고 확인 질문. 셋(초기 admin 비밀번호 / 웹훅 secret / GitLab PAT)이 서로 다른 값임을 표로 정리해 안내함
+
+### 빌드 #3: end-to-end 성공 (Day 2 목표 달성)
+- GitLab에서 **실제 MR/push → 웹훅 → 자동 빌드** 로 트리거됨 (`05:49:22 triggered for push`)
+- `Finished: SUCCESS`
+  ```
+  [deploy] APP_DIR=/home/ubuntu/app / branch=develop
+  [deploy] 소스 동기화
+  [deploy] 현재 커밋: f18512e [S15P21D105-570] [BE] Docs: ERD 및 데이터 무결성 정책 정비
+  [deploy] 이미지 빌드 및 컨테이너 기동 (mysql redis backend nginx)
+  [deploy] nginx 설정 리로드 (conf.d 변경 반영)
+  [deploy] 헬스체크: http://nginx/api/health
+  [deploy]   대기중... (1/40, http_code=502)
+  [deploy]   대기중... (2/40, http_code=502)
+  [deploy] 헬스체크 통과 (3회차)
+  배포 성공: origin/develop (3)
+  ```
+  - 재기동 중 502가 두 번 뜬 뒤 통과 — 헬스체크 폴링(5초 간격 40회)이 의도대로 동작함을 확인
+- 배포 직후 외부 검증
+  ```
+  $ curl http://j15D105.p.ssafy.io/api/health
+  {"success":true,"data":{"status":"UP"},"message":null}   HTTP 200
+  ```
+  - 컨테이너: backend/mysql/redis 모두 `healthy`, 배포된 커밋 `f18512e`
+
+## Day 2 완료 처리
+- **GitLab push/MR → Jenkins 자동 빌드(테스트 포함) → EC2 배포 → 헬스체크** 전 구간 자동화 달성
+- 원래 Day 2 목표(더미 앱으로 배관만 검증)를 넘어, **실제 백엔드 + MySQL + Redis가 배포되어 서비스되는 상태**까지 도달 (구 Day 4·5 범위 일부 선취)
+- Day 4는 DB 고도화(초기화 스크립트/백업/튜닝), Day 5는 시크릿 정식화 중심으로 범위 조정 예정
+
 ## 다음 기록할 것 (TODO)
 - [x] `infra/jenkins/Dockerfile` 작성 결과
 - [x] `docker-compose.yml` jenkins 서비스 추가 결과
@@ -181,8 +238,16 @@
 - [x] MySQL/Redis/backend 서비스 + Jenkinsfile + deploy.sh 작성
 - [x] EC2 `.env`에 `MYSQL_*`, `REDIS_PASSWORD`, `CORS_ALLOWED_ORIGINS` 채우기
 - [x] EC2에서 스택 기동 + `/api/health` 200 수동 확인 (파이프라인 붙이기 전 선검증)
-- [ ] GitLab PAT 발급 + EC2 `credential.helper store` 설정 (**사용자 액션**)
-- [ ] Jenkins Credentials에 GitLab 토큰 등록 (**사용자 액션**)
-- [ ] Jenkins Pipeline Job 생성 (SCM: GitLab, Jenkinsfile 경로 루트)
-- [ ] GitLab Webhook 등록 (Push 이벤트 → Jenkins)
-- [ ] push → 자동 빌드/배포 end-to-end 검증
+- [x] GitLab PAT 발급 + EC2 `credential.helper store` 설정 (**사용자 액션**)
+- [x] Jenkins Credentials에 GitLab 토큰 등록 (**사용자 액션**)
+- [x] Jenkins Pipeline Job 생성 (SCM: GitLab, Jenkinsfile 경로 루트)
+- [x] GitLab Webhook 등록 (Push 이벤트 → Jenkins) (**사용자 액션**)
+- [x] push → 자동 빌드/배포 end-to-end 검증 (빌드 #3 SUCCESS)
+- [x] **Day 2 완료 처리**
+
+## Day 3로 이월할 것
+- [ ] 도메인 HTTPS(Let's Encrypt) 적용 — 적용 후 GitLab webhook URL을 https로 바꾸고 SSL verification 다시 켜기
+- [ ] nginx `/` 라우팅을 임시 200 응답에서 실제 구성으로 교체
+- [ ] Jenkins 웹 UI도 HTTPS로 (현재 HTTP로 로그인 중 — 자격증명이 평문 전송됨)
+- [ ] 팀 공지: push하면 자동 배포된다는 것과 Jenkins UI 위치 (**사용자 액션**)
+- [ ] 파이프라인 개선 여지: 테스트 리포트를 Jenkins UI에 게시(현재는 이미지 빌드 로그로만 확인), 배포 실패 시 이전 이미지로 롤백
