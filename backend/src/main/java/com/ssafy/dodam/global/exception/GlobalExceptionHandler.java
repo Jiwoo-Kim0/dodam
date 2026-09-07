@@ -80,6 +80,26 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.failure(errorCode.name(), errorCode.message()));
     }
 
+    @ExceptionHandler(InvalidRequestException.class)
+    public ResponseEntity<ApiResponse<Void>> handleInvalidRequest(InvalidRequestException exception) {
+        return ResponseEntity.badRequest()
+                .body(ApiResponse.failure(
+                        ErrorCode.INVALID_REQUEST.name(),
+                        exception.getMessage()
+                ));
+    }
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ApiResponse<Void>> handleResourceNotFound(
+            ResourceNotFoundException exception
+    ) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiResponse.failure(
+                        ErrorCode.RESOURCE_NOT_FOUND.name(),
+                        exception.getMessage()
+                ));
+    }
+
     @ExceptionHandler({
             NoResourceFoundException.class,
             NoHandlerFoundException.class

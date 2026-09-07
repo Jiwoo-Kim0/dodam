@@ -1,6 +1,7 @@
 # 도담 백엔드
 
-도담 백엔드의 초기 Spring Boot 프로젝트입니다. 현재는 비즈니스 API를 구현하지 않고 공통 응답, 예외 처리, Security, CORS, Profile, MySQL, Redis 및 Health Check 기반만 제공합니다.
+도담 백엔드의 Spring Boot 프로젝트입니다. 공통 응답, 예외 처리, Security, CORS,
+Profile, MySQL, Redis 및 Health Check 기반과 금융회사·상품 조회 API를 제공합니다.
 
 ## 기술 스택
 
@@ -38,6 +39,8 @@ OAuth2 Client는 계획된 Kakao/Google 로그인 확장을 위해 포함했지�
     │   │   │   │   ├── health/
     │   │   │   │   ├── response/
     │   │   │   │   └── security/
+    │   │   │   ├── domain/
+    │   │   │   │   └── product/
     │   │   │   └── infrastructure/
     │   │   └── resources/
     │   │       ├── db/migration/
@@ -50,7 +53,7 @@ OAuth2 Client는 계획된 Kakao/Google 로그인 확장을 위해 포함했지�
     ├── build.gradle
     └── settings.gradle
 
-database/finance_products의 기존 SQL은 시연용 금융상품 데이터이며 Flyway Migration으로 자동 실행하지 않습니다.
+database 아래의 금융상품 SQL은 시연용 데이터이며 Flyway Migration으로 자동 실행하지 않습니다.
 
 도메인 기능은 구현 시점에 domain/{domain-name} 아래에서 controller, service, repository, entity, dto 단위로 확장합니다. SSAFY 금융망, 금융상품한눈에, 생성형 AI처럼 여러 도메인이 공유하는 외부 어댑터는 infrastructure/external 아래에 배치합니다.
 
@@ -239,6 +242,24 @@ PATCH는 null인 항목을 건드리지 않으며, 바꿀 항목이 하나도 �
     }
 
 code와 errors는 null일 때만 생략하고 data와 message는 null이어도 항상 직렬화합니다. Validation, 잘못된 요청, 404, 401, 403 및 예상하지 못한 500 오류에 공통 JSON 응답을 사용합니다.
+
+## 금융회사 및 상품 조회
+
+이미 상품 DB에 적재된 스냅샷을 조회하며 외부 금융상품 API를 실시간으로 호출하지 않습니다.
+모든 경로는 인증이 필요합니다.
+
+| 대상 | 목록 | 상세 | 목록 필터 |
+| --- | --- | --- | --- |
+| 금융회사 | `GET /api/v1/products/companies` | - | `name`, `page`, `size` |
+| 정기예금 | `GET /api/v1/products/deposits` | `GET /api/v1/products/deposits/{productId}` | `companyId`, `term`, `minRate`, `page`, `size` |
+| 적금 | `GET /api/v1/products/savings` | `GET /api/v1/products/savings/{productId}` | `companyId`, `term`, `minRate`, `savingType`, `page`, `size` |
+| 개인신용대출 | `GET /api/v1/products/loans/personal` | `GET /api/v1/products/loans/{productId}` | `companyId`, `rateType`, `minRate`, `maxRate`, `page`, `size` |
+| 주택담보대출 | `GET /api/v1/products/loans/mortgage` | `GET /api/v1/products/loans/{productId}` | `companyId`, `mortgageType`, `repaymentType`, `page`, `size` |
+| 전세자금대출 | `GET /api/v1/products/loans/jeonse` | `GET /api/v1/products/loans/{productId}` | `companyId`, `repaymentType`, `page`, `size` |
+| 카드 | `GET /api/v1/products/cards` | `GET /api/v1/products/cards/{productId}` | `issuerCode`, `category`, `page`, `size` |
+
+목록 API의 기본 페이지는 0, 기본 크기는 20이며 크기는 최대 100입니다. 상세 경로와
+실제 상품 유형이 다르거나 상품이 없으면 `RESOURCE_NOT_FOUND`를 반환합니다.
 
 ## 아직 결정되거나 구현되어야 할 항목
 
