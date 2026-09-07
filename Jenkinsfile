@@ -29,12 +29,15 @@ pipeline {
 
         stage('Build & Test') {
             steps {
-                // Dockerfile builder 스테이지에서 ./gradlew clean build 수행 (테스트 포함).
-                // 테스트가 깨지면 이미지 빌드가 실패하며 파이프라인도 중단된다.
+                // 방금 체크아웃한 워크스페이스 코드로 빌드한다.
+                // ($APP_DIR은 Deploy 단계에서야 동기화되므로, 여기서 $APP_DIR을 쓰면
+                //  직전 배포 코드로 테스트하게 된다)
+                // Dockerfile builder 스테이지에서 ./gradlew clean build가 돌기 때문에
+                // 테스트가 깨지면 이미지 빌드가 실패하고, 배포까지 가지 않는다.
                 sh '''
                     set -e
                     docker compose \
-                        -f "$APP_DIR/infra/docker-compose.yml" \
+                        -f "$WORKSPACE/infra/docker-compose.yml" \
                         --env-file "$APP_DIR/infra/.env" \
                         build backend
                 '''
@@ -43,12 +46,14 @@ pipeline {
 
         stage('Deploy') {
             steps {
+                // deploy.sh는 $APP_DIR을 git reset --hard로 덮어쓰므로,
+                // 실행 중인 스크립트 파일이 교체되지 않도록 워크스페이스 사본을 실행한다.
                 sh '''
                     set -e
                     export APP_DIR="$APP_DIR"
                     export DEPLOY_BRANCH="${GIT_BRANCH#origin/}"
                     export HEALTH_URL="$HEALTH_URL"
-                    bash "$APP_DIR/infra/scripts/deploy.sh"
+                    bash "$WORKSPACE/infra/scripts/deploy.sh"
                 '''
             }
         }
