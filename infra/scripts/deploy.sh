@@ -13,7 +13,7 @@ ENV_FILE="$APP_DIR/infra/.env"
 # jenkins는 일부러 제외한다 — 이 스크립트는 Jenkins 컨테이너 안에서 실행되므로
 # jenkins까지 up 대상에 넣으면 배포 도중 자기 자신을 재시작해 빌드가 죽는다.
 # jenkins 이미지 변경은 호스트에서 수동으로 `docker compose up -d --build jenkins` 실행.
-DEPLOY_SERVICES="${DEPLOY_SERVICES:-mysql redis backend nginx}"
+DEPLOY_SERVICES="${DEPLOY_SERVICES:-mysql redis backend nginx certbot}"
 HEALTH_URL="${HEALTH_URL:-http://localhost/api/health}"
 HEALTH_RETRIES="${HEALTH_RETRIES:-40}"
 HEALTH_INTERVAL="${HEALTH_INTERVAL:-5}"
