@@ -3,20 +3,15 @@
 연 데이터 범위 내"
 시작 전,,마이너스통장 상세,GET,/api/v1/loans/minus-accounts/{accountNo},O,SSAFY,Path: accountNo,"본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
 연 데이터 범위 내"
-시작 전,,마이너스통장 이자,GET,"/api/v1/loans/minus-accounts/{accountNo}/
-interest",O,SSAFY,Path: accountNo,"본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
+시작 전,,마이너스통장 이자,GET,/api/v1/loans/minus-accounts/{accountNo}/interest,O,SSAFY,Path: accountNo,"본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
 연 데이터 범위 내"
-시작 전,,마이너스통장 거래내역,GET,"/api/v1/loans/minus-accounts/{accountNo}/
-transactions",O,SSAFY,"Path: accountNo / Query: startDate?, endDate?,
+시작 전,,마이너스통장 거래내역,GET,/api/v1/loans/minus-accounts/{accountNo}/transactions,O,SSAFY,"Path: accountNo / Query: startDate?, endDate?,
 page?, size?","본인 리소스만 접근; page≥0, size 1~100 (도담 정책); 시작일≤종료일; 조회기간 정책 제한; SSAFY
 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시연 데이터 범위 내"
-시작 전,,마이너스통장 알림,GET,"/api/v1/loans/minus-accounts/{accountNo}/
-alerts",O,SSAFY,"Path: accountNo / Query: unreadOnly?, page?, size?","본인 리소스만 접근; page≥0, size 1~100 (도담 정책); SSAFY 키·userKey 서버 관리; 호출별 거래
+시작 전,,마이너스통장 알림,GET,/api/v1/loans/minus-accounts/{accountNo}/alerts,O,SSAFY,"Path: accountNo / Query: unreadOnly?, page?, size?","본인 리소스만 접근; page≥0, size 1~100 (도담 정책); SSAFY 키·userKey 서버 관리; 호출별 거래
 고유번호 신규 생성; 사전 생성된 시연 데이터 범위 내"
-시작 전,,마이너스통장 원금 상환,POST,"/api/v1/loans/minus-accounts/{accountNo}/
-repayments",O,SSAFY,"Path: accountNo / Body: amount, repayAccountNo?","본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
+시작 전,,마이너스통장 원금 상환,POST,/api/v1/loans/minus-accounts/{accountNo}/repayments,O,SSAFY,"Path: accountNo / Body: amount, repayAccountNo?","본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
 연 데이터 범위 내; 입력값/상태 전이 검증; 중복 요청 방지"
-시작 전,,마이너스통장 이자 납부,POST,"/api/v1/loans/minus-accounts/{accountNo}/
-interest-payments",O,SSAFY,"Path: accountNo / Body: amount?,
+시작 전,,마이너스통장 이자 납부,POST,/api/v1/loans/minus-accounts/{accountNo}/interest-payments,O,SSAFY,"Path: accountNo / Body: amount?,
 paymentAccountNo?","본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
 연 데이터 범위 내; 입력값/상태 전이 검증; 중복 요청 방지"

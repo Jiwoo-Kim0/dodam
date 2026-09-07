@@ -7,7 +7,7 @@
 개선안 선택,/api/v1/recommendations/{recommendationId}/accept,POST,"Path: recommendationId / Body: memo?,reason?",,자체,O,본인 리소스만 접근; 입력값/상태 전이 검증; 중복 요청 방지,시작 전
 목표 기여도,/api/v1/recommendations/{recommendationId}/goal-impact,GET,Path: recommendationId,,자체,O,본인 리소스만 접근,시작 전
 예상 개선효과,/api/v1/recommendations/{recommendationId}/effect,GET,Path: recommendationId,,자체,O,본인 리소스만 접근,시작 전
-추천 근거,/api/v1/recommendations/{recommendationId}/reason,GET,Path: recommendationId,,자체,O,본인 리소스만 접근,시작 전
+추천 근거,/api/v1/recommendations/{recommendationId}/reasons,GET,Path: recommendationId,,자체,O,본인 리소스만 접근,시작 전
 개선안 상세,/api/v1/recommendations/{recommendationId},GET,Path: recommendationId,,자체,O,본인 리소스만 접근,시작 전
 우선순위 조회,/api/v1/recommendations/priorities,GET,Query: goalId?,,자체,O,본인 리소스만 접근,시작 전
 개선안 요약,/api/v1/recommendations/summary,GET,없음,,자체,O,본인 리소스만 접근,시작 전
