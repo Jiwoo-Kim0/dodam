@@ -25,7 +25,10 @@
 
 ## 2. 식별된 위험과 대응 (심각도 순)
 
-### R1. Jenkins 공개 노출 + docker.sock 접근권 ★최우선
+### R1. Jenkins 공개 노출 + docker.sock 접근권 ★최우선 — ✅ **해소 (2026-09-07, Day 3)**
+> 적용 완료: nginx가 `/jenkins/project/`(웹훅)만 프록시하고 그 외 `/jenkins/*`는 403.
+> Jenkins는 `127.0.0.1:8080`에만 바인딩되어 외부에서 접근 불가. 검증: 외부 403 / SSH 터널 200.
+
 - **문제**: Jenkins 컨테이너가 `docker` 그룹(gid 988)에 속해 호스트 Docker 데몬을 조작할 수 있다. Jenkins가 뚫리면 `docker run -v /:/host` 한 줄로 호스트 루트를 장악할 수 있고, 그러면 DB 전체와 `.env`의 모든 시크릿, **데이터 암호화 키까지 함께 털린다.** DB 컬럼 암호화를 아무리 잘 해도 무력화된다.
 - 게다가 현재 HTTP라 Jenkins admin 비밀번호가 평문으로 오간다.
 - **대응 (Day 3)**: **웹훅 엔드포인트만 공개하고 UI는 닫는다.**
@@ -38,13 +41,15 @@
   - 트레이드오프: 빌드 로그를 볼 때마다 터널을 열어야 한다. Jenkins UI를 보는 사람이 인프라 담당 1인이라 감수할 만하다고 판단.
 - **왜 DooD를 유지하는가**: DinD로 바꿔도 특권 컨테이너가 필요해 위험이 크게 줄지 않고, 남은 일정에 빌드 파이프라인을 다시 만드는 비용이 크다. **대신 노출면을 없애는 쪽으로 방어**한다 — 이 판단 근거를 발표에서 설명할 것.
 
-### R2. 전 구간 평문 HTTP
+### R2. 전 구간 평문 HTTP — ⚠️ **부분 해소 (로테이션 1건 미완)**
 - **문제**: Jenkins 로그인 자격증명과 GitLab webhook secret이 이미 여러 차례 평문으로 전송됐다.
 - **대응 (Day 3)**: HTTPS 적용 후 **이미 노출된 값들을 로테이션**한다.
-  - [ ] Jenkins admin 비밀번호 변경
-  - [ ] webhook secret 재생성 → Jenkins job config + GitLab webhook 양쪽 갱신
+  - [ ] **Jenkins admin 비밀번호 변경 — 미완 (사용자 액션)**
+        접속: `ssh -L 8080:127.0.0.1:8080 ssafy-ec2` → `http://localhost:8080/jenkins/`
+  - [x] webhook secret 재생성 → Jenkins job config + GitLab webhook 양쪽 갱신 (새 secret 200 / 옛 secret 401 검증)
   - [ ] GitLab PAT 재발급 검토 (HTTP로 오간 적 있으면)
-- HTTP → HTTPS 301 리다이렉트, HSTS 헤더 적용
+- [x] HTTPS 적용, HTTP → HTTPS 301 리다이렉트, HSTS 헤더 적용
+  - 단 **HSTS `max-age`는 1일로 낮게 설정**해둔 상태 — 443 장애 시 HTTP 폴백을 막지 않기 위함. 운영 안정화 후 상향 필요
 
 ### R3. backend 컨테이너가 root로 실행
 - **문제**: `docker exec backend id` → `uid=0(root)`. 컨테이너 탈출 취약점이 터지면 피해가 커진다.
