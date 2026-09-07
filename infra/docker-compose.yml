@@ -17,8 +17,25 @@ services:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
     networks:
       - app-net
+    depends_on:
+      - jenkins
 
-# Day 2에서 jenkins 서비스 추가 예정
+  jenkins:
+    build: ./jenkins
+    container_name: jenkins
+    restart: unless-stopped
+    environment:
+      - JENKINS_OPTS=--prefix=/jenkins
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=true
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      - "${DOCKER_GID}"
+    networks:
+      - app-net
+    # 웹 UI/웹훅은 nginx의 /jenkins/ 를 통해서만 노출, 8080은 컨테이너 내부용
+
 # Day 4에서 mysql, redis 서비스 추가 예정
 # Day 5에서 backend 서비스 추가 예정
 # Day 6에서 prometheus, grafana, loki, promtail 서비스 추가 예정
