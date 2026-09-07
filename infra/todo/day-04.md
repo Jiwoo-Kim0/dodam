@@ -3,6 +3,20 @@
 > **2026-09-07 재검토 반영.** MySQL/Redis 컨테이너 구성은 Day 2에서 이미 끝났다.
 > 이 Day는 "띄우기"가 아니라 **데이터 안정성(백업/복구)과 운영 설정 확정**으로 범위를 다시 잡는다.
 
+## 0. Day 3에서 이월된 것 (먼저 처리)
+
+Day 3(Nginx/도메인/SSL)의 핵심은 끝났고, 아래가 남았다. 상세 경위: [[jiw/day-03.md]]
+
+- [ ] ★ **`CORS_ALLOWED_ORIGINS` 갱신** — 현재 EC2 `.env`에 `http://localhost:8081` 하나뿐
+      **`docs/dev_plan.md` 기준 FE는 Day 4에 "로그인 / 금융데이터 연동"을 시작한다.** 지금 설정으로는 FE가 API를 호출하는 순간 CORS에 막히므로, **이 Day에서 가장 먼저 처리해야 할 항목**이다.
+      FE팀에 실제 호출 origin(Expo 개발 서버 주소, 웹 배포 시 도메인)을 확인할 것 (**사용자 액션**)
+- [ ] **Jenkins admin 비밀번호 변경** — 평문 HTTP로 오갔으므로 노출 간주 (**사용자 액션**, [[security.md]] R2)
+      접속: `ssh -L 8080:127.0.0.1:8080 ssafy-ec2` → `http://localhost:8080/jenkins/`
+- [ ] GitLab PAT 재발급 검토 (같은 이유)
+- [ ] `/` 루트 라우팅 결정 — 현재 임시 200 텍스트. FE가 Expo 웹 정적 빌드를 할지에 달려 있어 Day 7과 함께 결정 (지금 막혀도 서비스 영향은 없음)
+- [ ] HSTS `max-age` 상향 — 현재 1일. 443 장애 시 HTTP 폴백을 막지 않으려고 낮춰둔 것이므로, 며칠 안정적으로 돌면 1년으로 올릴 것
+- ~~`/jenkins/`에 Basic Auth 추가~~ → **불필요 판정**. UI 자체를 외부에 열지 않았으므로 이중 인증의 의미가 없음
+
 ## Day 2에서 이미 끝난 것 (재작업 불필요)
 
 - ✅ `mysql` 8.0 컨테이너 — utf8mb4, `mysql_data` named volume 영속화, `mysqladmin ping` 헬스체크, 외부 포트 미노출
