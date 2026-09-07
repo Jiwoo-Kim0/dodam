@@ -79,6 +79,19 @@ public class User {
         this.updatedAt = LocalDateTime.now();
     }
 
+    public void changeName(String name) {
+        this.name = name;
+    }
+
+    /**
+     * 회원 탈퇴(soft delete). 이메일은 UNIQUE 제약상 그대로 남으므로 같은 이메일로 재가입은 불가하다.
+     * 비밀번호 해시는 더 보관할 이유가 없어 지운다.
+     */
+    public void withdraw(LocalDateTime at) {
+        this.deletedAt = at;
+        this.passwordHash = null;
+    }
+
     public boolean hasPassword() {
         return passwordHash != null;
     }
