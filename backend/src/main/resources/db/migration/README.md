@@ -2,4 +2,22 @@
 
 비즈니스 엔티티와 물리 스키마가 확정되기 전에는 마이그레이션을 추가하지 않습니다.
 
-ERD Markdown과 docs/ERD/DODAM_ERDCLOUD_IMPORT.sql의 차이를 먼저 해소한 뒤 버전 마이그레이션을 작성하세요.
+2026-09-07 기준으로 ERD Markdown과 `docs/ERD/DODAM_ERDCLOUD_IMPORT.sql`의 구조 차이는 동기화했습니다.
+Import DDL은 신규 스키마 검토용이며 기존 DB에 직접 실행하지 않습니다. 팀 승인 후 현재 운영 스키마와의 차이를 확인하고 별도 버전 마이그레이션을 작성하세요.
+
+Seed와 실제 Migration은 다음 무결성 규칙을 지켜야 합니다.
+
+- 예금·적금은 먼저 `account`에 `DEPOSIT` 또는 `SAVINGS`로 생성한 뒤 같은 `account_id`로 `deposit_saving` 상세행을 생성합니다.
+- 마이너스통장도 먼저 `account`에 `MINUS`로 생성한 뒤 같은 `account_id`로 `minus_account` 상세행을 생성합니다.
+- `goal_account`에는 연결할 Account의 `account_type`을 함께 넣으며 `DEMAND_DEPOSIT`, `DEPOSIT`, `SAVINGS`만 허용합니다.
+- `goal_account`는 `saving_goal`에만 연결할 수 있으며 소비 목표에는 연결하지 않습니다.
+- 한 Account는 하나의 Goal에만 연결하며 목표 삭제·연결 변경 시 GoalAccount 행을 같은 트랜잭션에서 제거·교체합니다.
+- `subscription.card_id`가 있으면 반드시 같은 `user_id`의 Card를 참조해야 합니다.
+- Card·Loan의 출금계좌는 `withdrawal_account_type=DEMAND_DEPOSIT`로 저장합니다.
+- DepositSaving은 예금이면 출금계좌가 NULL일 수 있고, 적금이면 `DEMAND_DEPOSIT` 출금계좌가 필수입니다.
+- `savings_payment.account_type`은 항상 `SAVINGS`이며 `installment_number`는 계좌 안에서 유일한 1 이상의 회차입니다.
+- `cashflow_event.amount`는 항상 양수로 저장하고 `direction=INFLOW/OUTFLOW`로 방향을 구분합니다.
+- 마이너스통장 Account의 `balance`는 `-used_amount`로 저장하고 총자산 합계에서 제외합니다.
+- 외부 금융상품은 `source_type`과 `external_product_code`를 함께 저장하고 수동 Seed는 자연키를 사용합니다.
+- Goal과 Report는 상위행과 유형별 하위행을 한 트랜잭션에서 함께 생성합니다.
+- 상태·유형 문자열은 ERD 문서의 주요 코드값과 DDL `CHECK`를 기준으로 사용합니다.

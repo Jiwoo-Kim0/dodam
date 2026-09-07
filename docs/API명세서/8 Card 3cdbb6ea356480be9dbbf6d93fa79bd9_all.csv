@@ -14,7 +14,7 @@ size?",,SSAFY,O,"본인 리소스만 접근; page≥0, size 1~100 (도담 정책
 카드 청구서,/api/v1/cards/{cardNo}/billing-statements,GET,"Path: cardNo / Query: startMonth?, endMonth?",,SSAFY,O,본인 리소스만 접근; 시작월≤종료월; 조회기간 정책 제한,시작 전
 카드 결제 부담률,/api/v1/cards/payment-burden,GET,Query: yearMonth?,,자체,O,본인 리소스만 접근; YYYY-MM 형식,시작 전
 결제 설정 변경,/api/v1/cards/{cardNo}/payment-settings,PATCH,"Path: cardNo / Body: withdrawalAccountNo,
-withdrawalDate",,SSAFY,O,"본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
+withdrawalDay",,SSAFY,O,"본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
 연 데이터 범위 내; 입력값/상태 전이 검증; 중복 요청 방지; 유효한 본인 출금계좌만 허용",시작 전
 카드 이용한도,/api/v1/cards/{cardNo}/limit,GET,Path: cardNo,,SSAFY,O,"본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
 연 데이터 범위 내",시작 전

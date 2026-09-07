@@ -4,7 +4,7 @@
 시작 전,,개선안 요약,GET,/api/v1/recommendations/summary,O,자체,없음,본인 리소스만 접근
 시작 전,,우선순위 조회,GET,/api/v1/recommendations/priorities,O,자체,Query: goalId?,본인 리소스만 접근
 시작 전,,개선안 상세,GET,/api/v1/recommendations/{recommendationId},O,자체,Path: recommendationId,본인 리소스만 접근
-시작 전,,추천 근거,GET,/api/v1/recommendations/{recommendationId}/reason,O,자체,Path: recommendationId,본인 리소스만 접근
+시작 전,,추천 근거,GET,/api/v1/recommendations/{recommendationId}/reasons,O,자체,Path: recommendationId,본인 리소스만 접근
 시작 전,,예상 개선효과,GET,/api/v1/recommendations/{recommendationId}/effect,O,자체,Path: recommendationId,본인 리소스만 접근
 시작 전,,목표 기여도,GET,/api/v1/recommendations/{recommendationId}/goal-impact,O,자체,Path: recommendationId,본인 리소스만 접근
 시작 전,,개선안 선택,POST,/api/v1/recommendations/{recommendationId}/accept,O,자체,"Path: recommendationId / Body: memo?,reason?",본인 리소스만 접근; 입력값/상태 전이 검증; 중복 요청 방지
