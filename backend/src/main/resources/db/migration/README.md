@@ -3,6 +3,7 @@
 | 버전 | 내용 | Jira |
 | --- | --- | --- |
 | V1 | `user`, `auth_session` 생성 (Auth API 최소 범위) | S15P21D105-494 |
+| V2 | `user_setting`, `financial_profile`, `finance_connection` 생성 | S15P21D105-494, S15P21D105-497 |
 
 각 도메인 티켓은 자기 테이블만 다음 버전으로 추가합니다. DDL은 `docs/ERD/DODAM_ERDCLOUD_IMPORT.sql`의 해당 테이블 정의를 그대로 옮기고, 변경이 필요하면 ERD를 먼저 고칩니다. local/prod는 `ddl-auto: validate`이므로 엔티티와 DDL이 어긋나면 기동에 실패합니다.
 
