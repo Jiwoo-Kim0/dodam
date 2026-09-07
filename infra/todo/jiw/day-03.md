@@ -74,6 +74,26 @@
 - `infra/README.md` 전면 개편: 접속 정보 표, **Jenkins SSH 터널 접속법**, 배포 흐름(jenkins를 배포 대상에서 빼는 이유), TLS 갱신 구조, `down -v` 경고, 시크릿 위치 표
 - `deploy.sh`의 `DEPLOY_SERVICES`에 `certbot` 추가
 
+### 사고 — 배포가 Jenkins를 죽임 (depends_on 우회 경로)
+Day 3 커밋이 develop에 머지되어 배포가 돌자 **Jenkins 컨테이너가 종료**됨 (`Exited (143)`), 절반만 생성된 `a553f8712024_jenkins` 컨테이너가 남음.
+
+- **원인**: `nginx` 서비스에 `depends_on: - jenkins`가 걸려 있었음. 배포 스크립트가 `docker compose up -d --build mysql redis backend nginx certbot`을 실행하면, **compose가 nginx의 의존성으로 jenkins까지 끌고 들어와 재생성**한다. 그런데 그 배포는 바로 그 Jenkins 컨테이너 안에서 실행 중이므로 **자기 자신을 죽인다.**
+- Day 2에서 `DEPLOY_SERVICES`로 jenkins를 제외해 막아뒀던 문제가, **`depends_on`이라는 다른 경로로 우회해서 되살아난 것**. 서비스 목록에서 빼는 것만으로는 부족했다.
+- 다행히 nginx/backend/mysql/redis는 정상이라 **서비스 자체는 무중단**이었고, 죽은 것은 CI/CD뿐이었다.
+
+**수정 (두 가지를 함께)**
+1. `deploy.sh`의 compose up에 **`--no-deps`** 추가 — 의존성을 타고 비대상 서비스가 재생성되는 것을 차단
+2. nginx에서 `depends_on: jenkins` 제거. **다만 그냥 지우면 안 됐다** — nginx는 `proxy_pass http://jenkins:8080` 의 호스트명을 **기동 시점에 해석**하기 때문에, jenkins(또는 backend)가 내려가 있으면 **nginx 자체가 기동에 실패**해서 컨테이너 하나 장애가 전체 장애로 번진다. 그래서 함께 변경:
+   - `resolver 127.0.0.11 valid=10s ipv6=off;` (Docker 임베디드 DNS)
+   - `proxy_pass`를 변수로 (`set $upstream_backend http://backend:8080; proxy_pass $upstream_backend;`) → **요청 시점 해석**으로 바뀌어, 업스트림이 없어도 nginx는 뜨고 해당 경로만 502를 반환
+
+**검증**: jenkins를 중지한 상태에서 nginx를 재시작 → **nginx 정상 기동, `/api/health` 200 유지** 확인. 이전 구조였다면 여기서 nginx가 죽었다.
+
+### 교훈 — EC2 직접 수정 방식의 위험
+- Day 3는 속도를 위해 EC2에서 직접 수정하고 검증했는데, `deploy.sh`가 매 배포마다 `git reset --hard origin/develop`을 하므로 **커밋되지 않은 작업물은 다음 배포에 조용히 사라진다.**
+- 실제로 중간에 "빌드 4~6이 내 설정을 덮어썼나?" 의심하는 상황이 있었고(확인 결과 빌드는 06:08, 작업은 06:35 이후라 겹치지 않았음), 만약 팀원이 그 사이 develop에 머지했다면 **HTTPS와 Jenkins 잠금이 조용히 풀렸을 것**이다.
+- 앞으로는 EC2에서 실험하더라도 **검증 직후 즉시 커밋·머지**해서 정본과 서버 상태를 일치시킬 것.
+
 ## 남은 것 (사용자 액션 필요)
 - [ ] **GitLab webhook 갱신** — 지금 `http://`를 가리켜서 301을 맞고 있고(GitLab 웹훅은 리다이렉트를 따라가지 않음), secret도 교체됨. URL을 https로 바꾸고 새 secret 입력, SSL verification 다시 켜기
 - [ ] **Jenkins admin 비밀번호 변경** (평문 HTTP로 오갔음)
