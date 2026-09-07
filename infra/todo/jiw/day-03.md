@@ -94,13 +94,54 @@ Day 3 커밋이 develop에 머지되어 배포가 돌자 **Jenkins 컨테이너�
 - 실제로 중간에 "빌드 4~6이 내 설정을 덮어썼나?" 의심하는 상황이 있었고(확인 결과 빌드는 06:08, 작업은 06:35 이후라 겹치지 않았음), 만약 팀원이 그 사이 develop에 머지했다면 **HTTPS와 Jenkins 잠금이 조용히 풀렸을 것**이다.
 - 앞으로는 EC2에서 실험하더라도 **검증 직후 즉시 커밋·머지**해서 정본과 서버 상태를 일치시킬 것.
 
-## 남은 것 (사용자 액션 필요)
-- [ ] **GitLab webhook 갱신** — 지금 `http://`를 가리켜서 301을 맞고 있고(GitLab 웹훅은 리다이렉트를 따라가지 않음), secret도 교체됨. URL을 https로 바꾸고 새 secret 입력, SSL verification 다시 켜기
-- [ ] **Jenkins admin 비밀번호 변경** (평문 HTTP로 오갔음)
-- [ ] GitLab PAT 재발급 검토
-- [ ] 갱신 후 develop에 push해서 **파이프라인이 여전히 도는지 확인**
+### 사고 수습 및 depends_on 수정 검증
+- 잔여 정리
+  - 절반만 생성된 `a553f8712024_jenkins` 컨테이너 제거
+  - 중단된 **빌드 #7 제거** — Jenkins가 재시작 후 자동 재개를 시도했으나, `sh` 스텝이 실행하던 프로세스가 컨테이너와 함께 사라져 응답을 기다리며 멈춰 있었음. `disableConcurrentBuilds` 때문에 **그대로 두면 30분 타임아웃까지 이후 빌드가 큐에 묶임** → 죽은 배포의 잔재라 보존 가치가 없어 삭제 후 Jenkins 재기동
+- **수정 검증 (빌드 #8)**: depends_on 수정본(`690bef7`)이 develop에 머지되어 배포가 실행됨
+  - `Finished: SUCCESS`, 헬스체크 1회차 통과
+  - **이번에는 Jenkins가 죽지 않고 배포가 끝까지 완주** → `--no-deps` + `depends_on` 제거가 실제로 동작함을 확인
+- 후속 문제: 배포 후 jenkins 컨테이너의 **포트 바인딩이 비어 있었음**(`PortBindings: {}`). compose 파일에는 `127.0.0.1:8080:8080`이 있는데 실행 중인 컨테이너에는 반영되지 않은 상태 — 사고 과정에서 여러 번 재생성되며 옛 정의로 만들어진 컨테이너가 남은 것으로 보임
+  - `docker compose up -d --no-deps --force-recreate jenkins`로 해결
+  - 확인: `127.0.0.1:8080->8080/tcp`, 호스트에서 `docker-proxy`가 루프백에만 리스닝
 
-## 다음 기록할 것 (TODO)
-- [ ] 웹훅 갱신 후 end-to-end 재검증 결과
-- [ ] `certbot renew --dry-run` 실행 결과
-- [ ] Day 3 완료 처리
+### 최종 검증 (Day 3 완료 기준)
+| 항목 | 기대 | 결과 |
+| --- | --- | --- |
+| `https://.../api/health` | 200 | **200** |
+| `http://.../` | 301 | **301** |
+| `https://.../jenkins/` | 403 | **403** |
+| `https://.../actuator/health` | 404 | **404** |
+| SSH 터널 → Jenkins 로그인 | 200 | **200** |
+| jenkins 중지 상태에서 nginx 재시작 | 정상 기동 | **정상, API 200 유지** |
+| 배포 시 Jenkins 생존 | 생존 | **빌드 #8 완주** |
+
+### 인증서 자동 갱신 검증
+- `certbot renew --dry-run` 실행 → 처음엔 "Processing"에서 7분 넘게 멈춘 것처럼 보여 장애를 의심했으나, 로그 확인 결과 원인은 정상 동작이었음
+  ```
+  Certificate not due for renewal, but simulating renewal for dry run
+  Non-interactive renewal: random delay of 459.5678760091132 seconds
+  ```
+  - certbot은 **비대화형 갱신에 최대 8분의 랜덤 지연**을 넣는다 (Let's Encrypt 서버 부하 분산 목적). 컨테이너의 12시간 주기 갱신 루프도 이 지연을 거치므로, 갱신이 즉시 안 끝나는 것은 정상
+  - 이 사실을 모르면 나중에 "갱신이 멈췄다"고 오진하기 쉬워 기록해둠
+- 결과: **`Congratulations, all simulated renewals succeeded`**
+- 인증서 만료일: `notAfter=Dec 6 05:35:43 2026 GMT`
+
+### 사용자 액션 완료 사항
+- [x] **GitLab webhook 갱신** — URL을 https로 변경, 새 secret 적용. 빌드 #8이 실제로 트리거되어 성공한 것으로 검증됨
+- [ ] **Jenkins admin 비밀번호 변경** — 평문 HTTP로 오갔으므로 노출 간주. 접속: `ssh -L 8080:127.0.0.1:8080 ssafy-ec2` → `http://localhost:8080/jenkins/`
+- [ ] GitLab PAT 재발급 검토
+
+## Day 3 완료 처리
+- HTTPS 적용(Let's Encrypt, 자동 갱신 검증 완료), HTTP→HTTPS 301
+- **Jenkins 노출 축소** — 웹훅 경로만 공개, UI는 루프백 바인딩 + SSH 터널 (security.md R1 해소)
+- 보안 헤더 4종, `server_tokens off`, 레이트 리밋, `/actuator/` 차단, fail2ban
+- 웹훅 secret 로테이션 (security.md R2 일부 해소 — Jenkins 비밀번호 변경은 사용자 액션으로 남음)
+- 배포가 Jenkins를 죽이던 `depends_on` 경로 차단 + nginx 기동 복원력 확보 (업스트림 장애가 전체 장애로 번지지 않음)
+
+## Day 4로 이월
+- [ ] Jenkins admin 비밀번호 변경 (사용자 액션, 미완)
+- [ ] `/` 루트 라우팅 결정 — 현재 임시 200 텍스트. FE 웹 배포 여부에 달림 (Day 7과 연결, FE팀 확인 필요)
+- [ ] `/jenkins/`에 Basic Auth 추가 여부 → **불필요해짐**. UI 자체를 외부에 안 열었으므로 이중 인증 의미 없음
+- [ ] HSTS max-age 상향(현재 1일) — 운영 안정화 후
+- [ ] `CORS_ALLOWED_ORIGINS` 갱신 (현재 `http://localhost:8081`만)

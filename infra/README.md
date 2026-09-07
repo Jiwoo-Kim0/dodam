@@ -62,7 +62,7 @@ Let's Encrypt를 certbot 컨테이너로 발급/갱신한다.
 
 - [x] Day 1: 서버 기초 설정 & 리포 구조
 - [x] Day 2: CI/CD 파이프라인 (Jenkins + GitLab webhook, 실제 백엔드 자동 배포까지)
-- [x] Day 3: HTTPS, Jenkins 노출 축소, 저비용 방어
+- [x] Day 3: HTTPS(자동 갱신 검증 완료), Jenkins 노출 축소, 레이트 리밋·보안 헤더·fail2ban
 - [ ] Day 4: MySQL/Redis 고도화 (백업·복구, 운영 설정)
 - [ ] Day 5: 시크릿 관리 & 배포 안정화
 - [ ] Day 6: 모니터링 스택
