@@ -1,9 +1,14 @@
 # infra secrets
 infra/.env
 infra/**/.env
+infra/.env.bak.*
 *.pem
 *.key
+*.crt
 infra/jenkins_home/
+
+# TLS 인증서 (certbot이 생성/갱신 — 절대 커밋 금지)
+infra/nginx/certbot/
 
 # OS
 .DS_Store

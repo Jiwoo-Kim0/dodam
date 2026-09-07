@@ -17,10 +17,15 @@ services:
       - "443:443"
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/certbot/conf:/etc/letsencrypt:ro
+      - ./nginx/certbot/www:/var/www/certbot:ro
     networks:
       - app-net
     depends_on:
       - jenkins
+    # 인증서 갱신을 반영하기 위해 6시간마다 reload
+    command: >-
+      /bin/sh -c "while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g 'daemon off;'"
 
   jenkins:
     build: ./jenkins
@@ -40,7 +45,26 @@ services:
       - "${DOCKER_GID}"
     networks:
       - app-net
-    # 웹 UI/웹훅은 nginx의 /jenkins/ 를 통해서만 노출, 8080은 컨테이너 내부용
+    # Jenkins는 docker.sock 접근권을 가지므로 UI를 외부에 노출하지 않는다.
+    # 루프백에만 바인딩하고 SSH 터널로만 접근한다:
+    #   ssh -L 8080:127.0.0.1:8080 ssafy-ec2  →  http://localhost:8080/jenkins/
+    # 외부에는 nginx가 /jenkins/project/ (웹훅)만 열어준다. 상세: infra/todo/security.md R1
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: certbot
+    restart: unless-stopped
+    volumes:
+      - ./nginx/certbot/conf:/etc/letsencrypt
+      - ./nginx/certbot/www:/var/www/certbot
+    networks:
+      - app-net
+    # 12시간마다 갱신 시도 (만료 30일 전부터 실제 갱신됨).
+    # nginx는 자체 reload 루프로 새 인증서를 집어간다 — certbot에 docker 권한을 주지 않기 위함.
+    entrypoint: >-
+      /bin/sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"
 
   mysql:
     image: mysql:8.0
