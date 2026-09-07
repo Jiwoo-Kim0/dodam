@@ -4,6 +4,8 @@ networks:
 
 volumes:
   jenkins_home:
+  mysql_data:
+  redis_data:
 
 services:
   nginx:
@@ -30,12 +32,81 @@ services:
     volumes:
       - jenkins_home:/var/jenkins_home
       - /var/run/docker.sock:/var/run/docker.sock
+      # 배포 대상 체크아웃을 호스트와 "같은 경로"로 마운트한다.
+      # DooD에서 compose의 bind mount(./nginx/conf.d 등)는 호스트 기준으로 해석되므로,
+      # 경로가 일치해야 Jenkins가 돌린 compose가 정상 동작한다.
+      - ${APP_DIR:-/home/ubuntu/app}:${APP_DIR:-/home/ubuntu/app}
     group_add:
       - "${DOCKER_GID}"
     networks:
       - app-net
     # 웹 UI/웹훅은 nginx의 /jenkins/ 를 통해서만 노출, 8080은 컨테이너 내부용
 
-# Day 4에서 mysql, redis 서비스 추가 예정
-# Day 5에서 backend 서비스 추가 예정
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      TZ: Asia/Seoul
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - app-net
+    # 외부 포트 미노출 — 컨테이너 네트워크 안에서만 접근
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - app-net
+    # 외부 포트 미노출
+
+  backend:
+    build:
+      context: ../backend
+    container_name: backend
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+      DB_USERNAME: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      TZ: Asia/Seoul
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - app-net
+    # 외부 포트 미노출 — nginx의 /api/ 를 통해서만 접근
+
 # Day 6에서 prometheus, grafana, loki, promtail 서비스 추가 예정
