@@ -32,13 +32,19 @@
 - [ ] 도메인이 확정되지 않았다면 임시로 IP 기반 URI 등록 후, 도메인 확보 시 갱신 필요함을 팀에 공지
 
 ### 5. FE 빌드/배포 파이프라인
-현재 FE 구성 실측: **Expo SDK 57 / React Native 0.86 / expo-router**, `app.json`에 **`web.output: "static"`** 설정됨.
-- [ ] **웹 배포 여부 확정** (**사용자 액션**: FE팀 협의) — `web.output: static`이라 `expo export --platform web`으로 정적 산출물을 만들 수 있고, **이미 떠 있는 nginx가 `/`에서 서빙하면 별도 호스팅이 필요 없다**
-  - 한다면: Jenkins 파이프라인에 FE 빌드 스테이지 추가 (Node 이미지로 빌드 → 산출물을 nginx 볼륨에 배치). Day 3에서 정해둔 `/` 라우팅과 연결
-  - 안 한다면: `/`는 상태 페이지로 정리하고 앱 배포에만 집중
-- [ ] Expo EAS Build 사용 여부 확인 (**사용자 액션**: FE팀과 협의, 계정 필요) — 네이티브 앱(APK/IPA) 빌드가 필요한 경우
-- [ ] FE가 백엔드 API를 호출할 BaseURL을 환경변수로 관리하는 방식 합의 — **HTTPS 적용 후에는 `https://j15D105.p.ssafy.io/api`**
-- [ ] **`CORS_ALLOWED_ORIGINS` 갱신** — 현재 `.env`에 `http://localhost:8081`만 등록되어 있음. Expo 웹/개발 서버 origin, 배포 도메인을 실제 값으로 채울 것
+현재 FE 구성 실측: **Expo SDK 57 / React Native 0.86 / expo-router**.
+
+> **2026-09-07 확정**: FE팀이 **웹 없이 네이티브 앱(APK)만** 만들기로 결정.
+> 함의:
+> - **CORS 불필요** — 브라우저가 아니므로 적용되지 않음 (환경변수 자체는 백엔드 기동을 위해 남겨둘 것)
+> - **nginx가 FE를 서빙할 일 없음** — `web.output: static` 기반 정적 배포 계획 폐기, `/` 라우팅은 상태 페이지로 확정
+> - **HTTPS가 선택이 아니라 필수** — Android는 targetSdk 28+부터 평문 HTTP를 기본 차단한다. Day 3에서 붙인 Let's Encrypt 인증서는 공개 신뢰 체인이라 앱에서 추가 설정 없이 동작한다 (자체서명이었다면 앱에 인증서를 심어야 했음)
+
+- [ ] **APK 빌드 방식 확정** (**사용자 액션**: FE팀 협의)
+  - EAS Build(클라우드, Expo 계정 필요) vs 로컬 빌드(`expo run:android` / `eas build --local`)
+  - 인프라 관점에서는 EC2와 무관하므로 개입할 것이 없다. 다만 **APK 배포처**(팀 공유 드라이브 등)는 정해둘 것
+- [ ] FE가 백엔드 API를 호출할 BaseURL을 환경변수로 관리하는 방식 합의 — **`https://j15D105.p.ssafy.io/api`**
+- [ ] **소셜 로그인 Redirect URI는 웹 방식이 아님** — 네이티브 앱은 커스텀 스킴(`frontend://`, `app.json`의 `scheme`) 또는 App Links를 쓴다. Kakao/Google 콘솔에 등록할 값이 웹과 다르므로 FE팀과 형식을 맞출 것
 - [ ] FCM 관련: `package.json`에 `expo-device`는 있으나 **`expo-notifications`가 아직 없음** → FE팀이 토큰 발급 흐름을 붙일 때 추가 필요함을 공유
 - [ ] OTA 업데이트(Expo Updates) 사용 여부는 시간 되면 검토, 이번 범위에서는 필수 아님(P2)
 

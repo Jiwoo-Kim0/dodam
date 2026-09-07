@@ -7,13 +7,14 @@
 
 Day 3(Nginx/도메인/SSL)의 핵심은 끝났고, 아래가 남았다. 상세 경위: [[jiw/day-03.md]]
 
-- [ ] ★ **`CORS_ALLOWED_ORIGINS` 갱신** — 현재 EC2 `.env`에 `http://localhost:8081` 하나뿐
-      **`docs/dev_plan.md` 기준 FE는 Day 4에 "로그인 / 금융데이터 연동"을 시작한다.** 지금 설정으로는 FE가 API를 호출하는 순간 CORS에 막히므로, **이 Day에서 가장 먼저 처리해야 할 항목**이다.
-      FE팀에 실제 호출 origin(Expo 개발 서버 주소, 웹 배포 시 도메인)을 확인할 것 (**사용자 액션**)
+- [x] ~~★ `CORS_ALLOWED_ORIGINS` 갱신~~ → **불필요 판정 (2026-09-07)**
+      FE팀이 **웹 없이 React Native 네이티브 앱(APK)만** 만들기로 확정. **CORS는 브라우저가 강제하는 규칙이라 네이티브 앱의 HTTP 요청에는 적용되지 않는다.**
+      - 단 **환경변수 자체는 남겨둬야 한다** — `application-prod.yml`이 `${CORS_ALLOWED_ORIGINS}`를 참조하므로, 변수가 아예 없으면 placeholder 해석 실패로 **백엔드가 기동하지 않는다**. 값은 비어 있어도 됨 (`CorsProperties`가 null/빈 값을 빈 리스트로 처리)
+      - 나중에 웹(관리자 페이지, Expo web 등)을 붙이면 그때 다시 필요해짐
 - [ ] **Jenkins admin 비밀번호 변경** — 평문 HTTP로 오갔으므로 노출 간주 (**사용자 액션**, [[security.md]] R2)
       접속: `ssh -L 8080:127.0.0.1:8080 ssafy-ec2` → `http://localhost:8080/jenkins/`
 - [ ] GitLab PAT 재발급 검토 (같은 이유)
-- [ ] `/` 루트 라우팅 결정 — 현재 임시 200 텍스트. FE가 Expo 웹 정적 빌드를 할지에 달려 있어 Day 7과 함께 결정 (지금 막혀도 서비스 영향은 없음)
+- [x] ~~`/` 루트 라우팅 결정~~ → **확정 (2026-09-07)**: FE가 APK 전용이라 **nginx가 FE를 서빙할 일이 없다.** `/`는 현재의 상태 텍스트를 유지하거나 404로 정리하면 되고, Expo web 정적 서빙 계획은 폐기
 - [ ] HSTS `max-age` 상향 — 현재 1일. 443 장애 시 HTTP 폴백을 막지 않으려고 낮춰둔 것이므로, 며칠 안정적으로 돌면 1년으로 올릴 것
 - ~~`/jenkins/`에 Basic Auth 추가~~ → **불필요 판정**. UI 자체를 외부에 열지 않았으므로 이중 인증의 의미가 없음
 
