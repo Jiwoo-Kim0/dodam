@@ -129,6 +129,47 @@
   - 외부 도메인 → nginx → backend → MySQL/Redis 경로가 전부 실제로 동작함을 확인
   - Day 2 시점에 **실제 백엔드가 배포되어 서비스되는 상태** 달성 (원래 계획의 Day 5 목표를 앞당겨 달성)
 
+### 브랜치 전략 정리 및 EC2 체크아웃 정정
+- `git pull origin develop` 시도 시 scp로 임시 복사해둔 파일들과 충돌 발생
+- 확인 결과: **인프라 작업물이 `origin/infra`가 아니라 `origin/develop`에 올라가 있었음** (사용자가 MR로 develop에 머지)
+  - `origin/infra`에는 `Jenkinsfile`, `backend/Dockerfile`, `deploy.sh`, `nginx/conf.d/default.conf` 전부 없음 (Day 1 상태에서 멈춤)
+  - `origin/develop`에는 전부 존재
+- 삭제 전 안전 확인: 로컬 파일과 `origin/develop`의 blob 해시를 6개 파일 모두 비교 → **전부 동일**함을 확인한 뒤 scp 임시 파일 제거
+- EC2 체크아웃을 `git checkout -B develop origin/develop`으로 전환 (`.env`는 gitignore라 보존됨)
+- 이에 맞춰 `deploy.sh`의 `DEPLOY_BRANCH` 기본값을 `infra` → `develop`으로 변경
+
+### GitLab PAT 등록 (사용자 액션 완료)
+- EC2에서 `git config --global credential.helper store` + 1회 대화형 `git pull`로 자격증명 저장 완료 → 이후 비대화형 fetch 정상 동작
+- Jenkins Credentials 2건 등록
+  | ID | Kind | 용도 |
+  |---|---|---|
+  | `ec2-jenkins-deploy` | GitLab API token | Jenkins → GitLab API |
+  | `gitlab-https` | Username with password | 파이프라인 소스 체크아웃 |
+- 처음엔 GitLab API token 타입 하나만 등록됐는데, **이 타입으로는 HTTPS git 체크아웃이 안 되므로** `Username with password` 타입을 추가로 등록하도록 안내함
+
+### Jenkins Pipeline Job 생성 (UI 대신 config.xml 주입 방식)
+- Jenkins 관리자 비밀번호 없이 진행하기 위해, `/var/jenkins_home/jobs/dodam-backend-deploy/config.xml`을 직접 작성하고 컨테이너를 재시작하는 방식 채택
+- Job 구성: `CpsScmFlowDefinition`(SCM: GitLab HTTPS + `gitlab-https` 자격증명, 브랜치 `*/develop`, `scriptPath=Jenkinsfile`), 트리거는 `GitLabPushTrigger`(push만, 브랜치 필터 `develop`, secretToken)
+- webhook secret은 EC2에서 `openssl rand -hex 20`으로 생성해 `~/.jenkins-webhook-secret`(600)에 저장 — 값이 대화/로그를 거치지 않도록 함
+- 로드 검증
+  - `nextBuildNumber`가 안 생겨서 처음엔 로드 실패로 오해했으나, 웹훅 엔드포인트에 POST 시 **401**(=job은 찾았고 secret 검증에서 거부) 응답 → job 정상 로드 확인. (GET은 404가 정상)
+  - secret 포함 POST 시 트리거는 됐으나 `sourceRepoSshUrl must not be null` (테스트 페이로드에 `repository.git_ssh_url` 누락) → 페이로드 보완 후 **HTTP 200, 빌드 #1 생성**
+
+### 빌드 #1 실패 → 원인 분석 및 수정
+- 결과: `Finished: FAILURE`. 체크아웃/자격증명은 정상(`using credential gitlab-https`, develop `5cc59b5` 체크아웃 성공)
+- 실패 지점: `Build & Test` 스테이지의 이미지 빌드
+  ```
+  Step 12/16 : COPY --from=builder /workspace/build/libs/*.jar app.jar
+  When using COPY with more than one source file, the destination must be a directory and end with a /
+  ```
+- 원인: gradle이 jar를 2개 생성함 (`dodam-backend-0.0.1-SNAPSHOT.jar` + `-plain.jar`) → 와일드카드가 2개 매칭
+- **왜 수동 빌드 때는 통과했는가**: 호스트에는 buildx가 설치돼 있어 BuildKit으로 빌드됐지만, **Jenkins 컨테이너엔 buildx가 없어 classic builder로 폴백**(로그에 `buildx Docker CLI plugin not found: falling back to the classic builder` 경고)되었고, classic builder는 이 규칙을 엄격히 적용함
+- 수정
+  - `backend/Dockerfile`: builder 스테이지에서 `-plain.jar`를 제외하고 실행 가능한 jar만 골라 `/workspace/app.jar`로 정규화 → 런타임 스테이지는 고정 경로를 COPY (버전 문자열이 바뀌어도 안전)
+  - `infra/jenkins/Dockerfile`: `docker-buildx-plugin` 추가 설치 → Jenkins에서도 BuildKit 사용, 호스트와 동작 일치
+- 커밋 전 검증: 백엔드 소스+Dockerfile을 EC2 `/tmp/bt`에 복사해 **`DOCKER_BUILDKIT=0`(classic builder)로 직접 빌드 → 성공** 확인 후 테스트 아티팩트 정리
+- 부수 확인: 실패 로그의 `docker compose ps`상 backend는 `Up (healthy)` — 앞서 수동 배포한 컨테이너가 계속 정상 서비스 중이었음 (파이프라인 실패가 서비스 중단으로 이어지지 않음)
+
 ## 다음 기록할 것 (TODO)
 - [x] `infra/jenkins/Dockerfile` 작성 결과
 - [x] `docker-compose.yml` jenkins 서비스 추가 결과

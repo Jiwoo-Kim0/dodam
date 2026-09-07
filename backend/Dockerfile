@@ -11,7 +11,11 @@ COPY settings.gradle build.gradle gradle.properties ./
 RUN chmod +x gradlew && ./gradlew --no-daemon dependencies > /dev/null 2>&1 || true
 
 COPY src src
-RUN ./gradlew --no-daemon clean build
+# gradle이 bootJar와 plain jar 두 개를 만들기 때문에, 실행 가능한 쪽만 골라
+# 고정된 이름으로 정규화한다. (와일드카드로 COPY하면 classic builder에서
+# "destination must be a directory"로 실패한다)
+RUN ./gradlew --no-daemon clean build \
+    && cp "$(ls build/libs/*.jar | grep -v -- '-plain\.jar$' | head -1)" /workspace/app.jar
 
 # 런타임 스테이지
 FROM eclipse-temurin:21-jre
@@ -22,7 +26,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /workspace/build/libs/*.jar app.jar
+COPY --from=builder /workspace/app.jar app.jar
 
 EXPOSE 8080
 
