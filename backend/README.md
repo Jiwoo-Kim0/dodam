@@ -180,16 +180,14 @@ formLogin, httpBasic, OAuth2 Login은 비활성화되어 있습니다. JWT Filte
 
 code와 errors는 null일 때만 생략하고 data와 message는 null이어도 항상 직렬화합니다. Validation, 잘못된 요청, 404, 401, 403 및 예상하지 못한 500 오류에 공통 JSON 응답을 사용합니다.
 
-## 아직 결정되지 않은 문서 항목
+## 아직 결정되거나 구현되어야 할 항목
 
 - 회원가입 시 SSAFY 금융망 사용자를 함께 만들지, 가입 후 별도로 연결할지
 - 실제 대출 실행 제외 원칙과 마이너스통장 상환·이자 납부 API의 충돌
-- ADMIN 역할 및 권한 데이터 모델
-- 계좌번호와 카드번호의 저장 암호화 및 검색용 해시 전략
-- ERD Markdown의 군집 분석 컬럼과 ERDCloud Import DDL 동기화
-- 마이너스통장 API Endpoint의 줄바꿈 제거
-- OAuth 사용자 식별 모델과 인증 Endpoint
-- FCM Device Token 모델과 등록 API
+- ERD의 `USER`/`ADMIN` 역할 모델을 Spring Security 권한으로 연결
+- ERD에서 확정한 AES-256-GCM 암호화와 HMAC-SHA-256 조회 해시의 키 저장·순환 구현
+- ERD의 `UserOAuthAccount`를 사용하는 OAuth 인증 Endpoint와 계정 연결 정책
+- ERD의 `UserDevice`를 사용하는 FCM Device Token 등록·폐기 API
 - Redis의 캐시, 세션, Refresh Token 저장소 및 분산 락 적용 범위
 
 ## 향후 작업

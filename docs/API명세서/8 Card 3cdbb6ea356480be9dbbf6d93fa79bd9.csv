@@ -21,5 +21,5 @@ size?","본인 리소스만 접근; page≥0, size 1~100 (도담 정책); 시작
 시작 전,,카드 이용한도,GET,/api/v1/cards/{cardNo}/limit,O,SSAFY,Path: cardNo,"본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
 연 데이터 범위 내"
 시작 전,,결제 설정 변경,PATCH,/api/v1/cards/{cardNo}/payment-settings,O,SSAFY,"Path: cardNo / Body: withdrawalAccountNo,
-withdrawalDate","본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
+withdrawalDay","본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
 연 데이터 범위 내; 입력값/상태 전이 검증; 중복 요청 방지; 유효한 본인 출금계좌만 허용"

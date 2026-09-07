@@ -3,6 +3,6 @@
 시작 전,,내 정보 수정,PATCH,/api/v1/users/me,O,자체 DB,Body: 수정 허용 프로필 필드,본인 리소스만 접근; 입력값/상태 전이 검증; 중복 요청 방지
 시작 전,,회원 탈퇴,DELETE,/api/v1/users/me,O,자체 DB,X,본인 리소스만 접근; 존재 · 소유권 확인 후 처리
 시작 전,,사용자 설정 조회,GET,/api/v1/users/me/settings,O,자체 DB,X,본인 리소스만 접근
-시작 전,,사용자 설정 수정,PATCH,/api/v1/users/me/settings,O,자체 DB,Body: notificationEnabled: Boolean; dailyBriefingEnabled:Boolean; monthlyReportEnabled: Boolean         모두 선택 사항,본인 리소스만 접근; 입력값/상태 전이 검증; 중복 요청 방지
+시작 전,,사용자 설정 수정,PATCH,/api/v1/users/me/settings,O,자체 DB,Body: notificationEnabled?: Boolean; dailyBriefingEnabled?: Boolean; monthlyReportEnabled?: Boolean; dailyBriefingTime?: HH:mm; timezone?: String,본인 리소스만 접근; 입력값/상태 전이 검증; 중복 요청 방지
 시작 전,,금융 기본정보 조회,GET,/api/v1/users/me/financial-profile,O,자체 DB,X,본인 리소스만 접근
 시작 전,,금융 기본정보 수정,PATCH,/api/v1/users/me/financial-profile,O,자체 DB,"Body: 월소득?, 연소득?, 급여일?, 고정지출?, 비상자금 기준? 등",본인 리소스만 접근; 입력값/상태 전이 검증; 중복 요청 방지
