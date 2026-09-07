@@ -1,0 +1,17 @@
+# infra secrets
+infra/.env
+infra/**/.env
+*.pem
+*.key
+infra/jenkins_home/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+
+# logs
+*.log

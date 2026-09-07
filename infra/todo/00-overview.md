@@ -18,9 +18,9 @@
 
 | 항목 | 왜 중요한가 | 잠정 대응 |
 | --- | --- | --- |
-| EC2 사양(vCPU/RAM/Disk) | MySQL+Redis+Spring+Nginx+CI/CD+Prometheus+Grafana+Loki를 한 대에 다 올리면 메모리가 빠듯할 가능성이 큼 | Day 1에 `nproc`, `free -h`, `df -h`로 실측 → 부족하면 스왑 추가 + 모니터링 스택(Loki 등) 축소 |
+| ~~EC2 사양(vCPU/RAM/Disk)~~ | ~~메모리가 빠듯할 가능성~~ | **확인 완료 (2026-09-06)**: 4vCPU / RAM 16GB(가용 14GB) / Disk 307GB 여유. 여유 충분 → 스왑 불필요, 모니터링 스택 축소 없이 진행 가능. 상세: [[jiw/day-01.md]] |
 | 실제로 열려있는 외부 포트 | 웹 콘솔이 없어 보안그룹을 못 바꿈 | Day 1에 확인, 80/443 외에는 전부 Nginx 서브패스+Basic Auth로 우회 노출 |
-| 도메인 유무 / SSL 발급 가능 여부 | HTTPS, 소셜로그인 리다이렉트 URI, 앱 API BaseURL에 필요 | 없으면 Day 2는 IP+포트로 진행하고, 도메인 확보 시 Day 2 절차 재실행 |
+| ~~도메인 유무~~ | ~~HTTPS, 소셜로그인 리다이렉트 URI, 앱 API BaseURL에 필요~~ | **확인 완료 (2026-09-06)**: 도메인 있음 — `j15D105.p.ssafy.io` (→ `43.203.198.18`, SSAFY 측에서 이미 연결해줌). Day 3 SSL 발급(Let's Encrypt) 이 도메인으로 진행 가능. 상세: [[jiw/day-01.md]] |
 | GitLab Runner를 EC2에 등록 가능한지 (네트워크 정책상) | CI/CD 방식(Jenkins vs GitLab CI) 결정 | Day 2에 Jenkins 먼저 시도, 막히면 GitLab CI+Runner로 전환 (아래 3번 참고) |
 | SSAFY 교육용 금융망이 아웃바운드 IP 화이트리스트를 요구하는지 | 요구하면 EC2 고정 IP를 금융망 쪽에 등록해야 함 | Day 7에 백엔드팀·API 문서로 확인 |
 | 백엔드 코드/Dockerfile 존재 여부 | 아직 코드가 없음(레포에 docs만 있음) | 인프라는 "표준 Dockerfile 템플릿 + docker-compose"를 먼저 제공하고, 팀 코드가 붙는 대로 연결 |
@@ -69,6 +69,7 @@ infra/
 
 ## 5. 파일 목록
 
+- `jiw/` — **실제 작업 로그**. Claude와 김지우가 각각 무엇을 했는지 매 작업마다 시간순으로 기록 (이 폴더의 파일들은 "계획", `jiw/`는 "실제로 한 일")
 - `day-01.md` 서버 기초 설정 & 리포 구조
 - `day-02.md` CI/CD 파이프라인 조기 구축 (더미 앱, Jenkins)
 - `day-03.md` Nginx 리버스 프록시 정식화 & 도메인/SSL
