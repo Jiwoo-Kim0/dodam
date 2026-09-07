@@ -24,3 +24,8 @@ app:
   auth:
     jwt:
       secret: ${JWT_SECRET}
+  crypto:
+    data-key: ${DATA_ENCRYPTION_KEY}
+    hash-key: ${DATA_HASH_KEY}
+  ssafy-finance:
+    api-key: ${SSAFY_FINANCE_API_KEY}
