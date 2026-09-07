@@ -75,10 +75,11 @@ local 또는 prod Profile 실행 전 다음 값을 설정해야 합니다.
 | REDIS_PORT | Redis 포트 |
 | REDIS_PASSWORD | Redis 비밀번호 |
 | CORS_ALLOWED_ORIGINS | 쉼표로 구분한 허용 Origin 목록 |
+| JWT_SECRET | Access Token(HS256) 서명키. 32바이트 이상, 비어 있으면 기동 실패 |
 
 .env.example에는 키만 제공하며 Spring Boot가 .env 파일을 자동으로 읽지는 않습니다. 실행 환경이나 IDE에서 환경변수를 주입하세요.
 
-OAuth Client 정보, Firebase 서비스 계정, JWT Secret과 외부 API Key는 아직 필요하지 않습니다.
+OAuth Client 정보, Firebase 서비스 계정과 외부 API Key는 아직 필요하지 않습니다.
 
 ## Profile
 
@@ -96,9 +97,9 @@ application-prod.yml도 환경변수만 사용합니다. 데이터 손실 위험
 
 ### test
 
-application-test.yml은 H2를 사용하는 초기 Context 및 Health Smoke Test 전용 Profile입니다. 외부 MySQL과 Redis에 연결하지 않으며 Redis Health Indicator를 비활성화합니다.
+application-test.yml은 H2를 사용하는 통합 테스트 전용 Profile입니다. 외부 MySQL과 Redis에 연결하지 않으며 Redis Health Indicator를 비활성화합니다. Flyway DDL이 MySQL 전용이므로 테스트에서는 Flyway를 끄고 JPA `ddl-auto: create-drop`으로 엔티티 기준 스키마를 만듭니다.
 
-MySQL Entity와 Flyway Migration 구현을 시작하면 MySQL 전용 JSON, TINYINT 및 제약조건 검증을 위해 Testcontainers MySQL 기반 통합 테스트로 전환해야 합니다.
+MySQL 전용 JSON, TINYINT 및 CHECK 제약조건 검증은 Testcontainers MySQL 기반 통합 테스트로 전환해 Flyway 마이그레이션 기준으로 수행해야 합니다.
 
 ## 로컬 실행
 
@@ -153,11 +154,35 @@ local과 prod에서는 DataSource와 Redis Health를 포함합니다. test에서
 - POST /api/v1/auth/refresh
 - CORS Preflight
 
-/api/v1/admin/**는 향후 ADMIN 권한이 필요하고, 나머지 /api/v1/**는 인증이 필요합니다. 현재 인증 기능은 없으므로 보호 경로는 JSON 형식의 401을 반환합니다.
+/api/v1/admin/**는 ADMIN 권한(`user.role`)이 필요하고, 나머지 /api/v1/**는 인증이 필요합니다. 보호 경로에 토큰이 없으면 JSON 형식의 401(`UNAUTHORIZED`)을 반환합니다.
 
-formLogin, httpBasic, OAuth2 Login은 비활성화되어 있습니다. JWT Filter, 임시 사용자 및 하드코딩 계정은 없습니다. CSRF와 SessionCreationPolicy는 Refresh Token 전달 방식이 결정되기 전까지 임의로 고정하지 않습니다.
+formLogin, httpBasic, OAuth2 Login은 비활성화되어 있습니다. 클라이언트가 네이티브 앱(APK)이고 Bearer 토큰만 사용하므로 CSRF는 비활성화, SessionCreationPolicy는 STATELESS입니다.
 
-향후 인증 방향은 JWT Access Token과 해시된 Refresh Token을 AuthSession에 보관하는 구조입니다. JWT Claim, 만료시간, 서명키, Token Rotation, Refresh Token의 Body/HttpOnly Cookie 전달 방식은 아직 결정되지 않았습니다.
+### 인증 구조 (Auth API)
+
+| 항목 | 결정 |
+| --- | --- |
+| Access Token | JWT HS256. Claim: `sub`=userId, `sid`=auth_session.session_id, `role`. 기본 30분(`app.auth.jwt.access-token-validity`) |
+| Refresh Token | JWT가 아닌 256bit 난수(Base64URL). DB `auth_session`에는 SHA-256 해시만 저장. 기본 14일 |
+| 전달 방식 | 둘 다 응답 Body. 앱은 SecureStore 등 안전한 저장소에 보관 |
+| 서명키 | `JWT_SECRET` 환경변수 (`app.auth.jwt.secret`), 32바이트 미만이면 기동 실패 |
+| 세션 검증 | Access Token은 만료 전까지 DB를 다시 보지 않음. 세션 폐기는 `GET /api/v1/auth/session`과 재발급 시점에 반영 |
+
+`JwtAuthenticationFilter`는 토큰 오류 시 바로 응답하지 않고 오류 코드만 request attribute에 남깁니다. 공개 경로는 오래된 헤더가 있어도 정상 동작하고, 보호 경로는 `RestAuthenticationEntryPoint`가 `TOKEN_EXPIRED` / `INVALID_TOKEN`으로 구분해 401을 반환합니다.
+
+구현된 엔드포인트 (API 명세 1. Auth):
+
+| Method | Endpoint | 인증 | 응답 |
+| --- | --- | --- | --- |
+| POST | /api/v1/auth/signup | X | 201, `{ user: { userId, email, name, role }, createdAt }` |
+| POST | /api/v1/auth/login | X | 200, `{ tokenType, accessToken, accessTokenExpiresAt, refreshToken, refreshTokenExpiresAt, user }` |
+| GET | /api/v1/auth/session | O | 200, `{ user, sessionId, sessionCreatedAt, lastAccessedAt, sessionExpiresAt }` |
+
+주요 오류 코드: `EMAIL_ALREADY_EXISTS`(409), `INVALID_CREDENTIALS`(401, 이메일 존재 여부를 노출하지 않음), `SESSION_EXPIRED`(401, 세션 폐기·만료·탈퇴 계정), `TOKEN_EXPIRED` / `INVALID_TOKEN`(401).
+
+회원가입은 현재 자체 회원만 생성합니다. SSAFY 금융망 사용자 생성은 연동 방식이 확정되면 별도 단계로 추가합니다. 비밀번호는 BCrypt로 저장하며 8~72자, 영문·숫자 포함, 공백 불가입니다. 이메일은 trim + 소문자로 정규화해 저장합니다.
+
+로그아웃, Access Token 재발급, 세션 삭제는 후속 티켓에서 추가합니다.
 
 ## 공통 응답과 예외
 
@@ -182,25 +207,24 @@ code와 errors는 null일 때만 생략하고 data와 message는 null이어도 �
 
 ## 아직 결정되거나 구현되어야 할 항목
 
-- 회원가입 시 SSAFY 금융망 사용자를 함께 만들지, 가입 후 별도로 연결할지
+- 회원가입 시 SSAFY 금융망 사용자를 함께 만들지, 가입 후 별도로 연결할지 (현재는 자체 회원만 생성)
 - 실제 대출 실행 제외 원칙과 마이너스통장 상환·이자 납부 API의 충돌
-- ERD의 `USER`/`ADMIN` 역할 모델을 Spring Security 권한으로 연결
 - ERD에서 확정한 AES-256-GCM 암호화와 HMAC-SHA-256 조회 해시의 키 저장·순환 구현
+- Refresh Token Rotation 적용 여부 (재발급 API 구현 시 결정)
 - ERD의 `UserOAuthAccount`를 사용하는 OAuth 인증 Endpoint와 계정 연결 정책
 - ERD의 `UserDevice`를 사용하는 FCM Device Token 등록·폐기 API
 - Redis의 캐시, 세션, Refresh Token 저장소 및 분산 락 적용 범위
 
 ## 향후 작업
 
-- Auth와 User 도메인
-- JWT Access Token 및 Refresh Token 구현
+- Auth 나머지 API(로그아웃·재발급·세션 삭제)와 User 도메인
 - Kakao/Google OAuth
 - API 명세의 금융 도메인
 - SSAFY 금융망 및 금융상품한눈에 연동
 - Redis 적용 범위 확정 및 구현
 - FCM 알림
 - 생성형 AI 연동
-- ERD와 Flyway Migration
+- ERD 나머지 테이블의 Flyway Migration (V1은 `user`, `auth_session`만 포함)
 - Testcontainers MySQL 통합 테스트
 - Prometheus Metrics 연동
 - Docker와 CI/CD는 infra 작업 범위에서 진행
