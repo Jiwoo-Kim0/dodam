@@ -96,6 +96,80 @@
 - 로컬 WSL엔 docker가 없어 검증 불가 → compose 파일을 EC2 `/tmp`로 scp해서 `docker compose config -q` 실행 → **문법 OK**
 - `bash -n infra/scripts/deploy.sh` → 문법 OK
 
+### EC2 `.env` 실값 작성
+- 기존 `.env` 백업(`.env.bak.20260907132856`) 후 새 템플릿 기준으로 재작성, `chmod 600`
+- `MYSQL_ROOT_PASSWORD`, `MYSQL_PASSWORD`, `REDIS_PASSWORD`(각 24자), `JWT_SECRET`(64자)는 **EC2 서버에서 `openssl rand`로 직접 생성** — 값이 대화/로그를 거치지 않도록 함
+- `MYSQL_DATABASE=dodam`, `MYSQL_USER=dodam`, `APP_DIR=/home/ubuntu/app`, `CORS_ALLOWED_ORIGINS=http://localhost:8081`
+- 기존 `DOCKER_GID` 값은 그대로 승계
+
+### GitLab 인증 문제 발견
+- EC2에서 `git pull` 시 `could not read Username for 'https://lab.ssafy.com'` — **EC2에 GitLab 자격증명이 저장돼 있지 않음** (`credential.helper` 미설정, `~/.git-credentials` 없음)
+- 로컬 WSL에서도 동일 — 이 세션에서는 push 불가, 사용자가 직접 push 중
+- 영향: 단순 pull 문제가 아니라 **`deploy.sh`의 `git fetch`와 Jenkins의 SCM 체크아웃이 모두 비대화형이라 반드시 해결 필요**
+- 사용자 선택: **Personal Access Token 방식** (Deploy Key(SSH) 대비 HTTPS 그대로 쓸 수 있어 간단, 사내망 SSH 아웃바운드 차단 리스크 없음)
+- 사용자 액션으로 안내 (토큰 값은 대화에 남기지 않도록 사용자가 직접 입력):
+  1. GitLab → Edit profile → Access Tokens에서 `read_repository`(+ 필요시 `api`) 토큰 발급
+  2. EC2에서 `git config --global credential.helper store` 후 `git pull` 1회 대화형 인증 → `~/.git-credentials`에 저장
+  3. Jenkins → Credentials에 `Username with password`로 등록 (ID: `gitlab-token`)
+
+### 스택 전체 기동 및 end-to-end 검증 (파이프라인 연결 전 선검증)
+- git 인증이 아직 안 풀린 상태라, 변경 파일을 `scp`로 EC2에 직접 복사해 선검증 진행 (이후 git pull로 대체될 임시 조치)
+- `docker compose up -d --build` 결과
+  - `infra-backend` 이미지 빌드 성공 — **builder 스테이지의 `./gradlew clean build`가 통과했다는 것은 백엔드 테스트도 함께 통과했다는 의미**
+  - `mysql` → Healthy, `redis` → Healthy 확인 후 `backend` 기동 (`depends_on: service_healthy` 정상 동작)
+  - `backend` 컨테이너 자체 HEALTHCHECK도 `healthy`
+  - jenkins 컨테이너는 compose 정의 변경(APP_DIR 마운트 추가)으로 recreate됨 — `jenkins_home`이 named volume이라 **setup wizard 결과/계정 유지됨**
+- nginx가 예전 설정을 물고 있어 `/api/`가 안 잡히는 현상 → `docker exec nginx nginx -s reload`로 해결 (Day 1에서 겪은 것과 같은 패턴. `deploy.sh`에 reload 단계를 이미 넣어둬서 이후 배포부터는 자동 처리됨)
+- **최종 검증 결과**
+  ```
+  $ curl http://j15D105.p.ssafy.io/api/health
+  {"success":true,"data":{"status":"UP"},"message":null}
+  HTTP 200
+  ```
+  - 외부 도메인 → nginx → backend → MySQL/Redis 경로가 전부 실제로 동작함을 확인
+  - Day 2 시점에 **실제 백엔드가 배포되어 서비스되는 상태** 달성 (원래 계획의 Day 5 목표를 앞당겨 달성)
+
+### 브랜치 전략 정리 및 EC2 체크아웃 정정
+- `git pull origin develop` 시도 시 scp로 임시 복사해둔 파일들과 충돌 발생
+- 확인 결과: **인프라 작업물이 `origin/infra`가 아니라 `origin/develop`에 올라가 있었음** (사용자가 MR로 develop에 머지)
+  - `origin/infra`에는 `Jenkinsfile`, `backend/Dockerfile`, `deploy.sh`, `nginx/conf.d/default.conf` 전부 없음 (Day 1 상태에서 멈춤)
+  - `origin/develop`에는 전부 존재
+- 삭제 전 안전 확인: 로컬 파일과 `origin/develop`의 blob 해시를 6개 파일 모두 비교 → **전부 동일**함을 확인한 뒤 scp 임시 파일 제거
+- EC2 체크아웃을 `git checkout -B develop origin/develop`으로 전환 (`.env`는 gitignore라 보존됨)
+- 이에 맞춰 `deploy.sh`의 `DEPLOY_BRANCH` 기본값을 `infra` → `develop`으로 변경
+
+### GitLab PAT 등록 (사용자 액션 완료)
+- EC2에서 `git config --global credential.helper store` + 1회 대화형 `git pull`로 자격증명 저장 완료 → 이후 비대화형 fetch 정상 동작
+- Jenkins Credentials 2건 등록
+  | ID | Kind | 용도 |
+  |---|---|---|
+  | `ec2-jenkins-deploy` | GitLab API token | Jenkins → GitLab API |
+  | `gitlab-https` | Username with password | 파이프라인 소스 체크아웃 |
+- 처음엔 GitLab API token 타입 하나만 등록됐는데, **이 타입으로는 HTTPS git 체크아웃이 안 되므로** `Username with password` 타입을 추가로 등록하도록 안내함
+
+### Jenkins Pipeline Job 생성 (UI 대신 config.xml 주입 방식)
+- Jenkins 관리자 비밀번호 없이 진행하기 위해, `/var/jenkins_home/jobs/dodam-backend-deploy/config.xml`을 직접 작성하고 컨테이너를 재시작하는 방식 채택
+- Job 구성: `CpsScmFlowDefinition`(SCM: GitLab HTTPS + `gitlab-https` 자격증명, 브랜치 `*/develop`, `scriptPath=Jenkinsfile`), 트리거는 `GitLabPushTrigger`(push만, 브랜치 필터 `develop`, secretToken)
+- webhook secret은 EC2에서 `openssl rand -hex 20`으로 생성해 `~/.jenkins-webhook-secret`(600)에 저장 — 값이 대화/로그를 거치지 않도록 함
+- 로드 검증
+  - `nextBuildNumber`가 안 생겨서 처음엔 로드 실패로 오해했으나, 웹훅 엔드포인트에 POST 시 **401**(=job은 찾았고 secret 검증에서 거부) 응답 → job 정상 로드 확인. (GET은 404가 정상)
+  - secret 포함 POST 시 트리거는 됐으나 `sourceRepoSshUrl must not be null` (테스트 페이로드에 `repository.git_ssh_url` 누락) → 페이로드 보완 후 **HTTP 200, 빌드 #1 생성**
+
+### 빌드 #1 실패 → 원인 분석 및 수정
+- 결과: `Finished: FAILURE`. 체크아웃/자격증명은 정상(`using credential gitlab-https`, develop `5cc59b5` 체크아웃 성공)
+- 실패 지점: `Build & Test` 스테이지의 이미지 빌드
+  ```
+  Step 12/16 : COPY --from=builder /workspace/build/libs/*.jar app.jar
+  When using COPY with more than one source file, the destination must be a directory and end with a /
+  ```
+- 원인: gradle이 jar를 2개 생성함 (`dodam-backend-0.0.1-SNAPSHOT.jar` + `-plain.jar`) → 와일드카드가 2개 매칭
+- **왜 수동 빌드 때는 통과했는가**: 호스트에는 buildx가 설치돼 있어 BuildKit으로 빌드됐지만, **Jenkins 컨테이너엔 buildx가 없어 classic builder로 폴백**(로그에 `buildx Docker CLI plugin not found: falling back to the classic builder` 경고)되었고, classic builder는 이 규칙을 엄격히 적용함
+- 수정
+  - `backend/Dockerfile`: builder 스테이지에서 `-plain.jar`를 제외하고 실행 가능한 jar만 골라 `/workspace/app.jar`로 정규화 → 런타임 스테이지는 고정 경로를 COPY (버전 문자열이 바뀌어도 안전)
+  - `infra/jenkins/Dockerfile`: `docker-buildx-plugin` 추가 설치 → Jenkins에서도 BuildKit 사용, 호스트와 동작 일치
+- 커밋 전 검증: 백엔드 소스+Dockerfile을 EC2 `/tmp/bt`에 복사해 **`DOCKER_BUILDKIT=0`(classic builder)로 직접 빌드 → 성공** 확인 후 테스트 아티팩트 정리
+- 부수 확인: 실패 로그의 `docker compose ps`상 backend는 `Up (healthy)` — 앞서 수동 배포한 컨테이너가 계속 정상 서비스 중이었음 (파이프라인 실패가 서비스 중단으로 이어지지 않음)
+
 ## 다음 기록할 것 (TODO)
 - [x] `infra/jenkins/Dockerfile` 작성 결과
 - [x] `docker-compose.yml` jenkins 서비스 추가 결과
@@ -105,9 +179,10 @@
 - [x] Jenkins 웹 UI 외부 접근 경로 확인 (`/jenkins/login` 200)
 - [x] 브라우저에서 초기 setup wizard 진행 (admin 계정 생성)
 - [x] MySQL/Redis/backend 서비스 + Jenkinsfile + deploy.sh 작성
-- [ ] EC2 `.env`에 `MYSQL_*`, `REDIS_PASSWORD`, `CORS_ALLOWED_ORIGINS` 채우기
-- [ ] EC2에서 스택 기동 + `/api/health` 200 수동 확인 (파이프라인 붙이기 전 선검증)
-- [ ] Jenkins Credentials에 GitLab 토큰 등록
+- [x] EC2 `.env`에 `MYSQL_*`, `REDIS_PASSWORD`, `CORS_ALLOWED_ORIGINS` 채우기
+- [x] EC2에서 스택 기동 + `/api/health` 200 수동 확인 (파이프라인 붙이기 전 선검증)
+- [ ] GitLab PAT 발급 + EC2 `credential.helper store` 설정 (**사용자 액션**)
+- [ ] Jenkins Credentials에 GitLab 토큰 등록 (**사용자 액션**)
 - [ ] Jenkins Pipeline Job 생성 (SCM: GitLab, Jenkinsfile 경로 루트)
 - [ ] GitLab Webhook 등록 (Push 이벤트 → Jenkins)
 - [ ] push → 자동 빌드/배포 end-to-end 검증

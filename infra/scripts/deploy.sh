@@ -7,7 +7,7 @@
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/home/ubuntu/app}"
-DEPLOY_BRANCH="${DEPLOY_BRANCH:-infra}"
+DEPLOY_BRANCH="${DEPLOY_BRANCH:-develop}"
 COMPOSE_FILE="$APP_DIR/infra/docker-compose.yml"
 ENV_FILE="$APP_DIR/infra/.env"
 HEALTH_URL="${HEALTH_URL:-http://localhost/api/health}"
