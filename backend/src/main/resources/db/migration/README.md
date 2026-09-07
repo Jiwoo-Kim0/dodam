@@ -1,6 +1,10 @@
 # Flyway migrations
 
-비즈니스 엔티티와 물리 스키마가 확정되기 전에는 마이그레이션을 추가하지 않습니다.
+| 버전 | 내용 | Jira |
+| --- | --- | --- |
+| V1 | `user`, `auth_session` 생성 (Auth API 최소 범위) | S15P21D105-494 |
+
+각 도메인 티켓은 자기 테이블만 다음 버전으로 추가합니다. DDL은 `docs/ERD/DODAM_ERDCLOUD_IMPORT.sql`의 해당 테이블 정의를 그대로 옮기고, 변경이 필요하면 ERD를 먼저 고칩니다. local/prod는 `ddl-auto: validate`이므로 엔티티와 DDL이 어긋나면 기동에 실패합니다.
 
 2026-09-07 기준으로 ERD Markdown과 `docs/ERD/DODAM_ERDCLOUD_IMPORT.sql`의 구조 차이는 동기화했습니다.
 Import DDL은 신규 스키마 검토용이며 기존 DB에 직접 실행하지 않습니다. 팀 승인 후 현재 운영 스키마와의 차이를 확인하고 별도 버전 마이그레이션을 작성하세요.

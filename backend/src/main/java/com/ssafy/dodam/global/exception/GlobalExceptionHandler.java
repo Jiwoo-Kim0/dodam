@@ -73,6 +73,13 @@ public class GlobalExceptionHandler {
                 ));
     }
 
+    @ExceptionHandler(BusinessException.class)
+    public ResponseEntity<ApiResponse<Void>> handleBusiness(BusinessException exception) {
+        ErrorCode errorCode = exception.getErrorCode();
+        return ResponseEntity.status(errorCode.status())
+                .body(ApiResponse.failure(errorCode.name(), errorCode.message()));
+    }
+
     @ExceptionHandler({
             NoResourceFoundException.class,
             NoHandlerFoundException.class
