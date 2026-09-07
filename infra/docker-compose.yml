@@ -1,0 +1,24 @@
+networks:
+  app-net:
+    driver: bridge
+
+volumes:
+  jenkins_home:
+
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+    networks:
+      - app-net
+
+# Day 2에서 jenkins 서비스 추가 예정
+# Day 4에서 mysql, redis 서비스 추가 예정
+# Day 5에서 backend 서비스 추가 예정
+# Day 6에서 prometheus, grafana, loki, promtail 서비스 추가 예정
