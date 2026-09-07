@@ -29,7 +29,20 @@ log "APP_DIR=$APP_DIR / branch=$DEPLOY_BRANCH"
 
 log "소스 동기화"
 git config --global --add safe.directory "$APP_DIR" 2>/dev/null || true
-git -C "$APP_DIR" fetch --prune origin
+
+# Jenkins 컨테이너 안에는 호스트의 ~/.git-credentials가 없으므로,
+# 파이프라인이 GIT_USER/GIT_TOKEN을 넘겨주면 그것으로 인증한다.
+# (토큰은 디스크에 쓰지 않고 helper가 표준출력으로만 넘긴다)
+# 호스트에서 수동 실행할 때는 저장된 credential.helper가 쓰인다.
+if [ -n "${GIT_USER:-}" ] && [ -n "${GIT_TOKEN:-}" ]; then
+    export GIT_USER GIT_TOKEN
+    GIT_AUTH=(-c credential.helper= \
+              -c "credential.helper=!f() { echo \"username=\${GIT_USER}\"; echo \"password=\${GIT_TOKEN}\"; }; f")
+else
+    GIT_AUTH=()
+fi
+
+git -C "$APP_DIR" "${GIT_AUTH[@]}" fetch --prune origin
 git -C "$APP_DIR" checkout "$DEPLOY_BRANCH"
 git -C "$APP_DIR" reset --hard "origin/$DEPLOY_BRANCH"
 log "현재 커밋: $(git -C "$APP_DIR" rev-parse --short HEAD) $(git -C "$APP_DIR" log -1 --pretty=%s)"

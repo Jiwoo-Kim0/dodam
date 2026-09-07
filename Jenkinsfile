@@ -48,13 +48,20 @@ pipeline {
             steps {
                 // deploy.sh는 $APP_DIR을 git reset --hard로 덮어쓰므로,
                 // 실행 중인 스크립트 파일이 교체되지 않도록 워크스페이스 사본을 실행한다.
-                sh '''
-                    set -e
-                    export APP_DIR="$APP_DIR"
-                    export DEPLOY_BRANCH="${GIT_BRANCH#origin/}"
-                    export HEALTH_URL="$HEALTH_URL"
-                    bash "$WORKSPACE/infra/scripts/deploy.sh"
-                '''
+                // Jenkins 컨테이너에는 호스트의 git 자격증명이 없으므로 여기서 주입한다.
+                withCredentials([usernamePassword(
+                    credentialsId: 'gitlab-https',
+                    usernameVariable: 'GIT_USER',
+                    passwordVariable: 'GIT_TOKEN'
+                )]) {
+                    sh '''
+                        set -e
+                        export APP_DIR="$APP_DIR"
+                        export DEPLOY_BRANCH="${GIT_BRANCH#origin/}"
+                        export HEALTH_URL="$HEALTH_URL"
+                        bash "$WORKSPACE/infra/scripts/deploy.sh"
+                    '''
+                }
             }
         }
     }
