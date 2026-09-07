@@ -48,7 +48,9 @@ git -C "$APP_DIR" reset --hard "origin/$DEPLOY_BRANCH"
 log "현재 커밋: $(git -C "$APP_DIR" rev-parse --short HEAD) $(git -C "$APP_DIR" log -1 --pretty=%s)"
 
 log "이미지 빌드 및 컨테이너 기동 ($DEPLOY_SERVICES)"
-docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --build $DEPLOY_SERVICES
+# --no-deps: depends_on을 타고 jenkins 같은 비대상 서비스가 재생성되는 것을 막는다.
+# (DEPLOY_SERVICES에서 제외해도 의존성으로 끌려 들어오면 배포가 자기 자신을 죽인다)
+docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --build --no-deps $DEPLOY_SERVICES
 
 log "nginx 설정 리로드 (conf.d 변경 반영)"
 docker exec nginx nginx -s reload 2>/dev/null || log "nginx reload 생략(컨테이너 미기동?)"
