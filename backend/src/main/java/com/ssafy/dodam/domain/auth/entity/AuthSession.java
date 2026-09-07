@@ -75,6 +75,15 @@ public class AuthSession {
         this.lastAccessedAt = at;
     }
 
+    /**
+     * Refresh Token 회전. 세션(session_id)과 절대 만료 시각은 유지하고 토큰 해시만 새 값으로 바꾼다.
+     * 이전 Refresh Token은 이 시점부터 무효가 된다.
+     */
+    public void rotate(String newRefreshTokenHash, LocalDateTime at) {
+        this.refreshTokenHash = newRefreshTokenHash;
+        this.lastAccessedAt = at;
+    }
+
     public Long getId() {
         return id;
     }
