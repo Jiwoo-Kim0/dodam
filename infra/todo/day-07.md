@@ -2,6 +2,15 @@
 
 기획안 기준 외부 연동: OpenAI, SSAFY 교육용 금융망, FCM(Firebase), Kakao/Google 소셜로그인. FE(React Native+Expo)는 EC2와 무관하게 별도 빌드/배포 경로를 갖는다.
 
+> **2026-09-07 재검토 반영 — 전제가 하나 바뀌었다.**
+> `backend/docs/init_settings_prompt.md`에는 "ERD에 OAuth 사용자 식별 모델과 FCM Device Token 모델이 없다"는 미결 사항이 적혀 있었으나, **갱신된 ERD에는 이미 들어와 있다.**
+> - `user_oauth_account` — `provider`, `provider_user_id_hash`, `provider_email_encrypted`
+> - `user_device` — `fcm_token_encrypted`, `fcm_token_hash`, `platform`, `enabled`
+> - `user.role` — `USER` / `ADMIN` CHECK 제약 (관리자 API 권한 모델도 해소됨)
+>
+> 즉 **소셜로그인과 FCM은 "할지 말지 미정"이 아니라 진행 전제로 확정**됐고, 두 값 모두 암호화 저장이므로 **Day 5의 데이터 암호화 키가 선행**되어야 한다.
+> 또 FE 일정상 **Day 4에 "로그인 / 금융데이터 연동"** 이 시작되므로, OAuth Redirect URI와 CORS는 이 Day까지 미루지 말고 **가능한 앞당겨 확정**할 것.
+
 ## 체크리스트
 
 ### 1. SSAFY 교육용 금융망 연동 준비
@@ -22,10 +31,16 @@
 - [ ] Kakao Developers / Google Cloud Console에 EC2 도메인(또는 IP) 기준 Redirect URI 등록 (**사용자 액션**: 각 콘솔 접근 권한 있는 팀원이 진행)
 - [ ] 도메인이 확정되지 않았다면 임시로 IP 기반 URI 등록 후, 도메인 확보 시 갱신 필요함을 팀에 공지
 
-### 5. FE 빌드/배포 파이프라인 (EC2 밖)
-- [ ] Expo EAS Build 사용 여부 확인 (**사용자 액션**: FE팀과 협의, 계정 필요)
-- [ ] FE가 백엔드 API를 호출할 BaseURL(도메인 또는 IP)을 환경변수로 관리하는 방식 합의
-- [ ] OTA 업데이트(Expo Updates) 사용 여부는 시간 되면 검토, 이번 8일 범위에서는 필수 아님(P2)
+### 5. FE 빌드/배포 파이프라인
+현재 FE 구성 실측: **Expo SDK 57 / React Native 0.86 / expo-router**, `app.json`에 **`web.output: "static"`** 설정됨.
+- [ ] **웹 배포 여부 확정** (**사용자 액션**: FE팀 협의) — `web.output: static`이라 `expo export --platform web`으로 정적 산출물을 만들 수 있고, **이미 떠 있는 nginx가 `/`에서 서빙하면 별도 호스팅이 필요 없다**
+  - 한다면: Jenkins 파이프라인에 FE 빌드 스테이지 추가 (Node 이미지로 빌드 → 산출물을 nginx 볼륨에 배치). Day 3에서 정해둔 `/` 라우팅과 연결
+  - 안 한다면: `/`는 상태 페이지로 정리하고 앱 배포에만 집중
+- [ ] Expo EAS Build 사용 여부 확인 (**사용자 액션**: FE팀과 협의, 계정 필요) — 네이티브 앱(APK/IPA) 빌드가 필요한 경우
+- [ ] FE가 백엔드 API를 호출할 BaseURL을 환경변수로 관리하는 방식 합의 — **HTTPS 적용 후에는 `https://j15D105.p.ssafy.io/api`**
+- [ ] **`CORS_ALLOWED_ORIGINS` 갱신** — 현재 `.env`에 `http://localhost:8081`만 등록되어 있음. Expo 웹/개발 서버 origin, 배포 도메인을 실제 값으로 채울 것
+- [ ] FCM 관련: `package.json`에 `expo-device`는 있으나 **`expo-notifications`가 아직 없음** → FE팀이 토큰 발급 흐름을 붙일 때 추가 필요함을 공유
+- [ ] OTA 업데이트(Expo Updates) 사용 여부는 시간 되면 검토, 이번 범위에서는 필수 아님(P2)
 
 ## 산출물
 - 외부 연동 시크릿/등록 상태 체크리스트 완료 (또는 담당자에게 위임된 액션 목록)
