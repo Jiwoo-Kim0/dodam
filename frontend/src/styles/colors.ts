@@ -13,5 +13,7 @@ export const colors = {
   textSecondary: 'rgba(34, 34, 34, 0.55)',
   divider: '#E7E7E7',
   border: '#B7B7B7',
+  textTertiary: 'rgba(34, 34, 34, 0.4)',
   disabledBackground: '#D6E1BC',
+  overlay: 'rgba(0, 0, 0, 0.35)',
 } as const;
