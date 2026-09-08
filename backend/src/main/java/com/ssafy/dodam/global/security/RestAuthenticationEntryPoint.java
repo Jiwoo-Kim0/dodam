@@ -3,6 +3,7 @@ package com.ssafy.dodam.global.security;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ssafy.dodam.global.exception.ErrorCode;
 import com.ssafy.dodam.global.response.ApiResponse;
+import com.ssafy.dodam.global.security.jwt.JwtAuthenticationFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -27,15 +28,16 @@ public class RestAuthenticationEntryPoint implements AuthenticationEntryPoint {
             HttpServletResponse response,
             AuthenticationException authenticationException
     ) throws IOException {
+        // JwtAuthenticationFilter가 토큰 오류를 남겨둔 경우 그 코드를 우선 사용한다.
+        Object attribute = request.getAttribute(JwtAuthenticationFilter.ERROR_CODE_ATTRIBUTE);
+        ErrorCode errorCode = attribute instanceof ErrorCode code ? code : ErrorCode.UNAUTHORIZED;
+
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         objectMapper.writeValue(
                 response.getOutputStream(),
-                ApiResponse.failure(
-                        ErrorCode.UNAUTHORIZED.name(),
-                        "인증이 필요합니다."
-                )
+                ApiResponse.failure(errorCode.name(), errorCode.message())
         );
     }
 }
