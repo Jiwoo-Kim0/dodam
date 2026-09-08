@@ -44,8 +44,49 @@ fi
 
 git -C "$APP_DIR" "${GIT_AUTH[@]}" fetch --prune origin
 git -C "$APP_DIR" checkout "$DEPLOY_BRANCH"
+
+# 롤백 지점: 동기화 "전" 커밋. 배포가 실패하면 여기로 되돌린다.
+PREV_COMMIT="$(git -C "$APP_DIR" rev-parse HEAD)"
+# 현재 떠 있는 backend 이미지도 함께 보존한다.
+# (코드를 되돌려도 이미지를 다시 빌드하면 시간이 걸리고, 빌드 자체가 깨져 있을 수도 있다)
+PREV_IMAGE=""
+if docker image inspect infra-backend:latest >/dev/null 2>&1; then
+    docker tag infra-backend:latest infra-backend:rollback && PREV_IMAGE="infra-backend:rollback"
+fi
+
 git -C "$APP_DIR" reset --hard "origin/$DEPLOY_BRANCH"
 log "현재 커밋: $(git -C "$APP_DIR" rev-parse --short HEAD) $(git -C "$APP_DIR" log -1 --pretty=%s)"
+log "롤백 지점: $(git -C "$APP_DIR" rev-parse --short "$PREV_COMMIT")${PREV_IMAGE:+ + 이미지 보존됨}"
+
+# 배포 실패 시 직전 상태로 되돌린다.
+# 설계 의도: 서비스는 살리되 빌드는 실패로 끝낸다.
+#   - 서비스가 죽은 채 방치되는 것이 가장 나쁘다 (2026-09-07, 09-08 두 차례 실제 발생)
+#   - 그렇다고 조용히 성공 처리하면 develop이 깨진 것을 아무도 모른다
+rollback() {
+    log "───────────────────────────────────────────────"
+    log "롤백 시작: $(git -C "$APP_DIR" rev-parse --short "$PREV_COMMIT") 상태로 되돌립니다"
+    git -C "$APP_DIR" reset --hard "$PREV_COMMIT" || { log "롤백 실패(git)"; return 1; }
+    if [ -n "$PREV_IMAGE" ]; then
+        docker tag "$PREV_IMAGE" infra-backend:latest || true
+    fi
+    # --build를 쓰지 않는다: 보존해둔 이미지를 그대로 사용해야 빠르고 확실하다
+    docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --no-deps --force-recreate $DEPLOY_SERVICES \
+        || { log "롤백 실패(compose)"; return 1; }
+    docker exec nginx nginx -s reload 2>/dev/null || true
+
+    # 롤백 검증용 URL은 따로 둔다. 기본값은 동일하지만,
+    # "배포는 실패시키고 롤백은 성공해야 한다"는 시나리오를 실제로 돌려보려면 분리가 필요하다.
+    # (검증되지 않은 롤백 경로는 없느니만 못하므로 테스트 가능하게 만들어 둔다)
+    ROLLBACK_HEALTH_URL="${ROLLBACK_HEALTH_URL:-$HEALTH_URL}"
+    log "롤백 후 헬스체크: $ROLLBACK_HEALTH_URL"
+    for i in $(seq 1 20); do
+        c="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$ROLLBACK_HEALTH_URL" || true)"
+        if [ "$c" = "200" ]; then log "롤백 성공 — 서비스 정상 (${i}회차)"; return 0; fi
+        sleep "$HEALTH_INTERVAL"
+    done
+    log "롤백했으나 헬스체크가 여전히 실패 — 수동 확인 필요"
+    return 1
+}
 
 # .env가 잘못돼 있으면 컨테이너가 기동에 실패하는 형태로만 드러나 원인 추적이 오래 걸린다.
 # 배포를 진행하기 전에 먼저 걸러낸다.
@@ -79,4 +120,14 @@ done
 
 log "ERROR: 헬스체크 실패. backend 로그 마지막 100줄:"
 docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" logs --tail=100 backend
+
+if rollback; then
+    log "───────────────────────────────────────────────"
+    log "배포는 실패했지만 서비스는 직전 상태로 복구되었습니다."
+    log "develop이 깨진 상태이므로 원인을 수정한 뒤 다시 배포하세요."
+else
+    log "───────────────────────────────────────────────"
+    log "★ 롤백까지 실패했습니다. 서비스가 중단 상태일 수 있으니 즉시 수동 확인이 필요합니다."
+fi
+# 롤백 성공 여부와 무관하게 빌드는 실패로 끝낸다 — develop이 깨졌다는 사실이 드러나야 한다.
 exit 1
