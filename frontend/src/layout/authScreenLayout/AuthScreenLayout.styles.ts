@@ -7,6 +7,7 @@ export const styles = StyleSheet.create({
     flex: 1,
     paddingTop: semanticSpacing.screenTitleTop,
     paddingHorizontal: semanticSpacing.screenMargin,
+    backgroundColor: colors.white,
   },
 
   title: {
