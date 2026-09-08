@@ -1,12 +1,5 @@
-import { StyleSheet, View } from 'react-native';
+import { SplashScreen } from '@/pages/splash/SplashScreen';
 
 export default function IndexRoute() {
-  return <View style={styles.container} />;
+  return <SplashScreen />;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-});
