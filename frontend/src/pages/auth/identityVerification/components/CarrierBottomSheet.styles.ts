@@ -23,6 +23,7 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.overlay,
   },
   sheet: {
+    height: componentSize.bottomSheet.height,
     maxHeight: componentSize.bottomSheet.maxHeight,
     paddingTop: spacing[6],
     paddingHorizontal: spacing[8],
