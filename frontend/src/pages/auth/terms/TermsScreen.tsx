@@ -1,7 +1,9 @@
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
 import { BottomActionButton } from '@/components/bottomActionButton/BottomActionButton';
+import { routes } from '@/constants/routes';
 import { AuthScreenLayout } from '@/layout/authScreenLayout/AuthScreenLayout';
 
 import { AgreementItem } from './components/AgreementItem';
@@ -22,6 +24,7 @@ const INITIAL_AGREEMENTS: AgreementState = {
 };
 
 export function TermsScreen() {
+  const router = useRouter();
   const [agreements, setAgreements] =
     useState<AgreementState>(INITIAL_AGREEMENTS);
 
@@ -50,7 +53,7 @@ export function TermsScreen() {
       return;
     }
 
-    // 다음 본인인증 화면을 만든 뒤 이동 경로 연결
+    router.push(routes.identityVerification);
   };
 
   return (
