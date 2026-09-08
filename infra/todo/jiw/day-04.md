@@ -168,6 +168,45 @@ Day 3의 교훈대로 **복구 직후 바로 커밋**해서, 다음 배포의 `g
 
 ---
 
+### 7. Auth MR 수용 검토 — `ddl-auto: validate` 사전 검증
+팀원이 MR 설명에 남긴 우려: **"`ddl-auto: validate`는 로컬(H2)에서 검증할 수 없으니 배포 후 첫 기동 로그를 확인해야 한다. 특히 `CHAR(64)` 해시 컬럼과 `TINYINT(1)` 불리언."**
+
+이건 **머지 전에 답을 낼 수 있는 문제**라 판단해 검증했다. 앞선 5번 검증은 `missing table [financial_company]`에서 멈춰 **컬럼 검사까지 도달하지 못했다** — Hibernate는 첫 실패에서 중단하기 때문이다. 그래서 상품 테이블을 채운 상태로 다시 돌렸다.
+
+방법
+1. `docs/ERD/DODAM_ERDCLOUD_IMPORT.sql`에서 누락 3개 테이블 DDL을 추출해 마이그레이션 초안 작성
+   → `infra/todo/drafts/V3__create_financial_product.sql`
+2. Auth 브랜치 소스에 이 초안을 얹어 이미지 빌드
+3. **별도의 임시 MySQL/Redis**에 운영과 동일한 조건(`ddl-auto`는 낮추지 않은 원래 `validate`)으로 기동
+4. 실제 `.env`의 키 4종을 주입 (운영과 같은 값으로 검증)
+
+결과
+```
+Migrating schema `dodam_vtest` to version "1 - create user and auth session"
+Migrating schema `dodam_vtest` to version "2 - create user setting financial profile finance connection"
+Migrating schema `dodam_vtest` to version "3 - create financial product"
+Successfully applied 3 migrations, now at version v3
+Started DodamApplication in 11.566 seconds
+```
+→ **Hibernate validate 통과, 기동 성공.**
+
+팀원이 지목한 컬럼들의 실제 생성 결과
+| 테이블 | 컬럼 | 타입 |
+| --- | --- | --- |
+| `user_setting` | `notification_enabled`, `daily_briefing_enabled`, `monthly_report_enabled` | `tinyint(1) NOT NULL DEFAULT 1` |
+| `finance_connection` | `member_email_hash`, `external_user_key_hash` | `char(64)` (UNIQUE) |
+| `finance_connection` | `member_email_encrypted`, `external_user_key_encrypted` | `varbinary(512)` |
+
+**결론: `CHAR(64)` / `TINYINT(1)` 매핑 문제는 없다.** 유일한 실제 결함은 상품 테이블 3개 누락이었고, 그건 이 MR이 아니라 앞서 병합된 상품 API MR에서 비롯됐다.
+
+이로써 팀원이 "배포 후에 확인해야 한다"고 남긴 항목을 **배포 전에 해소**했다. 머지 후 첫 기동에서 놀랄 일이 없다.
+
+### 8. 환경변수 준비 상태 확인
+MR 설명의 "머지 전 `.env`에 4개 채워야 함" 항목 검증:
+- `JWT_SECRET` 62자, `DATA_ENCRYPTION_KEY`/`DATA_HASH_KEY` 각 base64 디코드 32바이트(AES-256), `SSAFY_FINANCE_API_KEY` 32자 — 모두 설정 완료
+- **MR의 compose 파일을 기준으로 `check-env.sh` 시뮬레이션 → 필수 변수 11개 전부 통과**
+  (조치 전에는 `SSAFY_FINANCE_API_KEY` 누락을 정확히 검출했었다)
+
 ## 이 장애에서 드러난 구조적 문제 (개선 항목)
 
 1. **배포 실패가 조용하다** — 파이프라인은 실패를 감지했지만 알림이 없어 아무도 몰랐다.
