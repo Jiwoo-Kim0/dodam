@@ -10,4 +10,8 @@ export const colors = {
   white: '#FFFFFF',
   background: '#FBFBFB',
   textPrimary: '#222222',
+  textSecondary: '#666666',
+  divider: '#E7E7E7',
+  border: '#B7B7B7',
+  disabledBackground: '#D6E1BC',
 } as const;

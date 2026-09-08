@@ -1,11 +1,11 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, radius, spacing, typography } from '@/styles';
+import { colors, componentSize, radius, spacing, typography } from '@/styles';
 
 export const styles = StyleSheet.create({
   button: {
     width: '100%',
-    height: 48,
+    height: componentSize.button.compact,
     alignItems: 'center',
     justifyContent: 'center',
   },
