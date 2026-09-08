@@ -9,4 +9,5 @@ export const colors = {
   },
   background: '#FBFBFB',
   textPrimary: '#222222',
+  textSecondary: 'rgba(34, 34, 34, 0.55)',
 } as const;
