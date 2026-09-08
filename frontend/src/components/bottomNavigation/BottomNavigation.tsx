@@ -6,6 +6,8 @@ import type { GestureResponderEvent, ImageSourcePropType } from 'react-native';
 import { Animated, Image, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { routes } from '@/constants/routes';
+
 import { styles } from './BottomNavigation.styles';
 
 type BottomNavigationItemProps = TabTriggerSlotProps & {
@@ -132,7 +134,7 @@ export function BottomNavigation() {
             paddingBottom: insets.bottom,
           },
         ]}>
-          <TabTrigger asChild href="/home" name="home">
+          <TabTrigger asChild href={routes.home} name="home">
             <BottomNavigationItem
               activeIcon={require('@/assets/icons/home_active_tab.png')}
               inactiveIcon={require('@/assets/icons/home_inactive_tab.png')}
@@ -140,7 +142,7 @@ export function BottomNavigation() {
             />
           </TabTrigger>
 
-          <TabTrigger asChild href="/ledger" name="ledger">
+          <TabTrigger asChild href={routes.ledger} name="ledger">
             <BottomNavigationItem
               activeIcon={require('@/assets/icons/ledger_active_tab.png')}
               inactiveIcon={require('@/assets/icons/ledger_inactive_tab.png')}
@@ -148,7 +150,7 @@ export function BottomNavigation() {
             />
           </TabTrigger>
 
-          <TabTrigger asChild href="/assets" name="assets">
+          <TabTrigger asChild href={routes.assets} name="assets">
             <BottomNavigationItem
               activeIcon={require('@/assets/icons/assets_active_tab.png')}
               inactiveIcon={require('@/assets/icons/assets_inactive_tab.png')}
@@ -156,7 +158,7 @@ export function BottomNavigation() {
             />
           </TabTrigger>
 
-          <TabTrigger asChild href="/discovery" name="discovery">
+          <TabTrigger asChild href={routes.discovery} name="discovery">
             <BottomNavigationItem
               activeIcon={require('@/assets/icons/discovery_active_tab.png')}
               inactiveIcon={require('@/assets/icons/discovery_inactive_tab.png')}
@@ -164,7 +166,7 @@ export function BottomNavigation() {
             />
           </TabTrigger>
 
-          <TabTrigger asChild href="/report" name="report">
+          <TabTrigger asChild href={routes.report} name="report">
             <BottomNavigationItem
               activeIcon={require('@/assets/icons/report_active_tab.png')}
               inactiveIcon={require('@/assets/icons/report_inactive_tab.png')}
