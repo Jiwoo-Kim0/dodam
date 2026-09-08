@@ -28,9 +28,23 @@ RUN apt-get update \
 
 COPY --from=builder /workspace/app.jar app.jar
 
+# 비루트 실행 (infra/todo/security.md R3)
+# 컨테이너 탈출 취약점이 터졌을 때 피해 범위를 줄인다.
+# 8080은 1024 이상이라 비특권 사용자로도 바인딩할 수 있다.
+# 앱은 파일을 쓰지 않으므로 /app 소유권만 넘겨주면 충분하다.
+RUN useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin dodam \
+    && chown -R 10001:0 /app
+USER 10001
+
 EXPOSE 8080
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=5 \
     CMD curl -fsS http://localhost:8080/api/health || exit 1
 
-ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+# JVM 힙 상한 (infra/todo/day-05.md)
+# 상한이 없으면 JVM은 컨테이너 메모리의 약 1/4를 기본 최대 힙으로 잡는데,
+# 호스트 16GB 기준으로는 넉넉해 보여도 MySQL(버퍼풀 2GB)·Jenkins·Day 6 모니터링과
+# 겹치면 전체가 빠듯해진다. 명시적으로 고정한다.
+# MaxRAMPercentage 대신 절대값을 쓰는 이유: 컨테이너 메모리 제한을 아직 걸지 않아
+# JVM이 호스트 전체를 기준으로 계산해버리기 때문이다.
+ENTRYPOINT ["java", "-XX:MaxHeapSize=1g", "-XX:InitialHeapSize=256m", "-jar", "/app/app.jar"]
