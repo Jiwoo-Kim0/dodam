@@ -10,6 +10,17 @@ infra/jenkins_home/
 # TLS 인증서 (certbot이 생성/갱신 — 절대 커밋 금지)
 infra/nginx/certbot/
 
+# 시크릿 백업 (backup-secrets.sh 산출물 — 절대 커밋 금지)
+# 암호화되어 있긴 하지만 레포에 올라가면 팀 전체가 접근 가능해지므로 막는다.
+# 원칙적으로 레포 밖(가능하면 이 기기 밖)에 보관할 것 — infra/todo/security.md R5
+*.env.enc
+secrets-*.env*
+dodam-secrets/
+secrets-export/
+
+# DB 백업 덤프 (실수로 레포에 받아오는 경우 대비)
+*.sql.gz
+
 # OS
 .DS_Store
 Thumbs.db
