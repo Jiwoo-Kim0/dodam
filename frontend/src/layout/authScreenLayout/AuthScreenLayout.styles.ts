@@ -1,13 +1,12 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, semanticSpacing, typography } from '@/styles';
+import { colors, semanticSpacing, spacing, typography } from '@/styles';
 
 export const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingTop: semanticSpacing.screenTitleTop,
     paddingHorizontal: semanticSpacing.screenMargin,
-    backgroundColor: colors.background,
   },
 
   title: {
@@ -18,5 +17,12 @@ export const styles = StyleSheet.create({
   content: {
     flex: 1,
     marginTop: semanticSpacing.screenTitleContentGap,
+  },
+
+  description: {
+    ...typography.body1,
+    marginTop: spacing[2],
+    color: colors.textSecondary,
+    lineHeight: 20,
   },
 });

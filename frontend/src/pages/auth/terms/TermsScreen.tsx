@@ -1,8 +1,8 @@
-import { StatusBar } from 'expo-status-bar';
-import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View } from 'react-native';
+
+import { BottomActionButton } from '@/components/bottomActionButton/BottomActionButton';
+import { AuthScreenLayout } from '@/layout/authScreenLayout/AuthScreenLayout';
 
 import { AgreementItem } from './components/AgreementItem';
 import { styles } from './TermsScreen.styles';
@@ -22,7 +22,6 @@ const INITIAL_AGREEMENTS: AgreementState = {
 };
 
 export function TermsScreen() {
-  const router = useRouter();
   const [agreements, setAgreements] =
     useState<AgreementState>(INITIAL_AGREEMENTS);
 
@@ -55,30 +54,17 @@ export function TermsScreen() {
   };
 
   return (
-    <SafeAreaView
-      edges={['left', 'right']}
-      style={styles.container}
-    >
-      <StatusBar style="dark" />
-
-      <Pressable
-        onPress={() => router.back()}
-        accessibilityRole="button"
-        accessibilityLabel="뒤로 가기"
-        hitSlop={12}
-        style={styles.backButton}
-      >
-        <Text style={styles.backIcon}>‹</Text>
-      </Pressable>
-
-      <View style={styles.header}>
-        <Text style={styles.title}>약관에 동의해주세요</Text>
-        <Text style={styles.description}>
-          도담 서비스 이용을 위해 아래 약관 동의가 필요해요.
-        </Text>
-      </View>
-
-      <View style={styles.agreementSection}>
+    <AuthScreenLayout
+      title="약관에 동의해주세요"
+      description="도담 서비스 이용을 위해 아래 약관 동의가 필요해요."
+      showBackButton
+      footer={
+        <BottomActionButton
+          label="동의하고 계속하기"
+          onPress={handleContinue}
+          disabled={!canContinue}
+        />
+      }>
         <AgreementItem
           label="전체 동의"
           checked={allAgreed}
@@ -105,23 +91,6 @@ export function TermsScreen() {
             onPress={() => toggleAgreement('marketing')}
           />
         </View>
-      </View>
-
-      <Pressable
-        onPress={handleContinue}
-        disabled={!canContinue}
-        accessibilityRole="button"
-        accessibilityState={{ disabled: !canContinue }}
-        style={({ pressed }) => [
-          styles.continueButton,
-          !canContinue && styles.disabledButton,
-          pressed && canContinue && styles.pressedButton,
-        ]}
-      >
-        <Text style={styles.continueButtonLabel}>
-          동의하고 계속하기
-        </Text>
-      </Pressable>
-    </SafeAreaView>
+    </AuthScreenLayout>
   );
 }

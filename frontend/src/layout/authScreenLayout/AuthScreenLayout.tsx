@@ -1,29 +1,43 @@
 import type { ReactNode } from 'react';
-import { StatusBar } from 'expo-status-bar';
 import { Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { AuthBackButton } from '@/components/authBackButton/AuthBackButton';
+import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 
 import { styles } from './AuthScreenLayout.styles';
 
 interface AuthScreenLayoutProps {
   title: string;
+  description?: string;
+  showBackButton?: boolean;
+  onBackPress?: () => void;
+  footer?: ReactNode;
   children: ReactNode;
 }
 
 export function AuthScreenLayout({
   title,
+  description,
+  showBackButton = false,
+  onBackPress,
+  footer,
   children,
 }: AuthScreenLayoutProps) {
   return (
-    <SafeAreaView
+    <SafeAreaLayout
       edges={['left', 'right', 'bottom']}
-      style={styles.container}
-    >
-      <StatusBar style="dark" />
+      style={styles.container}>
+      {showBackButton ? <AuthBackButton onPress={onBackPress} /> : null}
 
       <Text style={styles.title}>{title}</Text>
 
+      {description ? (
+        <Text style={styles.description}>{description}</Text>
+      ) : null}
+
       <View style={styles.content}>{children}</View>
-    </SafeAreaView>
+
+      {footer}
+    </SafeAreaLayout>
   );
 }
