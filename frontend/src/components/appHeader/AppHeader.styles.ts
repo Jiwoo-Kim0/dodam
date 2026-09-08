@@ -1,6 +1,12 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, semanticSpacing, spacing, typography } from '@/styles';
+import {
+  colors,
+  componentSize,
+  semanticSpacing,
+  spacing,
+  typography,
+} from '@/styles';
 
 export const styles = StyleSheet.create({
   container: {
@@ -12,16 +18,16 @@ export const styles = StyleSheet.create({
   side: {
     alignItems: 'flex-start',
     justifyContent: 'center',
-    minWidth: 44,
+    minWidth: componentSize.touchTarget,
   },
   right: {
     alignItems: 'flex-end',
   },
   actionButton: {
     alignItems: 'center',
-    height: 44,
+    height: componentSize.touchTarget,
     justifyContent: 'center',
-    width: 44,
+    width: componentSize.touchTarget,
   },
   title: {
     ...typography.title,
