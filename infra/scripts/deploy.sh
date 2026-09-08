@@ -14,7 +14,22 @@ ENV_FILE="$APP_DIR/infra/.env"
 # jenkins까지 up 대상에 넣으면 배포 도중 자기 자신을 재시작해 빌드가 죽는다.
 # jenkins 이미지 변경은 호스트에서 수동으로 `docker compose up -d --build jenkins` 실행.
 DEPLOY_SERVICES="${DEPLOY_SERVICES:-mysql redis backend nginx certbot}"
+# 배포 검증은 두 단계로 한다.
+#
+#  1) readiness — 앱이 의존성(DB/Redis)에 실제로 붙었는가
+#     /actuator/health 는 DataSource·Redis 상태를 집계하므로 "떴지만 DB에 못 붙은" 배포를 잡아낸다.
+#     실측(2026-09-08): MySQL을 pause한 상태에서
+#       /actuator/health → 실패(타임아웃)
+#       /api/health      → 200  ← 앱 컨트롤러라 의존성을 보지 않아 통과해버린다
+#     즉 /api/health 만으로 검증하면 DB에 못 붙는 배포가 성공으로 처리된다.
+#
+#     actuator는 nginx에서 외부 차단(404)돼 있으므로 컨테이너 안에서 직접 호출한다.
+#     docker exec를 쓰면 Jenkins 컨테이너에서든 호스트에서든 동일하게 동작한다.
+#
+#  2) end-to-end — 외부에서 nginx를 거쳐 실제로 응답이 나오는가
+#     nginx 라우팅까지 포함해 확인한다.
 HEALTH_URL="${HEALTH_URL:-http://localhost/api/health}"
+READINESS_CMD="${READINESS_CMD:-docker exec backend curl -fsS --max-time 10 http://localhost:8080/actuator/health}"
 HEALTH_RETRIES="${HEALTH_RETRIES:-40}"
 HEALTH_INTERVAL="${HEALTH_INTERVAL:-5}"
 
@@ -106,19 +121,37 @@ docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --build --no-deps
 log "nginx 설정 리로드 (conf.d 변경 반영)"
 docker exec nginx nginx -s reload 2>/dev/null || log "nginx reload 생략(컨테이너 미기동?)"
 
-log "헬스체크: $HEALTH_URL"
+log "① readiness 검사 (의존성 포함): actuator/health"
+READY=0
 for i in $(seq 1 "$HEALTH_RETRIES"); do
-    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$HEALTH_URL" || true)"
-    if [ "$code" = "200" ]; then
-        log "헬스체크 통과 (${i}회차)"
-        docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" ps
-        exit 0
+    if out="$($READINESS_CMD 2>/dev/null)"; then
+        log "  readiness 통과 (${i}회차) — $out"
+        READY=1
+        break
     fi
-    log "  대기중... (${i}/${HEALTH_RETRIES}, http_code=$code)"
+    log "  대기중... (${i}/${HEALTH_RETRIES})"
     sleep "$HEALTH_INTERVAL"
 done
 
-log "ERROR: 헬스체크 실패. backend 로그 마지막 100줄:"
+if [ "$READY" = "1" ]; then
+    log "② end-to-end 검사 (nginx 경유): $HEALTH_URL"
+    for i in $(seq 1 "$HEALTH_RETRIES"); do
+        code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$HEALTH_URL" || true)"
+        if [ "$code" = "200" ]; then
+            log "  end-to-end 통과 (${i}회차)"
+            log "배포 성공"
+            docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" ps
+            exit 0
+        fi
+        log "  대기중... (${i}/${HEALTH_RETRIES}, http_code=$code)"
+        sleep "$HEALTH_INTERVAL"
+    done
+    log "ERROR: readiness는 통과했으나 nginx 경유 접근이 실패 — 라우팅 문제 의심"
+else
+    log "ERROR: readiness 실패 — 앱이 기동하지 못했거나 DB/Redis에 접속하지 못함"
+fi
+
+log "backend 로그 마지막 100줄:"
 docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" logs --tail=100 backend
 
 if rollback; then

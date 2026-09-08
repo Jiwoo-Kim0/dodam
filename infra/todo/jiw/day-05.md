@@ -111,13 +111,90 @@ REDIS_HOST: redis                                        # 리터럴
 
 2번이 근본적이다. 1번은 이미 머지된 뒤에 배포를 막는 것이라 "서비스는 지키지만 develop은 깨진 상태"가 된다.
 
+### 4. 실전 검증 — 만든 가드가 실제 장애를 사전에 막았다
+롤백과 앱↔compose 대조 검사가 develop에 머지된 직후, **곧바로 실전 사례가 나왔다.**
+
+빌드 #24, #25가 연속 실패했는데 **서비스는 계속 200으로 정상**이었다. 로그를 보니:
+```
+[deploy] 롤백 지점: 1635372 + 이미지 보존됨
+[deploy] 환경변수 사전 검사
+[check-env] ERROR: NUMBER_HASH_KEY 를 application-prod.yml이 요구하는데
+                   docker-compose.yml이 전달하지 않는다 (병합 중 유실 의심)
+[check-env] 검사 실패 (1건)
+[deploy] ERROR: 환경변수 검사 실패
+```
+
+백엔드 MR이 새 환경변수(`NUMBER_HASH_KEY`, 계좌·카드번호 HMAC 해시 키)를 요구하기 시작했는데 compose에는 추가되지 않은 상태였다.
+
+**이전이었다면**: 배포가 진행되어 컨테이너가 교체되고, 새 컨테이너가 기동 실패하고, 깨진 컨테이너가 남아 502. 그리고 아무도 모른 채 방치. (09-07, 09-08에 실제로 세 번 겪은 경로)
+
+**이번에는**: 컨테이너를 건드리기 **전에** 중단되어 기존 정상 컨테이너가 그대로 서비스 중. 빌드는 빨간불로 문제를 드러냄. **다운타임 0.**
+
+조치
+- 코드 확인: `SensitiveNumberHasher`가 `configuredKey.getBytes(UTF_8)`로 문자열을 그대로 키 재료로 사용 (base64 디코드 아님) → 기존 `.env`의 64자 값은 유효
+- `docker-compose.yml`에 `NUMBER_HASH_KEY: ${NUMBER_HASH_KEY}` 추가
+- 주석에 **"키가 바뀌면 기존 `*_hash` 값과 매칭이 깨지므로 고정"** 명시 → 이 키는 로테이션 대상이 아니라는 점이 다른 시크릿과 다르다
+- 배포 후 확인: check-env 통과(필수 변수 12개), backend healthy, 비루트(`uid=10001`) 유지, 힙 옵션 적용, 외부 200
+
+**의미**: "장애가 안 났다"는 사실 자체는 눈에 띄지 않지만, 이번 건은 **같은 패턴의 네 번째 장애가 될 뻔한 것을 막은 사례**다. 세 번의 장애를 겪고 만든 가드가 네 번째를 막았다는 점에서, Day 5의 우선순위 판단이 옳았음을 보여준다.
+
+### 5. 백엔드 컨테이너 하드닝
+- **비루트 실행** ([[security.md]] R3) — `backend/Dockerfile` 런타임 스테이지에 uid 10001 시스템 계정 생성 후 `USER` 전환. 8080은 1024 이상이라 비특권 사용자로도 바인딩 가능
+- **JVM 힙 상한** — 기존에는 상한이 없어 JVM이 호스트 메모리의 약 1/4(약 3.8GB)을 최대 힙으로 잡고 있었다. `-XX:MaxHeapSize=1g -XX:InitialHeapSize=256m`로 고정
+  - `MaxRAMPercentage` 대신 절대값을 쓴 이유: 컨테이너 메모리 제한을 아직 걸지 않아 JVM이 호스트 전체를 기준으로 계산하기 때문
+  - MySQL 버퍼풀 2GB, Jenkins, Day 6 모니터링 스택과의 총량을 고려한 값
+- **검증 과정에서의 오측정 기록**: 처음에 `docker exec backend java -XX:+PrintFlagsFinal -version`으로 힙을 재려다 3.8GB라는 값을 봤는데, 이건 **새로 뜬 JVM**이라 ENTRYPOINT 옵션이 붙지 않은 것이었다. `/proc/1/cmdline`로 실행 중인 프로세스의 실제 인자를 확인해야 한다
+- 격리 환경(임시 MySQL/Redis)에서 먼저 검증한 뒤 운영에 반영 — 비루트 전환은 파일 권한 문제로 기동이 깨지기 쉬운 변경이라 바로 넣지 않았다
+
+### 6. 헬스체크 엔드포인트 — 일원화하지 않고 역할을 나누기로 결정
+계획서에는 "일원화"로 적혀 있었으나, 두 엔드포인트의 성격을 확인한 뒤 **나누는 것이 맞다고 판단**했다.
+
+| 엔드포인트 | 응답 | 성격 |
+| --- | --- | --- |
+| `/api/health` | `{"success":true,"data":{"status":"UP"}}` | 앱 컨트롤러. **의존성을 검사하지 않음** |
+| `/actuator/health` | `{"status":"UP"}` | Actuator. **DB·Redis 상태를 집계** |
+
+- **컨테이너 HEALTHCHECK (liveness)** → `/api/health` 유지
+  DB가 잠깐 끊겼다고 컨테이너를 재시작시키면 안 된다. 재시작해도 DB는 안 돌아온다
+- **배포 검증 (readiness)** → `/actuator/health`가 더 적합
+  "앱은 떴는데 DB에 못 붙는" 배포를 잡아낼 수 있다. 현재 `deploy.sh`는 `/api/health`를 쓰므로 이 경우를 통과시킨다
+
+### 7. 배포 검증을 2단계로 전환
+6번 판단을 실제 검증으로 뒷받침한 뒤 `deploy.sh`에 반영했다.
+
+**근거 실측** — MySQL을 `docker pause`로 잠시 멈추고 두 엔드포인트를 비교했다.
+
+| | 평상시 | MySQL 정지 시 |
+| --- | --- | --- |
+| `/actuator/health` | `{"status":"UP"}` | **실패(타임아웃)** ← 의존성 이상을 감지 |
+| `/api/health` | 200 | **200** ← DB가 죽었는데도 정상이라고 응답 |
+
+즉 기존 검증(`/api/health`만 확인)은 **DB에 못 붙는 배포를 성공으로 처리**한다. 실제로 그런 배포가 나가면 헬스체크는 통과하고 API 호출 시점에야 터진다.
+
+**변경**
+```
+① readiness  : docker exec backend curl .../actuator/health   (의존성 포함)
+② end-to-end : curl http://localhost/api/health                (nginx 라우팅 포함)
+```
+- actuator는 nginx에서 외부 차단(404)돼 있으므로 컨테이너 안에서 직접 호출한다.
+  `docker exec`를 쓰면 Jenkins 컨테이너에서든 호스트에서든 같은 방식으로 동작한다
+- 실패 메시지도 구분했다 — readiness 실패면 "앱 기동 실패 또는 DB/Redis 접속 실패",
+  readiness는 통과했는데 end-to-end가 실패하면 "라우팅 문제 의심"
+
+**검증**: 두 명령을 개별 실행해 각각 `{"status":"UP"}`, `200` 확인.
+전체 배포 경로 검증은 이 변경이 develop에 머지된 뒤에 가능하다 —
+`deploy.sh`가 `git reset --hard`로 EC2를 develop 기준으로 되돌리기 때문에,
+미머지 상태에서는 배포를 돌리는 순간 변경분이 사라진다.
+(실제로 테스트 중 이 현상이 발생했고, `check-env.sh`가 `NUMBER_HASH_KEY` 누락을 잡아 배포를 막았다)
+
 ## 다음 기록할 것 (TODO)
 - [x] 배포 실패 시 자동 롤백
 - [x] `check-env.sh` 앱↔compose 대조 검사
 - [x] 롤백 실제 동작 검증
-- [ ] backend 컨테이너 비루트 실행 ([[security.md]] R3)
+- [x] backend 컨테이너 비루트 실행 ([[security.md]] R3)
+- [x] JVM 힙 상한 설정 (1GB)
+- [x] 헬스체크 엔드포인트 방침 결정 — 일원화 대신 liveness/readiness 역할 분리
+- [x] 배포 검증을 2단계(readiness + end-to-end)로 전환
 - [ ] `develop` Protected branch 설정 ([[security.md]] R4, **사용자 액션**)
-- [ ] JVM 힙 상한 설정 (현재 무제한)
-- [ ] 헬스체크 엔드포인트 일원화 (`/api/health` vs `/actuator/health`)
 - [ ] `.env` 백업 절차 실행 (**사용자 액션**)
 - [ ] 인프라 파일 편집 주체에 대한 팀 합의 (**사용자 액션**)
