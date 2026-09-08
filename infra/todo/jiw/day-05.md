@@ -159,7 +159,33 @@ REDIS_HOST: redis                                        # 리터럴
 - **배포 검증 (readiness)** → `/actuator/health`가 더 적합
   "앱은 떴는데 DB에 못 붙는" 배포를 잡아낼 수 있다. 현재 `deploy.sh`는 `/api/health`를 쓰므로 이 경우를 통과시킨다
 
-`deploy.sh` 수정은 당시 `471` MR에 걸려 있어 충돌을 피하려고 보류했다. → 아래 TODO로 이월.
+### 7. 배포 검증을 2단계로 전환
+6번 판단을 실제 검증으로 뒷받침한 뒤 `deploy.sh`에 반영했다.
+
+**근거 실측** — MySQL을 `docker pause`로 잠시 멈추고 두 엔드포인트를 비교했다.
+
+| | 평상시 | MySQL 정지 시 |
+| --- | --- | --- |
+| `/actuator/health` | `{"status":"UP"}` | **실패(타임아웃)** ← 의존성 이상을 감지 |
+| `/api/health` | 200 | **200** ← DB가 죽었는데도 정상이라고 응답 |
+
+즉 기존 검증(`/api/health`만 확인)은 **DB에 못 붙는 배포를 성공으로 처리**한다. 실제로 그런 배포가 나가면 헬스체크는 통과하고 API 호출 시점에야 터진다.
+
+**변경**
+```
+① readiness  : docker exec backend curl .../actuator/health   (의존성 포함)
+② end-to-end : curl http://localhost/api/health                (nginx 라우팅 포함)
+```
+- actuator는 nginx에서 외부 차단(404)돼 있으므로 컨테이너 안에서 직접 호출한다.
+  `docker exec`를 쓰면 Jenkins 컨테이너에서든 호스트에서든 같은 방식으로 동작한다
+- 실패 메시지도 구분했다 — readiness 실패면 "앱 기동 실패 또는 DB/Redis 접속 실패",
+  readiness는 통과했는데 end-to-end가 실패하면 "라우팅 문제 의심"
+
+**검증**: 두 명령을 개별 실행해 각각 `{"status":"UP"}`, `200` 확인.
+전체 배포 경로 검증은 이 변경이 develop에 머지된 뒤에 가능하다 —
+`deploy.sh`가 `git reset --hard`로 EC2를 develop 기준으로 되돌리기 때문에,
+미머지 상태에서는 배포를 돌리는 순간 변경분이 사라진다.
+(실제로 테스트 중 이 현상이 발생했고, `check-env.sh`가 `NUMBER_HASH_KEY` 누락을 잡아 배포를 막았다)
 
 ## 다음 기록할 것 (TODO)
 - [x] 배포 실패 시 자동 롤백
@@ -168,7 +194,7 @@ REDIS_HOST: redis                                        # 리터럴
 - [x] backend 컨테이너 비루트 실행 ([[security.md]] R3)
 - [x] JVM 힙 상한 설정 (1GB)
 - [x] 헬스체크 엔드포인트 방침 결정 — 일원화 대신 liveness/readiness 역할 분리
-- [ ] 배포 검증을 `/actuator/health` 기반으로 전환 (deploy.sh 수정)
+- [x] 배포 검증을 2단계(readiness + end-to-end)로 전환
 - [ ] `develop` Protected branch 설정 ([[security.md]] R4, **사용자 액션**)
 - [ ] `.env` 백업 절차 실행 (**사용자 액션**)
 - [ ] 인프라 파일 편집 주체에 대한 팀 합의 (**사용자 액션**)
