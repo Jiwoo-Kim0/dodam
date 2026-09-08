@@ -80,6 +80,11 @@ services:
       # 기본값 128MB는 너무 작다. 호스트 RAM 16GB 중 2GB를 할당한다.
       # (백엔드 JVM, Jenkins, Day 6 모니터링 스택 몫을 남긴 값)
       - --innodb-buffer-pool-size=2G
+      # 느린 쿼리 로그. 기본 임계값 10초는 사실상 아무것도 안 잡히므로 1초로 낮춘다.
+      # 파일명에 컨테이너 호스트명이 들어가면 재생성마다 바뀌므로 고정한다.
+      - --slow-query-log=ON
+      - --long-query-time=1
+      - --slow-query-log-file=/var/lib/mysql/slow.log
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
