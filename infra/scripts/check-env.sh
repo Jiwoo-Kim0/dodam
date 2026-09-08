@@ -57,6 +57,32 @@ for var in $REQUIRED; do
     fi
 done
 
+# 3-1) 앱이 요구하는 변수를 compose가 실제로 전달하는지
+#
+# 왜 필요한가 (2026-09-08 장애):
+#   Auth MR 병합 과정에서 docker-compose.yml의 JWT_SECRET 등 4줄이 유실됐다.
+#   위 3)번 검사는 필수 변수 목록을 compose에서 뽑기 때문에, compose가 참조 자체를
+#   잃어버리면 "요구하는 변수가 없다"고 판단해 통과시켜 버린다.
+#   결국 백엔드만 기동에 실패하고(`app.auth.jwt.secret must be at least 32 bytes`)
+#   원인 파악에 시간이 걸렸다.
+#   그래서 "앱이 뭘 필요로 하는가"를 별도 출처(application-prod.yml)에서 읽어 대조한다.
+APP_CONFIG="${APP_CONFIG:-$APP_DIR/backend/src/main/resources/application-prod.yml}"
+if [ -f "$APP_CONFIG" ]; then
+    APP_VARS="$(grep -oE '\$\{[A-Z_][A-Z0-9_]*\}' "$APP_CONFIG" | tr -d '${}' | sort -u || true)"
+    for var in $APP_VARS; do
+        # compose가 "값을 어떻게 만드는지"는 상관없다 (리터럴이든 ${...} 조합이든).
+        # 중요한 것은 그 이름의 환경변수 키를 backend에 전달하고 있는지다.
+        #   예) DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE}?...  ← 키는 DB_URL
+        #       REDIS_HOST: redis                                      ← 리터럴이지만 키는 존재
+        if ! grep -qE "^[[:space:]]+${var}:" "$COMPOSE_FILE" \
+           && ! grep -qE "^[[:space:]]+- ${var}=" "$COMPOSE_FILE"; then
+            err "$var 를 application-prod.yml이 요구하는데 docker-compose.yml이 전달하지 않는다 (병합 중 유실 의심)"
+        fi
+    done
+else
+    warn "application-prod.yml을 찾을 수 없어 앱↔compose 대조를 건너뜀 ($APP_CONFIG)"
+fi
+
 # 4) 암호화 키 형식 (AES-256 = 디코드 시 32바이트)
 for var in DATA_ENCRYPTION_KEY DATA_HASH_KEY; do
     val="$(
