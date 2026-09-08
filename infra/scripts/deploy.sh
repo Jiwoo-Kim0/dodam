@@ -47,6 +47,16 @@ git -C "$APP_DIR" checkout "$DEPLOY_BRANCH"
 git -C "$APP_DIR" reset --hard "origin/$DEPLOY_BRANCH"
 log "현재 커밋: $(git -C "$APP_DIR" rev-parse --short HEAD) $(git -C "$APP_DIR" log -1 --pretty=%s)"
 
+# .env가 잘못돼 있으면 컨테이너가 기동에 실패하는 형태로만 드러나 원인 추적이 오래 걸린다.
+# 배포를 진행하기 전에 먼저 걸러낸다.
+CHECK_ENV="$(dirname "$0")/check-env.sh"
+if [ -x "$CHECK_ENV" ]; then
+    log "환경변수 사전 검사"
+    APP_DIR="$APP_DIR" ENV_FILE="$ENV_FILE" COMPOSE_FILE="$COMPOSE_FILE" "$CHECK_ENV" \
+        || fail_msg="환경변수 검사 실패"
+    [ -n "${fail_msg:-}" ] && { log "ERROR: $fail_msg"; exit 1; }
+fi
+
 log "이미지 빌드 및 컨테이너 기동 ($DEPLOY_SERVICES)"
 # --no-deps: depends_on을 타고 jenkins 같은 비대상 서비스가 재생성되는 것을 막는다.
 # (DEPLOY_SERVICES에서 제외해도 의존성으로 끌려 들어오면 배포가 자기 자신을 죽인다)
