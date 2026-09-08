@@ -7,6 +7,7 @@ export const colors = {
     orange: '#FA9500',
     brown: '#8A572A',
   },
+  white: '#FFFFFF',
   background: '#FBFBFB',
   textPrimary: '#222222',
 } as const;

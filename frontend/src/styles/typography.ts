@@ -30,7 +30,7 @@ export const typography = {
     fontSize: fontSize.display,
   },
   headline: {
-    fontFamily: fontFamily.semiBold,
+    fontFamily: fontFamily.bold,
     fontSize: fontSize.headline,
   },
   title: {
@@ -60,5 +60,6 @@ export const typography = {
   buttonSmall: {
     fontFamily: fontFamily.semiBold,
     fontSize: fontSize.buttonSmall,
+    lineHeight: 20,
   },
 } as const satisfies Record<string, TextStyle>;
