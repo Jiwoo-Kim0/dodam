@@ -10,6 +10,7 @@ import {
   type Carrier,
 } from './components/CarrierBottomSheet';
 import { VerificationField } from './components/VerificationField';
+import { VerificationCodeBottomSheet } from './components/VerificationCodeBottomSheet';
 import { styles } from './IdentityVerificationScreen.styles';
 
 interface InputClearButtonProps {
@@ -42,6 +43,7 @@ export function IdentityVerificationScreen() {
   const [carrier, setCarrier] = useState<Carrier | null>(null);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [isCarrierSheetVisible, setIsCarrierSheetVisible] = useState(false);
+  const [isCodeSheetVisible, setIsCodeSheetVisible] = useState(false);
 
   const canContinue =
     name.trim().length > 0 &&
@@ -61,7 +63,10 @@ export function IdentityVerificationScreen() {
   };
 
   const handleContinue = () => {
-    // 본인인증 API 연결 후 다음 화면으로 이동
+    if (!canContinue) return;
+
+    Keyboard.dismiss();
+    setIsCodeSheetVisible(true);
   };
 
   return (
@@ -175,6 +180,14 @@ export function IdentityVerificationScreen() {
         onSelect={selectCarrier}
         onClose={() => setIsCarrierSheetVisible(false)}
       />
+      {carrier !== null && (
+        <VerificationCodeBottomSheet
+          visible={isCodeSheetVisible}
+          carrier={carrier}
+          phoneNumber={phoneNumber}
+          onClose={() => setIsCodeSheetVisible(false)}
+        />
+      )}
     </AuthScreenLayout>
   );
 }
