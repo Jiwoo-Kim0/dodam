@@ -1,5 +1,6 @@
 DROP TABLE IF EXISTS `transaction`;
 DROP TABLE IF EXISTS transaction_category;
+DROP TABLE IF EXISTS card_billing_statement;
 DROP TABLE IF EXISTS card;
 DROP TABLE IF EXISTS account;
 
@@ -47,6 +48,18 @@ CREATE TABLE card (
     CONSTRAINT uk_test_card_user_hash UNIQUE (user_id, card_no_hash),
     CONSTRAINT fk_test_card_account
         FOREIGN KEY (withdrawal_account_id) REFERENCES account (account_id)
+);
+
+CREATE TABLE card_billing_statement (
+    card_id BIGINT NOT NULL,
+    billing_month CHAR(7) NOT NULL,
+    billing_date DATE NOT NULL,
+    total_balance BIGINT NOT NULL,
+    status VARCHAR(30) NOT NULL,
+    payment_date DATE,
+    PRIMARY KEY (card_id, billing_month),
+    CONSTRAINT fk_test_billing_statement_card
+        FOREIGN KEY (card_id) REFERENCES card (card_id)
 );
 
 CREATE TABLE transaction_category (
@@ -105,6 +118,16 @@ INSERT INTO card (
     (3, 2, 12, 'DEMAND_DEPOSIT', NULL, X'00', REPEAT('3', 64), '9999-00**-****-2222',
      'KB_CARD', 'KB국민카드', 'KB 마이핏카드', 'ACTIVE', 1000000, NULL, NULL, 15000,
      '2030-03', 5, TIMESTAMP '2026-03-05 10:00:00', NULL);
+
+INSERT INTO card_billing_statement (
+    card_id, billing_month, billing_date, total_balance, status, payment_date
+) VALUES
+    (1, '2026-06', DATE '2026-06-25', 250000, 'FAILED', NULL),
+    (1, '2026-07', DATE '2026-07-25', 310000, 'OVERDUE', NULL),
+    (1, '2026-08', DATE '2026-08-25', 280000, 'PAID', DATE '2026-08-25'),
+    (1, '2026-09', DATE '2026-09-25', 350000, 'SCHEDULED', NULL),
+    (1, '2026-10', DATE '2026-10-25', 410000, 'SCHEDULED', NULL),
+    (3, '2026-09', DATE '2026-09-05', 90000, 'SCHEDULED', NULL);
 
 INSERT INTO transaction_category (category_id, code, name, default_spending_type, active) VALUES
     (1, 'CAFE', '카페', 'VARIABLE', TRUE),

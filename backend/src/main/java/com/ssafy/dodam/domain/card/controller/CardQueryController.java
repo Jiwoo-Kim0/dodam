@@ -1,6 +1,9 @@
 package com.ssafy.dodam.domain.card.controller;
 
+import com.ssafy.dodam.domain.card.dto.response.CardBillingStatementResponse;
 import com.ssafy.dodam.domain.card.dto.response.CardDetailResponse;
+import com.ssafy.dodam.domain.card.dto.response.CardLimitResponse;
+import com.ssafy.dodam.domain.card.dto.response.CardPaymentScheduleResponse;
 import com.ssafy.dodam.domain.card.dto.response.CardResponse;
 import com.ssafy.dodam.domain.card.dto.response.CardSummaryResponse;
 import com.ssafy.dodam.domain.card.dto.response.CardTransactionResponse;
@@ -89,5 +92,39 @@ public class CardQueryController {
                 page,
                 size
         ));
+    }
+
+    @GetMapping("/{cardNo}/payment-schedule")
+    public ApiResponse<CardPaymentScheduleResponse> getPaymentSchedule(
+            @PathVariable @Pattern(regexp = CARD_NO_PATTERN) String cardNo,
+            Authentication authentication
+    ) {
+        Long userId = authenticatedUserIdResolver.resolve(authentication);
+        return ApiResponse.success(cardQueryService.getPaymentSchedule(userId, cardNo));
+    }
+
+    @GetMapping("/{cardNo}/billing-statements")
+    public ApiResponse<List<CardBillingStatementResponse>> getBillingStatements(
+            @PathVariable @Pattern(regexp = CARD_NO_PATTERN) String cardNo,
+            @RequestParam(required = false) String startMonth,
+            @RequestParam(required = false) String endMonth,
+            Authentication authentication
+    ) {
+        Long userId = authenticatedUserIdResolver.resolve(authentication);
+        return ApiResponse.success(cardQueryService.getBillingStatements(
+                userId,
+                cardNo,
+                startMonth,
+                endMonth
+        ));
+    }
+
+    @GetMapping("/{cardNo}/limit")
+    public ApiResponse<CardLimitResponse> getLimit(
+            @PathVariable @Pattern(regexp = CARD_NO_PATTERN) String cardNo,
+            Authentication authentication
+    ) {
+        Long userId = authenticatedUserIdResolver.resolve(authentication);
+        return ApiResponse.success(cardQueryService.getLimit(userId, cardNo));
     }
 }
