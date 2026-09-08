@@ -272,6 +272,33 @@ DODAM_DEPOSIT_SAVING_SEED.sql
 이들이 요구하는 테이블(`account`, `card`, `loan`, `deposit_saving` 등)도 마이그레이션이 없을 가능성이 높다. 즉 **누락은 상품 3개로 끝나지 않을 수 있다.**
 → 백엔드팀과 "마이그레이션을 도메인별로 쪼갤지, ERD 전체를 한 번에 깔지" 방침을 정할 필요가 있다.
 
+### 12. Redis 사용 범위 확정 — 코드로 답을 찾음
+Day 4 계획에서 "캐시 / 세션 / 분산 락 중 어느 용도인지 백엔드팀 확인 필요"로 남겨뒀던 항목이다.
+`backend/docs/init_settings_prompt.md`에도 "적용 범위 미확정"으로 적혀 있었다.
+
+Auth MR 브랜치 코드를 직접 확인한 결과:
+- `RedisTemplate`, `StringRedisTemplate`, `@Cacheable`, Redis 리포지토리 — **사용처 0건**
+- 로그인 세션은 **MySQL의 `auth_session` 테이블**(JPA `AuthSessionRepository`)에 저장
+- Redis는 접속 설정(`spring.data.redis.*`)만 있고 실제로 아무것도 넣지 않음
+- 운영 Redis 실측: **키 0개**, `used_memory` 1MB, `maxmemory` 미설정, 정책 `noeviction`
+
+즉 **현재 답은 "아직 아무 용도도 아니며, 세션은 DB에 있다"** 이고, 향후 캐시 용도가 유력하다.
+
+**판단**: 캐시로 전제하고 상한과 축출 정책을 걸었다.
+- `maxmemory 512mb`, `maxmemory-policy allkeys-lru`
+  - 지금처럼 **상한 없이 `noeviction`이면, 캐시를 쓰기 시작했을 때 Redis가 무한정 커져 호스트 메모리를 잠식**한다. 키가 0개인 지금은 문제가 안 보이지만, 나중에 터지면 원인 파악이 어렵다
+- **AOF는 유지**했다. 순수 캐시라면 불필요하지만 비용이 미미하고, 팀이 캐시 외 용도로 쓰기 시작했을 때 재시작으로 조용히 데이터를 잃는 편이 더 나쁘다고 판단
+- 세션·분산 락처럼 **축출되면 안 되는 용도로 쓰게 되면 정책을 재검토**해야 한다는 점을 compose 주석에 남겼다
+
+### 13. MySQL 버퍼 풀 조정
+- 실측: `innodb_buffer_pool_size` = **128MB** (MySQL 기본값)
+- 호스트 메모리: 총 15GB, 사용 2.5GB, 가용 12GB. 컨테이너 6개 합계 약 1.7GB
+- **2GB로 상향** (`--innodb-buffer-pool-size=2G`)
+  - 백엔드 JVM, Jenkins, Day 6 모니터링 스택 몫을 남긴 값
+- 적용 전 `backup.sh`로 백업을 먼저 수행 (컨테이너 재생성이라 볼륨은 보존되지만 절차를 지킴)
+- 적용 후 확인: 버퍼 풀 2.0GB, `dodam` DB 테이블 보존, Redis 설정 반영,
+  **백엔드는 재시작 없이 DB 재연결 성공**(Hikari가 처리), 외부 헬스체크 200
+
 ## 이 장애에서 드러난 구조적 문제 (개선 항목)
 
 1. **배포 실패가 조용하다** — 파이프라인은 실패를 감지했지만 알림이 없어 아무도 몰랐다.
@@ -301,7 +328,8 @@ DODAM_DEPOSIT_SAVING_SEED.sql
 - [x] 배포 전 `.env` 사전 검사
 - [x] 머지 전 사전 검증으로 누락 테이블 특정
 - [x] 운영 장애 복구
-- [ ] 마이그레이션 반영 후 `ddl-auto`를 validate로 되돌리기
-- [ ] Redis 사용 범위 확정 (캐시 / 세션 / 분산 락) — 백엔드팀 확인 필요
-- [ ] MySQL `innodb_buffer_pool_size` 튜닝 (현재 기본 128MB)
-- [ ] 시드 데이터 적재 (테이블 생성 이후)
+- [x] Redis 사용 범위 확정 — 코드 확인 결과 사용처 없음, 세션은 MySQL. 캐시 전제로 상한·정책 적용
+- [x] MySQL `innodb_buffer_pool_size` 2GB로 상향
+- [ ] 마이그레이션 반영 후 `ddl-auto`를 validate로 되돌리기 (**백엔드 담당자 진행**)
+- [ ] 시드 데이터 적재 (테이블 생성 이후, **백엔드 담당자 진행**)
+- [ ] 암호화 키 백업 실행 및 서버 밖 보관 (**사용자 액션**)
