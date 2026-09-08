@@ -25,6 +25,8 @@ management:
       enabled: false
 
 app:
+  security:
+    number-hash-key: dodam-test-number-hash-key
   cors:
     allowed-origins:
       - http://localhost:3000

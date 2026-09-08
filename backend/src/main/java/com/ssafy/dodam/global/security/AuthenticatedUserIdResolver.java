@@ -1,4 +1,4 @@
-package com.ssafy.dodam.domain.product.service;
+package com.ssafy.dodam.global.security;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
