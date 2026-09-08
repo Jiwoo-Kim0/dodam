@@ -4,19 +4,25 @@ import static com.ssafy.dodam.domain.card.repository.CardSpecifications.hasIssue
 import static com.ssafy.dodam.domain.card.repository.CardSpecifications.hasStatus;
 import static com.ssafy.dodam.domain.card.repository.CardSpecifications.ownedBy;
 
+import com.ssafy.dodam.domain.card.dto.response.CardBillingStatementResponse;
 import com.ssafy.dodam.domain.card.dto.response.CardDetailResponse;
 import com.ssafy.dodam.domain.card.dto.response.CardIssuerSummaryResponse;
+import com.ssafy.dodam.domain.card.dto.response.CardLimitResponse;
+import com.ssafy.dodam.domain.card.dto.response.CardPaymentScheduleResponse;
 import com.ssafy.dodam.domain.card.dto.response.CardResponse;
 import com.ssafy.dodam.domain.card.dto.response.CardSummaryResponse;
 import com.ssafy.dodam.domain.card.dto.response.CardTransactionResponse;
 import com.ssafy.dodam.domain.card.entity.Card;
 import com.ssafy.dodam.domain.card.entity.CardStatus;
+import com.ssafy.dodam.domain.card.repository.CardBillingStatementReader;
 import com.ssafy.dodam.domain.card.repository.CardRepository;
 import com.ssafy.dodam.domain.card.repository.CardTransactionReader;
 import com.ssafy.dodam.global.exception.InvalidRequestException;
 import com.ssafy.dodam.global.exception.ResourceNotFoundException;
 import com.ssafy.dodam.global.policy.QueryPeriod;
 import com.ssafy.dodam.global.policy.QueryPeriodPolicy;
+import com.ssafy.dodam.global.policy.YearMonthPeriod;
+import com.ssafy.dodam.global.policy.YearMonthPeriodPolicy;
 import com.ssafy.dodam.global.response.PageResponse;
 import com.ssafy.dodam.global.security.SensitiveNumberHasher;
 import java.time.LocalDate;
@@ -43,20 +49,26 @@ public class CardQueryService {
     );
 
     private final CardRepository cardRepository;
+    private final CardBillingStatementReader cardBillingStatementReader;
     private final CardTransactionReader cardTransactionReader;
     private final SensitiveNumberHasher sensitiveNumberHasher;
     private final QueryPeriodPolicy queryPeriodPolicy;
+    private final YearMonthPeriodPolicy yearMonthPeriodPolicy;
 
     public CardQueryService(
             CardRepository cardRepository,
+            CardBillingStatementReader cardBillingStatementReader,
             CardTransactionReader cardTransactionReader,
             SensitiveNumberHasher sensitiveNumberHasher,
-            QueryPeriodPolicy queryPeriodPolicy
+            QueryPeriodPolicy queryPeriodPolicy,
+            YearMonthPeriodPolicy yearMonthPeriodPolicy
     ) {
         this.cardRepository = cardRepository;
+        this.cardBillingStatementReader = cardBillingStatementReader;
         this.cardTransactionReader = cardTransactionReader;
         this.sensitiveNumberHasher = sensitiveNumberHasher;
         this.queryPeriodPolicy = queryPeriodPolicy;
+        this.yearMonthPeriodPolicy = yearMonthPeriodPolicy;
     }
 
     public List<CardResponse> getCards(Long userId, String issuerCode, String status) {
@@ -119,6 +131,31 @@ public class CardQueryService {
                 cardTransactionReader.read(userId, card.getId(), period, pageable),
                 CardTransactionResponse::from
         );
+    }
+
+    public CardPaymentScheduleResponse getPaymentSchedule(Long userId, String cardNo) {
+        Card card = findCard(userId, cardNo);
+        return CardPaymentScheduleResponse.from(
+                card,
+                cardBillingStatementReader.findNextScheduled(card.getId()).orElse(null)
+        );
+    }
+
+    public List<CardBillingStatementResponse> getBillingStatements(
+            Long userId,
+            String cardNo,
+            String startMonth,
+            String endMonth
+    ) {
+        Card card = findCard(userId, cardNo);
+        YearMonthPeriod period = yearMonthPeriodPolicy.resolve(startMonth, endMonth);
+        return cardBillingStatementReader.read(card.getId(), period).stream()
+                .map(CardBillingStatementResponse::from)
+                .toList();
+    }
+
+    public CardLimitResponse getLimit(Long userId, String cardNo) {
+        return CardLimitResponse.from(findCard(userId, cardNo));
     }
 
     private List<Card> findCards(Long userId, String issuerCode, String status) {

@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.ssafy.dodam.global.security.SensitiveNumberHasher;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.YearMonth;
 import java.time.ZoneId;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -148,6 +149,18 @@ class CardQueryApiIntegrationTest {
         mockMvc.perform(get("/api/v1/cards/{cardNo}/transactions", OTHER_USER_CARD_NO))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+
+        mockMvc.perform(get("/api/v1/cards/{cardNo}/payment-schedule", OTHER_USER_CARD_NO))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+
+        mockMvc.perform(get("/api/v1/cards/{cardNo}/billing-statements", OTHER_USER_CARD_NO))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+
+        mockMvc.perform(get("/api/v1/cards/{cardNo}/limit", OTHER_USER_CARD_NO))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
     }
 
     @Test
@@ -237,6 +250,89 @@ class CardQueryApiIntegrationTest {
     }
 
     @Test
+    @WithMockUser(username = "1")
+    void getsNextPaymentScheduleOrNullWhenNoneExists() throws Exception {
+        mockMvc.perform(get("/api/v1/cards/{cardNo}/payment-schedule", OWNED_CARD_NO))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.cardNoMasked")
+                        .value("1111-22**-****-4444"))
+                .andExpect(jsonPath("$.data.schedule.billingMonth").value("2026-09"))
+                .andExpect(jsonPath("$.data.schedule.billingDate").value("2026-09-25"))
+                .andExpect(jsonPath("$.data.schedule.scheduledAmount").value(350000))
+                .andExpect(jsonPath("$.data.schedule.status").value("SCHEDULED"));
+
+        mockMvc.perform(get("/api/v1/cards/{cardNo}/payment-schedule", SUSPENDED_CARD_NO))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.cardNoMasked")
+                        .value("5555-66**-****-8888"))
+                .andExpect(jsonPath("$.data.schedule").value(nullValue()));
+    }
+
+    @Test
+    @WithMockUser(username = "1")
+    void getsBillingStatementsWithinMonthPeriodInDescendingOrder() throws Exception {
+        mockMvc.perform(get("/api/v1/cards/{cardNo}/billing-statements", OWNED_CARD_NO)
+                        .param("startMonth", "2026-06")
+                        .param("endMonth", "2026-09"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(4)))
+                .andExpect(jsonPath("$.data[0].billingMonth").value("2026-09"))
+                .andExpect(jsonPath("$.data[0].billingDate").value("2026-09-25"))
+                .andExpect(jsonPath("$.data[0].totalBalance").value(350000))
+                .andExpect(jsonPath("$.data[0].status").value("SCHEDULED"))
+                .andExpect(jsonPath("$.data[0].paymentDate").value(nullValue()))
+                .andExpect(jsonPath("$.data[1].billingMonth").value("2026-08"))
+                .andExpect(jsonPath("$.data[1].paymentDate").value("2026-08-25"))
+                .andExpect(jsonPath("$.data[3].billingMonth").value("2026-06"));
+
+        mockMvc.perform(get("/api/v1/cards/{cardNo}/billing-statements", SUSPENDED_CARD_NO)
+                        .param("startMonth", "2026-06")
+                        .param("endMonth", "2026-09"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(0)));
+    }
+
+    @Test
+    @WithMockUser(username = "1")
+    void validatesBillingStatementMonthPeriod() throws Exception {
+        YearMonth currentMonth = YearMonth.from(today);
+
+        mockMvc.perform(get("/api/v1/cards/{cardNo}/billing-statements", OWNED_CARD_NO)
+                        .param("startMonth", "2026-13"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+
+        mockMvc.perform(get("/api/v1/cards/{cardNo}/billing-statements", OWNED_CARD_NO)
+                        .param("startMonth", "2026-09")
+                        .param("endMonth", "2026-08"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+
+        mockMvc.perform(get("/api/v1/cards/{cardNo}/billing-statements", OWNED_CARD_NO)
+                        .param("endMonth", currentMonth.plusMonths(1).toString()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+
+        mockMvc.perform(get("/api/v1/cards/{cardNo}/billing-statements", OWNED_CARD_NO)
+                        .param("startMonth", currentMonth.minusMonths(12).toString())
+                        .param("endMonth", currentMonth.toString()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+    }
+
+    @Test
+    @WithMockUser(username = "1")
+    void getsStoredCardLimitWithoutDerivingAvailableAmount() throws Exception {
+        mockMvc.perform(get("/api/v1/cards/{cardNo}/limit", OWNED_CARD_NO))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.cardNoMasked")
+                        .value("1111-22**-****-4444"))
+                .andExpect(jsonPath("$.data.creditLimit").value(5000000))
+                .andExpect(jsonPath("$.data.usedAmount").doesNotExist())
+                .andExpect(jsonPath("$.data.availableLimit").doesNotExist());
+    }
+
+    @Test
     @WithMockUser(username = "2")
     void scopesCardsToTheAuthenticatedUser() throws Exception {
         mockMvc.perform(get("/api/v1/cards"))
@@ -262,6 +358,15 @@ class CardQueryApiIntegrationTest {
                 .andExpect(status().isUnauthorized());
 
         mockMvc.perform(get("/api/v1/cards/{cardNo}/transactions", OWNED_CARD_NO))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get("/api/v1/cards/{cardNo}/payment-schedule", OWNED_CARD_NO))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get("/api/v1/cards/{cardNo}/billing-statements", OWNED_CARD_NO))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get("/api/v1/cards/{cardNo}/limit", OWNED_CARD_NO))
                 .andExpect(status().isUnauthorized());
     }
 
