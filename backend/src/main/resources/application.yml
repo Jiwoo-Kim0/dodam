@@ -12,3 +12,14 @@ management:
   endpoint:
     health:
       show-details: never
+
+app:
+  auth:
+    jwt:
+      issuer: dodam
+      access-token-validity: PT30M
+      refresh-token-validity: P14D
+  ssafy-finance:
+    base-url: https://finopenapi.ssafy.io
+    connect-timeout: PT3S
+    read-timeout: PT5S

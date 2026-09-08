@@ -10,7 +10,7 @@ export const colors = {
   white: '#FFFFFF',
   background: '#FBFBFB',
   textPrimary: '#222222',
-  textSecondary: '#666666',
+  textSecondary: 'rgba(34, 34, 34, 0.55)',
   divider: '#E7E7E7',
   border: '#B7B7B7',
   disabledBackground: '#D6E1BC',
