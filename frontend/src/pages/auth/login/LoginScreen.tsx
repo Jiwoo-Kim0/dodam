@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { View } from 'react-native';
 
+import { routes } from '@/constants/routes';
 import { AuthScreenLayout } from '@/layout/authScreenLayout/AuthScreenLayout';
 
 import { SocialLoginButton } from './components/SocialLoginButton';
@@ -10,7 +11,7 @@ export function LoginScreen() {
   const router = useRouter();
 
   const handleSocialLogin = () => {
-    router.push('/terms');
+    router.push(routes.terms);
   };
 
   return (
