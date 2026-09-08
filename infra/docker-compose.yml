@@ -127,7 +127,20 @@ services:
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
-      NUMBER_HASH_KEY: ${NUMBER_HASH_KEY}
+      # ───────────────────────────────────────────────────────────────────
+      # [임시 조치] 2026-09-08
+      # develop에 상품 엔티티(financial_company / financial_product /
+      # financial_product_option)는 들어왔는데 그 테이블을 만드는 Flyway 마이그레이션이
+      # 없어서, Hibernate `validate`가 실패하며 백엔드가 기동하지 못했다.
+      # (재시작 루프 → 외부 502. 빌드 #14, #15가 실제로 FAILURE로 끝남)
+      #
+      # 백엔드 소스(application-prod.yml)를 인프라가 고치는 대신 환경변수로 덮어쓴다.
+      # Spring Boot의 relaxed binding으로 spring.jpa.hibernate.ddl-auto에 매핑된다.
+      #
+      # ★ 해당 테이블을 만드는 마이그레이션이 들어오면 이 줄을 제거하고
+      #   validate로 되돌릴 것. 자세한 경위: infra/todo/jiw/day-04.md
+      SPRING_JPA_HIBERNATE_DDL_AUTO: none
+      # ───────────────────────────────────────────────────────────────────
       TZ: Asia/Seoul
     depends_on:
       mysql:
