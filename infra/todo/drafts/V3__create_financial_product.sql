@@ -97,3 +97,27 @@ CREATE TABLE `financial_product_option` (
   CONSTRAINT `fk_financial_product_option_product`
     FOREIGN KEY (`product_id`) REFERENCES `financial_product` (`product_id`)
 );
+
+-- backend/database/seeds/ 의 금융상품 시드가 적재 이력을 이 테이블에 남기므로 함께 생성한다.
+-- (엔티티는 아직 없지만 시드 SQL이 INSERT 하므로 없으면 시드 적재가 실패한다)
+CREATE TABLE `product_sync_history` (
+  `sync_id` BIGINT NOT NULL AUTO_INCREMENT,
+  `sync_type` VARCHAR(30) NOT NULL,
+  `status` VARCHAR(30) NOT NULL,
+  `fetched_count` INT NULL,
+  `inserted_count` INT NULL,
+  `updated_count` INT NULL,
+  `failed_count` INT NULL,
+  `error_message` VARCHAR(1000) NULL,
+  `started_at` DATETIME NOT NULL,
+  `completed_at` DATETIME NULL,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`sync_id`),
+  CONSTRAINT `chk_product_sync_history_status`
+    CHECK (`status` IN ('PENDING', 'RUNNING', 'COMPLETED', 'PARTIAL', 'FAILED')),
+  CONSTRAINT `chk_product_sync_history_counts`
+    CHECK ((`fetched_count` IS NULL OR `fetched_count` >= 0)
+       AND (`inserted_count` IS NULL OR `inserted_count` >= 0)
+       AND (`updated_count` IS NULL OR `updated_count` >= 0)
+       AND (`failed_count` IS NULL OR `failed_count` >= 0))
+);
