@@ -20,3 +20,10 @@ Thumbs.db
 
 # logs
 *.log
+
+#Folder
+SPRINT/
+
+# AI 에이전트 컨텍스트 (개인 작업용 — 공유 불필요)
+AGENTS.md
+CLAUDE.md
