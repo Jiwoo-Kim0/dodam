@@ -11,4 +11,5 @@ export const routes = {
   assets: '/assets',
   discovery: '/discovery',
   report: '/report',
+  goalSetup: '/goal-setup',
 } as const;
