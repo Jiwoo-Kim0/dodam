@@ -19,41 +19,46 @@
 | 시크릿 | 용도 | 발급처 | 현재 상태 | 보관 방식 |
 | --- | --- | --- | --- | --- |
 | MySQL 계정 4종 | DB 접속 | 인프라 자체 생성 | ✅ 생성됨 | EC2 `infra/.env` (600) |
-| Redis 비밀번호 | 캐시/세션 접속 | 인프라 자체 생성 | ✅ 생성됨 | EC2 `infra/.env` |
-| JWT Secret | Auth 세션 | 인프라 자체 생성 | ✅ 생성됨(64자) | EC2 `infra/.env` |
-| ★ **데이터 암호화 키** | 계좌번호·카드번호·FCM 토큰 등 `VARBINARY` 컬럼 암복호화 | 인프라 자체 생성 | ❌ **미생성 — 이번 Day에 신설** | EC2 `.env` + **별도 안전한 곳에 백업본** |
-| ★ GitLab PAT | Jenkins 소스 체크아웃, EC2 git pull | GitLab Access Tokens | ✅ 발급·등록됨 | Jenkins Credentials(`gitlab-https`, `ec2-jenkins-deploy`) + EC2 `~/.git-credentials` |
-| ★ Webhook secret | GitLab → Jenkins 웹훅 인증 | 인프라 자체 생성 | ✅ 생성됨 | Jenkins job config + EC2 `~/.jenkins-webhook-secret` |
-| ★ Jenkins admin 계정 | Jenkins 로그인 | setup wizard | ✅ 생성됨 | 개인 보관 (**HTTPS 전까지 평문 전송됨 — Day 3 참고**) |
-| OpenAI API Key | AI 코치 | OpenAI 콘솔 | ❌ 미발급 | `.env` |
-| SSAFY 금융망 키 | 금융 데이터 연동 | SSAFY 금융망 포털 | ❌ 미발급 | `.env` |
+| Redis 비밀번호 | 캐시 접속 | 인프라 자체 생성 | ✅ 생성됨 | EC2 `infra/.env` |
+| JWT Secret | Auth 세션 | 인프라 자체 생성 | ✅ 생성됨(62자) | EC2 `infra/.env` |
+| **DATA_ENCRYPTION_KEY** | 계좌번호·카드번호·FCM 토큰 등 `VARBINARY` 컬럼 암복호화 (AES-256) | 인프라 자체 생성 | ✅ 생성됨(base64 32바이트) | EC2 `.env` + **서버 밖 암호화 백업** |
+| **DATA_HASH_KEY** | 암호화 컬럼의 조회용 해시 (HMAC-SHA256) | 인프라 자체 생성 | ✅ 생성됨(base64 32바이트) | EC2 `.env` + **서버 밖 암호화 백업** |
+| **NUMBER_HASH_KEY** | 계좌·카드번호 해시 (`app.security.number-hash-key`) | 인프라 자체 생성 | ✅ 생성됨(64자) | EC2 `.env` |
+| GitLab PAT | Jenkins 소스 체크아웃, EC2 git pull | GitLab Access Tokens | ✅ 발급·등록됨 | Jenkins Credentials(`gitlab-https`, `ec2-jenkins-deploy`) + EC2 `~/.git-credentials`(600) |
+| Webhook secret | GitLab → Jenkins 웹훅 인증 | 인프라 자체 생성 | ✅ 생성됨 (Day 3에 로테이션) | Jenkins job config + EC2 `~/.jenkins-webhook-secret`(600) |
+| Jenkins admin 계정 | Jenkins 로그인 | setup wizard | ✅ 생성됨 (Day 3에 비밀번호 변경) | 개인 보관 |
+| SSAFY 금융망 키 | 금융 데이터 연동 | SSAFY 금융망 포털 | ✅ 발급됨(32자) | EC2 `infra/.env` |
+| OpenAI API Key | AI 코치 | OpenAI 콘솔 | ✅ 발급됨(47자) | EC2 `infra/.env` |
 | Firebase(FCM) 서비스 계정 키 | 푸시 알림 | Firebase 콘솔 | ❌ 미발급 | **파일 볼륨 마운트** (Git 커밋 금지) |
 | Kakao/Google OAuth | 소셜 로그인 | 각 개발자 콘솔 | ❌ 미발급 | `.env` |
 
-- [ ] **데이터 암호화 키 신설** — 갱신된 ERD가 `VARBINARY` 암호화 컬럼을 쓰므로 반드시 필요
-  - 키 형식/길이(AES-256 기준 32바이트 등)를 백엔드팀과 합의 (**사용자 액션**) — 애플리케이션이 어떻게 읽을지(`.env` 변수명)까지 함께
-  - **키 백업 절차 문서화**: 키를 잃으면 DB 백업이 있어도 복구 불가 (Day 4 백업 항목과 연결)
-  - 키와 DB 덤프를 같은 위치에 두지 않기
+> 상태는 2026-09-09 EC2 `.env` 실측 기준. 값은 출력하지 않고 설정 여부와 길이만 확인했다.
+>
+> **로테이션 성격이 다른 키가 있다.** `NUMBER_HASH_KEY`, `DATA_HASH_KEY`는 기존에 저장된 `*_hash` 값과 매칭에 쓰이므로 **바꾸면 기존 데이터를 찾을 수 없게 된다.** `DATA_ENCRYPTION_KEY`도 바꾸면 기존 암호문을 복호화할 수 없다. 즉 이 셋은 **유출되지 않는 한 고정**이며, 유출 시에는 키 교체와 함께 데이터 재암호화/재해시가 필요하다.
+
+- [x] **데이터 암호화 키 신설** — Day 4에 생성 완료
+  - 형식은 백엔드 구현에 맞춰 확정: `DATA_*`는 base64 32바이트, `NUMBER_HASH_KEY`는 문자열 그대로 사용(`getBytes(UTF_8)`)
+  - **키 백업 절차** — `infra/scripts/backup-secrets.sh` (패스프레이즈 암호화 후 서버 밖 반출)
+  - 키와 DB 덤프를 다른 디렉터리로 분리하고, 시크릿 백업은 **의도적으로 cron에 넣지 않음**
+- [x] `.env.example`에 신규 키 이름 추가 — compose가 요구하는 12개 변수 전부 포함 확인 (2026-09-09)
 - [ ] 위 표를 실제 값 없이 팀 문서(Notion 등)에 옮기고 발급 담당자 지정 (**사용자 액션**)
-- [ ] `.env.example`에 신규 키 이름 추가
 
 ### 2. `.env` 관리 방식 결정
 현재 `.env`는 **EC2에 수동으로만 존재**한다. 레포에는 없고 백업도 없다.
-- [ ] 이 방식을 유지할지, Jenkins Credentials에서 배포 시 생성하도록 바꿀지 결정
-  - 유지 → 단순하지만 **EC2가 날아가면 시크릿도 같이 날아감** → 최소한 오프라인 백업 필요
-  - Jenkins 생성 → 복구력은 좋지만 Jenkins가 단일 실패점이 되고 설정이 복잡해짐
-- [ ] 어느 쪽이든 **`.env` 백업 절차**는 반드시 만들 것 (Day 4의 DB 백업과 함께)
+- [x] **결정: 현행(EC2 수동 보관) 유지** (2026-09-09)
+  - Jenkins Credentials에서 생성하는 방식은 복구력은 좋지만, **docker.sock 접근권을 가진 Jenkins([[security.md]] R1의 최대 위험 요소)가 모든 시크릿까지 쥐게 되어 보안상 오히려 후퇴**한다고 판단
+  - 단점(EC2 소실 시 시크릿 소실)은 아래 백업 절차로 보완
+- [x] **`.env` 백업 절차** — `infra/scripts/backup-secrets.sh`
+  - 패스프레이즈로 암호화(`openssl enc -aes-256-cbc -pbkdf2 -iter 200000`)한 단일 파일 생성
+  - 출력 위치를 DB 덤프 디렉터리와 **의도적으로 분리**하고, **cron에 넣지 않음** — 자동화하면 같은 서버·같은 주기로 시크릿이 쌓여 한 번의 유출로 둘 다 털린다
+  - 암호화 → 복호화 → 원본 일치 검증 완료
 
 ### 3. 컨테이너 하드닝 ★보안 (상세: [[security.md]] R3)
 현재 `backend` 컨테이너가 **root(`uid=0`)로 실행 중**이다 (`docker exec backend id`로 확인).
-- [ ] `backend/Dockerfile` 런타임 스테이지에 비루트 유저 추가
-  ```dockerfile
-  RUN useradd -r -u 10001 -g root dodam
-  USER 10001
-  ```
-  - 8080은 1024 이상 포트라 비루트로도 바인딩 가능 (문제없음)
-- [ ] compose에 `security_opt: ["no-new-privileges:true"]`, `cap_drop: [ALL]` 적용 검토
-- [ ] jenkins 컨테이너는 docker.sock이 필요해 하드닝에 한계가 있음 → **Day 3에서 노출면을 없애는 방식으로 대응**했음을 문서에 명시
+- [x] `backend/Dockerfile` 런타임 스테이지에 비루트 유저 추가 (uid 10001, 검증 완료)
+- [x] `security_opt: no-new-privileges:true` — 전 서비스 6개 적용
+- [x] `cap_drop: ALL` — **backend에만** 적용. nginx(80/443 바인딩), mysql(파일 소유권)은 필요한 capability가 있어 제외
+- [x] jenkins 하드닝 한계 문서화 — [[security.md]] R1의 "왜 DooD를 유지하는가"와 "의도적으로 하지 않는 것" 표에 근거 명시
 
 ### 4. 배포 승인 게이트 ★보안 (상세: [[security.md]] R4)
 현재 `develop`에 push되면 그대로 프로덕션에 배포된다. 승인 단계가 없다.
@@ -62,18 +67,16 @@
   - 팀이 이미 MR 흐름을 쓰고 있어 추가 부담이 거의 없음
 
 ### 5. 배포 안정화
-- [ ] **JVM 메모리 옵션** — 현재 제한 없음. 16GB 중 MySQL/Redis/Jenkins/모니터링 몫을 남기고 `-Xmx` 지정 (예: 2~3GB)
-      Day 6 모니터링 스택이 올라오면 메모리가 빠듯해질 수 있으므로 이번 Day에 미리 잡아둘 것
-- [ ] **배포 실패 시 롤백** — 현재는 헬스체크 실패 시 로그만 남기고 끝나며, **깨진 컨테이너가 그대로 떠 있는다**
-      직전 이미지 태그를 남겨뒀다가 실패 시 되돌리는 방식 검토 (`infra-backend:previous` 태깅 등)
-- [ ] **헬스체크 엔드포인트 일원화** — 지금 컨테이너 HEALTHCHECK와 `deploy.sh`는 `/api/health`를 쓰고, `/actuator/health`도 별도로 열려 있다. 모니터링(Day 6)은 actuator를 쓸 예정이므로 역할을 정리해 문서화
-- [ ] 컨테이너 리소스 제한(`mem_limit`) 검토 — 한 서비스가 폭주해도 다른 서비스를 굶기지 않도록
+- [x] **JVM 메모리 옵션** — `-XX:MaxHeapSize=1g -XX:InitialHeapSize=256m` 적용
+- [x] **배포 실패 시 롤백** — 커밋+이미지 보존 후 실패 시 되돌림. 실제 동작 검증 완료
+- [x] **헬스체크** — 일원화 대신 **역할 분리**로 결정: liveness는 `/api/health`, 배포 검증(readiness)은 `/actuator/health`
+- [x] 컨테이너 리소스 제한(`mem_limit`) — 전 서비스 적용 (합계 약 7.5GB / 15GB)
 
 ### 6. 검증
-- [ ] 컨테이너 강제 종료(`docker kill backend`) → `restart` 정책으로 자동 복구되는지
-- [ ] 일부러 테스트를 깨뜨린 커밋을 push → **빌드에서 멈추고 배포되지 않는지** (Day 2에서 구조는 만들었으나 실제로 확인한 적 없음)
-- [ ] EC2 재부팅 후 전체 스택이 자동으로 올라오는지 (`restart: unless-stopped` 검증)
-- [ ] 비루트 전환 후 backend가 정상 기동/로그 기록되는지 (`docker exec backend id`로 uid 확인)
+- [x] `restart` 정책 자동 복구 — `docker kill`/컨테이너 내부 `kill -9 1`은 각각 "명시적 중단 취급", "PID 1의 SIGKILL 무시"로 검증에 부적합. 실증은 09-08 장애의 `RestartCount=604`
+- [x] 테스트를 깨뜨린 상태로 빌드 → `80 tests completed, 1 failed`로 **빌드 실패, 배포 진행 안 됨** 확인
+- [x] EC2 **실제 재부팅** → 26초 내 컨테이너 6개 자동 기동, 데이터·ufw·cron·하드닝 설정·HTTPS 전부 유지
+- [x] 비루트 전환 후 정상 기동 확인 (`uid=10001(dodam)`)
 
 ## 산출물
 - 시크릿 목록/보관/백업 방식 문서화 (실제 값 제외)
