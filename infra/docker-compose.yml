@@ -334,6 +334,8 @@ services:
       # 익명 접근과 가입을 막는다.
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_USERS_ALLOW_SIGN_UP: "false"
+      # 알림 채널 프로비저닝이 $__env{} 로 읽는다. 파일에 URL을 직접 쓰지 않기 위함.
+      MATTERMOST_WEBHOOK_URL: ${MATTERMOST_WEBHOOK_URL}
       TZ: Asia/Seoul
     volumes:
       - grafana_data:/var/lib/grafana
