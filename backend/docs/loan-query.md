@@ -113,9 +113,13 @@ null이다.
 ## 스키마
 
 `V13__create_loan_and_repayment.sql`에서 `loan`, `loan_repayment`를 생성한다. `loan`은 ERD대로
-`financial_product`와 `account`를 참조하므로 `financial_product`(529의 V10)와 BE-A의 `account`
-마이그레이션(S15P21D105-501) 이후에 적용된다. `card`에는 의존하지 않아 530과의 병합 순서 제약은
-없다. `account_no_hash`는 `CHAR(64)`이므로 엔티티에 `columnDefinition`을 명시했다.
+`financial_product`와 `account`를 참조하므로 529 브랜치의 `V3`(`account` 선반영)와 `V10`
+(금융상품) 이후에 적용된다. 즉 529를 먼저 병합해야 한다. `card`에는 의존하지 않아 530과의 병합
+순서 제약은 없다. `account_no_hash`는 `CHAR(64)`이므로 엔티티에 `columnDefinition`을 명시했다.
+
+`account`는 BE-A 소관(S15P21D105-501)이지만 이미 병합된 카드 도메인이 매핑하고 있어 develop이
+기동하지 못하는 상태였고, 담당자 부재로 529에서 스키마만 선반영했다. 계좌 조회 API는 501에 그대로
+남으며 같은 테이블을 다시 만들지 않도록 인수인계가 필요하다.
 
 ## 검증
 
