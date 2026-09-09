@@ -6,6 +6,9 @@ volumes:
   jenkins_home:
   mysql_data:
   redis_data:
+  prometheus_data:
+  grafana_data:
+  loki_data:
 
 services:
   nginx:
@@ -223,4 +226,118 @@ services:
       - app-net
     # 외부 포트 미노출 — nginx의 /api/ 를 통해서만 접근
 
-# Day 6에서 prometheus, grafana, loki, promtail 서비스 추가 예정
+# ── 모니터링 (Day 6) ──────────────────────────────────────────────────
+  # 전부 컨테이너 네트워크 안에서만 통신한다.
+  # 외부에 열리는 것은 nginx의 /grafana/ 하나뿐이고,
+  # Prometheus·Loki·exporter의 UI/포트는 호스트에도 바인딩하지 않는다.
+  # (Jenkins와 같은 원칙 — 노출면을 줄인다. infra/todo/security.md R1)
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: prometheus
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+    user: "65534:65534"          # nobody — 비루트 실행
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # 보관 기간을 제한하지 않으면 디스크를 계속 먹는다.
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    networks:
+      - app-net
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: node-exporter
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    # 호스트의 실제 CPU/메모리/디스크를 읽어야 하므로 호스트 네임스페이스와 파일시스템이 필요하다.
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    command:
+      - --path.rootfs=/host
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|var/lib/docker/.+)($$|/)
+    networks:
+      - app-net
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: cadvisor
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    # 컨테이너별 리소스를 읽으려면 docker 관련 경로에 대한 읽기 권한이 필요하다.
+    privileged: true
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - app-net
+
+  loki:
+    image: grafana/loki:3.3.2
+    container_name: loki
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 768m
+    user: "10001:10001"
+    volumes:
+      - ./monitoring/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - app-net
+
+  promtail:
+    image: grafana/promtail:3.3.2
+    container_name: promtail
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    volumes:
+      - ./monitoring/loki/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - app-net
+
+  grafana:
+    image: grafana/grafana:11.5.1
+    container_name: grafana
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    environment:
+      # nginx의 /grafana/ 서브패스 뒤에서 동작하도록 알려준다.
+      GF_SERVER_ROOT_URL: https://j15D105.p.ssafy.io/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      # 익명 접근과 가입을 막는다.
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      TZ: Asia/Seoul
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - app-net
+
