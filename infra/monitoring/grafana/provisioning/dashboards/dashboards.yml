@@ -1,0 +1,15 @@
+# 대시보드 자동 프로비저닝.
+# UI에서 만든 대시보드는 컨테이너를 다시 만들면 사라지므로 파일로 관리한다.
+apiVersion: 1
+
+providers:
+  - name: dodam
+    orgId: 1
+    folder: 도담
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false
