@@ -6,6 +6,7 @@
 | V2 | `user_setting`, `financial_profile`, `finance_connection` 생성 | S15P21D105-494, S15P21D105-497 |
 | V10 | `financial_company`, `financial_product`, `financial_product_option` 생성 | S15P21D105-525, S15P21D105-526 |
 | V11 | `card`, `card_billing_statement` 생성 | S15P21D105-527, S15P21D105-529 |
+| V12 | `installment` 생성 | S15P21D105-530 |
 
 ## 버전 번호 할당
 
