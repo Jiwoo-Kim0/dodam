@@ -1,6 +1,8 @@
 package com.ssafy.dodam.domain.card.repository;
 
+import com.ssafy.dodam.global.policy.QueryPeriod;
 import com.ssafy.dodam.global.policy.YearMonthPeriod;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.Optional;
 
@@ -15,4 +17,8 @@ public interface CardBillingStatementReader {
     Optional<CardBillingStatementRow> findNextScheduled(Long cardId);
 
     List<CardBillingStatementRow> read(Long cardId, YearMonthPeriod period);
+
+    List<CardPaymentScheduleRow> readScheduled(Long userId, QueryPeriod period);
+
+    long sumBillingAmount(Long userId, YearMonth billingMonth);
 }

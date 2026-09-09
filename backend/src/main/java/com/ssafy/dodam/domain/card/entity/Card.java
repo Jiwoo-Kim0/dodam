@@ -12,6 +12,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -37,6 +38,9 @@ public class Card {
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
+    @Column(name = "withdrawal_account_id", nullable = false)
+    private Long withdrawalAccountId;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(
             name = "withdrawal_account_id",
@@ -52,7 +56,9 @@ public class Card {
     @Column(name = "financial_product_id")
     private Long financialProductId;
 
-    @Column(name = "card_no_hash", nullable = false, length = 64)
+    // ERD의 해시·연월 컬럼은 고정 길이 CHAR다. columnDefinition을 명시하지 않으면 Hibernate가
+    // varchar로 기대해 ddl-auto: validate가 실패한다(MySQL 검증에서 확인).
+    @Column(name = "card_no_hash", nullable = false, length = 64, columnDefinition = "CHAR(64)")
     private String cardNoHash;
 
     @Column(name = "card_no_masked", nullable = false, length = 100)
@@ -83,7 +89,7 @@ public class Card {
     @Column(name = "annual_fee")
     private Long annualFee;
 
-    @Column(name = "expiry_month", length = 7)
+    @Column(name = "expiry_month", length = 7, columnDefinition = "CHAR(7)")
     private String expiryMonth;
 
     @Column(name = "withdrawal_day")
@@ -94,4 +100,18 @@ public class Card {
 
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
+    /** 동일한 설정을 다시 요청하면 갱신 시각도 바꾸지 않는다. */
+    public boolean updatePaymentSettings(Long accountId, Integer paymentDay) {
+        Long resolvedAccountId = accountId == null ? withdrawalAccountId : accountId;
+        Integer resolvedPaymentDay = paymentDay == null ? withdrawalDay : paymentDay;
+        if (Objects.equals(withdrawalAccountId, resolvedAccountId)
+                && Objects.equals(withdrawalDay, resolvedPaymentDay)) {
+            return false;
+        }
+        withdrawalAccountId = resolvedAccountId;
+        withdrawalDay = resolvedPaymentDay;
+        updatedAt = LocalDateTime.now();
+        return true;
+    }
 }

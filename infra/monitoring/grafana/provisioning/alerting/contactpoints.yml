@@ -1,0 +1,31 @@
+# 알림 채널(Contact point) 프로비저닝.
+# webhook URL은 파일에 직접 쓰지 않고 컨테이너 환경변수로 주입한다.
+# Grafana 프로비저닝은 $__env{} 문법으로 환경변수를 읽을 수 있다.
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: mattermost
+    receivers:
+      - uid: mattermost-webhook
+        type: webhook
+        settings:
+          url: $__env{MATTERMOST_WEBHOOK_URL}
+          httpMethod: POST
+          # Mattermost는 {"text": ...} 형태를 기대하므로 본문을 직접 구성한다.
+          # (Grafana 기본 webhook 페이로드는 Mattermost가 렌더링하지 못한다)
+          message: |
+            {{ if eq .Status "firing" }}:rotating_light: **[발생]**{{ else }}:white_check_mark: **[해제]**{{ end }} 도담 인프라 알림
+            {{ range .Alerts }}
+            - **{{ .Labels.alertname }}** {{ if .Annotations.summary }}— {{ .Annotations.summary }}{{ end }}
+            {{ end }}
+
+policies:
+  - orgId: 1
+    receiver: mattermost
+    group_by: [alertname]
+    group_wait: 30s
+    group_interval: 5m
+    # 같은 알림을 4시간마다 다시 보낸다. 너무 자주 보내면 무시하게 되고,
+    # 너무 뜸하면 잊어버린다.
+    repeat_interval: 4h
