@@ -136,40 +136,40 @@ export function BottomNavigation() {
         ]}>
           <TabTrigger asChild href={routes.home} name="home">
             <BottomNavigationItem
-              activeIcon={require('@/assets/icons/home_active_tab.png')}
-              inactiveIcon={require('@/assets/icons/home_inactive_tab.png')}
+              activeIcon={require('@/assets/icons/navigation/home_active_tab.png')}
+              inactiveIcon={require('@/assets/icons/navigation/home_inactive_tab.png')}
               label="홈"
             />
           </TabTrigger>
 
           <TabTrigger asChild href={routes.ledger} name="ledger">
             <BottomNavigationItem
-              activeIcon={require('@/assets/icons/ledger_active_tab.png')}
-              inactiveIcon={require('@/assets/icons/ledger_inactive_tab.png')}
+              activeIcon={require('@/assets/icons/navigation/ledger_active_tab.png')}
+              inactiveIcon={require('@/assets/icons/navigation/ledger_inactive_tab.png')}
               label="가계부"
             />
           </TabTrigger>
 
           <TabTrigger asChild href={routes.assets} name="assets">
             <BottomNavigationItem
-              activeIcon={require('@/assets/icons/assets_active_tab.png')}
-              inactiveIcon={require('@/assets/icons/assets_inactive_tab.png')}
+              activeIcon={require('@/assets/icons/navigation/assets_active_tab.png')}
+              inactiveIcon={require('@/assets/icons/navigation/assets_inactive_tab.png')}
               label="자산"
             />
           </TabTrigger>
 
           <TabTrigger asChild href={routes.discovery} name="discovery">
             <BottomNavigationItem
-              activeIcon={require('@/assets/icons/discovery_active_tab.png')}
-              inactiveIcon={require('@/assets/icons/discovery_inactive_tab.png')}
+              activeIcon={require('@/assets/icons/navigation/discovery_active_tab.png')}
+              inactiveIcon={require('@/assets/icons/navigation/discovery_inactive_tab.png')}
               label="발견"
             />
           </TabTrigger>
 
           <TabTrigger asChild href={routes.report} name="report">
             <BottomNavigationItem
-              activeIcon={require('@/assets/icons/report_active_tab.png')}
-              inactiveIcon={require('@/assets/icons/report_inactive_tab.png')}
+              activeIcon={require('@/assets/icons/navigation/report_active_tab.png')}
+              inactiveIcon={require('@/assets/icons/navigation/report_inactive_tab.png')}
               label="리포트"
             />
           </TabTrigger>
