@@ -5,24 +5,30 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 금융망 「신용등급 기준 조회」 결과. 등급별 요구 입출금 자산과 비율 표를 금융망 순서 그대로 돌려준다.
+ * 금융망 「신용등급 기준 조회」(2.7.1) 결과. 등급별 자산 구간(수시입출금 + 예·적금 합산 기준)을 금융망 순서(A→E) 그대로 돌려준다.
  */
 public record CreditRatingCriteriaResponse(
         List<Criterion> criteria,
         LocalDateTime inquiredAt
 ) {
 
+    /**
+     * @param minAssetValue 이 등급의 최소 자산 가치 (원)
+     * @param maxAssetValue 이 등급의 최대 자산 가치 (원). 최고 등급의 최대값을 넘어도 최고 등급이다
+     */
     public record Criterion(
+            String ratingUniqueNo,
             String ratingName,
-            Long demandDepositAssetValue,
-            String ratingPercent
+            Long minAssetValue,
+            Long maxAssetValue
     ) {
 
         static Criterion from(SsafyCreditRatingCriterion criterion) {
             return new Criterion(
+                    criterion.ratingUniqueNo(),
                     criterion.ratingName(),
-                    criterion.demandDepositAssetValue(),
-                    criterion.ratingPercent()
+                    criterion.minAssetValue(),
+                    criterion.maxAssetValue()
             );
         }
     }

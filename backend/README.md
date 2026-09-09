@@ -229,7 +229,7 @@ PATCH는 null인 항목을 건드리지 않으며, 바꿀 항목이 하나도 �
 | POST | /api/v1/finance-data/sync | Body `{ scope?: ALL\|ACCOUNT\|CARD\|LOAN\|SAVING }`. 사용자별 동시 실행 방지, scope별 결과를 응답 |
 | GET | /api/v1/finance-data/sync/status, /sync/latest | 최근 동기화·진행 여부 / 마지막 반영 시각·마지막 성공 이력 |
 | GET | /api/v1/finance-data/summary | 로컬 DB 집계: 계좌·카드·대출 잔액과 순자산 |
-| GET | /api/v1/finance-data/credit-rating, /credit-rating/criteria | 금융망 실시간 신용등급 조회 / 등급 기준표 |
+| GET | /api/v1/finance-data/credit-rating, /credit-rating/criteria | 금융망 실시간 내 신용등급(A~E, userKey 필요) / 등급별 자산 구간 기준표(앱 단위, 연결 불필요) |
 
 금융망 호출이 필요한 API는 연결이 CONNECTED가 아니면 409 `FINANCE_NOT_CONNECTED`, 금융망 오류 응답은 502 `FINANCE_API_ERROR`, 도달 불가는 503 `FINANCE_API_UNAVAILABLE`입니다. 도메인별 동기화 구현(`FinanceSyncScopeHandler`)은 아직 등록된 것이 없어 모든 scope가 SKIPPED로 보고됩니다.
 

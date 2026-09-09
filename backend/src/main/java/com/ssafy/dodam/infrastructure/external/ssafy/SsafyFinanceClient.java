@@ -26,18 +26,18 @@ public interface SsafyFinanceClient {
     SsafyMember searchMember(String email);
 
     /**
-     * 내 신용등급 조회 (대출 > inquireMyCreditRating).
+     * 2.7.4 내 신용등급 조회 (inquireMyCreditRating). 사용자 단위 API.
      *
-     * @throws SsafyApiException 금융망 오류 응답
+     * @throws SsafyApiException H1009(USER_KEY 무효) 등 금융망 오류 응답
      * @throws SsafyUnavailableException 네트워크 오류·응답 해석 불가
      */
     SsafyCreditRating inquireMyCreditRating(String userKey);
 
     /**
-     * 신용등급 기준 조회 (대출 > inquireCreditRatingList). 등급별 요구 자산·비율 표.
+     * 2.7.1 신용등급 기준 조회 (inquireAssetBasedCreditRatingList). 앱 단위 API로 userKey를 보내지 않는다.
      *
      * @throws SsafyApiException 금융망 오류 응답
      * @throws SsafyUnavailableException 네트워크 오류·응답 해석 불가
      */
-    List<SsafyCreditRatingCriterion> inquireCreditRatingList(String userKey);
+    List<SsafyCreditRatingCriterion> inquireAssetBasedCreditRatingList();
 }

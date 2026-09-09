@@ -26,7 +26,7 @@ API 명세 4 Finance Data의 10개 엔드포인트를 모두 다룬다. 계좌·
 | --- | --- | --- |
 | `FINANCE_CONNECTION_NOT_FOUND` | 404 | 연결 행이 없는 사용자가 해제를 요청 |
 | `FINANCE_ALREADY_CONNECTED` | 409 | 이미 CONNECTED인데 등록을 요청 (금융망을 다시 호출하지 않음) |
-| `FINANCE_NOT_CONNECTED` | 409 | CONNECTED가 아니거나 userKey가 없는 상태에서 회원 조회·동기화·신용등급 조회, 또는 이미 DISCONNECTED인 연결 해제 |
+| `FINANCE_NOT_CONNECTED` | 409 | CONNECTED가 아니거나 userKey가 없는 상태에서 회원 조회·동기화·내 신용등급 조회, 또는 이미 DISCONNECTED인 연결 해제. 신용등급 기준표는 앱 단위 API라 해당 없음 |
 | `FINANCE_EMAIL_ALREADY_REGISTERED` | 409 | 금융망에 다른 앱이 먼저 등록한 이메일 (E4002 후 조회 E4003) |
 | `FINANCE_SYNC_IN_PROGRESS` | 409 | 진행 중인 동기화가 있는데 동기화 또는 연결 해제를 요청 |
 | `FINANCE_API_ERROR` | 502 | 금융망이 오류 응답(responseCode)을 돌려줌. 코드·메시지는 서버 로그에만 남김 |
@@ -110,10 +110,17 @@ MySQL은 부분 유니크 인덱스가 없어 "사용자당 RUNNING 1행"을 DB 
 
 ## 신용등급 (500)
 
-금융망 대출 API의 「내 신용등급 조회」(`inquireMyCreditRating`)와 「신용등급 기준 조회」(`inquireCreditRatingList`)를 실시간 호출하며 결과를 저장하지 않는다. CONNECTED 상태와 userKey가 필요하다.
+SSAFY 금융망 API 문서 2.7절 대출 API를 실시간 호출하며 결과를 저장하지 않는다. 필드명은 문서(2026-09-09 확인본)와 대조해 확정했다.
 
-- `GET /credit-rating`: `{ ratingName, creditScore, demandDepositAssetValue, depositSavingsAssetValue, totalAssetValue, inquiredAt }`. 자산 값은 금융망이 계산한 금융망 내 자산이며 로컬 통합 요약과 다를 수 있다.
-- `GET /credit-rating/criteria`: `{ criteria: [{ ratingName, demandDepositAssetValue, ratingPercent }], inquiredAt }`. 금융망이 돌려준 순서를 유지하고 `ratingPercent`는 "5%"처럼 문자열 그대로 둔다.
+| 도담 API | 금융망 API | Header | 응답 |
+| --- | --- | --- | --- |
+| `GET /credit-rating` | 2.7.4 내 신용등급 조회 `POST /ssafy/api/v1/edu/loan/inquireMyCreditRating` | userKey 필요 (CONNECTED 아니면 409) | `{ ratingName, demandDepositAssetValue, depositSavingsAssetValue, totalAssetValue, inquiredAt }` |
+| `GET /credit-rating/criteria` | 2.7.1 신용등급 기준 조회 `POST /ssafy/api/v1/edu/loan/inquireAssetBasedCreditRatingList` | **userKey 제외** (앱 단위, 연결 상태 무관) | `{ criteria: [{ ratingUniqueNo, ratingName, minAssetValue, maxAssetValue }], inquiredAt }` |
+
+- 등급은 A~E이며 금융망 내 수시입출금 + 예·적금 자산 합산으로 산정된다. 최고 등급의 `maxAssetValue`를 넘는 자산도 최고 등급이다. 금융망은 신용점수(creditScore)를 제공하지 않는다.
+- 자산 값은 금융망이 계산한 금융망 내 자산이며 로컬 통합 요약과 다를 수 있다. 금융망은 Long 항목을 문자열(`"1089427976"`)로 내려주므로 Jackson 강제 변환으로 받는다.
+- `ratingUniqueNo`는 대출 상품 생성 API(2.7.2)의 입력이라 그대로 전달한다.
+- 기준표 조회는 로그인만 필요하고 금융망 연결이 FAILED여도 응답한다.
 
 ## SSAFY 금융망 거래 API 공통 Header
 
@@ -131,13 +138,15 @@ MySQL은 부분 유니크 인덱스가 없어 "사용자당 RUNNING 1행"을 DB 
 
 일련번호는 카운터가 아닌 난수다. 서버 인스턴스가 여러 대여도 같은 초에 중복될 확률이 무시할 수준이고, 금융망이 중복을 거절하면 502로 드러난다.
 
-응답은 `{"Header": {...}, "REC": ...}`이며 `RestSsafyFinanceClient`는 REC만 꺼내 타입으로 변환한다. HTTP 4xx Body의 `responseCode`뿐 아니라 2xx Body의 `Header.responseCode`가 `H`로 시작하지 않는 경우도 `SsafyApiException`으로 처리한다. 금융망은 숫자를 문자열로 내려주는 경우가 있어 응답 record의 숫자 필드는 Jackson 강제 변환에 의존하며, 알 수 없는 필드는 무시한다.
+앱 단위 API(문서에 "Header 공통 — userKey 제외")는 `userKey`를 null로 넘기며, `SsafyRequestHeader`가 `@JsonInclude(NON_NULL)`이라 JSON에서 키 자체가 빠진다.
 
-`MockRestServiceServer` 기반 단위 테스트(`RestSsafyFinanceClientTest`)가 요청 Header 형식과 REC 해석을 검증한다. **실제 금융망에 대한 호출은 아직 확인하지 않았다** — 신용등급 REC 필드명은 API 문서 기준으로 작성했으므로 첫 실호출 때 응답을 대조해야 한다(`docs/remaining-work.md`).
+응답은 `{"Header": {...}, "REC": ...}`이며 `RestSsafyFinanceClient`는 REC만 꺼내 타입으로 변환한다. 정상 코드는 `H0000` 하나다. Header 검증 오류 `H1000`~`H1010`(예: `H1007` 기관거래고유번호 중복, `H1008` API_KEY 무효, `H1009` USER_KEY 무효)도 `H`로 시작하므로 "H로 시작하면 성공"으로 판정하면 안 된다. HTTP 4xx Body의 `responseCode`와 2xx Body의 `Header.responseCode ≠ H0000` 모두 `SsafyApiException`으로 처리한다. 응답 record의 숫자 필드는 Jackson 문자열→숫자 강제 변환에 의존하며, 알 수 없는 필드는 무시한다.
+
+`MockRestServiceServer` 기반 단위 테스트(`RestSsafyFinanceClientTest`)가 요청 Header 형식과 REC 해석을 문서의 요청·응답 예시로 검증한다. **실제 금융망 호출은 2026-09-09 시도했으나 전달받은 API Key가 `E4004`/`H1008`(API KEY 무효)로 거절되어 확인하지 못했다**(`docs/remaining-work.md`).
 
 ## 테스트
 
-`FinanceDataApiIntegrationTest`(H2, MockMvc, `SsafyFinanceClient` Mock) 34개와 `SsafyHeaderFactoryTest` 3개, `RestSsafyFinanceClientTest` 8개.
+`FinanceDataApiIntegrationTest`(H2, MockMvc, `SsafyFinanceClient` Mock) 34개와 `SsafyHeaderFactoryTest` 3개, `RestSsafyFinanceClientTest` 8개. 신용등급 관련 요청·응답 형식은 SSAFY API 문서 2.3.1, 2.7.1, 2.7.4의 예시를 그대로 사용한다.
 
 - 동기화 확장점은 테스트 설정(`SyncHandlerStubs`)이 ACCOUNT 성공·LOAN 실패 스텁을 등록해 COMPLETED/SKIPPED/FAILED 집계와 `last_synced_at` 규칙을 검증한다.
 - 통합 요약은 `sql/finance-summary-test-schema.sql`로 `account`, `card`, `loan`을 ERD 컬럼명 기준으로 다시 만들고(다른 도메인 엔티티가 일부 컬럼만 매핑하거나 없기 때문) 테스트가 사용자 ID를 안 뒤 행을 넣는다. 다른 사용자 데이터가 섞이지 않는지, CLOSED 계좌·종료 대출이 제외되는지, 마이너스통장이 부채로 잡히는지를 본다.

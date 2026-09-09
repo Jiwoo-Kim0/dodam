@@ -92,37 +92,45 @@ class RestSsafyFinanceClientTest {
                 .andRespond(withSuccess("""
                         {"Header":{"responseCode":"H0000","responseMessage":"정상처리 되었습니다.",
                                    "apiName":"inquireMyCreditRating","institutionTransactionUniqueNo":"20260909183045123456"},
-                         "REC":{"ratingName":"B+","demandDepositAssetValue":"3500000",
-                                "depositSavingsAssetValue":"12000000","totalAssetValue":"15500000","creditScore":"720"}}
+                         "REC":{"ratingName":"A","demandDepositAssetValue":"1089427976",
+                                "depositSavingsAssetValue":"0","totalAssetValue":"1089427976"}}
                         """, MediaType.APPLICATION_JSON));
 
         SsafyCreditRating rating = client.inquireMyCreditRating("user-key-1");
 
-        assertThat(rating.ratingName()).isEqualTo("B+");
-        assertThat(rating.demandDepositAssetValue()).isEqualTo(3_500_000L);
-        assertThat(rating.depositSavingsAssetValue()).isEqualTo(12_000_000L);
-        assertThat(rating.totalAssetValue()).isEqualTo(15_500_000L);
-        assertThat(rating.creditScore()).isEqualTo(720);
+        // API 문서 2.7.4 응답 예시 그대로: Long 항목이 문자열로 내려온다
+        assertThat(rating.ratingName()).isEqualTo("A");
+        assertThat(rating.demandDepositAssetValue()).isEqualTo(1_089_427_976L);
+        assertThat(rating.depositSavingsAssetValue()).isZero();
+        assertThat(rating.totalAssetValue()).isEqualTo(1_089_427_976L);
         server.verify();
     }
 
     @Test
-    void creditRatingListParsesRecArrayInOrder() {
-        server.expect(requestTo(BASE_URL + "/ssafy/api/v1/edu/loan/inquireCreditRatingList"))
-                .andExpect(jsonPath("$.Header.apiName").value("inquireCreditRatingList"))
+    void creditRatingCriteriaIsAppLevelCallWithoutUserKeyAndParsesRecArrayInOrder() {
+        server.expect(requestTo(BASE_URL + "/ssafy/api/v1/edu/loan/inquireAssetBasedCreditRatingList"))
+                .andExpect(jsonPath("$.Header.apiName").value("inquireAssetBasedCreditRatingList"))
+                .andExpect(jsonPath("$.Header.apiServiceCode").value("inquireAssetBasedCreditRatingList"))
+                .andExpect(jsonPath("$.Header.apiKey").value("test-api-key"))
+                // 문서 2.7.1: "Header 공통 — userKey 제외". 키 자체가 없어야 한다
+                .andExpect(jsonPath("$.Header.userKey").doesNotExist())
                 .andRespond(withSuccess("""
                         {"Header":{"responseCode":"H0000","responseMessage":"정상처리 되었습니다."},
-                         "REC":[{"ratingName":"A+","demandDepositAssetValue":"100000000","ratingPercent":"5%"},
-                                {"ratingName":"A","demandDepositAssetValue":"50000000","ratingPercent":"10%"}]}
+                         "REC":[{"ratingUniqueNo":"RT-0fa85f6425e811ea4","ratingName":"A","minAssetValue":"100000000","maxAssetValue":"2000000000"},
+                                {"ratingUniqueNo":"RT-2gwxr5125e640552a","ratingName":"B","minAssetValue":"80000000","maxAssetValue":"99999999"},
+                                {"ratingUniqueNo":"RT-a335h7aa7f3x74ag5","ratingName":"E","minAssetValue":"0","maxAssetValue":"29999999"}]}
                         """, MediaType.APPLICATION_JSON));
 
-        List<SsafyCreditRatingCriterion> criteria = client.inquireCreditRatingList("user-key-1");
+        List<SsafyCreditRatingCriterion> criteria = client.inquireAssetBasedCreditRatingList();
 
-        assertThat(criteria).hasSize(2);
-        assertThat(criteria.get(0).ratingName()).isEqualTo("A+");
-        assertThat(criteria.get(0).demandDepositAssetValue()).isEqualTo(100_000_000L);
-        assertThat(criteria.get(0).ratingPercent()).isEqualTo("5%");
-        assertThat(criteria.get(1).ratingName()).isEqualTo("A");
+        assertThat(criteria).hasSize(3);
+        assertThat(criteria.get(0).ratingUniqueNo()).isEqualTo("RT-0fa85f6425e811ea4");
+        assertThat(criteria.get(0).ratingName()).isEqualTo("A");
+        assertThat(criteria.get(0).minAssetValue()).isEqualTo(100_000_000L);
+        assertThat(criteria.get(0).maxAssetValue()).isEqualTo(2_000_000_000L);
+        assertThat(criteria.get(2).ratingName()).isEqualTo("E");
+        assertThat(criteria.get(2).minAssetValue()).isZero();
+        server.verify();
     }
 
     @Test
@@ -130,23 +138,24 @@ class RestSsafyFinanceClientTest {
         server.expect(requestTo(BASE_URL + "/ssafy/api/v1/edu/loan/inquireMyCreditRating"))
                 .andRespond(withBadRequest()
                         .contentType(MediaType.APPLICATION_JSON)
-                        .body("{\"responseCode\":\"A1003\",\"responseMessage\":\"유효하지 않은 userKey입니다.\"}"));
+                        .body("{\"responseCode\":\"H1009\",\"responseMessage\":\"USER_KEY가 유효하지 않습니다.\"}"));
 
         assertThatThrownBy(() -> client.inquireMyCreditRating("bad-key"))
                 .isInstanceOf(SsafyApiException.class)
-                .extracting("responseCode").isEqualTo("A1003");
+                .satisfies(exception -> assertThat(((SsafyApiException) exception).is(SsafyErrorCode.INVALID_USER_KEY)).isTrue());
     }
 
     @Test
-    void successStatusWithNonHeaderCodeIsTreatedAsApiError() {
+    void successStatusWithHeaderErrorCodeIsTreatedAsApiError() {
+        // Header 검증 오류 코드도 H로 시작한다(H1000~H1010). 정상은 H0000 하나뿐이어야 한다
         server.expect(requestTo(BASE_URL + "/ssafy/api/v1/edu/loan/inquireMyCreditRating"))
                 .andRespond(withSuccess("""
-                        {"Header":{"responseCode":"A1004","responseMessage":"기관거래고유번호가 중복되었습니다."}}
+                        {"Header":{"responseCode":"H1007","responseMessage":"기관거래고유번호가 중복된 값입니다."}}
                         """, MediaType.APPLICATION_JSON));
 
         assertThatThrownBy(() -> client.inquireMyCreditRating("user-key-1"))
                 .isInstanceOf(SsafyApiException.class)
-                .extracting("responseCode").isEqualTo("A1004");
+                .satisfies(exception -> assertThat(((SsafyApiException) exception).is(SsafyErrorCode.DUPLICATE_TRANSACTION_NO)).isTrue());
     }
 
     @Test
@@ -160,10 +169,10 @@ class RestSsafyFinanceClientTest {
 
     @Test
     void unparseableErrorBodyIsUnavailable() {
-        server.expect(requestTo(BASE_URL + "/ssafy/api/v1/edu/loan/inquireCreditRatingList"))
+        server.expect(requestTo(BASE_URL + "/ssafy/api/v1/edu/loan/inquireAssetBasedCreditRatingList"))
                 .andRespond(withBadRequest().body("<html>gateway error</html>"));
 
-        assertThatThrownBy(() -> client.inquireCreditRatingList("user-key-1"))
+        assertThatThrownBy(() -> client.inquireAssetBasedCreditRatingList())
                 .isInstanceOf(SsafyUnavailableException.class);
     }
 }

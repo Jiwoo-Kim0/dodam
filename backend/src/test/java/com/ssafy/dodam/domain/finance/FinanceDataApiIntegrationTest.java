@@ -647,12 +647,12 @@ class FinanceDataApiIntegrationTest {
     @Test
     void creditRatingIsFetchedWithStoredUserKey() throws Exception {
         given(ssafyFinanceClient.inquireMyCreditRating(anyString()))
-                .willReturn(new SsafyCreditRating("B+", 3_500_000L, 12_000_000L, 15_500_000L, 720));
+                .willReturn(new SsafyCreditRating("B", 3_500_000L, 12_000_000L, 15_500_000L));
 
         mockMvc.perform(get("/api/v1/finance-data/credit-rating").header(HttpHeaders.AUTHORIZATION, bearer))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.ratingName").value("B+"))
-                .andExpect(jsonPath("$.data.creditScore").value(720))
+                .andExpect(jsonPath("$.data.ratingName").value("B"))
+                .andExpect(jsonPath("$.data.creditScore").doesNotExist())
                 .andExpect(jsonPath("$.data.demandDepositAssetValue").value(3_500_000))
                 .andExpect(jsonPath("$.data.depositSavingsAssetValue").value(12_000_000))
                 .andExpect(jsonPath("$.data.totalAssetValue").value(15_500_000))
@@ -663,48 +663,48 @@ class FinanceDataApiIntegrationTest {
     }
 
     @Test
-    void creditRatingCriteriaKeepsFinanceNetworkOrder() throws Exception {
-        given(ssafyFinanceClient.inquireCreditRatingList(anyString())).willReturn(List.of(
-                new SsafyCreditRatingCriterion("A+", 100_000_000L, "5%"),
-                new SsafyCreditRatingCriterion("A", 50_000_000L, "10%")
+    void creditRatingCriteriaKeepsFinanceNetworkOrderAndDoesNotNeedConnection() throws Exception {
+        given(ssafyFinanceClient.inquireAssetBasedCreditRatingList()).willReturn(List.of(
+                new SsafyCreditRatingCriterion("RT-0fa85f6425e811ea4", "A", 100_000_000L, 2_000_000_000L),
+                new SsafyCreditRatingCriterion("RT-a335h7aa7f3x74ag5", "E", 0L, 29_999_999L)
         ));
+        // 앱 단위 API이므로 금융망 연결이 FAILED여도 조회된다
+        markConnectionFailed();
 
         mockMvc.perform(get("/api/v1/finance-data/credit-rating/criteria").header(HttpHeaders.AUTHORIZATION, bearer))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.criteria", hasSize(2)))
-                .andExpect(jsonPath("$.data.criteria[0].ratingName").value("A+"))
-                .andExpect(jsonPath("$.data.criteria[0].demandDepositAssetValue").value(100_000_000))
-                .andExpect(jsonPath("$.data.criteria[0].ratingPercent").value("5%"))
-                .andExpect(jsonPath("$.data.criteria[1].ratingName").value("A"))
+                .andExpect(jsonPath("$.data.criteria[0].ratingUniqueNo").value("RT-0fa85f6425e811ea4"))
+                .andExpect(jsonPath("$.data.criteria[0].ratingName").value("A"))
+                .andExpect(jsonPath("$.data.criteria[0].minAssetValue").value(100_000_000))
+                .andExpect(jsonPath("$.data.criteria[0].maxAssetValue").value(2_000_000_000L))
+                .andExpect(jsonPath("$.data.criteria[1].ratingName").value("E"))
+                .andExpect(jsonPath("$.data.criteria[1].minAssetValue").value(0))
                 .andExpect(jsonPath("$.data.inquiredAt").isNotEmpty());
 
-        verify(ssafyFinanceClient).inquireCreditRatingList(USER_KEY);
+        verify(ssafyFinanceClient).inquireAssetBasedCreditRatingList();
     }
 
     @Test
-    void creditRatingRequiresConnectedStateWithoutCallingFinanceNetwork() throws Exception {
+    void myCreditRatingRequiresConnectedStateWithoutCallingFinanceNetwork() throws Exception {
         markConnectionFailed();
 
         mockMvc.perform(get("/api/v1/finance-data/credit-rating").header(HttpHeaders.AUTHORIZATION, bearer))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("FINANCE_NOT_CONNECTED"));
-        mockMvc.perform(get("/api/v1/finance-data/credit-rating/criteria").header(HttpHeaders.AUTHORIZATION, bearer))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("FINANCE_NOT_CONNECTED"));
 
         verify(ssafyFinanceClient, never()).inquireMyCreditRating(anyString());
-        verify(ssafyFinanceClient, never()).inquireCreditRatingList(anyString());
     }
 
     @Test
     void creditRatingTranslatesFinanceNetworkFailures() throws Exception {
         given(ssafyFinanceClient.inquireMyCreditRating(anyString()))
-                .willThrow(new SsafyApiException("A1003", "유효하지 않은 userKey입니다."));
+                .willThrow(new SsafyApiException("H1009", "USER_KEY가 유효하지 않습니다."));
         mockMvc.perform(get("/api/v1/finance-data/credit-rating").header(HttpHeaders.AUTHORIZATION, bearer))
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.code").value("FINANCE_API_ERROR"));
 
-        given(ssafyFinanceClient.inquireCreditRatingList(anyString()))
+        given(ssafyFinanceClient.inquireAssetBasedCreditRatingList())
                 .willThrow(new SsafyUnavailableException("timeout", null));
         mockMvc.perform(get("/api/v1/finance-data/credit-rating/criteria").header(HttpHeaders.AUTHORIZATION, bearer))
                 .andExpect(status().isServiceUnavailable())

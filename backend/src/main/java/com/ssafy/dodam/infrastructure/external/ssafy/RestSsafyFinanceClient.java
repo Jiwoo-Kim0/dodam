@@ -23,6 +23,7 @@ import org.springframework.web.client.RestClientResponseException;
  * - 거래 API는 {"Header": {...}} 형태의 공통 Header를 보내고 {"Header": {...}, "REC": ...}로 받는다.
  *   REC는 API에 따라 객체 또는 배열이다.
  * - 오류는 HTTP 4xx Body의 {"responseCode":"E4002","responseMessage":"..."}로 온다.
+ *   거래 API의 Header 검증 오류(H1000~H1010)도 같은 형태이며, 정상 코드는 H0000 하나다.
  */
 @Component
 public class RestSsafyFinanceClient implements SsafyFinanceClient {
@@ -32,9 +33,9 @@ public class RestSsafyFinanceClient implements SsafyFinanceClient {
     static final String MEMBER_CREATE_PATH = "/ssafy/api/v1/member/";
     static final String MEMBER_SEARCH_PATH = "/ssafy/api/v1/member/search";
     static final String CREDIT_RATING_PATH = "/ssafy/api/v1/edu/loan/inquireMyCreditRating";
-    static final String CREDIT_RATING_LIST_PATH = "/ssafy/api/v1/edu/loan/inquireCreditRatingList";
+    static final String CREDIT_RATING_LIST_PATH = "/ssafy/api/v1/edu/loan/inquireAssetBasedCreditRatingList";
     static final String API_INQUIRE_MY_CREDIT_RATING = "inquireMyCreditRating";
-    static final String API_INQUIRE_CREDIT_RATING_LIST = "inquireCreditRatingList";
+    static final String API_INQUIRE_CREDIT_RATING_LIST = "inquireAssetBasedCreditRatingList";
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
@@ -110,9 +111,12 @@ public class RestSsafyFinanceClient implements SsafyFinanceClient {
         return convert(rec, SsafyCreditRating.class, CREDIT_RATING_PATH);
     }
 
+    /**
+     * 앱 단위 API — 문서에 "Header: userKey 제외"로 명시되어 있어 userKey 없이 보낸다.
+     */
     @Override
-    public List<SsafyCreditRatingCriterion> inquireCreditRatingList(String userKey) {
-        JsonNode rec = inquire(CREDIT_RATING_LIST_PATH, API_INQUIRE_CREDIT_RATING_LIST, userKey);
+    public List<SsafyCreditRatingCriterion> inquireAssetBasedCreditRatingList() {
+        JsonNode rec = inquire(CREDIT_RATING_LIST_PATH, API_INQUIRE_CREDIT_RATING_LIST, null);
         if (!rec.isArray()) {
             throw new SsafyUnavailableException("SSAFY finance API returned non-array REC for " + CREDIT_RATING_LIST_PATH, null);
         }
@@ -152,9 +156,9 @@ public class RestSsafyFinanceClient implements SsafyFinanceClient {
         } catch (JsonProcessingException exception) {
             throw new SsafyUnavailableException("SSAFY finance API returned unparseable body for " + path, exception);
         }
-        // 정상 처리는 H0000. 2xx로 내려온 오류 코드도 방어적으로 처리한다.
+        // 정상 처리는 H0000 하나뿐이다 (H1000~H1010은 Header 검증 오류). 2xx로 내려온 오류 코드도 방어적으로 처리한다.
         String responseCode = root.path("Header").path("responseCode").asText(null);
-        if (responseCode != null && !responseCode.startsWith("H")) {
+        if (responseCode != null && !SsafyErrorCode.SUCCESS.code().equals(responseCode)) {
             throw new SsafyApiException(responseCode, root.path("Header").path("responseMessage").asText(""));
         }
         JsonNode rec = root.path("REC");

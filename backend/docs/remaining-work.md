@@ -34,9 +34,10 @@
 
 ### 금융망 실호출 대조
 
-- [ ] `inquireMyCreditRating` / `inquireCreditRatingList`의 실제 응답과 `SsafyCreditRating`, `SsafyCreditRatingCriterion` 필드명을 대조한다. API 문서 기준으로 작성했고 `MockRestServiceServer`로 요청 Header 형식만 검증했다. 알 수 없는 필드는 무시하지만 필드명이 다르면 값이 null로 내려간다.
-- 선행 조건: 실제 `SSAFY_FINANCE_API_KEY`가 주입된 환경(EC2 또는 로컬)과 금융망 계정이 있는 테스트 사용자.
-- 완료 조건: 두 API의 200 응답을 확인하고 필드 차이가 있으면 record와 문서를 함께 고친다.
+- [x] SSAFY 금융망 API 문서(2.3.1 공통 Header, 2.7.1 신용등급 기준 조회, 2.7.4 내 신용등급 조회)와 필드명·경로·Header 규칙을 대조해 수정했다(2026-09-09). 기준 조회는 `inquireAssetBasedCreditRatingList`(userKey 제외, REC `ratingUniqueNo/ratingName/minAssetValue/maxAssetValue`), 내 신용등급 REC에는 `creditScore`가 없다. 정상 코드는 `H0000` 하나이며 `H1000~H1010`은 오류다.
+- [ ] 실제 금융망 호출로 200 응답을 확인한다. 2026-09-09 로컬에서 curl로 시도했으나 전달받은 API Key가 사용자 계정 API에서 `E4004`, 거래 API에서 `H1008`(API KEY 무효)로 거절됐다.
+- 선행 조건: SSAFY 개발센터에서 유효한 앱 API Key 확인(만료·재발급 여부). 키는 레포·문서에 기록하지 않는다.
+- 완료 조건: 회원 생성 → 내 신용등급 조회 → 기준 조회의 200 응답과 REC 필드를 확인한다. 차이가 있으면 record·문서·테스트 픽스처를 함께 고친다.
 
 ### 통합 요약 범위
 
