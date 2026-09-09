@@ -72,6 +72,8 @@ MySQL은 부분 유니크 인덱스가 없어 "사용자당 RUNNING 1행"을 DB 
 
 프로세스가 2단계에서 죽으면 RUNNING 행이 남는다. 시작 후 10분(`FinanceSyncService.STALE_AFTER`)이 지난 RUNNING 행은 다음 동기화 요청이 `FAILED`("만료 처리")로 정리하고 새 동기화를 시작한다. `GET /sync/status`의 `inProgress`도 만료된 행은 진행 중으로 보지 않는다.
 
+만료 처리된 실행이 뒤늦게 끝나는 경우(A가 handler 실행 중 10분을 넘겨 B가 A를 FAILED로 정리한 뒤 A가 완료) 마감 단계는 같은 연결 행 잠금을 잡고 실행이 아직 RUNNING인지 확인한다. RUNNING이 아니면 결과를 버리고 상태·`last_synced_at`을 건드리지 않는다. 그 사이 B가 새 데이터를 반영했을 수 있기 때문이다. A의 응답에는 FAILED(만료) 상태와 handler가 실제로 한 일(`results`)이 함께 실린다.
+
 ### 요청·응답
 
 - 요청 Body `{ "scope": "ALL" | "ACCOUNT" | "CARD" | "LOAN" | "SAVING" }`. Body 생략 또는 `{}`면 ALL, 대소문자 무관.
@@ -146,8 +148,9 @@ SSAFY 금융망 API 문서 2.7절 대출 API를 실시간 호출하며 결과를
 
 ## 테스트
 
-`FinanceDataApiIntegrationTest`(H2, MockMvc, `SsafyFinanceClient` Mock) 34개와 `SsafyHeaderFactoryTest` 3개, `RestSsafyFinanceClientTest` 8개. 신용등급 관련 요청·응답 형식은 SSAFY API 문서 2.3.1, 2.7.1, 2.7.4의 예시를 그대로 사용한다.
+`FinanceDataApiIntegrationTest`(H2, MockMvc, `SsafyFinanceClient` Mock) 36개와 `FlywayOutOfOrderTest` 2개, `SsafyHeaderFactoryTest` 3개, `RestSsafyFinanceClientTest` 8개. 신용등급 관련 요청·응답 형식은 SSAFY API 문서 2.3.1, 2.7.1, 2.7.4의 예시를 그대로 사용한다.
 
-- 동기화 확장점은 테스트 설정(`SyncHandlerStubs`)이 ACCOUNT 성공·LOAN 실패 스텁을 등록해 COMPLETED/SKIPPED/FAILED 집계와 `last_synced_at` 규칙을 검증한다.
+- 동기화 확장점은 테스트 설정(`SyncHandlerStubs`)이 ACCOUNT 성공·CARD 성공(실행 중 훅)·LOAN 실패 스텁을 등록해 COMPLETED/SKIPPED/FAILED 집계와 `last_synced_at` 규칙, 만료된 실행의 늦은 완료 무시를 검증한다.
+- V4처럼 BE-A 구간 번호가 V10~V13 이후에 추가되는 상황은 `FlywayOutOfOrderTest`가 H2로 재현한다(기본값은 검증 실패, `outOfOrder`면 적용).
 - 통합 요약은 `sql/finance-summary-test-schema.sql`로 `account`, `card`, `loan`을 ERD 컬럼명 기준으로 다시 만들고(다른 도메인 엔티티가 일부 컬럼만 매핑하거나 없기 때문) 테스트가 사용자 ID를 안 뒤 행을 넣는다. 다른 사용자 데이터가 섞이지 않는지, CLOSED 계좌·종료 대출이 제외되는지, 마이너스통장이 부채로 잡히는지를 본다.
 - MySQL 8.0 검증(`ddl-auto: validate`, V4 적용, 집계 SQL)은 아직 하지 않았다.

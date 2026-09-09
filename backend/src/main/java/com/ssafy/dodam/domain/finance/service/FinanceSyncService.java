@@ -37,6 +37,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 3. 결과를 모아 COMPLETED/FAILED로 마감하고, 실제로 반영된 도메인이 하나라도 있으면 last_synced_at을 갱신한다 (트랜잭션 2)
  *
  * 프로세스가 2단계에서 죽으면 RUNNING 행이 남는다. {@link #STALE_AFTER}가 지난 RUNNING 행은 다음 요청이 FAILED로 정리한다.
+ * 만료 처리된 실행이 뒤늦게 끝나면 결과를 버린다 ({@link #finish}).
  */
 @Service
 public class FinanceSyncService {
@@ -157,9 +158,20 @@ public class FinanceSyncService {
         }
     }
 
+    /**
+     * 마감. 시작할 때와 같은 연결 행 잠금을 잡아 {@link #begin}의 만료 처리와 직렬화한다.
+     * 이 실행이 이미 RUNNING이 아니면(다른 요청이 STALE_AFTER 경과로 FAILED 처리한 뒤 늦게 끝난 경우)
+     * 결과를 반영하지 않는다 — 그 사이 새 동기화가 돌았을 수 있어 늦은 결과로 상태·last_synced_at을 덮어쓰면 안 된다.
+     */
     private FinanceSync finish(Long syncId, Long userId, List<FinanceSyncScopeResult> results) {
         LocalDateTime now = LocalDateTime.now();
+        Optional<FinanceConnection> connection = financeConnectionRepository.findByUserIdForUpdate(userId);
         FinanceSync sync = financeSyncRepository.findById(syncId).orElseThrow();
+        if (!sync.isInProgress()) {
+            log.warn("Finance sync {} for user {} finished late after being marked {}; discarding results",
+                    syncId, userId, sync.getStatus());
+            return sync;
+        }
 
         long failed = results.stream().filter(FinanceSyncScopeResult::isFailed).count();
         int progress = results.isEmpty()
@@ -176,8 +188,7 @@ public class FinanceSyncService {
         }
 
         if (results.stream().anyMatch(FinanceSyncScopeResult::isCompleted)) {
-            financeConnectionRepository.findByUserId(userId)
-                    .ifPresent(connection -> connection.markSynced(now));
+            connection.ifPresent(found -> found.markSynced(now));
         }
         return sync;
     }

@@ -41,6 +41,7 @@ import com.ssafy.dodam.infrastructure.external.ssafy.SsafyUnavailableException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -121,6 +122,7 @@ class FinanceDataApiIntegrationTest {
 
         given(ssafyFinanceClient.createMember(anyString())).willReturn(member(USER_KEY));
         given(ssafyFinanceClient.searchMember(anyString())).willReturn(member(USER_KEY));
+        SyncHandlerStubs.DURING_CARD_SYNC.set(null);
 
         mockMvc.perform(post("/api/v1/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -376,7 +378,8 @@ class FinanceDataApiIntegrationTest {
                 .andExpect(jsonPath("$.data.results[0].status").value("COMPLETED"))
                 .andExpect(jsonPath("$.data.results[0].syncedCount").value(3))
                 .andExpect(jsonPath("$.data.results[1].scope").value("CARD"))
-                .andExpect(jsonPath("$.data.results[1].status").value("SKIPPED"))
+                .andExpect(jsonPath("$.data.results[1].status").value("COMPLETED"))
+                .andExpect(jsonPath("$.data.results[1].syncedCount").value(0))
                 .andExpect(jsonPath("$.data.results[2].scope").value("LOAN"))
                 .andExpect(jsonPath("$.data.results[2].status").value("FAILED"))
                 .andExpect(jsonPath("$.data.results[2].message").value("동기화 처리 중 오류가 발생했습니다."))
@@ -549,10 +552,77 @@ class FinanceDataApiIntegrationTest {
     }
 
     /**
-     * 동기화 확장점 검증용 스텁. ACCOUNT는 3건 성공, LOAN은 예외, CARD·SAVING은 미등록(SKIPPED).
+     * MR 리뷰(정현진): 실행 A가 시간 초과로 FAILED 처리되고 B가 시작된 뒤 A가 늦게 끝나면
+     * 다시 COMPLETED로 바뀌고 last_synced_at도 갱신되던 문제. 늦게 끝난 실행은 결과를 반영하지 않아야 한다.
+     * CARD 스텁이 실행되는 동안(= A가 handler를 돌리는 사이) 다른 요청이 A를 만료 처리한 상황을 재현한다.
+     */
+    @Test
+    void lateCompletionOfExpiredSyncDoesNotOverwriteStateOrLastSyncedAt() throws Exception {
+        SyncHandlerStubs.DURING_CARD_SYNC.set(() -> {
+            FinanceSync running = financeSyncRepository.findTopByUserIdOrderByStartedAtDescIdDesc(userId).orElseThrow();
+            running.fail(0, "동기화가 비정상 종료되어 만료 처리되었습니다.", LocalDateTime.now());
+            financeSyncRepository.saveAndFlush(running);
+        });
+
+        mockMvc.perform(post("/api/v1/finance-data/sync")
+                        .header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("scope", "CARD"))))
+                .andExpect(status().isCreated())
+                // 늦게 끝난 A의 결과(CARD COMPLETED)가 만료 상태를 덮어쓰지 않는다
+                .andExpect(jsonPath("$.data.status").value("FAILED"))
+                .andExpect(jsonPath("$.data.errorMessage").value(containsString("만료")))
+                .andExpect(jsonPath("$.data.results[0].status").value("COMPLETED"));
+
+        FinanceSync stored = financeSyncRepository.findTopByUserIdOrderByStartedAtDescIdDesc(userId).orElseThrow();
+        assertThat(stored.getStatus()).isEqualTo(FinanceSyncStatus.FAILED);
+        assertThat(stored.getErrorMessage()).contains("만료");
+        assertThat(financeConnectionRepository.findByUserId(userId).orElseThrow().getLastSyncedAt()).isNull();
+
+        mockMvc.perform(get("/api/v1/finance-data/sync/latest").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(jsonPath("$.data.lastSyncedAt").value(nullValue()))
+                .andExpect(jsonPath("$.data.lastCompletedSync").value(nullValue()));
+    }
+
+    @Test
+    void normalCardSyncStillCompletesWhenNotExpired() throws Exception {
+        mockMvc.perform(post("/api/v1/finance-data/sync")
+                        .header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("scope", "CARD"))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.status").value("COMPLETED"));
+
+        assertThat(financeConnectionRepository.findByUserId(userId).orElseThrow().getLastSyncedAt()).isNotNull();
+    }
+
+    /**
+     * 동기화 확장점 검증용 스텁. ACCOUNT는 3건 성공, LOAN은 예외, CARD는 0건 성공(실행 중 훅 호출 가능), SAVING은 미등록(SKIPPED).
      */
     @TestConfiguration
     static class SyncHandlerStubs {
+
+        /** CARD 스텁이 실행되는 도중에 실행할 동작. 만료 처리 등 동시 상황 재현용. null이면 아무 것도 하지 않는다. */
+        static final AtomicReference<Runnable> DURING_CARD_SYNC = new AtomicReference<>();
+
+        @Bean
+        FinanceSyncScopeHandler cardSyncHandlerStub() {
+            return new FinanceSyncScopeHandler() {
+                @Override
+                public FinanceSyncScope scope() {
+                    return FinanceSyncScope.CARD;
+                }
+
+                @Override
+                public FinanceSyncScopeResult sync(Long userId, String userKey) {
+                    Runnable hook = DURING_CARD_SYNC.get();
+                    if (hook != null) {
+                        hook.run();
+                    }
+                    return FinanceSyncScopeResult.completed(FinanceSyncScope.CARD, 0);
+                }
+            };
+        }
 
         @Bean
         FinanceSyncScopeHandler accountSyncHandlerStub() {

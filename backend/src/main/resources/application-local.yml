@@ -16,6 +16,9 @@ spring:
       ddl-auto: validate
   flyway:
     enabled: true
+    # 마이그레이션 번호를 담당 영역별 구간(V1~V9 BE-A, V10~ BE-B)으로 나눠 쓰므로, 이미 V13이 적용된 DB에
+    # 나중에 V4가 추가되는 일이 정상이다. 이 옵션이 없으면 Flyway가 "resolved migration not applied"로 기동을 막는다.
+    out-of-order: true
 
 app:
   security:

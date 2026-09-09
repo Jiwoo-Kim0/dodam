@@ -26,6 +26,10 @@
 
 Flyway는 버전이 연속일 필요가 없으므로 빈 번호는 그대로 둡니다. 구간을 넘겨 써야 하면 먼저 해당 영역 담당자와 번호를 확인하세요.
 
+이 방식은 **이미 V13이 적용된 DB에 나중에 V4가 추가되는 상황**을 전제로 합니다. Flyway 기본값은 이를
+"resolved migration not applied to database" 검증 오류로 막으므로 local/prod 프로필에 `spring.flyway.out-of-order: true`를
+켜 두었습니다(`FlywayOutOfOrderTest`가 두 동작을 재현). 새 프로필을 추가할 때도 이 옵션을 빠뜨리지 마세요.
+
 `card`와 `loan`은 ERD 정의대로 `account`를 복합 외래키로 참조합니다. FK를 빼고 나중에 추가하는 방식은 데이터 적재 후 제약 추가가 어려워 택하지 않았습니다.
 
 각 도메인 티켓은 자기 테이블만 다음 버전으로 추가합니다. DDL은 `docs/ERD/DODAM_ERDCLOUD_IMPORT.sql`의 해당 테이블 정의를 그대로 옮기고, 변경이 필요하면 ERD를 먼저 고칩니다. local/prod는 `ddl-auto: validate`이므로 엔티티와 DDL이 어긋나면 기동에 실패합니다.
