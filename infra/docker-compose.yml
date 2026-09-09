@@ -269,25 +269,6 @@ services:
     networks:
       - app-net
 
-  cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.49.1
-    container_name: cadvisor
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    mem_limit: 512m
-    # 컨테이너별 리소스를 읽으려면 docker 관련 경로에 대한 읽기 권한이 필요하다.
-    privileged: true
-    devices:
-      - /dev/kmsg
-    volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:ro
-      - /sys:/sys:ro
-      - /var/lib/docker/:/var/lib/docker:ro
-    networks:
-      - app-net
-
   loki:
     image: grafana/loki:3.3.2
     container_name: loki
