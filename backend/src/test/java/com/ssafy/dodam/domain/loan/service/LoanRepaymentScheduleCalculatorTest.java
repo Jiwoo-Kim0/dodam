@@ -166,6 +166,38 @@ class LoanRepaymentScheduleCalculatorTest {
                 maturityDate);
     }
 
+    @Test
+    void 과거_상환일과_만기가_함께_남아있어도_만기경과는_빈_일정이다() {
+        assertThat(calculator.calculate(terms(1000000, "5", RepaymentType.BULLET,
+                LocalDate.of(2026, 7, 10), LocalDate.of(2026, 8, 10)), AS_OF).items()).isEmpty();
+    }
+
+    @Test
+    void 이월_말일_다음에는_약정_31일을_복원한다() {
+        var result = calculator.calculate(terms(1200000, "12", RepaymentType.EQUAL_PRINCIPAL,
+                31, LocalDate.of(2027, 2, 28), LocalDate.of(2027, 4, 30)), AS_OF);
+        assertThat(result.items()).extracting(LoanRepaymentScheduleItem::repaymentDate)
+                .containsExactly(LocalDate.of(2027, 2, 28), LocalDate.of(2027, 3, 31), LocalDate.of(2027, 4, 30));
+        assertThat(result.totalInterest()).isEqualTo(24000);
+    }
+
+    @Test
+    void 추론한_약정일보다_만기가_빠르면_만기일에_최종상환한다() {
+        var result = calculator.calculate(terms(1200000, "12", RepaymentType.BULLET,
+                25, null, LocalDate.of(2026, 9, 20)), AS_OF);
+        assertThat(result.items()).hasSize(1);
+        assertThat(result.items().getFirst().repaymentDate()).isEqualTo(LocalDate.of(2026, 9, 20));
+        assertThat(result.items().getFirst().amount()).isEqualTo(1212000);
+    }
+
+    @Test
+    void 마지막_회차는_만기일을_넘지_않는다() {
+        var result = calculator.calculate(terms(1200000, "12", RepaymentType.EQUAL_PRINCIPAL,
+                25, LocalDate.of(2026, 9, 25), LocalDate.of(2026, 11, 20)), AS_OF);
+        assertThat(result.items().getLast().repaymentDate()).isEqualTo(LocalDate.of(2026, 11, 20));
+        assertThat(result.totalPrincipal()).isEqualTo(1200000);
+    }
+
     private static LoanRepaymentTerms terms(
             long balance,
             String annualRatePercent,

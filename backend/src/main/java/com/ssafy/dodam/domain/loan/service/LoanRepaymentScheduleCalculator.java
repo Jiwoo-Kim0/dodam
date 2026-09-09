@@ -33,7 +33,7 @@ import org.springframework.stereotype.Component;
 public class LoanRepaymentScheduleCalculator {
 
     /**
-     * 한 번에 반환할 최대 회차. 30년 만기 대출도 360회를 넘지 않으며 응답 크기를 제한한다.
+     * 한 번에 반환할 최대 회차. 전체 만기와 별개로 응답 크기를 제한한다.
      */
     public static final int MAX_SCHEDULE_SIZE = 360;
 
@@ -67,7 +67,9 @@ public class LoanRepaymentScheduleCalculator {
     ) {
         LocalDate firstDate = resolveFirstRepaymentDate(terms, asOfDate);
         long balance = terms.balance();
-        if (firstDate == null || terms.maturityDate() == null || balance <= 0) {
+        if (firstDate == null || terms.maturityDate() == null || balance <= 0
+                || terms.maturityDate().isBefore(asOfDate)
+                || firstDate.isAfter(terms.maturityDate())) {
             // 만기일이나 상환일이 없으면 회차를 특정할 수 없다. 추정하지 않고 빈 일정으로 응답한다.
             return new LoanRepaymentSchedule(List.of(), false);
         }
@@ -79,6 +81,9 @@ public class LoanRepaymentScheduleCalculator {
         // truncated는 응답 상한을 넘겼는지만 알린다. 호출자가 더 적게 요청한 경우는 해당하지 않는다.
         boolean truncated = totalCount > MAX_SCHEDULE_SIZE;
         int size = Math.min(Math.min(totalCount, MAX_SCHEDULE_SIZE), Math.max(limit, 0));
+        if (size == 0) {
+            return new LoanRepaymentSchedule(List.of(), truncated);
+        }
 
         BigDecimal monthlyRate = monthlyRate(terms.annualRatePercent());
         long equalPayment = terms.repaymentType() == RepaymentType.EQUAL_PAYMENT
@@ -104,8 +109,8 @@ public class LoanRepaymentScheduleCalculator {
             remaining -= principal;
             items.add(new LoanRepaymentScheduleItem(
                     index + 1,
-                    repaymentDate(firstDate, index),
-                    principal + interest,
+                    repaymentDate(terms, firstDate, index, last),
+                    Math.addExact(principal, interest),
                     principal,
                     interest,
                     remaining
@@ -170,7 +175,7 @@ public class LoanRepaymentScheduleCalculator {
      * 첫 회차 날짜. `next_repayment_date`가 있으면 그대로 쓰고, 없으면 상환일 기준으로 기준일
      * 이후의 가장 빠른 날짜를 사용한다. 둘 다 없으면 회차를 특정할 수 없어 null이다.
      */
-    private static LocalDate resolveFirstRepaymentDate(
+    static LocalDate resolveFirstRepaymentDate(
             LoanRepaymentTerms terms,
             LocalDate asOfDate
     ) {
@@ -182,17 +187,27 @@ public class LoanRepaymentScheduleCalculator {
             return null;
         }
         LocalDate candidate = atRepaymentDay(YearMonth.from(asOfDate), repaymentDay);
-        return candidate.isBefore(asOfDate)
+        LocalDate firstDate = candidate.isBefore(asOfDate)
                 ? atRepaymentDay(YearMonth.from(asOfDate).plusMonths(1), repaymentDay)
                 : candidate;
+        // 약정일에서 추론한 날짜만 만기로 보정한다. 저장된 다음 상환일의 모순은 보정하지 않는다.
+        return terms.maturityDate() != null && firstDate.isAfter(terms.maturityDate())
+                ? terms.maturityDate() : firstDate;
     }
 
     /**
      * 회차 날짜. 31일처럼 해당 월에 없는 상환일은 그 달의 말일로 보정한다.
      */
-    private static LocalDate repaymentDate(LocalDate firstDate, int monthOffset) {
+    private static LocalDate repaymentDate(
+            LoanRepaymentTerms terms, LocalDate firstDate, int monthOffset, boolean last
+    ) {
+        if (monthOffset == 0) {
+            return firstDate;
+        }
         YearMonth targetMonth = YearMonth.from(firstDate).plusMonths(monthOffset);
-        return atRepaymentDay(targetMonth, firstDate.getDayOfMonth());
+        int day = terms.repaymentDay() == null ? firstDate.getDayOfMonth() : terms.repaymentDay();
+        LocalDate date = atRepaymentDay(targetMonth, day);
+        return last && date.isAfter(terms.maturityDate()) ? terms.maturityDate() : date;
     }
 
     private static LocalDate atRepaymentDay(YearMonth month, int day) {
