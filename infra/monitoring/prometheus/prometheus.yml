@@ -23,10 +23,16 @@ scrape_configs:
         labels:
           instance: ec2-host
 
-  # 컨테이너별 리소스
-  - job_name: cadvisor
-    static_configs:
-      - targets: ["cadvisor:8080"]
+  # 컨테이너별 리소스 수집은 제외했다.
+  #
+  # cAdvisor(v0.49.1, v0.52.1 모두)가 Docker 29의 overlayfs 스토리지 드라이버를
+  # 지원하지 않아 "failed to identify the read-write layer ID"로 컨테이너 객체 생성에
+  # 실패하고, name 라벨이 붙은 메트릭이 하나도 나오지 않았다.
+  # 데이터를 내놓지 못하는 수집기를 남겨두면 대시보드가 빈 채로 유지되고
+  # "모니터링이 되고 있다"는 착각만 남으므로 제거했다.
+  #
+  # 대신 컨테이너 이상 감지는 infra/scripts/container-watch.sh가 담당한다.
+  # (docker에 직접 물어 정지/unhealthy/크래시 루프를 감지하고 Mattermost로 알림)
 
   # 백엔드 애플리케이션 메트릭 (JVM 힙/GC, HTTP 요청 등)
   #
