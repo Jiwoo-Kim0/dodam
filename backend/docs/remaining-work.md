@@ -2,7 +2,7 @@
 
 마지막 갱신: 2026-09-09
 
-백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-530, 532, 533이다.
+백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533이다.
 
 ## 기록 방식
 
@@ -11,6 +11,37 @@
 - API 계약·계산식은 해당 구현 문서를 기준으로 하고, 남은 작업의 진행 상태는 이 파일에서 갱신한다.
 - 담당자는 확인된 자료를 근거로 기록하며 새 담당 배정을 의미하지 않는다. 불명확하면 확인 필요로 남긴다.
 - 이 파일에 기록하는 것만으로 이슈 범위를 축소하거나 커밋·push·MR 생성·배포를 승인한 것으로 보지 않는다.
+
+## S15P21D105-499 — Finance Data 동기화
+
+구현 계약: [finance-data.md](finance-data.md)
+
+### 도메인별 동기화 구현
+
+- [ ] `FinanceSyncScopeHandler` 구현을 도메인별로 등록한다. 현재 등록된 구현이 없어 `POST /finance-data/sync`는 모든 scope를 SKIPPED로 보고하고 `last_synced_at`을 갱신하지 않는다.
+- 담당 근거: 테이블 소유 도메인이 구현한다. ACCOUNT는 BE-A(S15P21D105-501, `Account` 엔티티와 함께), CARD·LOAN·SAVING은 BE-B 영역이다. 새 담당 배정을 의미하지 않는다.
+- 선행 조건: 시연 데이터를 로컬 DB에서 읽는 현재 방식과 금융망 실시간 동기화의 역할 분담을 팀이 정한다. 금융망에서 받은 행은 `source_type = 'SSAFY'`, 시연 데이터는 `SEED`로 구분해 공존시키는 것을 전제로 한다.
+- 완료 조건: scope별 handler가 금융망 조회 → 로컬 upsert를 수행하고, 실행 응답의 `syncedCount`와 `last_synced_at` 갱신을 통합 테스트로 확인한다.
+
+### MySQL 검증
+
+- [ ] `V4__create_finance_sync.sql`을 MySQL 8.0에 적용해 `ddl-auto: validate` 통과와 `FinanceSync` 엔티티 매핑(VARCHAR(30) enum, DATETIME)을 확인한다. H2 통합 테스트만 수행했다.
+- [ ] `SELECT ... FOR UPDATE`(`findByUserIdForUpdate`) 기반 동시 실행 방지가 MySQL InnoDB에서 의도대로 직렬화되는지 동시 요청으로 확인한다.
+
+## S15P21D105-500 — Finance Data 통합 요약·신용등급
+
+구현 계약: [finance-data.md](finance-data.md)
+
+### 금융망 실호출 대조
+
+- [ ] `inquireMyCreditRating` / `inquireCreditRatingList`의 실제 응답과 `SsafyCreditRating`, `SsafyCreditRatingCriterion` 필드명을 대조한다. API 문서 기준으로 작성했고 `MockRestServiceServer`로 요청 Header 형식만 검증했다. 알 수 없는 필드는 무시하지만 필드명이 다르면 값이 null로 내려간다.
+- 선행 조건: 실제 `SSAFY_FINANCE_API_KEY`가 주입된 환경(EC2 또는 로컬)과 금융망 계정이 있는 테스트 사용자.
+- 완료 조건: 두 API의 200 응답을 확인하고 필드 차이가 있으면 record와 문서를 함께 고친다.
+
+### 통합 요약 범위
+
+- [ ] `deposit_saving`, `installment`, `subscription` 테이블이 마이그레이션되면 요약 포함 여부를 정한다. 현재 예·적금은 `account`의 DEPOSIT·SAVINGS 행으로만 집계하고 할부·구독은 포함하지 않는다.
+- [ ] 집계 SQL(`JdbcFinanceSummaryReader`)을 MySQL 8.0에서 `PREPARE`로 확인한다. H2에서만 검증했다.
 
 ## S15P21D105-530 — Installment API
 
