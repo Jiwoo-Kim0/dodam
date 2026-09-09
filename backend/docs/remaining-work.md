@@ -2,7 +2,7 @@
 
 마지막 갱신: 2026-09-09
 
-백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-530, 532다.
+백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-530, 532, 533이다.
 
 ## 기록 방식
 
@@ -79,3 +79,35 @@
 - [ ] 실제 프로젝트 Jira 접근이 가능해지면 최신 532 완료 조건과 구현·남은 제한을 대조한다.
 - 현재 브랜치는 사용자가 생성한 `S15P21D105-532-api-10-loan`이며 최신 develop `22821fe` 기준이다.
 - 기존 계획·명세에 근거한 구현을 진행했으며 Jira 조회 실패를 기능 완료 조건 확인으로 대신하지 않는다.
+
+## S15P21D105-533 — Loan 금리비교·상환우선순위
+
+계획: [loan-rate-priority-plan.md](loan-rate-priority-plan.md), 구현 계약: [loan-rate-priority.md](loan-rate-priority.md)
+
+3개 API 중 상환 우선순위만 구현했다. 아래가 남아 있는 동안 533 전체를 완료 처리하지 않는다.
+
+### 시장금리 비교와 고금리 판정 API
+
+- [ ] `GET /api/v1/loans/{accountNo}/rate-comparison`과 `GET /api/v1/loans/high-interest`를 구현한다.
+- 현재 동작: 두 경로는 존재하지 않는다. `GET /api/v1/loans/repayment-priority`만 동작한다.
+- 선행 조건: 계획 8절 4단계의 공통 비교 계산기와 전용 테스트 fixture. 계획 5절의 비교군·상환방식 대응표와 기간 밴드, 최저금리 중앙값 기준은 확정 상태다.
+- 완료 조건: 계획 8절 5단계 게이트(시연 데이터에서 판정 1건 이상, 0건이면 기준 방식 재검토)를 통과하고 `rateSpreadThreshold`를 편차 분포 근거와 함께 확정한다. 확정값이 통계적 기준이 아니라 서비스 초기 임계값임을 응답과 문서에 남긴다.
+
+### goalId 미지원
+
+- [ ] 목표 기반 상환 우선순위 지원 여부를 최신 Jira 범위와 대조해 후속 이슈로 분리할지 정한다.
+- 현재 동작: 형식이 유효한 goalId도 `INVALID_REQUEST` 400이다. 존재 여부를 조회한 것처럼 404를 반환하지 않는다.
+- 선행 조건: `goal` 테이블 마이그레이션과 Goal 도메인(명세 12). 현재 저장소에 둘 다 없다. 533에 임시 테이블이나 대체 저장소를 만들지 않는다.
+- 제약: ERD `goal_account`의 `chk_goal_account_type`이 예금 계좌만 허용해 목표에 대출을 연결할 수 없고, 예산 항목은 소비목표 전용 `monthly_budget`뿐이다. 목표를 반영한 우선순위는 명세 16의 `GET /api/v1/recommendations/priorities`가 소유한다.
+
+### MySQL 검증과 미검증 분기
+
+- [ ] 기존 `LoanAnalysisMySqlIntegrationTest`와 같은 `@EnabledIfEnvironmentVariable` 조건부 테스트를 533에도 추가한다.
+- 현재 동작: 상환 우선순위는 H2로만 검증했다. MySQL 조회·매핑은 미검증이다.
+- 금리 무효(`INVALID_TERMS`) 분기는 테스트로 도달할 수 없다. `sql/loan-query-test-data.sql`이 ERD의 `interest_rate >= 0` CHECK를 복제해 H2에서도 음수를 넣을 수 없다. 서비스에는 방어 코드로만 남아 있다.
+
+### Jira 최신 완료 조건 대조
+
+- [ ] 실제 Jira 접근이 가능해지면 최신 533 완료 조건과 구현·남은 제한을 대조한다.
+- 현재 브랜치는 사용자가 생성한 `S15P21D105-533-api-10`이며 `1247b18` 기준이다. 이후 develop에 추가된 4커밋은 모두 Infra(473)로 백엔드 변경이 없다.
+- 로컬 `SPRINT/Jira (4).csv`의 제목·설명만 근거로 범위를 정했다. Jira 조회 실패를 완료 조건 확인으로 대신하지 않는다.
