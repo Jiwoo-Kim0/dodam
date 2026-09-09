@@ -26,7 +26,22 @@ public enum ErrorCode {
     SESSION_NOT_FOUND(HttpStatus.NOT_FOUND, "세션을 찾을 수 없습니다."),
 
     INVALID_TIMEZONE(HttpStatus.BAD_REQUEST, "지원하지 않는 타임존입니다."),
-    NO_FIELDS_TO_UPDATE(HttpStatus.BAD_REQUEST, "수정할 항목이 없습니다.");
+    NO_FIELDS_TO_UPDATE(HttpStatus.BAD_REQUEST, "수정할 항목이 없습니다."),
+
+    // ---------- Finance Data (S15P21D105-498 ~ 500) ----------
+    FINANCE_CONNECTION_NOT_FOUND(HttpStatus.NOT_FOUND, "금융망 연결 정보가 없습니다."),
+    FINANCE_ALREADY_CONNECTED(HttpStatus.CONFLICT, "이미 금융망에 연결되어 있습니다."),
+    FINANCE_NOT_CONNECTED(HttpStatus.CONFLICT, "금융망에 연결되어 있지 않습니다. 먼저 금융망 연결을 완료해 주세요."),
+    FINANCE_SYNC_IN_PROGRESS(HttpStatus.CONFLICT, "금융 데이터 동기화가 이미 진행 중입니다."),
+    FINANCE_SYNC_NOT_FOUND(HttpStatus.NOT_FOUND, "동기화 이력이 없습니다."),
+    /**
+     * 금융망이 오류 응답(responseCode)을 돌려준 경우. 상세 코드는 서버 로그에만 남긴다.
+     */
+    FINANCE_API_ERROR(HttpStatus.BAD_GATEWAY, "금융망 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."),
+    /**
+     * 금융망에 도달하지 못한 경우(타임아웃·연결 실패·응답 해석 불가).
+     */
+    FINANCE_API_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "금융망에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.");
 
     private final HttpStatus status;
     private final String message;
