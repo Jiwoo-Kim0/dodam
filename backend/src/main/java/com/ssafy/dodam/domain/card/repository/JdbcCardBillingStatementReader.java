@@ -1,6 +1,7 @@
 package com.ssafy.dodam.domain.card.repository;
 
 import com.ssafy.dodam.domain.card.entity.CardBillingStatementStatus;
+import com.ssafy.dodam.global.policy.QueryPeriod;
 import com.ssafy.dodam.global.policy.YearMonthPeriod;
 import java.time.LocalDate;
 import java.time.YearMonth;
@@ -31,6 +32,26 @@ public class JdbcCardBillingStatementReader implements CardBillingStatementReade
             ORDER BY billing_month DESC
             """;
 
+    private static final String USER_SCHEDULED_SQL = """
+            SELECT card.card_id, card.card_no_masked, card.card_name,
+                   statement.billing_month, statement.billing_date,
+                   statement.total_balance, statement.status
+            FROM card_billing_statement statement
+            JOIN card ON card.card_id = statement.card_id
+            WHERE card.user_id = :userId
+              AND statement.status = 'SCHEDULED'
+              AND statement.billing_date BETWEEN :startDate AND :endDate
+            ORDER BY statement.billing_date ASC, card.card_name ASC, card.card_id ASC
+            """;
+
+    private static final String BILLING_SUM_SQL = """
+            SELECT COALESCE(SUM(statement.total_balance), 0)
+            FROM card_billing_statement statement
+            JOIN card ON card.card_id = statement.card_id
+            WHERE card.user_id = :userId
+              AND statement.billing_month = :billingMonth
+            """;
+
     private final NamedParameterJdbcTemplate jdbcTemplate;
 
     public JdbcCardBillingStatementReader(NamedParameterJdbcTemplate jdbcTemplate) {
@@ -57,6 +78,37 @@ public class JdbcCardBillingStatementReader implements CardBillingStatementReade
                 ),
                 (resultSet, rowNumber) -> mapRow(resultSet)
         );
+    }
+
+    @Override
+    public List<CardPaymentScheduleRow> readScheduled(Long userId, QueryPeriod period) {
+        return jdbcTemplate.query(
+                USER_SCHEDULED_SQL,
+                Map.of(
+                        "userId", userId,
+                        "startDate", period.startDate(),
+                        "endDate", period.endDate()
+                ),
+                (resultSet, rowNumber) -> new CardPaymentScheduleRow(
+                        resultSet.getLong("card_id"),
+                        resultSet.getString("card_no_masked"),
+                        resultSet.getString("card_name"),
+                        resultSet.getString("billing_month"),
+                        resultSet.getObject("billing_date", LocalDate.class),
+                        resultSet.getLong("total_balance"),
+                        resultSet.getString("status")
+                )
+        );
+    }
+
+    @Override
+    public long sumBillingAmount(Long userId, YearMonth billingMonth) {
+        Long amount = jdbcTemplate.queryForObject(
+                BILLING_SUM_SQL,
+                Map.of("userId", userId, "billingMonth", billingMonth.toString()),
+                Long.class
+        );
+        return amount == null ? 0 : amount;
     }
 
     private static CardBillingStatementRow mapRow(java.sql.ResultSet resultSet)

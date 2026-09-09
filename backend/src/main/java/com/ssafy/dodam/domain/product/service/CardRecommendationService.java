@@ -8,7 +8,6 @@ import com.ssafy.dodam.domain.product.dto.response.RecommendedCardResponse;
 import com.ssafy.dodam.domain.product.entity.FinancialProduct;
 import com.ssafy.dodam.domain.product.entity.ProductType;
 import com.ssafy.dodam.domain.product.model.MonthlySpendingProfile;
-import com.ssafy.dodam.domain.product.model.SpendingSegment;
 import com.ssafy.dodam.domain.product.repository.CardRecommendationSpendingReader;
 import com.ssafy.dodam.domain.product.repository.FinancialProductRepository;
 import com.ssafy.dodam.global.exception.InvalidRequestException;
@@ -19,10 +18,7 @@ import java.time.YearMonth;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,7 +27,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class CardRecommendationService {
 
     private static final ZoneId SERVICE_ZONE = ZoneId.of("Asia/Seoul");
-    private static final Set<String> GENERAL_CATEGORIES = Set.of("ALL", "DOMESTIC");
     private static final Comparator<RecommendedCardResponse> RECOMMENDATION_ORDER = Comparator
             .comparingLong(RecommendedCardResponse::estimatedMonthlyBenefit).reversed()
             .thenComparing(RecommendedCardResponse::benefitCoverageRate, Comparator.reverseOrder())
@@ -41,16 +36,16 @@ public class CardRecommendationService {
 
     private final FinancialProductRepository financialProductRepository;
     private final CardRecommendationSpendingReader spendingReader;
-    private final CardBenefitCategoryMapper categoryMapper;
+    private final CardBenefitCalculator benefitCalculator;
 
     public CardRecommendationService(
             FinancialProductRepository financialProductRepository,
             CardRecommendationSpendingReader spendingReader,
-            CardBenefitCategoryMapper categoryMapper
+            CardBenefitCalculator benefitCalculator
     ) {
         this.financialProductRepository = financialProductRepository;
         this.spendingReader = spendingReader;
-        this.categoryMapper = categoryMapper;
+        this.benefitCalculator = benefitCalculator;
     }
 
     public CardRecommendationResponse recommend(Long userId, int topN, String requestedYearMonth) {
@@ -85,52 +80,20 @@ public class CardRecommendationService {
             MonthlySpendingProfile profile
     ) {
         List<CardBenefitResponse> benefits = CardBenefitResponse.from(product.getBenefits());
-        Map<Integer, Long> calculableSpending = new LinkedHashMap<>();
-        Map<Integer, Long> qualitativeSpending = new LinkedHashMap<>();
-        long matchedSpending = 0;
-
-        for (SpendingSegment segment : profile.segments()) {
-            Set<String> applicable = categoryMapper.applicableBenefitCategories(segment);
-            int bestCalculableIndex = findBestCalculableBenefit(benefits, applicable);
-            boolean matched = bestCalculableIndex >= 0;
-            if (bestCalculableIndex >= 0) {
-                calculableSpending.merge(bestCalculableIndex, segment.amount(), Long::sum);
-            }
-
-            for (int index = 0; index < benefits.size(); index++) {
-                CardBenefitResponse benefit = benefits.get(index);
-                if (isApplicable(benefit, applicable) && !isCalculable(benefit)) {
-                    qualitativeSpending.merge(index, segment.amount(), Long::sum);
-                    matched = true;
-                }
-            }
-            if (matched) {
-                matchedSpending += segment.amount();
-            }
-        }
+        CardBenefitCalculator.Calculation calculation = benefitCalculator.calculate(
+                benefits,
+                profile,
+                profile.totalSpending(),
+                product.getBaselinePerformance(),
+                product.getMaxBenefitLimit()
+        );
 
         List<RecommendedBenefitResponse> matches = new ArrayList<>();
-        long potentialBenefit = 0;
-        for (Map.Entry<Integer, Long> entry : calculableSpending.entrySet()) {
-            CardBenefitResponse benefit = benefits.get(entry.getKey());
-            long expectedBenefit = calculateBenefit(entry.getValue(), benefit);
-            potentialBenefit += expectedBenefit;
-            matches.add(toResponse(benefit, entry.getValue(), expectedBenefit, true));
-        }
-        for (Map.Entry<Integer, Long> entry : qualitativeSpending.entrySet()) {
-            CardBenefitResponse benefit = benefits.get(entry.getKey());
-            matches.add(toResponse(benefit, entry.getValue(), 0, false));
-        }
-
-        if (product.getMaxBenefitLimit() != null && product.getMaxBenefitLimit() > 0) {
-            potentialBenefit = Math.min(potentialBenefit, product.getMaxBenefitLimit());
-        }
-
-        long baseline = normalizedBaseline(product.getBaselinePerformance());
-        boolean performanceReachable = profile.totalSpending() >= baseline;
-        long shortfall = Math.max(baseline - profile.totalSpending(), 0);
-        long estimatedBenefit = performanceReachable ? potentialBenefit : 0;
-        BigDecimal coverageRate = coverageRate(matchedSpending, profile.totalSpending());
+        calculation.matches().forEach(match -> matches.add(toResponse(match)));
+        BigDecimal coverageRate = coverageRate(
+                calculation.matchedSpending(),
+                profile.totalSpending()
+        );
         matches.sort(Comparator
                 .comparingLong(RecommendedBenefitResponse::expectedBenefit).reversed()
                 .thenComparing(RecommendedBenefitResponse::category));
@@ -141,76 +104,27 @@ public class CardRecommendationService {
                 ProductCompanyResponse.from(product.getCompany()),
                 product.getProductName(),
                 product.getBaselinePerformance(),
-                performanceReachable,
-                shortfall,
-                estimatedBenefit,
-                potentialBenefit,
+                calculation.performanceMet(),
+                calculation.performanceShortfall(),
+                calculation.estimatedBenefit(),
+                calculation.potentialBenefit(),
                 product.getMaxBenefitLimit(),
                 coverageRate,
                 matches,
-                recommendationReason(matches, performanceReachable)
+                recommendationReason(matches, calculation.performanceMet())
         );
     }
 
-    private int findBestCalculableBenefit(
-            List<CardBenefitResponse> benefits,
-            Set<String> applicable
-    ) {
-        int bestIndex = -1;
-        for (int index = 0; index < benefits.size(); index++) {
-            CardBenefitResponse candidate = benefits.get(index);
-            if (!isApplicable(candidate, applicable) || !isCalculable(candidate)) {
-                continue;
-            }
-            if (bestIndex < 0 || isBetter(candidate, benefits.get(bestIndex))) {
-                bestIndex = index;
-            }
-        }
-        return bestIndex;
-    }
-
-    private boolean isBetter(CardBenefitResponse candidate, CardBenefitResponse current) {
-        int rateComparison = candidate.discountRate().compareTo(current.discountRate());
-        if (rateComparison != 0) {
-            return rateComparison > 0;
-        }
-        boolean candidateGeneral = GENERAL_CATEGORIES.contains(candidate.category());
-        boolean currentGeneral = GENERAL_CATEGORIES.contains(current.category());
-        return currentGeneral && !candidateGeneral;
-    }
-
-    private boolean isApplicable(CardBenefitResponse benefit, Set<String> applicable) {
-        return benefit.category() != null && applicable.contains(benefit.category());
-    }
-
-    private boolean isCalculable(CardBenefitResponse benefit) {
-        return benefit.discountRate() != null && benefit.discountRate().signum() > 0;
-    }
-
-    private long calculateBenefit(long spendingAmount, CardBenefitResponse benefit) {
-        long calculated = BigDecimal.valueOf(spendingAmount)
-                .multiply(benefit.discountRate())
-                .divide(BigDecimal.valueOf(100), 0, RoundingMode.DOWN)
-                .longValue();
-        if (benefit.limitAmount() != null && benefit.limitAmount() > 0) {
-            return Math.min(calculated, benefit.limitAmount());
-        }
-        return calculated;
-    }
-
     private RecommendedBenefitResponse toResponse(
-            CardBenefitResponse benefit,
-            long spendingAmount,
-            long expectedBenefit,
-            boolean calculable
+            CardBenefitCalculator.BenefitMatch match
     ) {
         return new RecommendedBenefitResponse(
-                benefit.category(),
-                spendingAmount,
-                benefit.discountRate(),
-                expectedBenefit,
-                calculable,
-                benefit.description()
+                match.benefit().category(),
+                match.spendingAmount(),
+                match.benefit().discountRate(),
+                match.expectedBenefit(),
+                match.calculable(),
+                match.benefit().description()
         );
     }
 
