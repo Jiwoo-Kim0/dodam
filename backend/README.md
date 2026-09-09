@@ -81,7 +81,7 @@ local 또는 prod Profile 실행 전 다음 값을 설정해야 합니다.
 | JWT_SECRET | Access Token(HS256) 서명키. 32바이트 이상, 비어 있으면 기동 실패 |
 | DATA_ENCRYPTION_KEY | 민감 컬럼(`*_encrypted`) AES-256-GCM 키. Base64 32바이트 (`openssl rand -base64 32`). **잃으면 복구 불가** |
 | DATA_HASH_KEY | 조회용 해시(`*_hash`) HMAC-SHA-256 키. Base64 32바이트 |
-| SSAFY_FINANCE_API_KEY | SSAFY 금융망 앱 관리자 API Key. 회원가입 시 금융망 사용자 생성에 사용 |
+| SSAFY_FINANCE_API_KEY | SSAFY 금융망 앱 관리자 API Key. 금융망 사용자 생성·조회, 신용등급 조회 등 모든 금융망 호출에 사용 |
 
 .env.example에는 키만 제공하며 Spring Boot가 .env 파일을 자동으로 읽지는 않습니다. 실행 환경이나 IDE에서 환경변수를 주입하세요.
 
@@ -199,10 +199,10 @@ formLogin, httpBasic, OAuth2 Login은 비활성화되어 있습니다. 클라이
 1. 금융망 호출은 DB 트랜잭션 **밖에서** 먼저 수행합니다 (외부 응답을 기다리며 커넥션을 붙잡지 않기 위해).
 2. 생성 성공 → `finance_connection.status = CONNECTED`, userKey는 AES-GCM 암호문 + HMAC 해시로 저장.
 3. `E4002`(이미 존재) → 조회 API로 userKey 회수. 조회도 `E4003`이면 다른 서비스가 선점한 이메일이므로 **가입 거절(409 `FINANCE_EMAIL_ALREADY_REGISTERED`)**.
-4. 그 외 금융망 오류·네트워크 장애 → 가입은 진행하고 `status = FAILED`. 응답의 `financeConnectionStatus`로 확인할 수 있으며, 재연결 API는 Finance Data 도메인에서 다룹니다.
+4. 그 외 금융망 오류·네트워크 장애 → 가입은 진행하고 `status = FAILED`. 응답의 `financeConnectionStatus`로 확인할 수 있으며, `POST /api/v1/finance-data/connection`으로 다시 연결합니다.
 5. 같은 트랜잭션에서 `user`, `user_setting`(기본값), `financial_profile`(빈 값), `finance_connection`을 함께 생성합니다.
 
-금융망 클라이언트는 `infrastructure/external/ssafy`에 있고, 도메인은 `SsafyFinanceClient` 인터페이스에만 의존합니다(테스트에서는 `@MockitoBean`으로 대체). 거래 API에 필요한 공통 `Header`(기관거래고유번호 채번 등)는 Finance Data 도메인 구현 시 추가합니다.
+금융망 클라이언트는 `infrastructure/external/ssafy`에 있고, 도메인은 `SsafyFinanceClient` 인터페이스에만 의존합니다(테스트에서는 `@MockitoBean`으로 대체). 거래 API 공통 `Header`(기관거래고유번호 채번 등)는 `SsafyHeaderFactory`가 만들며 자세한 규칙은 [docs/finance-data.md](docs/finance-data.md)에 있습니다.
 
 ### User API (API 명세 2. User)
 
@@ -217,6 +217,21 @@ formLogin, httpBasic, OAuth2 Login은 비활성화되어 있습니다. 클라이
 | GET / PATCH | /api/v1/users/me/financial-profile | `monthlyIncome?, annualIncome?, payday?(1~31), fixedExpense?, emergencyFundTarget?` (원 단위 정수, ERD CHECK와 동일 제약) |
 
 PATCH는 null인 항목을 건드리지 않으며, 바꿀 항목이 하나도 없으면 400 `NO_FIELDS_TO_UPDATE`, 알 수 없는 타임존은 400 `INVALID_TIMEZONE`입니다. 설정·프로필 행은 회원가입 때 만들지만 없으면(Seed 사용자 등) 조회 시점에 기본값으로 생성합니다.
+
+### Finance Data API (API 명세 4. Finance Data)
+
+금융망 연결 관리·동기화·통합 요약·신용등급 조회 10개 엔드포인트입니다. 구현 계약과 상태 전이, 집계 기준은 [docs/finance-data.md](docs/finance-data.md)를 기준으로 합니다.
+
+| Method | Endpoint | 설명 |
+| --- | --- | --- |
+| GET / POST / DELETE | /api/v1/finance-data/connection | 연결 상태 조회 / 금융망 사용자 등록·재연결(201) / 연동 해제. 이미 연결이면 409 `FINANCE_ALREADY_CONNECTED` |
+| GET | /api/v1/finance-data/member | 금융망 사용자 계정 조회 (userKey는 응답에 포함하지 않음) |
+| POST | /api/v1/finance-data/sync | Body `{ scope?: ALL\|ACCOUNT\|CARD\|LOAN\|SAVING }`. 사용자별 동시 실행 방지, scope별 결과를 응답 |
+| GET | /api/v1/finance-data/sync/status, /sync/latest | 최근 동기화·진행 여부 / 마지막 반영 시각·마지막 성공 이력 |
+| GET | /api/v1/finance-data/summary | 로컬 DB 집계: 계좌·카드·대출 잔액과 순자산 |
+| GET | /api/v1/finance-data/credit-rating, /credit-rating/criteria | 금융망 실시간 내 신용등급(A~E, userKey 필요) / 등급별 자산 구간 기준표(앱 단위, 연결 불필요) |
+
+금융망 호출이 필요한 API는 연결이 CONNECTED가 아니면 409 `FINANCE_NOT_CONNECTED`, 금융망 오류 응답은 502 `FINANCE_API_ERROR`, 도달 불가는 503 `FINANCE_API_UNAVAILABLE`입니다. 도메인별 동기화 구현(`FinanceSyncScopeHandler`)은 아직 등록된 것이 없어 모든 scope가 SKIPPED로 보고됩니다.
 
 ### 민감 컬럼 암호화
 
@@ -263,7 +278,8 @@ code와 errors는 null일 때만 생략하고 data와 message는 null이어도 �
 
 ## 아직 결정되거나 구현되어야 할 항목
 
-- 금융망 연결이 `FAILED`인 사용자의 재연결 API (Finance Data 도메인)
+- 도메인별 금융 데이터 동기화 구현(`FinanceSyncScopeHandler`) — 시연 데이터를 로컬 DB에서 읽는 현재 방식과 금융망 실시간 동기화의 역할 분담
+- 회원가입 시 금융망 계정 자동 생성 유지 여부 (현재 유지, `POST /finance-data/connection`은 재연결 용도)
 - 탈퇴한 이메일의 재가입 허용 여부 (현재는 UNIQUE 제약으로 불가)
 - 비밀번호 변경 API
 - 실제 대출 실행 제외 원칙과 마이너스통장 상환·이자 납부 API의 충돌
@@ -280,7 +296,7 @@ code와 errors는 null일 때만 생략하고 data와 message는 null이어도 �
 - Redis 적용 범위 확정 및 구현
 - FCM 알림
 - 생성형 AI 연동
-- ERD 나머지 테이블의 Flyway Migration (V1: `user`, `auth_session` / V2: `user_setting`, `financial_profile`, `finance_connection`)
+- ERD 나머지 테이블의 Flyway Migration (BE-A 구간 V1~V4 적용: `user`, `auth_session`, `user_setting`, `financial_profile`, `finance_connection`, `account`, `finance_sync`)
 - Testcontainers MySQL 통합 테스트
 - Prometheus Metrics 연동
 - Docker와 CI/CD는 infra 작업 범위에서 진행

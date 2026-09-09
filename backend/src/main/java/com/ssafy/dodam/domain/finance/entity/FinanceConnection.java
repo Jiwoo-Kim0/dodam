@@ -15,6 +15,11 @@ import org.hibernate.type.SqlTypes;
 /**
  * ERD `finance_connection`. 사용자 1명당 SSAFY 금융망 계정(userKey) 연결 상태 1행.
  * 이메일·userKey는 AES-GCM 암호문 + HMAC 해시 + 마스킹으로 나눠 저장한다 (FieldCryptor).
+ *
+ * 상태 전이
+ * - (없음) / FAILED / DISCONNECTED → CONNECTED : {@link #connect}
+ * - CONNECTED / FAILED / PENDING → DISCONNECTED : {@link #disconnect}
+ * - CONNECTED는 다시 연결할 수 없다 (호출자가 FINANCE_ALREADY_CONNECTED로 거절).
  */
 @Entity
 @Table(name = "finance_connection")
@@ -109,13 +114,36 @@ public class FinanceConnection {
         );
     }
 
+    /**
+     * FAILED·DISCONNECTED 행을 다시 CONNECTED로 만든다. userKey는 새로 확보한 값으로 덮어쓴다.
+     * 해제 시각은 지우지 않고 마지막 해제 이력으로 남긴다.
+     */
+    public void connect(byte[] externalUserKeyEncrypted, String externalUserKeyHash, LocalDateTime at) {
+        this.externalUserKeyEncrypted = externalUserKeyEncrypted;
+        this.externalUserKeyHash = externalUserKeyHash;
+        this.status = FinanceConnectionStatus.CONNECTED;
+        this.connectedAt = at;
+    }
+
     public void disconnect(LocalDateTime at) {
         this.status = FinanceConnectionStatus.DISCONNECTED;
         this.disconnectedAt = at;
     }
 
+    public void markSynced(LocalDateTime at) {
+        this.lastSyncedAt = at;
+    }
+
     public boolean isConnected() {
         return status == FinanceConnectionStatus.CONNECTED;
+    }
+
+    public boolean isDisconnected() {
+        return status == FinanceConnectionStatus.DISCONNECTED;
+    }
+
+    public boolean hasUserKey() {
+        return externalUserKeyEncrypted != null && externalUserKeyEncrypted.length > 0;
     }
 
     public Long getId() {
