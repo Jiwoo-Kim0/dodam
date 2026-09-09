@@ -1,6 +1,8 @@
 package com.ssafy.dodam.domain.finance;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
@@ -18,7 +20,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ssafy.dodam.domain.auth.repository.AuthSessionRepository;
 import com.ssafy.dodam.domain.finance.entity.FinanceConnection;
 import com.ssafy.dodam.domain.finance.entity.FinanceConnectionStatus;
+import com.ssafy.dodam.domain.finance.entity.FinanceSync;
+import com.ssafy.dodam.domain.finance.entity.FinanceSyncScope;
+import com.ssafy.dodam.domain.finance.entity.FinanceSyncStatus;
 import com.ssafy.dodam.domain.finance.repository.FinanceConnectionRepository;
+import com.ssafy.dodam.domain.finance.repository.FinanceSyncRepository;
+import com.ssafy.dodam.domain.finance.service.FinanceSyncScopeHandler;
+import com.ssafy.dodam.domain.finance.service.FinanceSyncScopeResult;
+import com.ssafy.dodam.domain.finance.service.FinanceSyncService;
 import com.ssafy.dodam.domain.user.repository.FinancialProfileRepository;
 import com.ssafy.dodam.domain.user.repository.UserRepository;
 import com.ssafy.dodam.domain.user.repository.UserSettingRepository;
@@ -27,12 +36,16 @@ import com.ssafy.dodam.infrastructure.external.ssafy.SsafyApiException;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyFinanceClient;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyMember;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyUnavailableException;
+import java.time.LocalDateTime;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
@@ -43,6 +56,7 @@ import org.springframework.test.web.servlet.MvcResult;
 @ActiveProfiles("test")
 @AutoConfigureMockMvc
 @SpringBootTest
+@Import(FinanceDataApiIntegrationTest.SyncHandlerStubs.class)
 class FinanceDataApiIntegrationTest {
 
     private static final String EMAIL = "dodam@example.com";
@@ -73,6 +87,9 @@ class FinanceDataApiIntegrationTest {
     private AuthSessionRepository authSessionRepository;
 
     @Autowired
+    private FinanceSyncRepository financeSyncRepository;
+
+    @Autowired
     private FieldCryptor fieldCryptor;
 
     @MockitoBean
@@ -84,6 +101,7 @@ class FinanceDataApiIntegrationTest {
     @BeforeEach
     void setUp() throws Exception {
         authSessionRepository.deleteAll();
+        financeSyncRepository.deleteAll();
         financeConnectionRepository.deleteAll();
         userSettingRepository.deleteAll();
         financialProfileRepository.deleteAll();
@@ -322,6 +340,238 @@ class FinanceDataApiIntegrationTest {
 
         mockMvc.perform(get("/api/v1/finance-data/member").header(HttpHeaders.AUTHORIZATION, bearer))
                 .andExpect(status().isOk());
+    }
+
+    // ---------- S15P21D105-499 금융 데이터 동기화 ----------
+
+    @Test
+    void syncAllRunsEveryScopeAndReportsPerScopeResults() throws Exception {
+        mockMvc.perform(post("/api/v1/finance-data/sync")
+                        .header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.syncId").isNumber())
+                .andExpect(jsonPath("$.data.scope").value("ALL"))
+                // LOAN 스텁이 실패하므로 전체는 FAILED, 나머지 3개는 처리됨 → 75%
+                .andExpect(jsonPath("$.data.status").value("FAILED"))
+                .andExpect(jsonPath("$.data.progress").value(75))
+                .andExpect(jsonPath("$.data.errorMessage").value(containsString("LOAN")))
+                .andExpect(jsonPath("$.data.startedAt").isNotEmpty())
+                .andExpect(jsonPath("$.data.completedAt").isNotEmpty())
+                .andExpect(jsonPath("$.data.results", hasSize(4)))
+                .andExpect(jsonPath("$.data.results[0].scope").value("ACCOUNT"))
+                .andExpect(jsonPath("$.data.results[0].status").value("COMPLETED"))
+                .andExpect(jsonPath("$.data.results[0].syncedCount").value(3))
+                .andExpect(jsonPath("$.data.results[1].scope").value("CARD"))
+                .andExpect(jsonPath("$.data.results[1].status").value("SKIPPED"))
+                .andExpect(jsonPath("$.data.results[2].scope").value("LOAN"))
+                .andExpect(jsonPath("$.data.results[2].status").value("FAILED"))
+                .andExpect(jsonPath("$.data.results[2].message").value("동기화 처리 중 오류가 발생했습니다."))
+                .andExpect(jsonPath("$.data.results[3].scope").value("SAVING"))
+                .andExpect(jsonPath("$.data.results[3].status").value("SKIPPED"));
+
+        // ACCOUNT가 실제로 반영됐으므로 last_synced_at은 갱신된다
+        assertThat(financeConnectionRepository.findByUserId(userId).orElseThrow().getLastSyncedAt()).isNotNull();
+        assertThat(financeSyncRepository.count()).isEqualTo(1);
+    }
+
+    @Test
+    void syncSingleScopeCompletesAndIsReportedAsLatest() throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/v1/finance-data/sync")
+                        .header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("scope", "account"))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.scope").value("ACCOUNT"))
+                .andExpect(jsonPath("$.data.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.data.progress").value(100))
+                .andExpect(jsonPath("$.data.errorMessage").value(nullValue()))
+                .andExpect(jsonPath("$.data.results", hasSize(1)))
+                .andReturn();
+        long syncId = readData(result).path("syncId").asLong();
+
+        mockMvc.perform(get("/api/v1/finance-data/sync/status").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.inProgress").value(false))
+                .andExpect(jsonPath("$.data.sync.syncId").value(syncId))
+                .andExpect(jsonPath("$.data.sync.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.data.sync.results").value(nullValue()));
+
+        mockMvc.perform(get("/api/v1/finance-data/sync/latest").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.lastSyncedAt").isNotEmpty())
+                .andExpect(jsonPath("$.data.lastCompletedSync.syncId").value(syncId));
+
+        mockMvc.perform(get("/api/v1/finance-data/connection").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(jsonPath("$.data.lastSyncedAt").isNotEmpty());
+    }
+
+    @Test
+    void syncWithOnlySkippedScopesDoesNotUpdateLastSyncedAt() throws Exception {
+        mockMvc.perform(post("/api/v1/finance-data/sync")
+                        .header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("scope", "SAVING"))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.data.results[0].status").value("SKIPPED"));
+
+        mockMvc.perform(get("/api/v1/finance-data/sync/latest").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(jsonPath("$.data.lastSyncedAt").value(nullValue()))
+                .andExpect(jsonPath("$.data.lastCompletedSync.scope").value("SAVING"));
+    }
+
+    @Test
+    void syncWithoutBodyDefaultsToAllScopes() throws Exception {
+        mockMvc.perform(post("/api/v1/finance-data/sync").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.scope").value("ALL"))
+                .andExpect(jsonPath("$.data.results", hasSize(4)));
+    }
+
+    @Test
+    void syncRejectsUnknownScope() throws Exception {
+        mockMvc.perform(post("/api/v1/finance-data/sync")
+                        .header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("scope", "CRYPTO"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+
+        assertThat(financeSyncRepository.count()).isZero();
+    }
+
+    @Test
+    void syncRequiresConnectedFinanceNetwork() throws Exception {
+        markConnectionFailed();
+
+        mockMvc.perform(post("/api/v1/finance-data/sync").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("FINANCE_NOT_CONNECTED"));
+
+        assertThat(financeSyncRepository.count()).isZero();
+    }
+
+    @Test
+    void syncIsRejectedWhileAnotherSyncIsRunning() throws Exception {
+        financeSyncRepository.save(FinanceSync.start(userId, FinanceSyncScope.ALL, LocalDateTime.now()));
+
+        mockMvc.perform(post("/api/v1/finance-data/sync").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("FINANCE_SYNC_IN_PROGRESS"));
+
+        mockMvc.perform(get("/api/v1/finance-data/sync/status").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(jsonPath("$.data.inProgress").value(true))
+                .andExpect(jsonPath("$.data.sync.status").value("RUNNING"));
+
+        assertThat(financeSyncRepository.count()).isEqualTo(1);
+    }
+
+    @Test
+    void staleRunningSyncIsExpiredAndNewSyncStarts() throws Exception {
+        FinanceSync stale = financeSyncRepository.save(FinanceSync.start(
+                userId, FinanceSyncScope.ALL, LocalDateTime.now().minus(FinanceSyncService.STALE_AFTER).minusMinutes(1)
+        ));
+
+        mockMvc.perform(get("/api/v1/finance-data/sync/status").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(jsonPath("$.data.inProgress").value(false));
+
+        mockMvc.perform(post("/api/v1/finance-data/sync")
+                        .header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("scope", "ACCOUNT"))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.status").value("COMPLETED"));
+
+        FinanceSync expired = financeSyncRepository.findById(stale.getId()).orElseThrow();
+        assertThat(expired.getStatus()).isEqualTo(FinanceSyncStatus.FAILED);
+        assertThat(expired.getErrorMessage()).contains("만료");
+        assertThat(financeSyncRepository.count()).isEqualTo(2);
+    }
+
+    @Test
+    void disconnectIsRejectedWhileSyncIsRunning() throws Exception {
+        financeSyncRepository.save(FinanceSync.start(userId, FinanceSyncScope.ALL, LocalDateTime.now()));
+
+        mockMvc.perform(delete("/api/v1/finance-data/connection").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("FINANCE_SYNC_IN_PROGRESS"));
+
+        assertThat(connectionStatus()).isEqualTo(FinanceConnectionStatus.CONNECTED);
+    }
+
+    @Test
+    void syncStatusAndLatestAreEmptyWithoutHistory() throws Exception {
+        mockMvc.perform(get("/api/v1/finance-data/sync/status").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.inProgress").value(false))
+                .andExpect(jsonPath("$.data.sync").value(nullValue()));
+
+        mockMvc.perform(get("/api/v1/finance-data/sync/latest").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.lastSyncedAt").value(nullValue()))
+                .andExpect(jsonPath("$.data.lastCompletedSync").value(nullValue()));
+    }
+
+    @Test
+    void syncHistoryIsIsolatedPerUser() throws Exception {
+        mockMvc.perform(post("/api/v1/finance-data/sync").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isCreated());
+
+        given(ssafyFinanceClient.createMember(anyString()))
+                .willReturn(new SsafyMember("other@example.com", "other", "00100", "other-key"));
+        mockMvc.perform(post("/api/v1/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("email", "other@example.com", "password", PASSWORD, "name", "타인"))))
+                .andExpect(status().isCreated());
+        MvcResult login = mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("email", "other@example.com", "password", PASSWORD))))
+                .andExpect(status().isOk())
+                .andReturn();
+        String otherBearer = "Bearer " + readData(login).path("accessToken").asText();
+
+        mockMvc.perform(get("/api/v1/finance-data/sync/status").header(HttpHeaders.AUTHORIZATION, otherBearer))
+                .andExpect(jsonPath("$.data.sync").value(nullValue()));
+    }
+
+    /**
+     * 동기화 확장점 검증용 스텁. ACCOUNT는 3건 성공, LOAN은 예외, CARD·SAVING은 미등록(SKIPPED).
+     */
+    @TestConfiguration
+    static class SyncHandlerStubs {
+
+        @Bean
+        FinanceSyncScopeHandler accountSyncHandlerStub() {
+            return new FinanceSyncScopeHandler() {
+                @Override
+                public FinanceSyncScope scope() {
+                    return FinanceSyncScope.ACCOUNT;
+                }
+
+                @Override
+                public FinanceSyncScopeResult sync(Long userId, String userKey) {
+                    assertThat(userKey).isNotBlank();
+                    return FinanceSyncScopeResult.completed(FinanceSyncScope.ACCOUNT, 3);
+                }
+            };
+        }
+
+        @Bean
+        FinanceSyncScopeHandler loanSyncHandlerStub() {
+            return new FinanceSyncScopeHandler() {
+                @Override
+                public FinanceSyncScope scope() {
+                    return FinanceSyncScope.LOAN;
+                }
+
+                @Override
+                public FinanceSyncScopeResult sync(Long userId, String userKey) {
+                    throw new IllegalStateException("loan sync stub failure");
+                }
+            };
+        }
     }
 
     // ---------- helpers ----------

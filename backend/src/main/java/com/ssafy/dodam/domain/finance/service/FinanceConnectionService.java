@@ -3,7 +3,9 @@ package com.ssafy.dodam.domain.finance.service;
 import com.ssafy.dodam.domain.finance.dto.FinanceConnectionResponse;
 import com.ssafy.dodam.domain.finance.dto.FinanceMemberResponse;
 import com.ssafy.dodam.domain.finance.entity.FinanceConnection;
+import com.ssafy.dodam.domain.finance.entity.FinanceSyncStatus;
 import com.ssafy.dodam.domain.finance.repository.FinanceConnectionRepository;
+import com.ssafy.dodam.domain.finance.repository.FinanceSyncRepository;
 import com.ssafy.dodam.domain.user.entity.User;
 import com.ssafy.dodam.domain.user.repository.UserRepository;
 import com.ssafy.dodam.global.crypto.FieldCryptor;
@@ -12,6 +14,7 @@ import com.ssafy.dodam.global.exception.ErrorCode;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyFinanceClient;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyMember;
 import java.time.LocalDateTime;
+import java.util.EnumSet;
 import java.util.Optional;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -27,6 +30,7 @@ public class FinanceConnectionService {
 
     private final UserRepository userRepository;
     private final FinanceConnectionRepository financeConnectionRepository;
+    private final FinanceSyncRepository financeSyncRepository;
     private final FinanceMemberService financeMemberService;
     private final SsafyFinanceClient ssafyFinanceClient;
     private final FieldCryptor fieldCryptor;
@@ -35,6 +39,7 @@ public class FinanceConnectionService {
     public FinanceConnectionService(
             UserRepository userRepository,
             FinanceConnectionRepository financeConnectionRepository,
+            FinanceSyncRepository financeSyncRepository,
             FinanceMemberService financeMemberService,
             SsafyFinanceClient ssafyFinanceClient,
             FieldCryptor fieldCryptor,
@@ -42,6 +47,7 @@ public class FinanceConnectionService {
     ) {
         this.userRepository = userRepository;
         this.financeConnectionRepository = financeConnectionRepository;
+        this.financeSyncRepository = financeSyncRepository;
         this.financeMemberService = financeMemberService;
         this.ssafyFinanceClient = ssafyFinanceClient;
         this.fieldCryptor = fieldCryptor;
@@ -121,7 +127,11 @@ public class FinanceConnectionService {
         if (connection.isDisconnected()) {
             throw new BusinessException(ErrorCode.FINANCE_NOT_CONNECTED);
         }
-        connection.disconnect(LocalDateTime.now());
+        LocalDateTime now = LocalDateTime.now();
+        if (hasSyncInProgress(userId, now)) {
+            throw new BusinessException(ErrorCode.FINANCE_SYNC_IN_PROGRESS);
+        }
+        connection.disconnect(now);
         return FinanceConnectionResponse.from(connection);
     }
 
@@ -135,6 +145,18 @@ public class FinanceConnectionService {
         return financeConnectionRepository.findByUserId(userId)
                 .filter(connection -> connection.isConnected() && connection.hasUserKey())
                 .orElseThrow(() -> new BusinessException(ErrorCode.FINANCE_NOT_CONNECTED));
+    }
+
+    /**
+     * 동기화가 돌고 있는 동안 연결을 끊으면 handler가 쓰던 userKey 상태와 어긋나므로 해제를 거절한다.
+     * 비정상 종료로 남은 RUNNING 행(STALE_AFTER 경과)은 진행 중으로 보지 않는다.
+     */
+    private boolean hasSyncInProgress(Long userId, LocalDateTime now) {
+        LocalDateTime staleThreshold = now.minus(FinanceSyncService.STALE_AFTER);
+        return financeSyncRepository
+                .findAllByUserIdAndStatusIn(userId, EnumSet.of(FinanceSyncStatus.PENDING, FinanceSyncStatus.RUNNING))
+                .stream()
+                .anyMatch(sync -> !sync.isStaleSince(staleThreshold));
     }
 
     public String userKeyOf(FinanceConnection connection) {
