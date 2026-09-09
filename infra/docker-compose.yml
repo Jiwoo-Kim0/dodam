@@ -12,6 +12,13 @@ services:
     image: nginx:1.27-alpine
     container_name: nginx
     restart: unless-stopped
+    # 하드닝 (infra/todo/security.md R3)
+    #   no-new-privileges: setuid 바이너리로 권한을 올리는 경로를 차단한다.
+    #   mem_limit: 한 서비스가 폭주해도 다른 서비스를 굶기지 않도록 상한을 둔다.
+    #     (한도 초과 시 해당 컨테이너만 OOM으로 종료되고 restart 정책이 되살린다)
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
     ports:
       - "80:80"
       - "443:443"
@@ -35,6 +42,9 @@ services:
     build: ./jenkins
     container_name: jenkins
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 2g
     environment:
       - JENKINS_OPTS=--prefix=/jenkins
       - JAVA_OPTS=-Djenkins.install.runSetupWizard=true
@@ -60,6 +70,9 @@ services:
     image: certbot/certbot:latest
     container_name: certbot
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
     volumes:
       - ./nginx/certbot/conf:/etc/letsencrypt
       - ./nginx/certbot/www:/var/www/certbot
@@ -74,6 +87,9 @@ services:
     image: mysql:8.0
     container_name: mysql
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 3g
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
@@ -108,6 +124,9 @@ services:
     image: redis:7-alpine
     container_name: redis
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 768m
     # 사용 범위 판단 근거 (2026-09-08, 코드 확인):
     #   Java 코드에 RedisTemplate/@Cacheable/Redis 리포지토리 사용처가 하나도 없고,
     #   로그인 세션은 MySQL의 auth_session 테이블(JPA)에 저장된다.
@@ -145,6 +164,15 @@ services:
       context: ../backend
     container_name: backend
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    # backend만 cap_drop을 전부 적용한다.
+    # 이미 비루트(uid 10001)로 실행되고 8080 바인딩에 특권이 필요 없어 떨궈도 안전하다.
+    # nginx(80/443 바인딩), mysql(파일 소유권 변경) 등은 필요한 capability가 있어
+    # 일괄 적용하면 기동이 깨지므로 제외했다.
+    cap_drop:
+      - ALL
+    mem_limit: 1536m
     environment:
       SPRING_PROFILES_ACTIVE: prod
       DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8

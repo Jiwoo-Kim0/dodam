@@ -187,6 +187,76 @@ REDIS_HOST: redis                                        # 리터럴
 미머지 상태에서는 배포를 돌리는 순간 변경분이 사라진다.
 (실제로 테스트 중 이 현상이 발생했고, `check-env.sh`가 `NUMBER_HASH_KEY` 누락을 잡아 배포를 막았다)
 
+
+### 8. 컨테이너 하드닝 마무리 및 리소스 제한
+계획서의 나머지 하드닝 항목을 적용했다.
+
+- **`security_opt: no-new-privileges:true`** — 전 서비스(6개). setuid 바이너리로 권한을 올리는 경로를 차단한다
+- **`cap_drop: ALL`** — **backend에만** 적용
+  - 이미 비루트(uid 10001)이고 8080 바인딩에 특권이 필요 없어 안전하다
+  - nginx(80/443 바인딩), mysql(파일 소유권 변경)은 필요한 capability가 있어 일괄 적용하면 기동이 깨지므로 제외했다. "전부 떨구기"가 항상 옳은 건 아니다
+- **`mem_limit`** — 실사용 실측 후 여유를 둔 값
+
+| 서비스 | 실사용 | 상한 | 근거 |
+| --- | --- | --- | --- |
+| backend | 398MB | 1536m | 힙 1GB + 메타스페이스/스택/네이티브 |
+| mysql | 536MB | 3g | 버퍼풀 2GB + 커넥션/임시테이블 |
+| jenkins | 1.37GB | 2g | 실사용 기준 여유 |
+| redis | 3.7MB | 768m | maxmemory 512mb + 오버헤드 |
+| nginx / certbot | 6MB / 2MB | 128m | 여유 충분 |
+
+합계 약 7.5GB로 호스트 15GB 중 절반. Day 6 모니터링 스택 몫을 남겼다.
+상한을 두는 이유는 **한 서비스가 폭주해도 다른 서비스를 굶기지 않게** 하기 위함이다. 한도를 넘으면 해당 컨테이너만 OOM으로 종료되고 restart 정책이 되살린다.
+
+### 9. 계획서의 검증 항목 실제 수행
+계획서 6번 검증 항목을 하나씩 실제로 돌렸다. **두 개는 내 테스트 방법이 틀려서 두 번 시도했다.**
+
+**① `restart` 정책 자동 복구**
+- 1차: `docker kill backend` → 컨테이너가 exited 상태로 남고 복구되지 않음
+  - 원인은 정책 문제가 아니라 **`docker kill`이 "사용자가 명시적으로 중단시킨 것"으로 취급**되기 때문. `unless-stopped`는 이 경우 재시작하지 않는 것이 정의된 동작이다
+- 2차: `docker exec backend kill -9 1` → 역시 안 죽음
+  - 원인: **PID 1은 자기 PID 네임스페이스 안에서 보낸 SIGKILL을 커널이 무시**한다 (핸들러를 등록한 시그널만 받음)
+- **실증 근거는 이미 확보되어 있었다**: 09-08 장애 당시 백엔드가 크래시 루프에 빠지며 `RestartCount=604`까지 올라갔다. 프로세스가 스스로 죽을 때 Docker가 계속 되살렸다는 뜻이므로 정책은 정상 동작한다
+- 전 서비스 `restart: unless-stopped` 설정 확인 완료
+
+**② 테스트 실패가 배포를 막는지**
+격리 복사본에 의도적으로 실패하는 테스트를 추가하고 이미지 빌드를 시도했다.
+```
+DeliberatelyFailingTest > thisTestMustFail() FAILED
+80 tests completed, 1 failed
+Execution failed for task ':test'.
+→ 빌드 실패
+```
+빌드가 Dockerfile builder 스테이지에서 `./gradlew clean build`를 돌리므로, **테스트가 깨지면 이미지가 만들어지지 않고 배포 단계로 진행하지 않는다.** Day 2에서 구조만 만들고 확인한 적 없던 항목을 실제로 검증했다.
+
+**③ EC2 재부팅 후 전체 스택 자동 기동**
+`sudo systemctl reboot`으로 실제 재부팅했다.
+
+| 항목 | 결과 |
+| --- | --- |
+| 컨테이너 6개 자동 기동 | ✅ 부팅 후 **26초** 내 전부 Up, backend healthy |
+| DB 데이터 | ✅ `user`, `auth_session`, `user_setting`, `financial_profile`, `finance_connection` 등 보존 |
+| ufw 규칙 | ✅ 유지 |
+| cron (일일 백업) | ✅ 유지 |
+| 하드닝 설정 | ✅ `mem_limit`, `cap_drop` 유지 |
+| HTTPS | ✅ 200, 인증서 유지(만료 2026-12-06) |
+| HTTP → HTTPS | ✅ 301 |
+| Jenkins UI 외부 차단 | ✅ 403, 루프백 바인딩 유지 |
+| `/actuator/` 차단 | ✅ 404 |
+| fail2ban | ✅ active |
+
+**수동 개입 없이 전 구간이 복구**되었다. 서버가 재부팅돼도 서비스가 알아서 돌아온다는 것이 확인됐다.
+
+### 10. `.env` 관리 방식 결정
+계획서 2번 항목. 두 선택지를 두고 **현행(EC2에 수동 보관) 유지**로 결정했다.
+
+| 방식 | 장점 | 단점 |
+| --- | --- | --- |
+| **EC2 수동 보관 (채택)** | 단순함. 배포 경로에 시크릿 생성 로직이 없어 실패 지점이 적다 | EC2가 날아가면 시크릿도 사라짐 |
+| Jenkins Credentials에서 배포 시 생성 | 복구력 좋음 | **Jenkins가 단일 실패점**이 된다. 이미 Jenkins는 docker.sock 접근권 때문에 최대 위험 요소(R1)인데, 모든 시크릿까지 쥐게 하면 침해 시 피해가 커진다 |
+
+채택 이유: Jenkins에 시크릿을 몰아주는 것은 **보안 관점에서 오히려 후퇴**다. 대신 단점(EC2 소실 시 시크릿 소실)은 **`backup-secrets.sh`로 서버 밖 백업**을 만들어 보완했다.
+
 ## 다음 기록할 것 (TODO)
 - [x] 배포 실패 시 자동 롤백
 - [x] `check-env.sh` 앱↔compose 대조 검사
@@ -195,6 +265,12 @@ REDIS_HOST: redis                                        # 리터럴
 - [x] JVM 힙 상한 설정 (1GB)
 - [x] 헬스체크 엔드포인트 방침 결정 — 일원화 대신 liveness/readiness 역할 분리
 - [x] 배포 검증을 2단계(readiness + end-to-end)로 전환
+- [x] `security_opt: no-new-privileges` 전 서비스 적용, `cap_drop: ALL` backend 적용
+- [x] 컨테이너 리소스 제한(`mem_limit`) 적용
+- [x] restart 정책 동작 확인
+- [x] 테스트 실패가 배포를 막는지 검증
+- [x] EC2 재부팅 후 전체 스택 자동 기동 검증
+- [x] `.env` 관리 방식 결정 (현행 유지 + 서버 밖 백업으로 보완)
 - [ ] `develop` Protected branch 설정 ([[security.md]] R4, **사용자 액션**)
-- [ ] `.env` 백업 절차 실행 (**사용자 액션**)
+- [ ] 시크릿 목록 표를 팀 문서로 이관하고 발급 담당자 지정 (**사용자 액션**)
 - [ ] 인프라 파일 편집 주체에 대한 팀 합의 (**사용자 액션**)
