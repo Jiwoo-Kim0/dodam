@@ -4,6 +4,21 @@
 | --- | --- | --- |
 | V1 | `user`, `auth_session` 생성 (Auth API 최소 범위) | S15P21D105-494 |
 | V2 | `user_setting`, `financial_profile`, `finance_connection` 생성 | S15P21D105-494, S15P21D105-497 |
+| V10 | `financial_company`, `financial_product`, `financial_product_option` 생성 | S15P21D105-525, S15P21D105-526 |
+| V11 | `card`, `card_billing_statement` 생성 | S15P21D105-527, S15P21D105-529 |
+
+## 버전 번호 할당
+
+브랜치가 갈린 상태에서 같은 버전 번호를 잡으면 병합 시 반드시 충돌합니다. 담당 영역별로 번호 구간을 나눠 씁니다.
+
+| 구간 | 담당 영역 |
+| --- | --- |
+| V1~V9 | BE-A (Auth/User, Account, Transaction/Spending, Goal 등) |
+| V10~ | BE-B (금융상품, Card, Installment, Loan, 예적금, Cashflow 등) |
+
+Flyway는 버전이 연속일 필요가 없으므로 빈 번호는 그대로 둡니다. 구간을 넘겨 써야 하면 먼저 해당 영역 담당자와 번호를 확인하세요.
+
+`card`와 `loan`은 ERD 정의대로 `account`를 복합 외래키로 참조합니다. `account` 테이블은 BE-A 소관(S15P21D105-501)이므로 해당 버전이 들어오기 전에는 V11 이후가 적용되지 않습니다. FK를 빼고 나중에 추가하는 방식은 데이터 적재 후 제약 추가가 어려워 택하지 않았습니다.
 
 각 도메인 티켓은 자기 테이블만 다음 버전으로 추가합니다. DDL은 `docs/ERD/DODAM_ERDCLOUD_IMPORT.sql`의 해당 테이블 정의를 그대로 옮기고, 변경이 필요하면 ERD를 먼저 고칩니다. local/prod는 `ddl-auto: validate`이므로 엔티티와 DDL이 어긋나면 기동에 실패합니다.
 
