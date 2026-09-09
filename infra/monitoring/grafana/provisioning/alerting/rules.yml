@@ -69,7 +69,10 @@ groups:
               conditions:
                 - evaluator: { type: lt, params: [15] }
               refId: threshold
-        noDataState: NoData
+        # node-exporter가 죽으면 이 쿼리는 NoData가 되는데, 그 상황은
+        # "수집 대상 다운" 규칙이 이미 알려준다. NoData로도 알림을 보내면
+        # 컴포넌트 하나가 죽었을 때 알림이 3개 오게 되어 소음이 된다.
+        noDataState: OK
         execErrState: Alerting
 
       # ── 메모리 임계치 ──────────────────────────────────────────────
@@ -97,5 +100,8 @@ groups:
               conditions:
                 - evaluator: { type: lt, params: [10] }
               refId: threshold
-        noDataState: NoData
+        # node-exporter가 죽으면 이 쿼리는 NoData가 되는데, 그 상황은
+        # "수집 대상 다운" 규칙이 이미 알려준다. NoData로도 알림을 보내면
+        # 컴포넌트 하나가 죽었을 때 알림이 3개 오게 되어 소음이 된다.
+        noDataState: OK
         execErrState: Alerting

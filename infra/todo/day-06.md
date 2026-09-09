@@ -10,29 +10,43 @@
 ## 체크리스트
 
 ### 1. Prometheus (리소스 모니터링)
-- [ ] `prometheus` 컨테이너 추가, `infra/monitoring/prometheus/prometheus.yml` 작성
-- [ ] `cadvisor` 또는 `node-exporter` 추가해 EC2 자체 리소스(CPU/메모리/디스크) 수집
+- [x] `prometheus` 컨테이너 추가, `infra/monitoring/prometheus/prometheus.yml` 작성
+- [x] `node-exporter` 추가해 EC2 자체 리소스 수집
+- [x] ~~cadvisor~~ → **제거함**. Docker 29의 overlayfs 스토리지 드라이버를 지원하지 않아
+      컨테이너별 메트릭이 하나도 나오지 않았다(name 라벨 0건). 4가지 우회를 시도했으나 모두 실패.
+      대체: `infra/scripts/container-watch.sh` (docker에 직접 질의, 5분 cron). 상세: [[jiw/day-06.md]]
 - [ ] Spring Boot Actuator `/actuator/prometheus` 수집 대상으로 등록 — **백엔드팀에 아래 두 가지를 함께 요청** (**사용자 액션**)
   1. `build.gradle`에 `implementation 'io.micrometer:micrometer-registry-prometheus'` 추가
   2. `application.yml`의 `management.endpoints.web.exposure.include`에 `prometheus` 추가 (현재 `health`만 열려 있음)
-  - 주의: actuator 엔드포인트는 nginx `/api/` 프록시 밖(`/actuator/`)에 있으므로 **외부에 노출되지 않도록** nginx에서 막고, Prometheus는 컨테이너 네트워크로만 접근하게 할 것
+  3. **`SecurityConfig`에서 `/actuator/prometheus`를 permitAll에 추가** ← 실제 확인 결과 추가로 필요
+     (`/actuator/prometheus`가 404가 아니라 **401**을 반환한다. Spring Security가 막고 있어
+      의존성과 노출 설정만으로는 수집이 되지 않는다)
+  - [x] actuator를 외부에 노출하지 않도록 nginx에서 차단 (404 확인)
 - [ ] MySQL exporter 추가 여부는 시간 되면(P2 중에서도 후순위)
 
 ### 2. Grafana (모니터링 시각화)
-- [ ] `grafana` 컨테이너 추가, Nginx `/grafana/` 서브패스로 노출 (Day 2 기준, Basic Auth 또는 Grafana 자체 로그인)
-- [ ] Prometheus를 데이터소스로 연결
-- [ ] 기본 대시보드 3종 정도: (1) 컨테이너별 CPU/메모리, (2) JVM 힙/GC, (3) 디스크 사용량
-- [ ] 알림 채널(이메일/Slack/Discord webhook) 연결은 시간 남으면 — 디스크 사용량 90% 이상 시 알림 정도가 실전에서 가장 유용
+- [x] `grafana` 컨테이너 추가, Nginx `/grafana/` 서브패스로 노출 (Grafana 자체 로그인, 익명/가입 차단)
+- [x] Prometheus·Loki 데이터소스 파일 프로비저닝 (UI 설정은 컨테이너 재생성 시 소실되므로)
+- [x] 대시보드 3종 — 서비스 개요 / 호스트 리소스 / 로그
+      (컨테이너별 CPU·메모리는 cAdvisor 제거로 불가, JVM은 백엔드 선행작업 대기)
+- [x] **알림 채널 연결 — Mattermost**. 시간 남으면이 아니라 **최우선으로 처리**했다.
+      장애 3건이 모두 "빌드는 빨간불이었지만 아무도 안 봤다"였기 때문
 
 ### 3. Loki + Promtail (로그 모니터링)
-- [ ] `loki`, `promtail` 컨테이너 추가
-- [ ] Promtail이 Docker 컨테이너 로그(`/var/lib/docker/containers/*/*.log`)를 수집하도록 설정
-- [ ] Grafana에서 Loki를 데이터소스로 추가, 백엔드/Nginx 로그를 검색 가능하게 확인
-- [ ] 로그 보관 기간(retention) 설정 — 디스크 절약을 위해 짧게(예: 7~14일)
+- [x] `loki`, `promtail` 컨테이너 추가
+- [x] Promtail이 Docker 서비스 디스커버리로 컨테이너 로그 수집 (파일 경로 직접 훑기보다 컨테이너 이름 라벨이 정확히 붙는다)
+- [x] Grafana에 Loki 데이터소스 연결, 컨테이너 11개 로그 수집 및 조회 확인
+- [x] 보관 기간 14일 설정 (compactor `retention_enabled` 포함 — 없으면 설정만 하고 실제 삭제가 안 된다)
 
 ### 4. 리소스 부담 재확인
-- [ ] Day 1에서 실측한 EC2 스펙 기준으로 Prometheus/Grafana/Loki가 실제로 안정적으로 뜨는지 확인
-- [ ] 메모리가 부족하면: Loki 먼저 제외 → 컨테이너 로그는 `docker logs`로만 확인하는 최소 운영으로 대체
+- [x] 전 서비스에 `mem_limit` 적용 후 안정 기동 확인. 15GB 중 예약 약 7.5GB로 여유 있음
+- [x] 메모리 부족 상황 없었으므로 Loki 유지
+
+### 5. 배포 반영 (Day 6에서 추가로 발견)
+- [x] 모니터링 서비스를 `deploy.sh`의 `DEPLOY_SERVICES`에 포함
+      목록에 없으면 배포가 해당 컨테이너를 아예 건드리지 않아, 설정 변경이 반영되지 않고
+      수동 변경은 다음 배포의 `git reset --hard`에 밀려 조용히 원복된다
+- [x] compose 서비스와 배포 목록을 대조해 누락 시 배포 로그에 WARN을 남기도록 추가
 
 ## 산출물
 - Grafana 대시보드 3종, Loki 로그 검색 가능 (또는 리소스 부족 시 축소된 버전 + 그 사유 문서화)
