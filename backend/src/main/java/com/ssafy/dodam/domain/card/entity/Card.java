@@ -56,7 +56,9 @@ public class Card {
     @Column(name = "financial_product_id")
     private Long financialProductId;
 
-    @Column(name = "card_no_hash", nullable = false, length = 64)
+    // ERD의 해시·연월 컬럼은 고정 길이 CHAR다. columnDefinition을 명시하지 않으면 Hibernate가
+    // varchar로 기대해 ddl-auto: validate가 실패한다(MySQL 검증에서 확인).
+    @Column(name = "card_no_hash", nullable = false, length = 64, columnDefinition = "CHAR(64)")
     private String cardNoHash;
 
     @Column(name = "card_no_masked", nullable = false, length = 100)
@@ -87,7 +89,7 @@ public class Card {
     @Column(name = "annual_fee")
     private Long annualFee;
 
-    @Column(name = "expiry_month", length = 7)
+    @Column(name = "expiry_month", length = 7, columnDefinition = "CHAR(7)")
     private String expiryMonth;
 
     @Column(name = "withdrawal_day")
