@@ -10,10 +10,18 @@ APP_DIR="${APP_DIR:-/home/ubuntu/app}"
 DEPLOY_BRANCH="${DEPLOY_BRANCH:-develop}"
 COMPOSE_FILE="$APP_DIR/infra/docker-compose.yml"
 ENV_FILE="$APP_DIR/infra/.env"
-# jenkins는 일부러 제외한다 — 이 스크립트는 Jenkins 컨테이너 안에서 실행되므로
-# jenkins까지 up 대상에 넣으면 배포 도중 자기 자신을 재시작해 빌드가 죽는다.
-# jenkins 이미지 변경은 호스트에서 수동으로 `docker compose up -d --build jenkins` 실행.
-DEPLOY_SERVICES="${DEPLOY_SERVICES:-mysql redis backend nginx certbot}"
+# 배포 대상 서비스.
+#
+# compose에 정의된 서비스 중 jenkins만 제외한다.
+#   - jenkins: 이 스크립트가 Jenkins 컨테이너 안에서 실행되므로, up 대상에 넣으면
+#     배포 도중 자기 자신을 재시작해 빌드가 죽는다.
+#     jenkins 이미지/설정 변경은 호스트에서 수동으로 실행할 것:
+#       docker compose up -d --build --no-deps jenkins
+#
+# 모니터링 서비스도 반드시 포함한다. 목록에서 빠지면 설정 파일이나 이미지 태그를
+# 고쳐 머지해도 배포가 반영하지 않아, 수동으로 올린 변경이 다음 배포의
+# git reset --hard에 밀려 조용히 원복된다. (Day 3에서 같은 방식으로 사고가 났었다)
+DEPLOY_SERVICES="${DEPLOY_SERVICES:-mysql redis backend nginx certbot prometheus node-exporter loki promtail grafana}"
 # 배포 검증은 두 단계로 한다.
 #
 #  1) readiness — 앱이 의존성(DB/Redis)에 실제로 붙었는가
@@ -112,6 +120,17 @@ if [ -x "$CHECK_ENV" ]; then
         || fail_msg="환경변수 검사 실패"
     [ -n "${fail_msg:-}" ] && { log "ERROR: $fail_msg"; exit 1; }
 fi
+
+# compose에 서비스를 추가하고 DEPLOY_SERVICES에 넣는 것을 잊으면,
+# 그 서비스는 배포에 반영되지 않는데 아무 신호도 없다.
+# (실제로 모니터링 스택 5개가 이 상태로 누락되어 있었다)
+# 배포할 때마다 대조해서 알려준다.
+ALL_SERVICES="$(docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" config --services 2>/dev/null || true)"
+EXCLUDED="jenkins"   # 의도적 제외 (자기 자신을 재시작하게 되므로)
+for svc in $ALL_SERVICES; do
+    echo "$DEPLOY_SERVICES $EXCLUDED" | grep -qw "$svc" \
+        || log "WARN: '$svc' 가 compose에 있으나 배포 대상이 아닙니다 — DEPLOY_SERVICES 확인 필요"
+done
 
 log "이미지 빌드 및 컨테이너 기동 ($DEPLOY_SERVICES)"
 # --no-deps: depends_on을 타고 jenkins 같은 비대상 서비스가 재생성되는 것을 막는다.
