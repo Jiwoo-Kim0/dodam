@@ -23,6 +23,7 @@ interface VerificationCodeBottomSheetProps {
   carrier: Carrier;
   phoneNumber: string;
   onClose: () => void;
+  onComplete: () => void;
 }
 
 export function VerificationCodeBottomSheet({
@@ -30,6 +31,7 @@ export function VerificationCodeBottomSheet({
   carrier,
   phoneNumber,
   onClose,
+  onComplete,
 }: VerificationCodeBottomSheetProps) {
   const inputRef = useRef<TextInput>(null);
   const [code, setCode] = useState('');
@@ -50,6 +52,13 @@ export function VerificationCodeBottomSheet({
       'UI 미리보기',
       '문자 발송과 본인인증은 API 연결 후 사용할 수 있어요.',
     );
+  };
+
+  const handleComplete = () => {
+    if (!canContinue) return;
+
+    Keyboard.dismiss();
+    onComplete();
   };
 
   return (
@@ -133,7 +142,7 @@ export function VerificationCodeBottomSheet({
 
               <Pressable
                 disabled={!canContinue}
-                onPress={showApiNotice}
+                onPress={handleComplete}
                 accessibilityRole="button"
                 accessibilityState={{ disabled: !canContinue }}
                 style={({ pressed }) => [

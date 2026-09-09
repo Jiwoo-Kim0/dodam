@@ -23,8 +23,7 @@ export function AgreementItem({
       style={[
         styles.container,
         emphasized && styles.emphasizedContainer,
-      ]}
-    >
+      ]}>
       <View style={[styles.checkbox, checked && styles.checkedBox]}>
         {checked && <View style={styles.checkmark} />}
       </View>

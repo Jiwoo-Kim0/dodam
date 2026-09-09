@@ -1,7 +1,9 @@
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Keyboard, Pressable, Text, TextInput, View } from 'react-native';
 
 import { BottomActionButton } from '@/components/bottomActionButton/BottomActionButton';
+import { routes } from '@/constants/routes';
 import { AuthScreenLayout } from '@/layout/authScreenLayout/AuthScreenLayout';
 import { colors } from '@/styles';
 
@@ -37,6 +39,7 @@ function InputClearButton({
 const getDigits = (value: string) => value.replace(/\D/g, '');
 
 export function IdentityVerificationScreen() {
+  const router = useRouter();
   const [name, setName] = useState('');
   const [birthDate, setBirthDate] = useState('');
   const [residentDigit, setResidentDigit] = useState('');
@@ -67,6 +70,11 @@ export function IdentityVerificationScreen() {
 
     Keyboard.dismiss();
     setIsCodeSheetVisible(true);
+  };
+
+  const handleVerificationComplete = () => {
+    setIsCodeSheetVisible(false);
+    router.replace(routes.financeConnection);
   };
 
   return (
@@ -186,6 +194,7 @@ export function IdentityVerificationScreen() {
           carrier={carrier}
           phoneNumber={phoneNumber}
           onClose={() => setIsCodeSheetVisible(false)}
+          onComplete={handleVerificationComplete}
         />
       )}
     </AuthScreenLayout>

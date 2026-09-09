@@ -82,4 +82,9 @@ export const styles = StyleSheet.create({
   pressed: {
     opacity: 0.8,
   },
+
+  selectedButton: {
+    borderWidth: 2,
+    borderColor: colors.primary.green,
+  },
 });
