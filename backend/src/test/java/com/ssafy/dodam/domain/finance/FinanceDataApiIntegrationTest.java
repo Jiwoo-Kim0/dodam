@@ -33,10 +33,13 @@ import com.ssafy.dodam.domain.user.repository.UserRepository;
 import com.ssafy.dodam.domain.user.repository.UserSettingRepository;
 import com.ssafy.dodam.global.crypto.FieldCryptor;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyApiException;
+import com.ssafy.dodam.infrastructure.external.ssafy.SsafyCreditRating;
+import com.ssafy.dodam.infrastructure.external.ssafy.SsafyCreditRatingCriterion;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyFinanceClient;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyMember;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyUnavailableException;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -48,7 +51,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.jdbc.Sql;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -57,6 +62,7 @@ import org.springframework.test.web.servlet.MvcResult;
 @AutoConfigureMockMvc
 @SpringBootTest
 @Import(FinanceDataApiIntegrationTest.SyncHandlerStubs.class)
+@Sql(scripts = "/sql/finance-summary-test-schema.sql", executionPhase = Sql.ExecutionPhase.BEFORE_TEST_CLASS)
 class FinanceDataApiIntegrationTest {
 
     private static final String EMAIL = "dodam@example.com";
@@ -90,6 +96,9 @@ class FinanceDataApiIntegrationTest {
     private FinanceSyncRepository financeSyncRepository;
 
     @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @Autowired
     private FieldCryptor fieldCryptor;
 
     @MockitoBean
@@ -102,6 +111,9 @@ class FinanceDataApiIntegrationTest {
     void setUp() throws Exception {
         authSessionRepository.deleteAll();
         financeSyncRepository.deleteAll();
+        jdbcTemplate.update("DELETE FROM card");
+        jdbcTemplate.update("DELETE FROM loan");
+        jdbcTemplate.update("DELETE FROM account");
         financeConnectionRepository.deleteAll();
         userSettingRepository.deleteAll();
         financialProfileRepository.deleteAll();
@@ -572,6 +584,163 @@ class FinanceDataApiIntegrationTest {
                 }
             };
         }
+    }
+
+    // ---------- S15P21D105-500 금융 데이터 통합 요약 ----------
+
+    @Test
+    void summaryAggregatesOwnAccountsCardsAndLoansOnly() throws Exception {
+        long otherUserId = userId + 1000;
+        insertAccount(userId, "DEMAND_DEPOSIT", "ACTIVE", 1_500_000);
+        insertAccount(userId, "DEMAND_DEPOSIT", "INACTIVE", 200_000);
+        insertAccount(userId, "DEPOSIT", "ACTIVE", 10_000_000);
+        insertAccount(userId, "SAVINGS", "ACTIVE", 3_000_000);
+        insertAccount(userId, "MINUS", "ACTIVE", -800_000);
+        insertAccount(userId, "DEMAND_DEPOSIT", "CLOSED", 999_999);
+        insertAccount(otherUserId, "DEMAND_DEPOSIT", "ACTIVE", 77_000_000);
+        insertCard(userId, "ACTIVE", 3_000_000);
+        insertCard(userId, "ACTIVE", 2_000_000);
+        insertCard(userId, "CANCELED", 9_000_000);
+        insertCard(otherUserId, "ACTIVE", 5_000_000);
+        insertLoan(userId, "ACTIVE", 20_000_000);
+        insertLoan(userId, "OVERDUE", 5_000_000);
+        insertLoan(userId, "COMPLETED", 0);
+        insertLoan(otherUserId, "ACTIVE", 30_000_000);
+
+        mockMvc.perform(get("/api/v1/finance-data/summary").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.connection.status").value("CONNECTED"))
+                .andExpect(jsonPath("$.data.connection.lastSyncedAt").value(nullValue()))
+                .andExpect(jsonPath("$.data.accounts.count").value(5))
+                .andExpect(jsonPath("$.data.accounts.demandDepositBalance").value(1_700_000))
+                .andExpect(jsonPath("$.data.accounts.depositBalance").value(10_000_000))
+                .andExpect(jsonPath("$.data.accounts.savingsBalance").value(3_000_000))
+                .andExpect(jsonPath("$.data.accounts.minusAccountCount").value(1))
+                .andExpect(jsonPath("$.data.accounts.minusUsedAmount").value(800_000))
+                .andExpect(jsonPath("$.data.cards.activeCount").value(2))
+                .andExpect(jsonPath("$.data.cards.totalCount").value(3))
+                .andExpect(jsonPath("$.data.cards.totalCreditLimit").value(5_000_000))
+                .andExpect(jsonPath("$.data.loans.outstandingCount").value(2))
+                .andExpect(jsonPath("$.data.loans.overdueCount").value(1))
+                .andExpect(jsonPath("$.data.loans.totalBalance").value(25_000_000))
+                .andExpect(jsonPath("$.data.totals.cashAssets").value(14_700_000))
+                .andExpect(jsonPath("$.data.totals.liabilities").value(25_800_000))
+                .andExpect(jsonPath("$.data.totals.netAssets").value(-11_100_000));
+    }
+
+    @Test
+    void summaryReturnsZerosWithoutFinancialDataAndWorksWhenDisconnected() throws Exception {
+        mockMvc.perform(delete("/api/v1/finance-data/connection").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/finance-data/summary").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.connection.status").value("DISCONNECTED"))
+                .andExpect(jsonPath("$.data.accounts.count").value(0))
+                .andExpect(jsonPath("$.data.cards.totalCount").value(0))
+                .andExpect(jsonPath("$.data.loans.outstandingCount").value(0))
+                .andExpect(jsonPath("$.data.totals.netAssets").value(0));
+    }
+
+    // ---------- S15P21D105-500 신용등급 조회 ----------
+
+    @Test
+    void creditRatingIsFetchedWithStoredUserKey() throws Exception {
+        given(ssafyFinanceClient.inquireMyCreditRating(anyString()))
+                .willReturn(new SsafyCreditRating("B+", 3_500_000L, 12_000_000L, 15_500_000L, 720));
+
+        mockMvc.perform(get("/api/v1/finance-data/credit-rating").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.ratingName").value("B+"))
+                .andExpect(jsonPath("$.data.creditScore").value(720))
+                .andExpect(jsonPath("$.data.demandDepositAssetValue").value(3_500_000))
+                .andExpect(jsonPath("$.data.depositSavingsAssetValue").value(12_000_000))
+                .andExpect(jsonPath("$.data.totalAssetValue").value(15_500_000))
+                .andExpect(jsonPath("$.data.inquiredAt").isNotEmpty());
+
+        // 저장된 userKey 암호문을 복호화해 그대로 넘겨야 한다
+        verify(ssafyFinanceClient).inquireMyCreditRating(USER_KEY);
+    }
+
+    @Test
+    void creditRatingCriteriaKeepsFinanceNetworkOrder() throws Exception {
+        given(ssafyFinanceClient.inquireCreditRatingList(anyString())).willReturn(List.of(
+                new SsafyCreditRatingCriterion("A+", 100_000_000L, "5%"),
+                new SsafyCreditRatingCriterion("A", 50_000_000L, "10%")
+        ));
+
+        mockMvc.perform(get("/api/v1/finance-data/credit-rating/criteria").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.criteria", hasSize(2)))
+                .andExpect(jsonPath("$.data.criteria[0].ratingName").value("A+"))
+                .andExpect(jsonPath("$.data.criteria[0].demandDepositAssetValue").value(100_000_000))
+                .andExpect(jsonPath("$.data.criteria[0].ratingPercent").value("5%"))
+                .andExpect(jsonPath("$.data.criteria[1].ratingName").value("A"))
+                .andExpect(jsonPath("$.data.inquiredAt").isNotEmpty());
+
+        verify(ssafyFinanceClient).inquireCreditRatingList(USER_KEY);
+    }
+
+    @Test
+    void creditRatingRequiresConnectedStateWithoutCallingFinanceNetwork() throws Exception {
+        markConnectionFailed();
+
+        mockMvc.perform(get("/api/v1/finance-data/credit-rating").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("FINANCE_NOT_CONNECTED"));
+        mockMvc.perform(get("/api/v1/finance-data/credit-rating/criteria").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("FINANCE_NOT_CONNECTED"));
+
+        verify(ssafyFinanceClient, never()).inquireMyCreditRating(anyString());
+        verify(ssafyFinanceClient, never()).inquireCreditRatingList(anyString());
+    }
+
+    @Test
+    void creditRatingTranslatesFinanceNetworkFailures() throws Exception {
+        given(ssafyFinanceClient.inquireMyCreditRating(anyString()))
+                .willThrow(new SsafyApiException("A1003", "유효하지 않은 userKey입니다."));
+        mockMvc.perform(get("/api/v1/finance-data/credit-rating").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.code").value("FINANCE_API_ERROR"));
+
+        given(ssafyFinanceClient.inquireCreditRatingList(anyString()))
+                .willThrow(new SsafyUnavailableException("timeout", null));
+        mockMvc.perform(get("/api/v1/finance-data/credit-rating/criteria").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("FINANCE_API_UNAVAILABLE"));
+    }
+
+    // ---------- summary fixtures ----------
+
+    private void insertAccount(long ownerId, String type, String status, long balance) {
+        jdbcTemplate.update("""
+                INSERT INTO account (user_id, bank_code, bank_name, account_no_encrypted, account_no_hash,
+                                     account_no_masked, account_name, account_type, status, balance, created_at, updated_at)
+                VALUES (?, '001', '한국은행', X'00', ?, '110-***-1234', '테스트 계좌', ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """, ownerId, uniqueHash(), type, status, balance);
+    }
+
+    private void insertCard(long ownerId, String status, long creditLimit) {
+        jdbcTemplate.update("""
+                INSERT INTO card (user_id, withdrawal_account_id, withdrawal_account_type, card_no_encrypted, card_no_hash,
+                                  card_no_masked, issuer_code, issuer_name, card_name, status, credit_limit, created_at)
+                VALUES (?, 1, 'DEMAND_DEPOSIT', X'00', ?, '1234-****-****-5678', 'KB', '국민카드', '테스트 카드', ?, ?, CURRENT_TIMESTAMP)
+                """, ownerId, uniqueHash(), status, creditLimit);
+    }
+
+    private void insertLoan(long ownerId, String status, long balance) {
+        jdbcTemplate.update("""
+                INSERT INTO loan (user_id, withdrawal_account_id, withdrawal_account_type, institution_code, institution_name,
+                                  account_no_encrypted, account_no_hash, account_no_masked, account_name, loan_type,
+                                  repayment_type, status, original_principal, balance, interest_rate, created_at)
+                VALUES (?, 1, 'DEMAND_DEPOSIT', '004', '국민은행', X'00', ?, '9999-***-0001', '테스트 대출', 'CREDIT',
+                        'EQUAL_PAYMENT', ?, 50000000, ?, 4.5000, CURRENT_TIMESTAMP)
+                """, ownerId, uniqueHash(), status, balance);
+    }
+
+    private static String uniqueHash() {
+        return String.format("%064x", java.math.BigInteger.valueOf(System.nanoTime() + (long) (Math.random() * 1_000_000)));
     }
 
     // ---------- helpers ----------

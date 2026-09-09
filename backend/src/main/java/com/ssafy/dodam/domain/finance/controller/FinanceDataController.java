@@ -1,12 +1,17 @@
 package com.ssafy.dodam.domain.finance.controller;
 
+import com.ssafy.dodam.domain.finance.dto.CreditRatingCriteriaResponse;
+import com.ssafy.dodam.domain.finance.dto.CreditRatingResponse;
 import com.ssafy.dodam.domain.finance.dto.FinanceConnectionResponse;
 import com.ssafy.dodam.domain.finance.dto.FinanceMemberResponse;
 import com.ssafy.dodam.domain.finance.dto.FinanceSyncLatestResponse;
 import com.ssafy.dodam.domain.finance.dto.FinanceSyncRequest;
 import com.ssafy.dodam.domain.finance.dto.FinanceSyncResponse;
+import com.ssafy.dodam.domain.finance.dto.FinanceSummaryResponse;
 import com.ssafy.dodam.domain.finance.dto.FinanceSyncStatusResponse;
+import com.ssafy.dodam.domain.finance.service.CreditRatingService;
 import com.ssafy.dodam.domain.finance.service.FinanceConnectionService;
+import com.ssafy.dodam.domain.finance.service.FinanceSummaryService;
 import com.ssafy.dodam.domain.finance.service.FinanceSyncService;
 import com.ssafy.dodam.global.response.ApiResponse;
 import com.ssafy.dodam.global.security.AuthPrincipal;
@@ -21,7 +26,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * API 명세 4. Finance Data (S15P21D105-498 연결·회원 관리, S15P21D105-499 동기화).
+ * API 명세 4. Finance Data (S15P21D105-498 연결·회원 관리, S15P21D105-499 동기화, S15P21D105-500 요약·신용등급).
  */
 @RestController
 @RequestMapping("/api/v1/finance-data")
@@ -29,13 +34,19 @@ public class FinanceDataController {
 
     private final FinanceConnectionService financeConnectionService;
     private final FinanceSyncService financeSyncService;
+    private final FinanceSummaryService financeSummaryService;
+    private final CreditRatingService creditRatingService;
 
     public FinanceDataController(
             FinanceConnectionService financeConnectionService,
-            FinanceSyncService financeSyncService
+            FinanceSyncService financeSyncService,
+            FinanceSummaryService financeSummaryService,
+            CreditRatingService creditRatingService
     ) {
         this.financeConnectionService = financeConnectionService;
         this.financeSyncService = financeSyncService;
+        this.financeSummaryService = financeSummaryService;
+        this.creditRatingService = creditRatingService;
     }
 
     // ---------- S15P21D105-498 금융망 연결·회원 관리 ----------
@@ -83,5 +94,24 @@ public class FinanceDataController {
     @GetMapping("/sync/latest")
     public ApiResponse<FinanceSyncLatestResponse> getLatestSync(@AuthenticationPrincipal AuthPrincipal principal) {
         return ApiResponse.success(financeSyncService.getLatest(principal.userId()));
+    }
+
+    // ---------- S15P21D105-500 금융현황·신용등급 조회 ----------
+
+    @GetMapping("/summary")
+    public ApiResponse<FinanceSummaryResponse> getSummary(@AuthenticationPrincipal AuthPrincipal principal) {
+        return ApiResponse.success(financeSummaryService.getSummary(principal.userId()));
+    }
+
+    @GetMapping("/credit-rating")
+    public ApiResponse<CreditRatingResponse> getCreditRating(@AuthenticationPrincipal AuthPrincipal principal) {
+        return ApiResponse.success(creditRatingService.getMyCreditRating(principal.userId()));
+    }
+
+    @GetMapping("/credit-rating/criteria")
+    public ApiResponse<CreditRatingCriteriaResponse> getCreditRatingCriteria(
+            @AuthenticationPrincipal AuthPrincipal principal
+    ) {
+        return ApiResponse.success(creditRatingService.getCreditRatingCriteria(principal.userId()));
     }
 }
