@@ -26,13 +26,13 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -45,11 +45,14 @@ public class LoanQueryService {
 
     // 상환 중인 대출을 먼저 보여주고, 같은 상태에서는 금리가 높은 대출을 위로 올린다.
     // 고금리 부채를 먼저 확인하려는 기획 의도에 맞춘 정렬이다.
-    private static final Sort LOAN_SORT = Sort.by(
-            Sort.Order.asc("status"),
-            Sort.Order.desc("interestRate"),
-            Sort.Order.asc("id")
-    );
+    //
+    // status는 문자열로 저장돼 DB 정렬이 사전순(ACTIVE, CLOSED, COMPLETED, OVERDUE)이 되고
+    // 연체가 종료된 대출보다 뒤로 밀린다. 그래서 정렬은 DB에 맡기지 않고 LoanStatus의
+    // 선언 순서로 다시 세운다. 목록은 사용자별 보유 건수라 메모리 정렬로 충분하다.
+    private static final Comparator<Loan> LOAN_ORDER = Comparator
+            .comparing(Loan::getStatus)
+            .thenComparing(Loan::getInterestRate, Comparator.reverseOrder())
+            .thenComparing(Loan::getId);
 
     private static final int RATE_SCALE = 4;
 
@@ -102,9 +105,10 @@ public class LoanQueryService {
                     loan.getInterestRate().multiply(BigDecimal.valueOf(balance))
             );
 
-            LoanRepaymentSchedule schedule = loanRepaymentScheduleCalculator
-                    .calculate(loan, asOfDate);
-            monthlyRepayment += schedule.nextAmount();
+            // 요약에는 다음 회차만 필요하므로 남은 회차 전체를 만들지 않는다.
+            monthlyRepayment += loanRepaymentScheduleCalculator
+                    .calculateNext(loan, asOfDate)
+                    .nextAmount();
             nextRepaymentDate = earlier(nextRepaymentDate, loan.getNextRepaymentDate());
 
             loanTypes.computeIfAbsent(loan.getLoanType(), LoanTypeAccumulator::new).add(balance);
@@ -156,11 +160,12 @@ public class LoanQueryService {
 
     private List<Loan> findLoans(Long userId, String status, String loanType) {
         return loanRepository.findAll(
-                ownedBy(userId)
-                        .and(hasStatus(parseStatus(status)))
-                        .and(hasLoanType(parseLoanType(loanType))),
-                LOAN_SORT
-        );
+                        ownedBy(userId)
+                                .and(hasStatus(parseStatus(status)))
+                                .and(hasLoanType(parseLoanType(loanType)))
+                ).stream()
+                .sorted(LOAN_ORDER)
+                .toList();
     }
 
     /**

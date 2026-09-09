@@ -42,10 +42,29 @@ public class LoanRepaymentScheduleCalculator {
     private static final MathContext RATE_CONTEXT = MathContext.DECIMAL64;
 
     public LoanRepaymentSchedule calculate(Loan loan, LocalDate asOfDate) {
-        return calculate(LoanRepaymentTerms.from(loan), asOfDate);
+        return calculate(LoanRepaymentTerms.from(loan), asOfDate, MAX_SCHEDULE_SIZE);
+    }
+
+    /**
+     * 다음 회차만 계산한다. 요약의 월 상환액 합계처럼 첫 회차만 필요한 곳에서 쓴다.
+     * 만기가 긴 대출의 남은 회차를 모두 만들지 않기 위한 경로다.
+     */
+    public LoanRepaymentSchedule calculateNext(Loan loan, LocalDate asOfDate) {
+        return calculate(LoanRepaymentTerms.from(loan), asOfDate, 1);
     }
 
     public LoanRepaymentSchedule calculate(LoanRepaymentTerms terms, LocalDate asOfDate) {
+        return calculate(terms, asOfDate, MAX_SCHEDULE_SIZE);
+    }
+
+    /**
+     * @param limit 반환할 최대 회차. 상한보다 작게 주면 남은 회차가 더 있어도 그만큼만 만든다.
+     */
+    public LoanRepaymentSchedule calculate(
+            LoanRepaymentTerms terms,
+            LocalDate asOfDate,
+            int limit
+    ) {
         LocalDate firstDate = resolveFirstRepaymentDate(terms, asOfDate);
         long balance = terms.balance();
         if (firstDate == null || terms.maturityDate() == null || balance <= 0) {
@@ -57,8 +76,9 @@ public class LoanRepaymentScheduleCalculator {
         if (totalCount <= 0) {
             return new LoanRepaymentSchedule(List.of(), false);
         }
+        // truncated는 응답 상한을 넘겼는지만 알린다. 호출자가 더 적게 요청한 경우는 해당하지 않는다.
         boolean truncated = totalCount > MAX_SCHEDULE_SIZE;
-        int size = Math.min(totalCount, MAX_SCHEDULE_SIZE);
+        int size = Math.min(Math.min(totalCount, MAX_SCHEDULE_SIZE), Math.max(limit, 0));
 
         BigDecimal monthlyRate = monthlyRate(terms.annualRatePercent());
         long equalPayment = terms.repaymentType() == RepaymentType.EQUAL_PAYMENT

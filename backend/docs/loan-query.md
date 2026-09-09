@@ -43,8 +43,13 @@
 
 ## 정렬
 
-- 목록: `status ASC, interest_rate DESC, loan_id ASC`. 상환 중인 대출을 먼저 보여주고 같은
-  상태에서는 금리가 높은 대출을 위로 올린다. 고금리 부채를 먼저 확인하려는 기획 의도를 따랐다.
+- 목록: 상태 우선순위 -> `interest_rate DESC` -> `loan_id ASC`. 상태 우선순위는
+  `ACTIVE`, `OVERDUE`, `COMPLETED`, `CLOSED` 순이며 `LoanStatus`의 선언 순서와 같다.
+  상환 중인 대출과 연체를 먼저 보여주고, 같은 상태에서는 금리가 높은 대출을 위로 올린다.
+  고금리 부채를 먼저 확인하려는 기획 의도를 따랐다.
+  상태를 문자열로 저장하므로 DB 정렬에 맡기면 사전순(`ACTIVE`, `CLOSED`, `COMPLETED`,
+  `OVERDUE`)이 되어 연체가 종료된 대출보다 뒤로 밀린다. 그래서 정렬은 조회 후 메모리에서
+  수행한다. 목록은 사용자별 보유 건수라 이 방식으로 충분하다.
 - 상환내역: `repayment_date DESC, loan_repayment_id DESC`.
 
 ## 요약 계산
@@ -69,6 +74,8 @@ null이다.
 
 `loan_repayment`는 실제 상환 내역만 보관하므로 향후 일정은 저장값이 아니라 계산값이다.
 `LoanRepaymentScheduleCalculator`가 현재 잔액, 연이율, 상환일, 만기일, 상환 방식으로 계산한다.
+요약의 월 상환액은 첫 회차만 필요하므로 `calculateNext`로 1회차만 계산한다. 만기가 긴 대출의 남은
+회차를 모두 만들지 않기 위한 경로다.
 
 월이율 r = 연이율 / 100 / 12이고 회차별 이자는 직전 잔액 x r을 원 단위 반올림(HALF_UP)한다.
 금액은 원 단위 `long`이고 비율 계산에만 `BigDecimal`을 사용한다.
@@ -86,6 +93,7 @@ null이다.
 - 회차 수는 첫 회차 월부터 만기 월까지이며 양끝을 모두 포함한다.
 - 만기일이 없거나 이미 지났거나 잔액이 0이면 빈 일정을 반환한다. 값을 추정하지 않는다.
 - 최대 360회까지만 반환하고 초과하면 `truncated`가 true다. 30년 만기도 360회를 넘지 않는다.
+  `totalPrincipal`과 `totalInterest`는 반환한 회차만 더한 값이다.
 - 무이자(`interest_rate = 0`)면 이자는 0이고 원금만 상환한다.
 
 기준일은 요청 시점의 Asia/Seoul 날짜다.

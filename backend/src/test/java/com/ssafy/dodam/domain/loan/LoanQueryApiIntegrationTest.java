@@ -69,17 +69,24 @@ class LoanQueryApiIntegrationTest {
     @Test
     @WithMockUser(username = "1")
     void 본인_대출만_상태와_금리_순으로_조회한다() throws Exception {
+        // 상환 중 -> 연체 -> 완료 순이며 같은 상태에서는 금리가 높은 대출이 먼저다.
+        // 상태를 문자열로 저장하면 사전순 정렬은 OVERDUE를 COMPLETED 뒤로 보내므로
+        // 이 순서가 유지되는지 확인한다.
         mockMvc.perform(get("/api/v1/loans"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data", hasSize(3)))
+                .andExpect(jsonPath("$.data", hasSize(4)))
                 .andExpect(jsonPath("$.data[0].accountNoMasked").value("110-***-****11"))
                 .andExpect(jsonPath("$.data[0].status").value("ACTIVE"))
                 .andExpect(jsonPath("$.data[0].loanType").value("CREDIT"))
                 .andExpect(jsonPath("$.data[0].repaymentType").value("EQUAL_PRINCIPAL"))
                 .andExpect(jsonPath("$.data[0].balance").value(8000000))
                 .andExpect(jsonPath("$.data[1].accountNoMasked").value("110-***-****22"))
-                .andExpect(jsonPath("$.data[2].status").value("COMPLETED"));
+                .andExpect(jsonPath("$.data[1].status").value("ACTIVE"))
+                .andExpect(jsonPath("$.data[2].accountNoMasked").value("110-***-****55"))
+                .andExpect(jsonPath("$.data[2].status").value("OVERDUE"))
+                .andExpect(jsonPath("$.data[3].accountNoMasked").value("110-***-****44"))
+                .andExpect(jsonPath("$.data[3].status").value("COMPLETED"));
     }
 
     @Test
@@ -113,12 +120,12 @@ class LoanQueryApiIntegrationTest {
     void 요약은_잔액이_남은_대출만_집계한다() throws Exception {
         mockMvc.perform(get("/api/v1/loans/summary"))
                 .andExpect(status().isOk())
-                // 완료된 4번 대출은 빠지고 1, 2번만 집계된다.
-                .andExpect(jsonPath("$.data.loanCount").value(2))
-                .andExpect(jsonPath("$.data.totalOriginalPrincipal").value(62000000))
-                .andExpect(jsonPath("$.data.totalBalance").value(58000000))
-                // 잔액 가중평균: (5.4 x 800만 + 3.2 x 5000만) / 5800만 = 3.5034
-                .andExpect(jsonPath("$.data.weightedAverageRate").value(3.5034))
+                // 완료된 4번 대출은 빠지고 잔액이 남은 1, 2, 5번만 집계된다.
+                .andExpect(jsonPath("$.data.loanCount").value(3))
+                .andExpect(jsonPath("$.data.totalOriginalPrincipal").value(66000000))
+                .andExpect(jsonPath("$.data.totalBalance").value(59500000))
+                // 잔액 가중평균: (5.4 x 800만 + 3.2 x 5000만 + 9.9 x 150만) / 5950만 = 3.6647
+                .andExpect(jsonPath("$.data.weightedAverageRate").value(3.6647))
                 .andExpect(jsonPath("$.data.loanTypes", hasSize(2)));
     }
 

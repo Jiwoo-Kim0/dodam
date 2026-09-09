@@ -79,4 +79,10 @@ INSERT INTO loan (
     (4, 1, 11, 'DEMAND_DEPOSIT', NULL, '020', '우리은행', X'00', REPEAT('4', 64),
      '110-***-****44', '완료된 대출', 'AUTO', 'EQUAL_PAYMENT', 'COMPLETED', 12,
      DATE '2024-01-15', DATE '2025-01-15', 6000000, 0, 6.5000, 15, NULL,
-     TIMESTAMP '2024-01-15 10:00:00', TIMESTAMP '2025-01-15 10:00:00');
+     TIMESTAMP '2024-01-15 10:00:00', TIMESTAMP '2025-01-15 10:00:00'),
+    -- 연체 대출. 상태를 문자열로 저장하면 사전순 정렬에서 COMPLETED 뒤로 밀리므로
+    -- 목록이 LoanStatus 선언 순서대로 나오는지 확인하는 데 쓴다.
+    (5, 1, 11, 'DEMAND_DEPOSIT', NULL, '011', 'NH농협은행', X'00', REPEAT('5', 64),
+     '110-***-****55', '연체된 대출', 'CREDIT', 'EQUAL_PAYMENT', 'OVERDUE', 12,
+     DATE '2025-06-20', DATE '2026-06-20', 4000000, 1500000, 9.9000, 20, NULL,
+     TIMESTAMP '2025-06-20 10:00:00', TIMESTAMP '2026-08-20 10:00:00');
