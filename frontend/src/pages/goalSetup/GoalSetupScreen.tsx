@@ -12,6 +12,8 @@ import {
   type GoalType,
 } from './components/GoalTypeStep';
 import { GoalStepProgress } from './components/GoalStepProgress';
+import { ReductionAmountStep } from './components/ReductionAmountStep';
+import { ReductionCompleteStep } from './components/ReductionCompleteStep';
 import { SavingAmountStep } from './components/SavingAmountStep';
 import { SavingAccountStep } from './components/SavingAccountStep';
 import { SavingCompleteStep } from './components/SavingCompleteStep';
@@ -25,7 +27,9 @@ type GoalSetupStep =
   | 'savingAmount'
   | 'savingDeadline'
   | 'savingAccount'
-  | 'savingComplete';
+  | 'savingComplete'
+  | 'reductionAmount'
+  | 'reductionComplete';
 
 export function GoalSetupScreen() {
   const router = useRouter();
@@ -35,13 +39,17 @@ export function GoalSetupScreen() {
   const [savingAmount, setSavingAmount] = useState(0);
   const [savingDeadline, setSavingDeadline] = useState<Date | null>(null);
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
+  const [reductionAmount, setReductionAmount] = useState(0);
 
   const handleGoalTypeSelect = (type: GoalType) => {
     setSelectedType(type);
 
     if (type === 'saving') {
       setStep('savingPurpose');
+      return;
     }
+
+    setStep('reductionAmount');
   };
 
   const handleAccountToggle = (accountId: string) => {
@@ -152,6 +160,37 @@ export function GoalSetupScreen() {
         savingAmount={savingAmount}
         savingDeadline={savingDeadline}
         onHomePress={() => router.replace(routes.home)}
+      />
+    );
+  }
+
+  if (step === 'reductionAmount') {
+    return (
+      <AuthScreenLayout
+        title="이번달은 얼마를 써볼까요?"
+        description="목표 소비금액을 설정해요."
+        showBackButton
+        onBackPress={() => setStep('goalType')}
+        footer={
+          <BottomActionButton
+            label="다음"
+            disabled={reductionAmount === 0}
+            onPress={() => setStep('reductionComplete')}
+          />
+        }>
+        <ReductionAmountStep
+          value={reductionAmount}
+          onChange={setReductionAmount}
+        />
+      </AuthScreenLayout>
+    );
+  }
+
+  if (step === 'reductionComplete') {
+    return (
+      <ReductionCompleteStep
+        targetAmount={reductionAmount}
+        onStartPress={() => router.replace(routes.home)}
       />
     );
   }
