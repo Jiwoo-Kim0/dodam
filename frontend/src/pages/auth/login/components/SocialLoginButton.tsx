@@ -8,6 +8,8 @@ export type SocialProvider = 'kakao' | 'google' | 'naver';
 interface SocialLoginButtonProps {
   provider: SocialProvider;
   onPress: () => void;
+  label?: string;
+  selected?: boolean;
 }
 
 const providers = {
@@ -46,17 +48,23 @@ const iconStyles = {
 export function SocialLoginButton({
   provider,
   onPress,
+  label,
+  selected,
 }: SocialLoginButtonProps) {
-  const { label, icon } = providers[provider];
+  const { label: defaultLabel, icon } = providers[provider];
+  const displayLabel = label ?? defaultLabel;
+  const isSelectable = selected !== undefined;
 
   return (
     <Pressable
       onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityRole={isSelectable ? 'radio' : 'button'}
+      accessibilityLabel={displayLabel}
+      accessibilityState={isSelectable ? { selected } : undefined}
       style={({ pressed }) => [
         styles.button,
         buttonStyles[provider],
+        selected && styles.selectedButton,
         pressed && styles.pressed,
       ]}
     >
@@ -70,7 +78,7 @@ export function SocialLoginButton({
         </View>
 
         <Text style={[styles.label, labelStyles[provider]]}>
-          {label}
+          {displayLabel}
         </Text>
       </View>
     </Pressable>
