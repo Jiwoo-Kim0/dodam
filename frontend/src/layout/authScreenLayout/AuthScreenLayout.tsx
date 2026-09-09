@@ -9,6 +9,7 @@ import { styles } from './AuthScreenLayout.styles';
 interface AuthScreenLayoutProps {
   title: string;
   description?: string;
+  headerAccessory?: ReactNode;
   showBackButton?: boolean;
   onBackPress?: () => void;
   footer?: ReactNode;
@@ -18,6 +19,7 @@ interface AuthScreenLayoutProps {
 export function AuthScreenLayout({
   title,
   description,
+  headerAccessory,
   showBackButton = false,
   onBackPress,
   footer,
@@ -28,6 +30,8 @@ export function AuthScreenLayout({
       edges={['left', 'right', 'bottom']}
       style={styles.container}>
       {showBackButton ? <AuthBackButton onPress={onBackPress} /> : null}
+
+      {headerAccessory}
 
       <Text style={styles.title}>{title}</Text>
 
