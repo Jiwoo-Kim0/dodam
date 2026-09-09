@@ -34,7 +34,7 @@ export function NotificationConsentScreen() {
     setIsRequesting(true);
 
     await requestNotificationPermission().catch(() => false);
-    router.replace(routes.home);
+    router.replace(routes.goalSetup);
   };
 
   return (
