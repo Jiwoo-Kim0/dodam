@@ -1,8 +1,11 @@
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
 import { BottomActionButton } from '@/components/bottomActionButton/BottomActionButton';
+import { routes } from '@/constants/routes';
 import { AuthScreenLayout } from '@/layout/authScreenLayout/AuthScreenLayout';
+import { MOCK_GOAL_ACCOUNTS } from '@/mocks/goalAccounts';
 
 import {
   GoalTypeStep,
@@ -10,6 +13,9 @@ import {
 } from './components/GoalTypeStep';
 import { GoalStepProgress } from './components/GoalStepProgress';
 import { SavingAmountStep } from './components/SavingAmountStep';
+import { SavingAccountStep } from './components/SavingAccountStep';
+import { SavingCompleteStep } from './components/SavingCompleteStep';
+import { SavingDeadlineStep } from './components/SavingDeadlineStep';
 import { SavingPurposeStep } from './components/SavingPurposeStep';
 import { styles } from './GoalSetupScreen.styles';
 
@@ -17,13 +23,18 @@ type GoalSetupStep =
   | 'goalType'
   | 'savingPurpose'
   | 'savingAmount'
-  | 'savingDeadline';
+  | 'savingDeadline'
+  | 'savingAccount'
+  | 'savingComplete';
 
 export function GoalSetupScreen() {
+  const router = useRouter();
   const [step, setStep] = useState<GoalSetupStep>('goalType');
   const [selectedType, setSelectedType] = useState<GoalType | null>(null);
   const [goalName, setGoalName] = useState('');
   const [savingAmount, setSavingAmount] = useState(0);
+  const [savingDeadline, setSavingDeadline] = useState<Date | null>(null);
+  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
 
   const handleGoalTypeSelect = (type: GoalType) => {
     setSelectedType(type);
@@ -31,6 +42,14 @@ export function GoalSetupScreen() {
     if (type === 'saving') {
       setStep('savingPurpose');
     }
+  };
+
+  const handleAccountToggle = (accountId: string) => {
+    setSelectedAccountIds((currentIds) =>
+      currentIds.includes(accountId)
+        ? currentIds.filter((id) => id !== accountId)
+        : [...currentIds, accountId],
+    );
   };
 
   if (step === 'savingPurpose') {
@@ -86,9 +105,54 @@ export function GoalSetupScreen() {
         description="목표 달성 날짜를 선택해주세요."
         headerAccessory={<GoalStepProgress currentStep={3} totalSteps={4} />}
         showBackButton
-        onBackPress={() => setStep('savingAmount')}>
-        <View style={styles.content} />
+        onBackPress={() => setStep('savingAmount')}
+        footer={
+          <BottomActionButton
+            label="다음"
+            disabled={savingDeadline === null}
+            onPress={() => setStep('savingAccount')}
+          />
+        }>
+        <SavingDeadlineStep
+          value={savingDeadline}
+          onChange={setSavingDeadline}
+        />
       </AuthScreenLayout>
+    );
+  }
+
+  if (step === 'savingAccount') {
+    return (
+      <AuthScreenLayout
+        title="어디에 모을까요?"
+        description="목표에 사용할 계좌를 선택해주세요."
+        headerAccessory={<GoalStepProgress currentStep={4} totalSteps={4} />}
+        showBackButton
+        onBackPress={() => setStep('savingDeadline')}
+        footer={
+          <BottomActionButton
+            label="선택 완료"
+            disabled={selectedAccountIds.length === 0}
+            onPress={() => setStep('savingComplete')}
+          />
+        }>
+        <SavingAccountStep
+          accounts={MOCK_GOAL_ACCOUNTS}
+          selectedAccountIds={selectedAccountIds}
+          onToggle={handleAccountToggle}
+        />
+      </AuthScreenLayout>
+    );
+  }
+
+  if (step === 'savingComplete' && savingDeadline) {
+    return (
+      <SavingCompleteStep
+        goalName={goalName.trim()}
+        savingAmount={savingAmount}
+        savingDeadline={savingDeadline}
+        onHomePress={() => router.replace(routes.home)}
+      />
     );
   }
 
