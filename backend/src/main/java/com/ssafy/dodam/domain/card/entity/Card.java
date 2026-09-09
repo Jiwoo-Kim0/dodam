@@ -12,6 +12,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -36,6 +37,9 @@ public class Card {
 
     @Column(name = "user_id", nullable = false)
     private Long userId;
+
+    @Column(name = "withdrawal_account_id", nullable = false)
+    private Long withdrawalAccountId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(
@@ -94,4 +98,18 @@ public class Card {
 
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
+    /** 동일한 설정을 다시 요청하면 갱신 시각도 바꾸지 않는다. */
+    public boolean updatePaymentSettings(Long accountId, Integer paymentDay) {
+        Long resolvedAccountId = accountId == null ? withdrawalAccountId : accountId;
+        Integer resolvedPaymentDay = paymentDay == null ? withdrawalDay : paymentDay;
+        if (Objects.equals(withdrawalAccountId, resolvedAccountId)
+                && Objects.equals(withdrawalDay, resolvedPaymentDay)) {
+            return false;
+        }
+        withdrawalAccountId = resolvedAccountId;
+        withdrawalDay = resolvedPaymentDay;
+        updatedAt = LocalDateTime.now();
+        return true;
+    }
 }

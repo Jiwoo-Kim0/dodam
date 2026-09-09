@@ -2,11 +2,11 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
+import { AgreementItem } from '@/components/agreementItem/AgreementItem';
 import { BottomActionButton } from '@/components/bottomActionButton/BottomActionButton';
 import { routes } from '@/constants/routes';
 import { AuthScreenLayout } from '@/layout/authScreenLayout/AuthScreenLayout';
 
-import { AgreementItem } from './components/AgreementItem';
 import { styles } from './TermsScreen.styles';
 
 interface AgreementState {
