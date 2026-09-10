@@ -4,7 +4,7 @@ import { HOME_SUMMARY } from '@/mocks/home';
 import { colors } from '@/styles';
 import { formatCurrency, formatNumber } from '@/utils/currency';
 
-import { AssetDonutChart } from './AssetDonutChart';
+import { AssetDonutChart } from '@/components/assetDonutChart/AssetDonutChart';
 import { CardDetailButton } from './CardDetailButton';
 import { styles } from './AssetSummaryCard.styles';
 
