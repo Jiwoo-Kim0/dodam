@@ -171,11 +171,97 @@ Android는 targetSdk 28+부터 평문 HTTP 통신을 기본 차단한다.
 Day 3에 적용한 Let's Encrypt 인증서는 공개 신뢰 체인이므로 앱에서 별도 설정 없이 동작한다.
 (자체 서명 인증서였다면 앱에 인증서를 심어야 했다)
 
-### APK 배포
+### APK 빌드 — EAS Build 사용 (2026-09-10 확정)
 
-EAS Build(클라우드) 또는 로컬 빌드 중 FE팀이 선택.
-EC2와 무관하므로 인프라가 개입할 부분은 없다.
-다만 **APK를 어디에 올려 공유할지**는 팀에서 정할 것.
+클라우드 빌드라 EC2와 무관하다. 인프라가 서버 쪽에서 할 일은 없지만,
+**소셜 로그인 등록에 필요한 SHA-1이 여기서 나오므로** 절차를 정리해둔다.
+
+**EAS를 택한 이유**
+- keystore를 Expo가 클라우드에서 관리한다 → **분실 위험이 없다**
+  로컬 빌드였다면 릴리즈 keystore를 잃는 순간 앱을 영영 업데이트할 수 없다
+  (스토어가 서명 키로 앱을 식별하므로 새 키는 "다른 앱"이 된다)
+- 팀원 누구나 같은 키로 빌드한다
+- SHA-1 조회가 명령 하나
+
+**현재 상태 (2026-09-10)**: `frontend/eas.json` 없음, `frontend/android/` 없음(prebuild 전).
+설정이 아직 안 되어 있다.
+
+#### 준비 절차 (FE팀)
+
+```bash
+npm install -g eas-cli
+eas login                 # Expo 계정 필요 — 팀 공용 계정 권장
+cd frontend && eas init
+```
+
+#### `eas.json` 참고 템플릿
+
+`EXPO_PUBLIC_API_BASE_URL`을 프로파일별로 주입한다.
+
+```json
+{
+  "cli": { "version": ">= 5.0.0" },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": { "EXPO_PUBLIC_API_BASE_URL": "https://j15D105.p.ssafy.io/api" }
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": { "buildType": "apk" },
+      "env": { "EXPO_PUBLIC_API_BASE_URL": "https://j15D105.p.ssafy.io/api" }
+    },
+    "production": {
+      "android": { "buildType": "apk" },
+      "env": { "EXPO_PUBLIC_API_BASE_URL": "https://j15D105.p.ssafy.io/api" }
+    }
+  }
+}
+```
+
+> ⚠️ **`buildType: "apk"`를 명시해야 한다.**
+> EAS의 production 프로파일은 기본이 **AAB**(Play 스토어 업로드용)라서, 그대로 두면
+> 팀원에게 바로 설치시킬 수 있는 APK가 나오지 않는다.
+> 스토어 배포가 아니라 시연·내부 공유가 목적이므로 APK로 지정한다.
+
+#### 빌드
+
+```bash
+eas build -p android --profile preview     # 팀 공유용 APK
+```
+빌드가 끝나면 Expo가 다운로드 링크를 준다. 그 링크를 팀에 공유하면 된다.
+
+#### SHA-1 지문 조회 (소셜 로그인 등록용)
+
+```bash
+eas credentials -p android
+```
+→ 빌드 프로파일 선택 → Keystore 정보에 SHA-1 / SHA-256이 표시된다.
+
+**카카오 키 해시**는 SHA-1을 Base64로 변환한 값이다.
+```bash
+# SHA-1이 AA:BB:CC... 형태로 나오면
+echo AA:BB:CC:... | xxd -r -p | openssl base64
+```
+
+> ⚠️ **debug keystore는 개발자 PC마다 다르다.**
+> `expo run:android`처럼 로컬에서 디버그 빌드로 테스트하는 사람이 있다면,
+> **그 사람들의 debug SHA-1도 각각 콘솔에 등록**해야 한다.
+> 안 그러면 "나는 되는데 쟤는 소셜로그인이 안 된다"가 된다.
+> ```bash
+> keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey \
+>         -storepass android -keypass android | grep SHA1
+> ```
+
+#### 시크릿 관점
+
+EAS가 keystore를 관리하므로 **인프라가 보관해야 할 서명 키는 없다.**
+대신 **Expo 계정**이 그 자리를 대신한다 — 계정을 잃으면 같은 키로 빌드할 수 없다.
+팀 공용 계정으로 만들고 접근 가능한 사람을 정해둘 것.
+
+`eas.json`의 `env`에 들어가는 값은 **APK에 그대로 포함된다.** API 주소만 넣고,
+키나 시크릿은 절대 넣지 말 것.
 
 ---
 
