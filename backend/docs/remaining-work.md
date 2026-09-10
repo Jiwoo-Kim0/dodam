@@ -311,9 +311,17 @@
 
 - [ ] 실제 Jira 접근이 가능해지면 최신 538 완료 조건과 구현 범위를 대조한다. 로컬 `SPRINT/Jira (4).csv`의 제목·설명만 근거로 범위를 정했다.
 
-## 공통 — develop의 H2 테스트 실패 (538 외부)
+## 공통 — develop의 H2 테스트 실패 (해결됨)
 
-- [ ] `CardQueryApiIntegrationTest`와 `DepositSavingApiIntegrationTest` 30건이 `NULL not allowed for column "currency"`로 실패한다. 538 이전부터 develop에 있던 문제다.
+- [x] 2026-09-10 해결했다. 원인이 하나가 아니라 둘이었다.
+  - `DepositSavingApiIntegrationTest` 29건: `deposit-saving-test-data.sql`의 `account` INSERT가
+    `currency`·`account_no_hash`·`created_at`·`updated_at`을 채우지 않아 NOT NULL 위반으로 실패했다.
+    `savings-test-data.sql`과 같은 방식으로 채웠다.
+  - `CardQueryApiIntegrationTest` 1건: `currency`와 무관했다. fixture가 자체 `CREATE TABLE`을 쓰므로
+    NOT NULL 문제가 없다. `TX-C1-003`을 `today.minusDays(40)`에 넣은 탓에 오늘 날짜에 따라 그 거래가
+    전월에 들어가고, 전월 실적이 0이라는 혜택 테스트의 전제가 매달 10일경부터 깨졌다.
+    `today.minusMonths(2)`로 바꿔 날짜 의존을 없앴다.
+- 아래 기록은 정정 전 내용이다. 30건을 모두 `currency` 문제로 본 것은 틀렸다.
 - 근거: `MinusAccountOwner`가 `account.currency`를 `nullable = false`로 매핑하는데, H2는 엔티티 기준으로 스키마를 만들어 `V3`의 `DEFAULT 'KRW'`가 없다. 두 테스트의 seed SQL은 `currency`를 넣지 않는다.
 - 영향: Jenkins의 Build & Test 단계가 `./gradlew clean build`를 돌리므로 어느 브랜치의 MR이든 이 실패를 함께 본다.
 - 완료 조건: `card-query-test-data.sql`과 `deposit-saving-test-data.sql`의 `account` INSERT에 `currency`를 채우거나, 엔티티 매핑에 기본값을 반영한다. 담당 이슈를 정해야 한다.

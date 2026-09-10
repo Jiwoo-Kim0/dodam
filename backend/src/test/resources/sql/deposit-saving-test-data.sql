@@ -11,15 +11,19 @@ DELETE FROM financial_profile;
 INSERT INTO financial_profile (user_id, monthly_income, updated_at)
 VALUES (1, 3000000, TIMESTAMP '2026-09-09 00:00:00'),
        (2, 9000000, TIMESTAMP '2026-09-09 00:00:00');
+-- H2 스키마는 account를 부분 매핑한 엔티티에서 만들어지므로 NOT NULL 컬럼을 모두 채운다.
+-- currency·account_no_hash·created_at·updated_at을 빼면 INSERT가 NOT NULL 위반으로 실패한다.
+-- 계좌번호 해시는 UNIQUE 충족용 자리값이며 실제 민감번호가 아니다.
 INSERT INTO account
-    (account_id, user_id, bank_code, bank_name, account_no_masked, account_name, account_type, status, balance)
+    (account_id, user_id, bank_code, bank_name, account_no_masked, account_no_hash,
+     account_name, account_type, status, balance, currency, created_at, updated_at)
 VALUES
-    (1, 1, 'TEST', '시연은행', '***-01', '예금', 'DEPOSIT', 'ACTIVE', 1000000),
-    (2, 1, 'TEST', '시연은행', '***-02', '적금', 'SAVINGS', 'ACTIVE', 600000),
-    (3, 1, 'TEST', '시연은행', '***-03', '종료 적금', 'SAVINGS', 'CLOSED', 0),
-    (4, 1, 'TEST', '시연은행', '***-04', '만기 예금', 'DEPOSIT', 'INACTIVE', 200000),
-    (5, 1, 'TEST', '시연은행', '***-05', '상세 누락 예금', 'DEPOSIT', 'ACTIVE', 50000),
-    (6, 2, 'TEST', '시연은행', '***-06', '타인 적금', 'SAVINGS', 'ACTIVE', 9000000);
+    (1, 1, 'TEST', '시연은행', '***-01', 'placeholder-hash-1', '예금', 'DEPOSIT', 'ACTIVE', 1000000, 'KRW', TIMESTAMP '2026-01-01 00:00:00', TIMESTAMP '2026-09-09 00:00:00'),
+    (2, 1, 'TEST', '시연은행', '***-02', 'placeholder-hash-2', '적금', 'SAVINGS', 'ACTIVE', 600000, 'KRW', TIMESTAMP '2026-01-01 00:00:00', TIMESTAMP '2026-09-09 00:00:00'),
+    (3, 1, 'TEST', '시연은행', '***-03', 'placeholder-hash-3', '종료 적금', 'SAVINGS', 'CLOSED', 0, 'KRW', TIMESTAMP '2026-01-01 00:00:00', TIMESTAMP '2026-09-09 00:00:00'),
+    (4, 1, 'TEST', '시연은행', '***-04', 'placeholder-hash-4', '만기 예금', 'DEPOSIT', 'INACTIVE', 200000, 'KRW', TIMESTAMP '2026-01-01 00:00:00', TIMESTAMP '2026-09-09 00:00:00'),
+    (5, 1, 'TEST', '시연은행', '***-05', 'placeholder-hash-5', '상세 누락 예금', 'DEPOSIT', 'ACTIVE', 50000, 'KRW', TIMESTAMP '2026-01-01 00:00:00', TIMESTAMP '2026-09-09 00:00:00'),
+    (6, 2, 'TEST', '시연은행', '***-06', 'placeholder-hash-6', '타인 적금', 'SAVINGS', 'ACTIVE', 9000000, 'KRW', TIMESTAMP '2026-01-01 00:00:00', TIMESTAMP '2026-09-09 00:00:00');
 INSERT INTO deposit_saving
     (account_id, user_id, account_type, interest_rate, monthly_amount, opening_date, expiry_date, created_at)
 VALUES
