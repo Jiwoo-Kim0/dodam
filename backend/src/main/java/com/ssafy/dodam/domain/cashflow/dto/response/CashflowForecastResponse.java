@@ -11,8 +11,10 @@ import java.time.LocalDateTime;
  * <p>`endDate`는 저장하지 않고 `baseDate + horizonDays - 1`로 파생한다(538의
  * {@code CashflowForecastPeriod}와 같은 규칙). 양 끝을 포함하는 구간이다.
  *
- * <p>`requestHash`는 캐시·멱등 판정용 내부 지문이므로 응답에 넣지 않는다. `availableToday`는 계산
- * 정의가 S15P21D105-542에서 확정되므로 그때 추가한다.
+ * <p>`requestHash`는 캐시·멱등 판정용 내부 지문이므로 응답에 넣지 않는다.
+ *
+ * <p>`availableToday`는 S15P21D105-542에서 계산 정의를 확정하고 추가했다(`max(0, minimumBalance)`).
+ * 542 이전에 완료된 예측에는 값이 없어 null이며, 0원으로 채우지 않는다.
  */
 public record CashflowForecastResponse(
         Long forecastId,
@@ -21,6 +23,7 @@ public record CashflowForecastResponse(
         LocalDate endDate,
         ForecastStatus status,
         Long currentBalance,
+        Long availableToday,
         Long minimumBalance,
         LocalDate riskDate,
         String calculationVersion,
@@ -36,6 +39,7 @@ public record CashflowForecastResponse(
                 forecast.getBaseDate().plusDays(forecast.getHorizonDays() - 1L),
                 forecast.getStatus(),
                 forecast.getCurrentBalance(),
+                forecast.getAvailableToday(),
                 forecast.getMinimumBalance(),
                 forecast.getRiskDate(),
                 forecast.getCalculationVersion(),

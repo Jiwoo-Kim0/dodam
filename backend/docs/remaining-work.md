@@ -2,7 +2,7 @@
 
 마지막 갱신: 2026-09-10
 
-백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538이다.
+백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542이다.
 
 ## S15P21D105-535 — 예·적금 ERD 제약 동기화
 
@@ -304,8 +304,8 @@
 ### 미확정 정책 반영
 
 - [ ] `calculation_version` 표기 규칙을 팀에서 정하고 `CashflowCalculationVersion.CURRENT`를 교체한다. 현재는 `"v1"` 상수다.
-- [ ] `cashflow_event.type`과 `cashflow_risk.type`의 값 집합을 539·542에서 확정하고 ERD 주요 코드값 표에 추가한다. ERD에 목록이 없어 `String`으로 두었다.
-- [ ] `request_hash` 생성 규칙(540)과 `available_today` 계산 정의(542)를 반영한다. 538은 컬럼과 조회 메서드만 제공한다.
+- [ ] `cashflow_event.type`과 `cashflow_risk.type`의 값 집합을 ERD 주요 코드값 표에 추가한다. 539·542가 코드에서 확정했고(`cashflow_risk.type`은 `BALANCE_SHORTAGE` 하나) ERD 반영만 남았다.
+- [x] `request_hash` 생성 규칙(540)과 `available_today` 계산 정의(542, `max(0, minimumBalance)`)를 반영했다.
 
 ### Jira 최신 완료 조건 대조
 
@@ -319,7 +319,7 @@
 
 - [ ] 540이 정한 기본값을 팀에서 확인한다. `horizonDays` 기본 90·상한 365, 완료 캐시 유효기간 당일,
   시작 잔액 = 활성 `DEMAND_DEPOSIT` 합계, 과거 기준일 거부. 모두 명세에 값이 없어 정한 기본안이다.
-- [ ] `request_hash` 생성 규칙은 540에서 확정했다(538의 남은 항목 해소). `available_today`는 542에 남아 있다.
+- [x] `request_hash` 생성 규칙은 540에서, `available_today`는 542에서 확정했다.
 
 ### 계산 정확도 한계
 
@@ -399,3 +399,45 @@
 - 근거: `MinusAccountOwner`가 `account.currency`를 `nullable = false`로 매핑하는데, H2는 엔티티 기준으로 스키마를 만들어 `V3`의 `DEFAULT 'KRW'`가 없다. 두 테스트의 seed SQL은 `currency`를 넣지 않는다.
 - 영향: Jenkins의 Build & Test 단계가 `./gradlew clean build`를 돌리므로 어느 브랜치의 MR이든 이 실패를 함께 본다.
 - 완료 조건: `card-query-test-data.sql`과 `deposit-saving-test-data.sql`의 `account` INSERT에 `currency`를 채우거나, 엔티티 매핑에 기본값을 반영한다. 담당 이슈를 정해야 한다.
+
+## S15P21D105-542 — 현금흐름 위험·가용금액
+
+구현 계약: [cashflow-risk.md](cashflow-risk.md)
+
+### 미확정 정책 확인
+
+- [ ] 542가 정한 기본안을 팀에서 확인한다. `available_today = max(0, 구간 최소잔액)`, 심각도 구간
+  (부족액/필요금액 0.2·0.5와 잔액 0 이하 CRITICAL), 위험 정렬 심각도 우선. 모두 명세에 값이 없다.
+- [ ] `cashflow_risk.type`의 값 `BALANCE_SHORTAGE`를 ERD 주요 코드값 표에 추가한다.
+
+### 탐지 범위 확대
+
+- [ ] 마이너스통장 한도 여력을 위험 판단에 반영한다. 현재는 현금(`DEMAND_DEPOSIT`)만 보므로 한도가
+  남아 실제로는 결제되는 출금도 부족으로 잡힌다.
+- 근거: 한도 여력은 minusaccount 도메인 정보다. cashflow가 직접 조회하면 도메인 경계를 넘고 테스트
+  범위가 늘어 이번 범위에서 제외했다.
+- 선행 조건: 두 도메인이 공유할 조회 계약(어느 쪽이 제공할지)을 정해야 한다.
+- 완료 조건: 부족액이 잔여 한도 안이면 심각도가 낮아지고, 그 판단 근거가 응답에 드러난다.
+
+- [ ] 탐지 규칙이 `BALANCE_SHORTAGE` 하나뿐이다. 기획안의 적금 납입일 부족 등 개별 시나리오가 유형으로
+  구분되지 않는다. 유형을 나눌지, 나눈다면 이벤트 유형과 어떤 관계인지 정해야 한다.
+- [ ] 심각도에 임박도(기준일로부터의 일수)를 반영할지 정한다. 현재는 부족 비율 한 축만 쓴다.
+- [ ] `available_today`의 구간을 좁힐지 정한다. 현재 예측 구간 전체(기본 90일)의 최소값이라 먼 미래의
+  큰 출금 한 건이 오늘 값을 끌어내린다.
+
+### MySQL 검증
+
+- [ ] `/risks`·`/available-today` 두 경로를 MySQL 8.0에서 실행한다. H2 통합 테스트만 수행했다.
+- 근거: 새 마이그레이션과 스키마 변경이 없어 검증할 DDL 변경은 없지만, H2 통과가 MySQL 제약·타입
+  검증을 대신하지 않는다.
+- 완료 조건: 위험 목록의 심각도 정렬과 `available_today` 값을 MySQL 데이터로 확인한다.
+
+### 병합 순서
+
+- [ ] 541(`S15P21D105-541-api-15-cashflow`)이 `develop`에 병합된 뒤에 542를 병합한다. 542 브랜치는
+  `develop`이 아니라 541 tip에서 분기했다.
+
+### Jira 최신 완료 조건 대조
+
+- [ ] 실제 Jira 접근이 가능해지면 최신 542 완료 조건과 구현 범위를 대조한다. 로컬
+  `SPRINT/Jira (4).csv`의 제목·설명만 근거로 범위를 정했다.
