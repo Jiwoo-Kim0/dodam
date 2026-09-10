@@ -1,7 +1,11 @@
 package com.ssafy.dodam.infrastructure.external.ssafy;
 
+import java.util.List;
+
 /**
  * SSAFY 금융망 호출 포트. 도메인 서비스는 이 인터페이스에만 의존하고, 테스트에서는 Mock으로 대체한다.
+ *
+ * 사용자 단위 API는 userKey 원문을 받는다. 구현은 userKey를 로그에 남기지 않는다.
  */
 public interface SsafyFinanceClient {
 
@@ -20,4 +24,20 @@ public interface SsafyFinanceClient {
      * @throws SsafyUnavailableException 네트워크 오류
      */
     SsafyMember searchMember(String email);
+
+    /**
+     * 2.7.4 내 신용등급 조회 (inquireMyCreditRating). 사용자 단위 API.
+     *
+     * @throws SsafyApiException H1009(USER_KEY 무효) 등 금융망 오류 응답
+     * @throws SsafyUnavailableException 네트워크 오류·응답 해석 불가
+     */
+    SsafyCreditRating inquireMyCreditRating(String userKey);
+
+    /**
+     * 2.7.1 신용등급 기준 조회 (inquireAssetBasedCreditRatingList). 앱 단위 API로 userKey를 보내지 않는다.
+     *
+     * @throws SsafyApiException 금융망 오류 응답
+     * @throws SsafyUnavailableException 네트워크 오류·응답 해석 불가
+     */
+    List<SsafyCreditRatingCriterion> inquireAssetBasedCreditRatingList();
 }

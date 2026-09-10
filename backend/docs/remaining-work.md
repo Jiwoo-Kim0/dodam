@@ -1,8 +1,17 @@
 # 백엔드 남은 작업
 
-마지막 갱신: 2026-09-09
+마지막 갱신: 2026-09-10
 
-백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-530, 532다.
+백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535이다.
+
+## S15P21D105-535 — 예·적금 ERD 제약 동기화
+
+구현 계약: [deposit-savings.md](deposit-savings.md)
+
+- [ ] 루트 ERD SQL의 `chk_deposit_saving_withdrawal_account`에 V15와 같은 `withdrawal_account_type IS NOT NULL` 조건을 반영한다.
+- 근거: MySQL CHECK는 UNKNOWN을 허용한다. 원본은 출금계좌 ID가 있어도 유형 NULL로 복합 FK를 우회할 수 있어 V15에서 보완했다.
+- 선행 조건: 루트 docs 수정은 사용자 명시 요청 범위가 아니므로 이번에는 변경하지 않았다.
+- 완료 조건: ERD와 V15가 같은 출금계좌 NULL 조합·유형·소유권 제약을 표현한다.
 
 ## 기록 방식
 
@@ -11,6 +20,39 @@
 - API 계약·계산식은 해당 구현 문서를 기준으로 하고, 남은 작업의 진행 상태는 이 파일에서 갱신한다.
 - 담당자는 확인된 자료를 근거로 기록하며 새 담당 배정을 의미하지 않는다. 불명확하면 확인 필요로 남긴다.
 - 이 파일에 기록하는 것만으로 이슈 범위를 축소하거나 커밋·push·MR 생성·배포를 승인한 것으로 보지 않는다.
+
+## S15P21D105-499 — Finance Data 동기화
+
+구현 계약: [finance-data.md](finance-data.md)
+
+### 도메인별 동기화 구현
+
+- [ ] `FinanceSyncScopeHandler` 구현을 도메인별로 등록한다. 현재 등록된 구현이 없어 `POST /finance-data/sync`는 모든 scope를 SKIPPED로 보고하고 `last_synced_at`을 갱신하지 않는다.
+- 담당 근거: 테이블 소유 도메인이 구현한다. ACCOUNT는 BE-A(S15P21D105-501, `Account` 엔티티와 함께), CARD·LOAN·SAVING은 BE-B 영역이다. 새 담당 배정을 의미하지 않는다.
+- 선행 조건: 시연 데이터를 로컬 DB에서 읽는 현재 방식과 금융망 실시간 동기화의 역할 분담을 팀이 정한다. 금융망에서 받은 행은 `source_type = 'SSAFY'`, 시연 데이터는 `SEED`로 구분해 공존시키는 것을 전제로 한다.
+- 완료 조건: scope별 handler가 금융망 조회 → 로컬 upsert를 수행하고, 실행 응답의 `syncedCount`와 `last_synced_at` 갱신을 통합 테스트로 확인한다.
+
+### MySQL 검증
+
+- [x] V13까지 적용된 MySQL에 V4를 추가하면 `FlywayValidateException`이 나는 문제(MR 리뷰, 2026-09-09)를 `spring.flyway.out-of-order: true`(local/prod)로 해결했다. 번호 구간 분할 자체가 이 옵션을 전제로 한다. `FlywayOutOfOrderTest`로 재현·검증.
+- [ ] `V4__create_finance_sync.sql`을 MySQL 8.0에 적용해 `ddl-auto: validate` 통과와 `FinanceSync` 엔티티 매핑(VARCHAR(30) enum, DATETIME)을 확인한다. H2 통합 테스트만 수행했다. out-of-order 적용은 리뷰어가 기존 DB에서 재확인 예정.
+- [ ] `SELECT ... FOR UPDATE`(`findByUserIdForUpdate`) 기반 동시 실행 방지가 MySQL InnoDB에서 의도대로 직렬화되는지 동시 요청으로 확인한다.
+
+## S15P21D105-500 — Finance Data 통합 요약·신용등급
+
+구현 계약: [finance-data.md](finance-data.md)
+
+### 금융망 실호출 대조
+
+- [x] SSAFY 금융망 API 문서(2.3.1 공통 Header, 2.7.1 신용등급 기준 조회, 2.7.4 내 신용등급 조회)와 필드명·경로·Header 규칙을 대조해 수정했다(2026-09-09). 기준 조회는 `inquireAssetBasedCreditRatingList`(userKey 제외, REC `ratingUniqueNo/ratingName/minAssetValue/maxAssetValue`), 내 신용등급 REC에는 `creditScore`가 없다. 정상 코드는 `H0000` 하나이며 `H1000~H1010`은 오류다.
+- [ ] 실제 금융망 호출로 200 응답을 확인한다. 2026-09-09 로컬에서 curl로 시도했으나 전달받은 API Key가 사용자 계정 API에서 `E4004`, 거래 API에서 `H1008`(API KEY 무효)로 거절됐다.
+- 선행 조건: SSAFY 개발센터에서 유효한 앱 API Key 확인(만료·재발급 여부). 키는 레포·문서에 기록하지 않는다.
+- 완료 조건: 회원 생성 → 내 신용등급 조회 → 기준 조회의 200 응답과 REC 필드를 확인한다. 차이가 있으면 record·문서·테스트 픽스처를 함께 고친다.
+
+### 통합 요약 범위
+
+- [ ] `deposit_saving`, `installment`, `subscription` 테이블이 마이그레이션되면 요약 포함 여부를 정한다. 현재 예·적금은 `account`의 DEPOSIT·SAVINGS 행으로만 집계하고 할부·구독은 포함하지 않는다.
+- [ ] 집계 SQL(`JdbcFinanceSummaryReader`)을 MySQL 8.0에서 `PREPARE`로 확인한다. H2에서만 검증했다.
 
 ## S15P21D105-530 — Installment API
 
@@ -79,3 +121,100 @@
 - [ ] 실제 프로젝트 Jira 접근이 가능해지면 최신 532 완료 조건과 구현·남은 제한을 대조한다.
 - 현재 브랜치는 사용자가 생성한 `S15P21D105-532-api-10-loan`이며 최신 develop `22821fe` 기준이다.
 - 기존 계획·명세에 근거한 구현을 진행했으며 Jira 조회 실패를 기능 완료 조건 확인으로 대신하지 않는다.
+
+## S15P21D105-533 — Loan 금리비교·상환우선순위
+
+계획: [loan-rate-priority-plan.md](loan-rate-priority-plan.md), 구현 계약: [loan-rate-priority.md](loan-rate-priority.md)
+
+3개 API 중 상환 우선순위만 구현했다. 아래가 남아 있는 동안 533 전체를 완료 처리하지 않는다.
+
+### 시장금리 비교와 고금리 판정 API
+
+- [ ] `GET /api/v1/loans/{accountNo}/rate-comparison`과 `GET /api/v1/loans/high-interest`를 구현한다.
+- 현재 동작: 두 경로는 존재하지 않는다. `GET /api/v1/loans/repayment-priority`만 동작한다.
+- 선행 조건: 계획 8절 4단계의 공통 비교 계산기와 전용 테스트 fixture. 계획 5절의 비교군·상환방식 대응표와 기간 밴드, 최저금리 중앙값 기준은 확정 상태다.
+- 완료 조건: 계획 8절 5단계 게이트(시연 데이터에서 판정 1건 이상, 0건이면 기준 방식 재검토)를 통과하고 `rateSpreadThreshold`를 편차 분포 근거와 함께 확정한다. 확정값이 통계적 기준이 아니라 서비스 초기 임계값임을 응답과 문서에 남긴다.
+
+### goalId 미지원
+
+- [ ] 목표 기반 상환 우선순위 지원 여부를 최신 Jira 범위와 대조해 후속 이슈로 분리할지 정한다.
+- 현재 동작: 형식이 유효한 goalId도 `INVALID_REQUEST` 400이다. 존재 여부를 조회한 것처럼 404를 반환하지 않는다.
+- 선행 조건: `goal` 테이블 마이그레이션과 Goal 도메인(명세 12). 현재 저장소에 둘 다 없다. 533에 임시 테이블이나 대체 저장소를 만들지 않는다.
+- 제약: ERD `goal_account`의 `chk_goal_account_type`이 예금 계좌만 허용해 목표에 대출을 연결할 수 없고, 예산 항목은 소비목표 전용 `monthly_budget`뿐이다. 목표를 반영한 우선순위는 명세 16의 `GET /api/v1/recommendations/priorities`가 소유한다.
+
+### MySQL 검증과 미검증 분기
+
+- [ ] 기존 `LoanAnalysisMySqlIntegrationTest`와 같은 `@EnabledIfEnvironmentVariable` 조건부 테스트를 533에도 추가한다.
+- 현재 동작: 상환 우선순위는 H2로만 검증했다. MySQL 조회·매핑은 미검증이다.
+- 금리 무효(`INVALID_TERMS`) 분기는 테스트로 도달할 수 없다. `sql/loan-query-test-data.sql`이 ERD의 `interest_rate >= 0` CHECK를 복제해 H2에서도 음수를 넣을 수 없다. 서비스에는 방어 코드로만 남아 있다.
+
+### Jira 최신 완료 조건 대조
+
+- [ ] 실제 Jira 접근이 가능해지면 최신 533 완료 조건과 구현·남은 제한을 대조한다.
+- 현재 브랜치는 사용자가 생성한 `S15P21D105-533-api-10`이며 `1247b18` 기준이다. 이후 develop에 추가된 4커밋은 모두 Infra(473)로 백엔드 변경이 없다.
+- 로컬 `SPRINT/Jira (4).csv`의 제목·설명만 근거로 범위를 정했다. Jira 조회 실패를 완료 조건 확인으로 대신하지 않는다.
+
+## S15P21D105-534 — 마이너스통장 API
+
+구현 계약: [minus-account.md](minus-account.md), 계획과 결정 배경: [minus-account-plan.md](minus-account-plan.md)
+
+7개 엔드포인트를 모두 구현했고 전체 378건이 통과했다(H2 35건, MySQL 조건부 1건 포함).
+아래 항목이 남아 있는 동안 534 전체를 완료 처리하지 않는다. 남은 항목은 모두 다른 이슈의 합의나
+산출물을 선행 조건으로 하며 534에서 단독으로 끝낼 수 없다.
+
+### finance-data sync가 로컬 상환분을 덮어쓰는 문제
+
+- [ ] `source_type = 'SEED'` 계좌를 `POST /api/v1/finance-data/sync`(scope `ALL`/`ACCOUNT`) 대상에서 제외하는 합의를 받는다.
+- 현재 동작: 상환·이자납부가 우리 DB의 `minus_account`와 `account`만 바꾸는 로컬 상태 전이다(2026-09-09 사용자 결정). 동기화가 SSAFY 기준으로 계좌를 덮어쓰면 상환 결과가 사라진다.
+- 담당 근거: 동기화는 `4 Finance Data`(BE-A, dev_plan Day 3) 소관이다. 534에서 단독으로 정하거나 동기화 로직을 고치지 않는다.
+- 완료 조건: 제외 규칙이 합의되고 시연 계좌에서 상환 후 동기화를 실행해도 결과가 유지되는지 확인한다. 미해결 상태로 시연하면 상환 결과가 사라질 수 있으므로 MR 시 명시한다.
+
+### 알림 연결 규약과 실데이터 검증
+
+- [ ] `source_type = 'MINUS_ACCOUNT'`와 `source_id = account_id` 규약을 S15P21D105-458과 합의한다.
+- 현재 동작: `JdbcMinusAccountAlertReader`가 그 규약으로 `notification`을 읽기만 한다. 테이블이 없어 항상 빈 페이지다.
+- 선행 조건: 458의 `notification` 마이그레이션. dev_plan상 Day 9~10이라 534(Day 4)보다 늦다. 534에서 테이블이나 알림 생성 배치를 만들지 않는다.
+- 완료 조건: 규약 확정 후 실제 알림 데이터로 `unreadOnly`, 소프트 삭제 제외, 정렬을 확인한다. 규약이 바뀌면 리더의 상수만 고친다.
+
+### 중복 요청 방지
+
+- [ ] 상환·이자납부의 재전송 멱등성을 구현한다.
+- 현재 동작: 행 잠금(`PESSIMISTIC_WRITE`)으로 동시 요청의 경쟁 조건만 막는다. 같은 요청을 두 번 보내면 두 번 처리된다. 명세 제한사항의 "중복 요청 방지"를 충족하지 못한다.
+- 선행 조건: `Idempotency-Key` 헤더와 처리 결과 저장(테이블 또는 Redis)의 계약. TTL과 응답 재생 방식이 정해지지 않았다. `(user, account, amount)` 시간창 차단은 정상적인 연속 상환을 막아 채택하지 않았다.
+- 완료 조건: 같은 키의 재요청이 잔액을 두 번 바꾸지 않고 첫 응답을 그대로 돌려주는지 확인한다.
+
+### 상환의 거래원장 반영
+
+- [ ] 상환·이자납부를 `transaction`에 기록할지 BE-A와 정한다.
+- 현재 동작: 기록하지 않아 상환 직후 거래내역 조회에 그 상환이 나타나지 않는다.
+- 선행 조건: 시스템 생성 거래의 `transaction_id` 규칙, `category_id`, `source_type` 계약. 명세의 유일한 거래 생성 경로인 `POST /api/v1/transactions`조차 Body에 계좌 지정 필드가 없어 규약 자체가 없다. 합의 전에 임의 규칙으로 남의 원장에 쓰지 않는다.
+- 완료 조건: 기록하기로 정하면 `account.last_transaction_date`도 같은 트랜잭션에서 갱신한다(ERD 계산 기준).
+
+### account 잔액 쓰기 방식 인수인계
+
+- [ ] `JdbcAccountBalanceWriter`의 존재를 S15P21D105-501 담당자에게 전달한다.
+- 현재 동작: `account`가 BE-A 소관이라 쓰기 엔티티를 만들지 않고 도메인 전용 JDBC writer로 UPDATE한다. 조건절에 `user_id`·`account_type`을 넣고 갱신 행 수가 1이 아니면 롤백한다.
+- 완료 조건: 501이 `Account` 엔티티를 만들면 이 어댑터를 교체한다. 같은 테이블에 쓰기 엔티티를 중복 매핑하지 않는다.
+
+### MySQL 검증
+
+- [x] 스키마와 상환 정합을 MySQL 8.0에서 확인했다(2026-09-09). `MinusAccountMySqlIntegrationTest`를 532와 같은 `@EnabledIfEnvironmentVariable` 방식으로 추가했고, 빈 `dodam_534_test` 스키마에 실제 Flyway가 `V1`~`V14`를 적용한 뒤 `ddl-auto: validate` 통과, CHECK 7개와 복합 외래키 3컬럼 생성, CHECK가 살아 있는 상태의 상환·이자납부 정합을 검증했다. 일회용 컨테이너에서 수행했고 운영 DB와 인프라 구성은 건드리지 않았다.
+- [ ] 데이터 기준 동작은 확인하지 못했다. seed 적재에 암호화 픽스처 임시 테이블 3개가 필요하며 530·532와 같은 선행 조건이다. 위 테스트는 테스트가 만든 최소 fixture 기준이다.
+
+### seed의 next_interest_date 고정
+
+- [ ] seed(S15P21D105-523)의 `next_interest_date`가 1,000행 모두 `2026-09-25`인 점을 보완한다.
+- 현재 동작: 그날이 지나면 이자 API의 `daysToNextInterestDate`와 `estimatedInterestUntilNextDate`가 시연 계좌 전체에서 `null`이 된다.
+- 담당 근거: 534 코드 문제가 아니라 seed 데이터 문제다. 발견 사항으로 보고한다.
+
+### API 5 거래내역과의 중복
+
+- [ ] `GET /api/v1/accounts/{accountNo}/transactions`(명세 5)와 응답 계약이 갈라지지 않게 501 구현과 대조한다.
+- 현재 동작: 두 명세 모두 승인된 문서라 10-1의 7개를 그대로 구현했다. 경로만 다르고 입력과 제한사항 문구가 동일하다.
+- 완료 조건: 응답 필드·정렬·기간 정책을 501과 맞추거나, 한쪽으로 통합할지 팀에서 정한다.
+
+### Jira 최신 완료 조건 대조
+
+- [ ] 실제 Jira 접근이 가능해지면 최신 534 완료 조건과 구현·남은 제한을 대조한다.
+- 현재 브랜치는 사용자가 지정한 `S15P21D105-534-api-10-1-minus-account-api`이며 develop `cf854be` 기준으로 로컬 생성했다. Jira `Create branch`가 아니므로 이슈 연결 확인이 남는다.
+- 로컬 `SPRINT/Jira (4).csv`의 제목·설명만 근거로 범위를 정했다.

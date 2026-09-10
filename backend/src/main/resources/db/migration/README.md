@@ -5,10 +5,12 @@
 | V1 | `user`, `auth_session` 생성 (Auth API 최소 범위) | S15P21D105-494 |
 | V2 | `user_setting`, `financial_profile`, `finance_connection` 생성 | S15P21D105-494, S15P21D105-497 |
 | V3 | `account` 생성 (BE-A 소관 테이블 선반영) | S15P21D105-501 |
+| V4 | `finance_sync` 생성 (금융 데이터 동기화 이력) | S15P21D105-499 |
 | V10 | `financial_company`, `financial_product`, `financial_product_option` 생성 | S15P21D105-525, S15P21D105-526 |
 | V11 | `card`, `card_billing_statement` 생성 | S15P21D105-527, S15P21D105-529 |
 | V12 | `installment` 생성 | S15P21D105-530 |
 | V13 | `loan`, `loan_repayment` 생성 | S15P21D105-531 |
+| V14 | `minus_account` 생성 | S15P21D105-534 |
 
 ## 버전 번호 할당
 
@@ -24,6 +26,10 @@
 진행하며 같은 테이블을 다시 만드는 마이그레이션을 추가하지 않습니다.
 
 Flyway는 버전이 연속일 필요가 없으므로 빈 번호는 그대로 둡니다. 구간을 넘겨 써야 하면 먼저 해당 영역 담당자와 번호를 확인하세요.
+
+이 방식은 **이미 V13이 적용된 DB에 나중에 V4가 추가되는 상황**을 전제로 합니다. Flyway 기본값은 이를
+"resolved migration not applied to database" 검증 오류로 막으므로 local/prod 프로필에 `spring.flyway.out-of-order: true`를
+켜 두었습니다(`FlywayOutOfOrderTest`가 두 동작을 재현). 새 프로필을 추가할 때도 이 옵션을 빠뜨리지 마세요.
 
 `card`와 `loan`은 ERD 정의대로 `account`를 복합 외래키로 참조합니다. FK를 빼고 나중에 추가하는 방식은 데이터 적재 후 제약 추가가 어려워 택하지 않았습니다.
 

@@ -1,6 +1,7 @@
 package com.ssafy.dodam.global.policy;
 
 import com.ssafy.dodam.global.exception.InvalidRequestException;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.util.regex.Pattern;
@@ -14,20 +15,26 @@ public class YearMonthPolicy {
     private static final Pattern YEAR_MONTH_PATTERN = Pattern.compile("\\d{4}-(0[1-9]|1[0-2])");
 
     public YearMonth resolveHistorical(String value) {
-        YearMonth resolved = parseOrCurrent(value);
-        if (resolved.isAfter(YearMonth.now(SERVICE_ZONE))) {
+        return resolveHistorical(value, LocalDate.now(SERVICE_ZONE));
+    }
+
+    /** 요청에서 한 번 정한 기준일로 기본 월과 미래 월 검증을 함께 수행한다. */
+    public YearMonth resolveHistorical(String value, LocalDate asOfDate) {
+        YearMonth current = YearMonth.from(asOfDate);
+        YearMonth resolved = parseOrCurrent(value, current);
+        if (resolved.isAfter(current)) {
             throw new InvalidRequestException("조회 연월은 현재 월 이후일 수 없습니다.");
         }
         return resolved;
     }
 
     public YearMonth resolveBillingMonth(String value) {
-        return parseOrCurrent(value);
+        return parseOrCurrent(value, YearMonth.now(SERVICE_ZONE));
     }
 
-    private YearMonth parseOrCurrent(String value) {
+    private YearMonth parseOrCurrent(String value, YearMonth current) {
         if (value == null) {
-            return YearMonth.now(SERVICE_ZONE);
+            return current;
         }
         if (!YEAR_MONTH_PATTERN.matcher(value).matches()) {
             throw new InvalidRequestException("yearMonth는 YYYY-MM 형식의 유효한 연월이어야 합니다.");
