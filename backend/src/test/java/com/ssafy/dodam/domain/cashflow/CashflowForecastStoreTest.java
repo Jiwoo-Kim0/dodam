@@ -137,7 +137,7 @@ class CashflowForecastStoreTest {
                 .containsExactly(200L);
         // 기준일이 같아도 최신 실행이 조회된다.
         assertThat(forecastRepository
-                        .findFirstByUserIdAndBaseDateAndStatusOrderByCreatedAtDesc(
+                        .findFirstByUserIdAndBaseDateAndStatusOrderByCompletedAtDescForecastIdDesc(
                                 USER_ID, BASE_DATE, ForecastStatus.COMPLETED)
                         .orElseThrow()
                         .getForecastId())

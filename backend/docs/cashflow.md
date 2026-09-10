@@ -81,8 +81,8 @@ domain/cashflow/
 | 메서드 | 용도 |
 | --- | --- |
 | `CashflowForecastRepository.findByForecastIdAndUserId` | 소유권 확인용 단건 |
-| `findFirstByUserIdAndBaseDateAndStatusOrderByCreatedAtDesc` | 기준일 지정 최신 예측(541) |
-| `findFirstByUserIdAndStatusOrderByBaseDateDescCreatedAtDesc` | 기준일 미지정 최신 예측(541) |
+| `findFirstByUserIdAndBaseDateAndStatusOrderByCompletedAtDescForecastIdDesc` | 기준일 지정 최신 예측(541) |
+| `findFirstByUserIdAndStatusOrderByCompletedAtDescForecastIdDesc` | 기준일 미지정 최신 예측(541). 기준일이 아니라 **완료 시각** 기준이다. 미래 기준일 예측이 계속 최신으로 남는 것을 막는다(541에서 정정) |
 | `findFirstByUserIdAndRequestHashAndStatusOrderByCreatedAtDesc` | 캐시·멱등 재사용 조회(540) |
 | `CashflowDailyBalanceRepository.findOwnedByPeriod` | 기간 조회, `balance_date` 오름차순 |
 | `CashflowEventRepository.findOwnedByPeriod` | 기간 조회, `type` 선택 필터 |

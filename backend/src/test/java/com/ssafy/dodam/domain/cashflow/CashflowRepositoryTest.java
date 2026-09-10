@@ -113,7 +113,7 @@ class CashflowRepositoryTest {
         store.start(OWNER, BASE_DATE.plusDays(1), 30, "hash-pending", NOW.plusHours(2));
 
         assertThat(forecastRepository
-                        .findFirstByUserIdAndStatusOrderByBaseDateDescCreatedAtDesc(
+                        .findFirstByUserIdAndStatusOrderByCompletedAtDescForecastIdDesc(
                                 OWNER, ForecastStatus.COMPLETED)
                         .orElseThrow()
                         .getForecastId())
