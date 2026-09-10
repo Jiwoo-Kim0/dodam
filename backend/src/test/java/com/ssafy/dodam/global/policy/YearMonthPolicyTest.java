@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.ssafy.dodam.global.exception.InvalidRequestException;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import org.junit.jupiter.api.Test;
@@ -11,6 +12,15 @@ import org.junit.jupiter.api.Test;
 class YearMonthPolicyTest {
 
     private final YearMonthPolicy policy = new YearMonthPolicy();
+
+    @Test
+    void explicitDateControlsDefaultMonthAndFutureValidation() {
+        LocalDate date = LocalDate.of(2024, 2, 29);
+        assertThat(policy.resolveHistorical(null, date)).isEqualTo(YearMonth.of(2024, 2));
+        assertThat(policy.resolveHistorical("2024-01", date)).isEqualTo(YearMonth.of(2024, 1));
+        assertThatThrownBy(() -> policy.resolveHistorical("2024-03", date))
+                .isInstanceOf(InvalidRequestException.class);
+    }
 
     @Test
     void defaultsToCurrentMonthAndAllowsFutureBillingMonth() {

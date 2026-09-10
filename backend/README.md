@@ -276,6 +276,21 @@ code와 errors는 null일 때만 생략하고 data와 message는 null이어도 �
 목록 API의 기본 페이지는 0, 기본 크기는 20이며 크기는 최대 100입니다. 상세 경로와
 실제 상품 유형이 다르거나 상품이 없으면 `RESOURCE_NOT_FOUND`를 반환합니다.
 
+## 예·적금 공통 조회
+
+535번은 로컬 시연 DB에서 보유 예·적금 목록, 원금 잔액 요약, 만기 예정과 월 소득 대비
+적금 납입률을 조회합니다. 모든 경로는 인증이 필요하며 본인 데이터만 반환합니다.
+
+| Method | 경로 | 기능 |
+| --- | --- | --- |
+| GET | /api/v1/deposit-savings | type/status 필터와 페이지 조회 |
+| GET | /api/v1/deposit-savings/summary | 보유 예금·적금 개수와 원금 잔액 |
+| GET | /api/v1/deposit-savings/maturities | withinDays 이내 만기 예정 |
+| GET | /api/v1/deposit-savings/rate | yearMonth의 PAID 적금 납입액 / 현재 등록 월 소득 |
+
+V15가 예·적금 상세·납입 테이블을 추가합니다. 기존 524번 seed는 별도 적재하며 SSAFY를
+호출하지 않습니다. 입력 기본값, 계산 가정과 검증은 [구현 문서](docs/deposit-savings.md)를 참고하세요.
+
 ## 아직 결정되거나 구현되어야 할 항목
 
 - 도메인별 금융 데이터 동기화 구현(`FinanceSyncScopeHandler`) — 시연 데이터를 로컬 DB에서 읽는 현재 방식과 금융망 실시간 동기화의 역할 분담
