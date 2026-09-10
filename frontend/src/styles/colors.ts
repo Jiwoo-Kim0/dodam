@@ -16,4 +16,14 @@ export const colors = {
   textTertiary: 'rgba(34, 34, 34, 0.4)',
   disabledBackground: '#D6E1BC',
   overlay: 'rgba(0, 0, 0, 0.35)',
+  home: {
+    goalGradientEnd: '#F3F6E3',
+    goalCardShadow: '#28310F',
+    secondaryRank: '#BEDB80',
+    assetChart: {
+      strong: '#5E7F18',
+      medium: '#A9C46B',
+      light: '#DCE9B9',
+    },
+  },
 } as const;
