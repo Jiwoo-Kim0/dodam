@@ -2,7 +2,7 @@
 
 마지막 갱신: 2026-09-10
 
-백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537이다.
+백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538이다.
 
 ## S15P21D105-535 — 예·적금 ERD 제약 동기화
 
@@ -290,3 +290,30 @@
 - [ ] 실제 Jira 접근이 가능해지면 최신 534 완료 조건과 구현·남은 제한을 대조한다.
 - 현재 브랜치는 사용자가 지정한 `S15P21D105-534-api-10-1-minus-account-api`이며 develop `cf854be` 기준으로 로컬 생성했다. Jira `Create branch`가 아니므로 이슈 연결 확인이 남는다.
 - 로컬 `SPRINT/Jira (4).csv`의 제목·설명만 근거로 범위를 정했다.
+
+## S15P21D105-538 — Cashflow 저장 계층
+
+구현 계약: [cashflow.md](cashflow.md)
+
+### MySQL 검증
+
+- [x] `V16`을 MySQL 8.0에서 검증했다(2026-09-10). 빈 `dodam_538_test` 스키마에 Flyway가 `V1`~`V16`을 적용한 뒤 `ddl-auto: validate` 통과, CHECK 5개 생성, 유니크·금액·심각도·horizon 제약 동작, 조회 3종의 MySQL 방언 실행을 확인했다. 일회용 컨테이너에서 수행했고 운영 DB와 인프라 구성은 건드리지 않았다.
+- 검증 중 `dedupe_key`·`request_hash`의 `CHAR(64)` 매핑 누락을 발견해 고쳤다. 엔티티가 VARCHAR로 매핑돼 `validate`에 실패했다(529의 `card` CHAR 컬럼과 같은 사례).
+- [ ] 데이터 기준 동작은 확인하지 못했다. 위 테스트는 최소 fixture 기준이며 시연 seed를 적재한 상태는 검증하지 않았다.
+
+### 미확정 정책 반영
+
+- [ ] `calculation_version` 표기 규칙을 팀에서 정하고 `CashflowCalculationVersion.CURRENT`를 교체한다. 현재는 `"v1"` 상수다.
+- [ ] `cashflow_event.type`과 `cashflow_risk.type`의 값 집합을 539·542에서 확정하고 ERD 주요 코드값 표에 추가한다. ERD에 목록이 없어 `String`으로 두었다.
+- [ ] `request_hash` 생성 규칙(540)과 `available_today` 계산 정의(542)를 반영한다. 538은 컬럼과 조회 메서드만 제공한다.
+
+### Jira 최신 완료 조건 대조
+
+- [ ] 실제 Jira 접근이 가능해지면 최신 538 완료 조건과 구현 범위를 대조한다. 로컬 `SPRINT/Jira (4).csv`의 제목·설명만 근거로 범위를 정했다.
+
+## 공통 — develop의 H2 테스트 실패 (538 외부)
+
+- [ ] `CardQueryApiIntegrationTest`와 `DepositSavingApiIntegrationTest` 30건이 `NULL not allowed for column "currency"`로 실패한다. 538 이전부터 develop에 있던 문제다.
+- 근거: `MinusAccountOwner`가 `account.currency`를 `nullable = false`로 매핑하는데, H2는 엔티티 기준으로 스키마를 만들어 `V3`의 `DEFAULT 'KRW'`가 없다. 두 테스트의 seed SQL은 `currency`를 넣지 않는다.
+- 영향: Jenkins의 Build & Test 단계가 `./gradlew clean build`를 돌리므로 어느 브랜치의 MR이든 이 실패를 함께 본다.
+- 완료 조건: `card-query-test-data.sql`과 `deposit-saving-test-data.sql`의 `account` INSERT에 `currency`를 채우거나, 엔티티 매핑에 기본값을 반영한다. 담당 이슈를 정해야 한다.
