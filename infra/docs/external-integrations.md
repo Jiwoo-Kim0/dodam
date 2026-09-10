@@ -82,25 +82,28 @@ API Key는 `.env`에 설정 완료.
 1. Firebase 콘솔에서 프로젝트 생성
 2. **Android 앱 추가** → 패키지명 **`com.ssafy.d105.dodam`** 입력
 3. 프로젝트 설정 → **서비스 계정** → "새 비공개 키 생성" → JSON 다운로드
-4. EC2로 옮긴다 (**레포 안에 두지 말 것**)
+4. EC2로 옮기고 **소유권을 컨테이너 유저에게 넘긴다** (**레포 안에 두지 말 것**)
    ```bash
    scp <다운로드파일>.json ssafy-ec2:/home/ubuntu/app/infra/secrets/fcm-service-account.json
-   ssh ssafy-ec2 'chmod 600 ~/app/infra/secrets/fcm-service-account.json'
+   ssh ssafy-ec2 'sudo chown 10001:10001 ~/app/infra/secrets/fcm-service-account.json \
+                  && sudo chmod 600 ~/app/infra/secrets/fcm-service-account.json'
    ```
-5. 인프라 담당에게 알린다 → compose의 FCM 마운트를 활성화하고 백엔드를 재기동한다
+   상세 절차와 주의점: [`infra/secrets/README.md`](../secrets/README.md)
 
-### 현재 상태
+### 현재 상태 — 활성화 완료 (2026-09-10)
 
-`docker-compose.yml`에 마운트 설정이 **주석 처리**되어 있다.
+키를 수령해 마운트를 활성화했다. 컨테이너 경로는 `/run/secrets/fcm-service-account.json`.
 
-키 파일이 없는 상태로 bind mount를 걸면 **Docker가 그 경로에 디렉터리를 생성**해버려,
-나중에 파일을 넣어도 꼬인다. 그래서 키를 받은 뒤 활성화한다.
+**설치 중 걸린 문제 두 가지 (다음에 키를 교체할 때 참고)**
 
-활성화 시 주석을 해제할 두 곳:
-- `environment`의 `FCM_SERVICE_ACCOUNT_PATH`
-- `volumes`의 `./secrets/fcm-service-account.json` 마운트
+1. **키가 없는 상태로 마운트를 걸면 안 된다** — Docker가 해당 경로에 **디렉터리를 생성**해버려
+   나중에 파일을 넣어도 꼬인다. 그래서 키 수령 전까지 compose 설정을 주석으로 두었다.
 
-컨테이너 안 경로는 `/run/secrets/fcm-service-account.json` 으로 고정.
+2. **파일 소유권을 옮겨야 한다** — backend는 비루트(`uid 10001`)로 실행되는데,
+   `scp`로 올린 파일은 `ubuntu`(uid 1000) 소유 600이라 **컨테이너가 읽지 못한다.**
+   마운트 자체는 성공하고 컨테이너도 healthy로 뜨기 때문에 겉으로는 정상으로 보이고,
+   **푸시 발송 코드가 붙은 뒤에야 런타임에서 실패**한다.
+   → `sudo chown 10001:10001` 후 `docker exec backend head -c 25 <경로>` 로 실제 읽힘을 확인할 것.
 
 ### FE·백엔드 쪽 남은 작업
 
