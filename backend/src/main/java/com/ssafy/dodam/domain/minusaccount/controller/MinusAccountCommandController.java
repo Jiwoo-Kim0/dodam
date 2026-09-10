@@ -1,0 +1,59 @@
+package com.ssafy.dodam.domain.minusaccount.controller;
+
+import com.ssafy.dodam.domain.minusaccount.dto.request.MinusAccountInterestPaymentRequest;
+import com.ssafy.dodam.domain.minusaccount.dto.request.MinusAccountRepaymentRequest;
+import com.ssafy.dodam.domain.minusaccount.dto.response.MinusAccountInterestPaymentResponse;
+import com.ssafy.dodam.domain.minusaccount.dto.response.MinusAccountRepaymentResponse;
+import com.ssafy.dodam.domain.minusaccount.service.MinusAccountCommandService;
+import com.ssafy.dodam.global.response.ApiResponse;
+import com.ssafy.dodam.global.security.AuthenticatedUserIdResolver;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Pattern;
+import org.springframework.security.core.Authentication;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@Validated
+@RestController
+@RequestMapping("/api/v1/loans/minus-accounts")
+public class MinusAccountCommandController {
+
+    private static final String ACCOUNT_NO_PATTERN = "^[0-9]{10,20}$";
+
+    private final MinusAccountCommandService minusAccountCommandService;
+    private final AuthenticatedUserIdResolver authenticatedUserIdResolver;
+
+    public MinusAccountCommandController(
+            MinusAccountCommandService minusAccountCommandService,
+            AuthenticatedUserIdResolver authenticatedUserIdResolver
+    ) {
+        this.minusAccountCommandService = minusAccountCommandService;
+        this.authenticatedUserIdResolver = authenticatedUserIdResolver;
+    }
+
+    @PostMapping("/{accountNo}/repayments")
+    public ApiResponse<MinusAccountRepaymentResponse> repay(
+            @PathVariable @Pattern(regexp = ACCOUNT_NO_PATTERN) String accountNo,
+            @Valid @RequestBody MinusAccountRepaymentRequest request,
+            Authentication authentication
+    ) {
+        Long userId = authenticatedUserIdResolver.resolve(authentication);
+        return ApiResponse.success(minusAccountCommandService.repay(userId, accountNo, request));
+    }
+
+    @PostMapping("/{accountNo}/interest-payments")
+    public ApiResponse<MinusAccountInterestPaymentResponse> payInterest(
+            @PathVariable @Pattern(regexp = ACCOUNT_NO_PATTERN) String accountNo,
+            @Valid @RequestBody MinusAccountInterestPaymentRequest request,
+            Authentication authentication
+    ) {
+        Long userId = authenticatedUserIdResolver.resolve(authentication);
+        return ApiResponse.success(
+                minusAccountCommandService.payInterest(userId, accountNo, request)
+        );
+    }
+}
