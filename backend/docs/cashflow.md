@@ -117,7 +117,7 @@ MySQL 테스트는 `CASHFLOW_MYSQL_TEST_URL` 환경변수가 있을 때만 실�
   확인하지 않았다.
 - `calculation_version`은 `CashflowCalculationVersion.CURRENT = "v1"` 상수다. 팀 표기 규칙이 정해지면
   교체한다.
-- `request_hash`는 컬럼과 조회 메서드만 있다. 지문 생성 규칙은 540에서 정한다.
+- `request_hash`는 컬럼과 조회 메서드만 있다. 지문 생성 규칙은 540에서 정했다([cashflow-daily-balance.md](cashflow-daily-balance.md)).
 - `cashflow_event.type`과 `cashflow_risk.type`은 `String`이다. ERD 코드값 표에 두 컬럼의 값 목록이
   없어 539·542에서 확정한 뒤 ERD와 함께 갱신한다.
 - `available_today`의 계산 정의가 확정되지 않았다(`remaining-work.md`). 538은 컬럼만 저장한다.

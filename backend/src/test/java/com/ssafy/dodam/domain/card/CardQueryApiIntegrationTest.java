@@ -75,7 +75,9 @@ class CardQueryApiIntegrationTest {
                 12000, "스타벅스 강남", "카페 결제", false);
         insertTransaction("TX-C1-002", 1L, 1L, 2L, today.minusDays(3), LocalTime.of(9, 5),
                 1500, "서울교통공사", "지하철", false);
-        insertTransaction("TX-C1-003", 1L, 1L, null, today.minusDays(40), null,
+        // 2개월 전으로 둔다. 40일 전은 오늘 날짜에 따라 전월에 들어가고, 그러면 실적 기준월 소비가
+        // 0이라는 혜택 테스트의 전제가 매달 10일경부터 깨진다.
+        insertTransaction("TX-C1-003", 1L, 1L, null, today.minusMonths(2), null,
                 32000, "이마트 성수", "장보기", false);
         insertTransaction("TX-C1-004", 1L, 1L, null, today.minusDays(200), LocalTime.of(18, 0),
                 50000, "올리브영", "화장품", false);

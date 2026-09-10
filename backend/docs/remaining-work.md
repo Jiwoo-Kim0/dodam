@@ -311,9 +311,63 @@
 
 - [ ] 실제 Jira 접근이 가능해지면 최신 538 완료 조건과 구현 범위를 대조한다. 로컬 `SPRINT/Jira (4).csv`의 제목·설명만 근거로 범위를 정했다.
 
-## 공통 — develop의 H2 테스트 실패 (538 외부)
+## S15P21D105-540 — 일별 잔액·캐시 정책
 
-- [ ] `CardQueryApiIntegrationTest`와 `DepositSavingApiIntegrationTest` 30건이 `NULL not allowed for column "currency"`로 실패한다. 538 이전부터 develop에 있던 문제다.
+구현 계약: [cashflow-daily-balance.md](cashflow-daily-balance.md)
+
+### 미확정 정책 반영
+
+- [ ] 540이 정한 기본값을 팀에서 확인한다. `horizonDays` 기본 90·상한 365, 완료 캐시 유효기간 당일,
+  시작 잔액 = 활성 `DEMAND_DEPOSIT` 합계, 과거 기준일 거부. 모두 명세에 값이 없어 정한 기본안이다.
+- [ ] `request_hash` 생성 규칙은 540에서 확정했다(538의 남은 항목 해소). `available_today`는 542에 남아 있다.
+
+### 계산 정확도 한계
+
+- [ ] 요일별 평균 변동지출을 반영하지 못한다. 입력이 될 `transaction` 테이블의 마이그레이션이 아직 없다
+  (현재 `V1`~`V4`, `V10`~`V16`). 그때까지 예상잔액은 실제보다 낙관적이다. 담당 이슈를 정해야 한다.
+- [ ] `AccountScheduledEventSource` 구현체가 없어 급여 등 예정 입금이 반영되지 않는다. 현재 예측은 확정
+  출금 위주다.
+- [ ] 수집 사유(`reasons`)를 저장할 컬럼이 ERD에 없다. 실행 응답에서만 노출되고 `latest` 조회와 캐시
+  재사용 응답에서는 사라진다. 컬럼 추가가 필요하면 ERD 변경을 먼저 논의한다.
+
+### 중복 요청 방지의 경합
+
+- [ ] 같은 요청이 동시에 들어오면 두 요청 모두 새 예측을 만들 수 있다. `(user_id, request_hash, status)`에
+  유니크 제약이 없고 조회와 생성이 한 트랜잭션이 아니다. 순차 재요청만 막는다.
+- [ ] 진행 중 인정 시간 10분은 임의값이다. 수집·계산의 실제 소요 시간을 측정한 뒤 조정한다.
+
+### 검증 범위
+
+- [x] H2 테스트로 기간 정책·지문·캐시 판정·잔액 계산·저장 경로를 검증했다(2026-09-10). 아래 H2 fixture
+  문제를 함께 고친 뒤 전체 `clean build`가 611건 전부 통과한다.
+- [ ] MySQL 검증은 하지 않았다. 스키마를 바꾸지 않고 538의 테이블만 읽고 쓴다. 새 SQL은
+  `CashflowBalanceReader`의 집계 한 건이다.
+
+### Jira 최신 완료 조건 대조
+
+- [ ] 실제 Jira 접근이 가능해지면 최신 540 완료 조건과 구현 범위를 대조한다. 로컬 `SPRINT/Jira (4).csv`의
+  제목·설명만 근거로 범위를 정했다.
+
+## 공통 — 테스트 소스 인코딩 (540 외부)
+
+- [ ] `build.gradle`에 `compileJava.options.encoding`이 없어 javac가 플랫폼 인코딩(MS949)으로 소스를 읽는다.
+  `gradle.properties`의 `-Dfile.encoding=UTF-8`은 Gradle 데몬 설정이라 컴파일 인코딩을 정하지 않는다.
+- 영향: 소스의 한글 문자열 리터럴이 깨진 채 컴파일된다. 테스트는 양쪽이 같이 깨져 비교가 통과하므로
+  드러나지 않지만, 이벤트 표시명처럼 응답·DB에 나가는 한글 상수도 같은 영향을 받는다.
+- 완료 조건: `compileJava`/`compileTestJava`에 `options.encoding = 'UTF-8'`을 추가하고 기존 한글 리터럴이
+  정상 출력되는지 확인한다. 빌드 설정 변경이라 540 범위 밖으로 두고 담당 이슈를 정해야 한다.
+
+## 공통 — develop의 H2 테스트 실패 (해결됨)
+
+- [x] 2026-09-10 해결했다. 원인이 하나가 아니라 둘이었다.
+  - `DepositSavingApiIntegrationTest` 29건: `deposit-saving-test-data.sql`의 `account` INSERT가
+    `currency`·`account_no_hash`·`created_at`·`updated_at`을 채우지 않아 NOT NULL 위반으로 실패했다.
+    `savings-test-data.sql`과 같은 방식으로 채웠다.
+  - `CardQueryApiIntegrationTest` 1건: `currency`와 무관했다. fixture가 자체 `CREATE TABLE`을 쓰므로
+    NOT NULL 문제가 없다. `TX-C1-003`을 `today.minusDays(40)`에 넣은 탓에 오늘 날짜에 따라 그 거래가
+    전월에 들어가고, 전월 실적이 0이라는 혜택 테스트의 전제가 매달 10일경부터 깨졌다.
+    `today.minusMonths(2)`로 바꿔 날짜 의존을 없앴다.
+- 아래 기록은 정정 전 내용이다. 30건을 모두 `currency` 문제로 본 것은 틀렸다.
 - 근거: `MinusAccountOwner`가 `account.currency`를 `nullable = false`로 매핑하는데, H2는 엔티티 기준으로 스키마를 만들어 `V3`의 `DEFAULT 'KRW'`가 없다. 두 테스트의 seed SQL은 `currency`를 넣지 않는다.
 - 영향: Jenkins의 Build & Test 단계가 `./gradlew clean build`를 돌리므로 어느 브랜치의 MR이든 이 실패를 함께 본다.
 - 완료 조건: `card-query-test-data.sql`과 `deposit-saving-test-data.sql`의 `account` INSERT에 `currency`를 채우거나, 엔티티 매핑에 기본값을 반영한다. 담당 이슈를 정해야 한다.
