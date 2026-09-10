@@ -20,7 +20,8 @@
 - `userId`는 인증 경계에서 `AuthenticatedUserIdResolver`로 얻은 양수 ID를 전달한다.
   HTTP 인증 검증은 541의 Controller 책임이다.
 - 날짜는 둘 다 필수이고 양 끝을 포함한다. 미래 조회가 가능한 공통 `PaymentSchedulePeriodPolicy`의
-  시작일 ≤ 종료일, 최대 12개월 정책을 재사용한다. horizon 기본값·상한 결정은 540에 남긴다.
+  시작일 ≤ 종료일, 최대 12개월 정책을 재사용한다. horizon 기본값·상한은 540에서 정했다
+  (기본 90일, 상한 365일. [cashflow-daily-balance.md](cashflow-daily-balance.md)).
 - 기준일을 적금·대출 계산기의 기준 시점으로 전달한다. 현재 저장 상태를 사용하는 계산이며,
   과거 기준일 당시의 잔액·납입 상태를 복원하는 백테스트 기능은 아니다.
 - 입력 오류는 기존 `InvalidRequestException`을 사용한다.
