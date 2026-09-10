@@ -16,15 +16,22 @@ public interface CashflowForecastRepository extends JpaRepository<CashflowForeca
 
     Optional<CashflowForecast> findByForecastIdAndUserId(Long forecastId, Long userId);
 
-    /** 기준일을 지정한 최신 예측. 같은 기준일로 여러 번 실행하면 마지막 실행이 유효하다. */
-    Optional<CashflowForecast> findFirstByUserIdAndBaseDateAndStatusOrderByCreatedAtDesc(
+    /** 기준일을 지정한 최신 예측. 같은 기준일로 여러 번 실행하면 마지막에 완료된 실행이 유효하다. */
+    Optional<CashflowForecast> findFirstByUserIdAndBaseDateAndStatusOrderByCompletedAtDescForecastIdDesc(
             Long userId,
             LocalDate baseDate,
             ForecastStatus status
     );
 
-    /** 기준일을 지정하지 않은 최신 예측. 기준일이 늦은 쪽을, 같으면 나중에 실행한 쪽을 고른다. */
-    Optional<CashflowForecast> findFirstByUserIdAndStatusOrderByBaseDateDescCreatedAtDesc(
+    /**
+     * 기준일을 지정하지 않은 최신 예측. **가장 마지막에 완료된 실행**을 고르며 기준일은 보지 않는다.
+     *
+     * <p>기준일 내림차순으로 고르면 미래 기준일로 한 번 실행해 둔 예측이 계속 최신이 되어, 오늘부터의
+     * 흐름을 조회할 수 없다. 완료 시각이 같으면 나중에 저장된 쪽(`forecastId`가 큰 쪽)을 고른다.
+     *
+     * <p>`COMPLETED`만 조회 대상이므로 `completed_at`은 항상 채워져 있다.
+     */
+    Optional<CashflowForecast> findFirstByUserIdAndStatusOrderByCompletedAtDescForecastIdDesc(
             Long userId,
             ForecastStatus status
     );
