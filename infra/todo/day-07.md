@@ -14,22 +14,34 @@
 ## 체크리스트
 
 ### 1. SSAFY 교육용 금융망 연동 준비
-- [ ] API 문서(`docs/API명세서/`) 기준으로 필요한 인증 방식(고정 API Key, userKey 등) 재확인
-- [ ] 아웃바운드 IP 화이트리스트가 필요한지 확인 (🔲 확인 필요, **사용자 액션**: 필요하면 EC2 고정 IP를 금융망 포털에 등록)
+- [x] 인증 방식 확인 — `application.yml`에 `app.ssafy-finance.api-key`(=`SSAFY_FINANCE_API_KEY`)로 정의됨, `.env` 설정 완료
+- [x] **아웃바운드 연결성 확인 (2026-09-10)** — Day 1부터 미확인이던 항목
+      EC2 호스트·backend 컨테이너 양쪽에서 `https://finopenapi.ssafy.io` **HTTP 200**
+      → 네트워크 차단 없음. IP 화이트리스트 등록 없이 호출 가능
+      (인증 단계에서 IP를 보는 경우에 대비해 공인 IP `43.203.198.18`을 문서에 기록)
 - [ ] 백엔드가 이 API를 호출할 때 타임아웃/재시도 정책을 어디서 관리할지(백엔드 코드 vs 인프라) 협의 — 인프라는 아웃바운드 네트워크만 보장
 
 ### 2. OpenAI 연동
-- [ ] API Key는 Day 4에서 정리한 시크릿 관리 체계로 등록 (조직 계정 여부, 사용량 한도 확인 — **사용자 액션**: 결제 담당자 지정)
+- [x] API Key `.env` 설정 완료, backend 컨테이너 → `api.openai.com` 연결 확인(401 = 네트워크 정상)
+- [ ] 사용량 한도·결제 담당자 확인 (**사용자 액션**)
 - [ ] 비용 폭주 방지를 위해 사용량 알림(있다면 OpenAI 대시보드 알림) 설정 안내
 
 ### 3. FCM (Firebase)
-- [ ] Firebase 프로젝트 생성 여부 확인 (**사용자 액션**: 없으면 생성)
-- [ ] 서비스 계정 키(JSON) 발급 → 백엔드 컨테이너에 볼륨 마운트로 전달 (`.env`가 아닌 파일 마운트, Git에는 절대 커밋 금지 — `.gitignore` 재확인)
+- [x] 키 보관 구조 준비 — `infra/secrets/` 생성, `.gitignore`로 차단(검증 완료), 발급 절차 문서화
+- [x] compose에 마운트 설정 준비 (**주석 상태**) — 키 파일 없이 bind mount를 걸면
+      Docker가 그 경로에 디렉터리를 만들어버려 나중에 꼬이므로, 키 수령 후 활성화
+- [ ] **Firebase 프로젝트 생성 + Android 앱 등록** (**사용자 액션**)
+      패키지명 `com.ssafy.d105.dodam` (FE 확정)
+- [ ] 서비스 계정 키(JSON) 발급 → EC2 `infra/secrets/`로 전달 → 인프라가 마운트 활성화
 - [ ] FE(Expo)에서 FCM 토큰 등록 흐름은 FE팀 담당, 인프라는 백엔드 쪽 서버 키 보관만 책임
 
 ### 4. 소셜 로그인 (Kakao/Google)
-- [ ] Kakao Developers / Google Cloud Console에 EC2 도메인(또는 IP) 기준 Redirect URI 등록 (**사용자 액션**: 각 콘솔 접근 권한 있는 팀원이 진행)
-- [ ] 도메인이 확정되지 않았다면 임시로 IP 기반 URI 등록 후, 도메인 확보 시 갱신 필요함을 팀에 공지
+- [x] 등록할 정확한 값 확정 — [[docs/external-integrations.md]]에 정리
+      Redirect URI: **`dodam://oauth/kakao`** (커스텀 스킴, 웹 방식 아님)
+      Android 패키지명: `com.ssafy.d105.dodam`
+- [ ] Kakao Developers 등록 + REST API 키/Secret 발급 (**사용자 액션**)
+- [ ] Google Cloud Console OAuth 클라이언트 생성 (**사용자 액션**)
+      Android 유형은 Client Secret이 없으므로, 백엔드가 secret을 요구하면 웹 클라이언트도 함께 생성 필요
 
 ### 5. FE 빌드/배포 파이프라인
 현재 FE 구성 실측: **Expo SDK 57 / React Native 0.86 / expo-router**.

@@ -5,6 +5,7 @@
 | 문서 | 내용 |
 | --- | --- |
 | [docs/ci-cd.md](docs/ci-cd.md) | **배포 파이프라인 전체 흐름**, 실패 시 롤백, 알림, 트러블슈팅 |
+| [docs/external-integrations.md](docs/external-integrations.md) | 외부 연동(금융망/OpenAI/FCM/소셜로그인) 등록값과 발급 절차 |
 | [todo/00-overview.md](todo/00-overview.md) | 인프라 전체 계획과 확정 사항 |
 | [todo/security.md](todo/security.md) | 보안 방침, 식별된 위험과 대응 |
 | [todo/jiw/](todo/jiw/) | 일자별 실제 작업 로그 (판단 근거와 실패 사례 포함) |
