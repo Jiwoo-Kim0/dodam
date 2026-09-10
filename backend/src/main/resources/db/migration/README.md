@@ -11,6 +11,8 @@
 | V12 | `installment` 생성 | S15P21D105-530 |
 | V13 | `loan`, `loan_repayment` 생성 | S15P21D105-531 |
 | V14 | `minus_account` 생성 | S15P21D105-534 |
+| V15 | `deposit_saving`, `savings_payment` 생성 | S15P21D105-535 |
+| V16 | `cashflow_forecast`, `cashflow_daily_balance`, `cashflow_event`, `cashflow_risk` 생성 | S15P21D105-538 |
 
 ## 버전 번호 할당
 
