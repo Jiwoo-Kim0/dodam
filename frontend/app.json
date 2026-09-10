@@ -1,7 +1,8 @@
 {
   "expo": {
-    "name": "frontend",
-    "slug": "frontend",
+    "owner": "d105-dodam",
+    "name": "도담",
+    "slug": "dodam",
     "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "dodam",
@@ -27,6 +28,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "83d2404b-583c-48a1-9e3c-16616161f2aa"
+      }
     }
   }
 }
