@@ -153,3 +153,68 @@
 - [ ] 실제 Jira 접근이 가능해지면 최신 533 완료 조건과 구현·남은 제한을 대조한다.
 - 현재 브랜치는 사용자가 생성한 `S15P21D105-533-api-10`이며 `1247b18` 기준이다. 이후 develop에 추가된 4커밋은 모두 Infra(473)로 백엔드 변경이 없다.
 - 로컬 `SPRINT/Jira (4).csv`의 제목·설명만 근거로 범위를 정했다. Jira 조회 실패를 완료 조건 확인으로 대신하지 않는다.
+
+## S15P21D105-534 — 마이너스통장 API
+
+구현 계약: [minus-account.md](minus-account.md), 계획과 결정 배경: [minus-account-plan.md](minus-account-plan.md)
+
+7개 엔드포인트를 모두 구현했고 전체 378건이 통과했다(H2 35건, MySQL 조건부 1건 포함).
+아래 항목이 남아 있는 동안 534 전체를 완료 처리하지 않는다. 남은 항목은 모두 다른 이슈의 합의나
+산출물을 선행 조건으로 하며 534에서 단독으로 끝낼 수 없다.
+
+### finance-data sync가 로컬 상환분을 덮어쓰는 문제
+
+- [ ] `source_type = 'SEED'` 계좌를 `POST /api/v1/finance-data/sync`(scope `ALL`/`ACCOUNT`) 대상에서 제외하는 합의를 받는다.
+- 현재 동작: 상환·이자납부가 우리 DB의 `minus_account`와 `account`만 바꾸는 로컬 상태 전이다(2026-09-09 사용자 결정). 동기화가 SSAFY 기준으로 계좌를 덮어쓰면 상환 결과가 사라진다.
+- 담당 근거: 동기화는 `4 Finance Data`(BE-A, dev_plan Day 3) 소관이다. 534에서 단독으로 정하거나 동기화 로직을 고치지 않는다.
+- 완료 조건: 제외 규칙이 합의되고 시연 계좌에서 상환 후 동기화를 실행해도 결과가 유지되는지 확인한다. 미해결 상태로 시연하면 상환 결과가 사라질 수 있으므로 MR 시 명시한다.
+
+### 알림 연결 규약과 실데이터 검증
+
+- [ ] `source_type = 'MINUS_ACCOUNT'`와 `source_id = account_id` 규약을 S15P21D105-458과 합의한다.
+- 현재 동작: `JdbcMinusAccountAlertReader`가 그 규약으로 `notification`을 읽기만 한다. 테이블이 없어 항상 빈 페이지다.
+- 선행 조건: 458의 `notification` 마이그레이션. dev_plan상 Day 9~10이라 534(Day 4)보다 늦다. 534에서 테이블이나 알림 생성 배치를 만들지 않는다.
+- 완료 조건: 규약 확정 후 실제 알림 데이터로 `unreadOnly`, 소프트 삭제 제외, 정렬을 확인한다. 규약이 바뀌면 리더의 상수만 고친다.
+
+### 중복 요청 방지
+
+- [ ] 상환·이자납부의 재전송 멱등성을 구현한다.
+- 현재 동작: 행 잠금(`PESSIMISTIC_WRITE`)으로 동시 요청의 경쟁 조건만 막는다. 같은 요청을 두 번 보내면 두 번 처리된다. 명세 제한사항의 "중복 요청 방지"를 충족하지 못한다.
+- 선행 조건: `Idempotency-Key` 헤더와 처리 결과 저장(테이블 또는 Redis)의 계약. TTL과 응답 재생 방식이 정해지지 않았다. `(user, account, amount)` 시간창 차단은 정상적인 연속 상환을 막아 채택하지 않았다.
+- 완료 조건: 같은 키의 재요청이 잔액을 두 번 바꾸지 않고 첫 응답을 그대로 돌려주는지 확인한다.
+
+### 상환의 거래원장 반영
+
+- [ ] 상환·이자납부를 `transaction`에 기록할지 BE-A와 정한다.
+- 현재 동작: 기록하지 않아 상환 직후 거래내역 조회에 그 상환이 나타나지 않는다.
+- 선행 조건: 시스템 생성 거래의 `transaction_id` 규칙, `category_id`, `source_type` 계약. 명세의 유일한 거래 생성 경로인 `POST /api/v1/transactions`조차 Body에 계좌 지정 필드가 없어 규약 자체가 없다. 합의 전에 임의 규칙으로 남의 원장에 쓰지 않는다.
+- 완료 조건: 기록하기로 정하면 `account.last_transaction_date`도 같은 트랜잭션에서 갱신한다(ERD 계산 기준).
+
+### account 잔액 쓰기 방식 인수인계
+
+- [ ] `JdbcAccountBalanceWriter`의 존재를 S15P21D105-501 담당자에게 전달한다.
+- 현재 동작: `account`가 BE-A 소관이라 쓰기 엔티티를 만들지 않고 도메인 전용 JDBC writer로 UPDATE한다. 조건절에 `user_id`·`account_type`을 넣고 갱신 행 수가 1이 아니면 롤백한다.
+- 완료 조건: 501이 `Account` 엔티티를 만들면 이 어댑터를 교체한다. 같은 테이블에 쓰기 엔티티를 중복 매핑하지 않는다.
+
+### MySQL 검증
+
+- [x] 스키마와 상환 정합을 MySQL 8.0에서 확인했다(2026-09-09). `MinusAccountMySqlIntegrationTest`를 532와 같은 `@EnabledIfEnvironmentVariable` 방식으로 추가했고, 빈 `dodam_534_test` 스키마에 실제 Flyway가 `V1`~`V14`를 적용한 뒤 `ddl-auto: validate` 통과, CHECK 7개와 복합 외래키 3컬럼 생성, CHECK가 살아 있는 상태의 상환·이자납부 정합을 검증했다. 일회용 컨테이너에서 수행했고 운영 DB와 인프라 구성은 건드리지 않았다.
+- [ ] 데이터 기준 동작은 확인하지 못했다. seed 적재에 암호화 픽스처 임시 테이블 3개가 필요하며 530·532와 같은 선행 조건이다. 위 테스트는 테스트가 만든 최소 fixture 기준이다.
+
+### seed의 next_interest_date 고정
+
+- [ ] seed(S15P21D105-523)의 `next_interest_date`가 1,000행 모두 `2026-09-25`인 점을 보완한다.
+- 현재 동작: 그날이 지나면 이자 API의 `daysToNextInterestDate`와 `estimatedInterestUntilNextDate`가 시연 계좌 전체에서 `null`이 된다.
+- 담당 근거: 534 코드 문제가 아니라 seed 데이터 문제다. 발견 사항으로 보고한다.
+
+### API 5 거래내역과의 중복
+
+- [ ] `GET /api/v1/accounts/{accountNo}/transactions`(명세 5)와 응답 계약이 갈라지지 않게 501 구현과 대조한다.
+- 현재 동작: 두 명세 모두 승인된 문서라 10-1의 7개를 그대로 구현했다. 경로만 다르고 입력과 제한사항 문구가 동일하다.
+- 완료 조건: 응답 필드·정렬·기간 정책을 501과 맞추거나, 한쪽으로 통합할지 팀에서 정한다.
+
+### Jira 최신 완료 조건 대조
+
+- [ ] 실제 Jira 접근이 가능해지면 최신 534 완료 조건과 구현·남은 제한을 대조한다.
+- 현재 브랜치는 사용자가 지정한 `S15P21D105-534-api-10-1-minus-account-api`이며 develop `cf854be` 기준으로 로컬 생성했다. Jira `Create branch`가 아니므로 이슈 연결 확인이 남는다.
+- 로컬 `SPRINT/Jira (4).csv`의 제목·설명만 근거로 범위를 정했다.
