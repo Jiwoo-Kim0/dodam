@@ -1,0 +1,127 @@
+import { StyleSheet } from 'react-native';
+
+import { colors, fontFamily, fontSize, radius, spacing } from '@/styles';
+
+export const styles = StyleSheet.create({
+  card: {
+    backgroundColor: colors.white,
+    borderRadius: radius.sheet,
+    elevation: 5,
+    minHeight: 178,
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[4],
+    shadowColor: colors.home.goalCardShadow,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+  },
+  header: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing[2],
+  },
+  title: {
+    color: colors.textPrimary,
+    fontFamily: fontFamily.bold,
+    fontSize: fontSize.subtitle,
+    lineHeight: 24,
+  },
+  dueDate: {
+    color: colors.textSecondary,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.body2,
+    lineHeight: 20,
+  },
+  goalStatus: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    height: 66,
+    marginTop: spacing[1],
+  },
+  dDay: {
+    color: colors.textPrimary,
+    flexShrink: 0,
+    fontFamily: fontFamily.bold,
+    fontSize: 38,
+    letterSpacing: -1.2,
+    lineHeight: 48,
+  },
+  messageBubble: {
+    backgroundColor: colors.background,
+    borderColor: colors.divider,
+    borderRadius: radius.default,
+    borderWidth: 1,
+    marginLeft: 'auto',
+    marginRight: -spacing[2],
+    paddingHorizontal: spacing[2],
+    paddingVertical: spacing[2],
+    width: 120,
+    zIndex: 1,
+  },
+  leafDecoration: {
+    height: 20,
+    left: -6,
+    position: 'absolute',
+    top: -12,
+    width: 22,
+  },
+  messageText: {
+    color: colors.textPrimary,
+    fontFamily: fontFamily.regular,
+    fontSize: 10,
+    lineHeight: 14,
+    textAlign: 'center',
+  },
+  characterImage: {
+    height: 72,
+    width: 72,
+  },
+  amountRow: {
+    alignItems: 'baseline',
+    flexDirection: 'row',
+    marginTop: spacing[1],
+  },
+  currentAmount: {
+    color: colors.primary.orange,
+    fontFamily: fontFamily.bold,
+    fontSize: fontSize.body2,
+    lineHeight: 18,
+  },
+  targetAmount: {
+    color: colors.textSecondary,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.body2,
+    lineHeight: 18,
+  },
+  reducingAmount: {
+    color: colors.textPrimary,
+    fontFamily: fontFamily.medium,
+    fontSize: fontSize.body2,
+    lineHeight: 18,
+    marginTop: spacing[1],
+  },
+  progressRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing[2],
+    marginTop: spacing[1],
+  },
+  progressTrack: {
+    backgroundColor: colors.divider,
+    borderRadius: radius.round,
+    flex: 1,
+    height: 8,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    borderRadius: radius.round,
+    height: '100%',
+  },
+  progressPercent: {
+    color: colors.textSecondary,
+    fontFamily: fontFamily.regular,
+    fontSize: 11,
+    lineHeight: 16,
+    width: 28,
+  },
+});
