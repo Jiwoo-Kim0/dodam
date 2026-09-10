@@ -1,5 +1,7 @@
 import type { ImageSourcePropType } from 'react-native';
 
+import type { AssetComposition } from '@/types/asset.types';
+
 export type GoalType = 'saving' | 'reducing';
 
 export interface HomeGoal {
@@ -38,14 +40,6 @@ export const HOME_GOALS: readonly HomeGoal[] = [
     characterImage: require('@/assets/characters/tori/tori_reducing_home.png'),
   },
 ];
-
-export type AssetCompositionTone = 'strong' | 'medium' | 'light';
-
-export interface AssetComposition {
-  label: string;
-  amount: number;
-  tone: AssetCompositionTone;
-}
 
 export const HOME_SUMMARY = {
   monthLabel: '8월',
