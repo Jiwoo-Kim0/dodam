@@ -4,9 +4,11 @@
     "slug": "frontend",
     "version": "1.0.0",
     "orientation": "portrait",
-    "scheme": "frontend",
+    "scheme": "dodam",
     "userInterfaceStyle": "automatic",
     "android": {
+      "package": "com.ssafy.d105.dodam",
+      "googleServicesFile": "./google-services.json",
       "predictiveBackGestureEnabled": false
     },
     "web": {
