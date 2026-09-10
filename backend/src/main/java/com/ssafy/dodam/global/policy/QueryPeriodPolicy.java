@@ -22,7 +22,7 @@ public class QueryPeriodPolicy {
         return resolve(startDate, endDate, LocalDate.now(SERVICE_ZONE));
     }
 
-    QueryPeriod resolve(LocalDate startDate, LocalDate endDate, LocalDate today) {
+    public QueryPeriod resolve(LocalDate startDate, LocalDate endDate, LocalDate today) {
         LocalDate resolvedEnd = endDate == null ? today : endDate;
         LocalDate resolvedStart = startDate == null
                 ? resolvedEnd.minusMonths(DEFAULT_PERIOD_MONTHS).plusDays(1)
