@@ -1,6 +1,6 @@
 # 외부 연동 설정값
 
-각 콘솔에 등록해야 하는 정확한 값과 발급 절차. 최종 갱신 2026-09-10.
+각 콘솔에 등록해야 하는 정확한 값과 발급 절차. 최종 갱신 2026-09-11.
 
 관련 문서: [CI/CD](ci-cd.md) · [보안 방침](../todo/security.md)
 
@@ -77,30 +77,33 @@ API Key는 `.env`에 설정 완료.
 
 ## 3. Firebase (FCM 푸시 알림)
 
-### 발급 절차 (사용자 액션)
+### 발급 절차 (완료 — 키 교체 시 같은 절차를 따른다)
 
 1. Firebase 콘솔에서 프로젝트 생성
 2. **Android 앱 추가** → 패키지명 **`com.ssafy.d105.dodam`** 입력
 3. 프로젝트 설정 → **서비스 계정** → "새 비공개 키 생성" → JSON 다운로드
-4. EC2로 옮긴다 (**레포 안에 두지 말 것**)
+4. EC2로 옮기고 **소유권을 컨테이너 유저에게 넘긴다** (**레포 안에 두지 말 것**)
    ```bash
    scp <다운로드파일>.json ssafy-ec2:/home/ubuntu/app/infra/secrets/fcm-service-account.json
-   ssh ssafy-ec2 'chmod 600 ~/app/infra/secrets/fcm-service-account.json'
+   ssh ssafy-ec2 'sudo chown 10001:10001 ~/app/infra/secrets/fcm-service-account.json \
+                  && sudo chmod 600 ~/app/infra/secrets/fcm-service-account.json'
    ```
-5. 인프라 담당에게 알린다 → compose의 FCM 마운트를 활성화하고 백엔드를 재기동한다
+   상세 절차와 주의점: [`infra/secrets/README.md`](../secrets/README.md)
 
-### 현재 상태
+### 현재 상태 — 활성화 완료 (2026-09-10)
 
-`docker-compose.yml`에 마운트 설정이 **주석 처리**되어 있다.
+키를 수령해 마운트를 활성화했다. 컨테이너 경로는 `/run/secrets/fcm-service-account.json`.
 
-키 파일이 없는 상태로 bind mount를 걸면 **Docker가 그 경로에 디렉터리를 생성**해버려,
-나중에 파일을 넣어도 꼬인다. 그래서 키를 받은 뒤 활성화한다.
+**설치 중 걸린 문제 두 가지 (다음에 키를 교체할 때 참고)**
 
-활성화 시 주석을 해제할 두 곳:
-- `environment`의 `FCM_SERVICE_ACCOUNT_PATH`
-- `volumes`의 `./secrets/fcm-service-account.json` 마운트
+1. **키가 없는 상태로 마운트를 걸면 안 된다** — Docker가 해당 경로에 **디렉터리를 생성**해버려
+   나중에 파일을 넣어도 꼬인다. 그래서 키 수령 전까지 compose 설정을 주석으로 두었다.
 
-컨테이너 안 경로는 `/run/secrets/fcm-service-account.json` 으로 고정.
+2. **파일 소유권을 옮겨야 한다** — backend는 비루트(`uid 10001`)로 실행되는데,
+   `scp`로 올린 파일은 `ubuntu`(uid 1000) 소유 600이라 **컨테이너가 읽지 못한다.**
+   마운트 자체는 성공하고 컨테이너도 healthy로 뜨기 때문에 겉으로는 정상으로 보이고,
+   **푸시 발송 코드가 붙은 뒤에야 런타임에서 실패**한다.
+   → `sudo chown 10001:10001` 후 `docker exec backend head -c 25 <경로>` 로 실제 읽힘을 확인할 것.
 
 ### FE·백엔드 쪽 남은 작업
 
@@ -183,8 +186,8 @@ Day 3에 적용한 Let's Encrypt 인증서는 공개 신뢰 체인이므로 앱�
 - 팀원 누구나 같은 키로 빌드한다
 - SHA-1 조회가 명령 하나
 
-**현재 상태 (2026-09-10)**: `frontend/eas.json` 없음, `frontend/android/` 없음(prebuild 전).
-설정이 아직 안 되어 있다.
+**현재 상태 (2026-09-11 재확인)**: `frontend/eas.json` 없음, `frontend/android/` 없음(prebuild 전).
+빌드 방식만 EAS로 확정된 상태이고 **설정은 아직 안 되어 있다** — 아래 절차는 FE팀 대기.
 
 #### 준비 절차 (FE팀)
 
@@ -271,9 +274,10 @@ EAS가 keystore를 관리하므로 **인프라가 보관해야 할 서명 키는
 | --- | --- | --- |
 | SSAFY 금융망 API Key | ✅ 설정됨 | 백엔드 |
 | OpenAI API Key | ✅ 설정됨 | ? |
-| Firebase 서비스 계정 키 | ❌ **미발급** | ? |
+| Firebase 서비스 계정 키 | ✅ 발급·마운트 완료 (2026-09-10) | 인프라 |
 | Kakao OAuth | ❌ **미발급** | ? |
 | Google OAuth | ❌ **미발급** | ? |
 
-미발급 3건은 **Day 7 연동 작업의 선행조건**이다.
-패키지명과 scheme이 확정됐으므로 이제 바로 발급받을 수 있다.
+미발급 2건(Kakao / Google OAuth)은 **로그인 기능의 선행조건**이다.
+패키지명과 scheme이 확정됐고 SHA-1 조회 절차도 정리됐으므로 바로 발급받을 수 있다.
+발급되면 `.env`에 넣고 backend를 재기동하면 끝난다 — 인프라 쪽 추가 작업은 없다.

@@ -30,10 +30,17 @@
 - [x] 키 보관 구조 준비 — `infra/secrets/` 생성, `.gitignore`로 차단(검증 완료), 발급 절차 문서화
 - [x] compose에 마운트 설정 준비 (**주석 상태**) — 키 파일 없이 bind mount를 걸면
       Docker가 그 경로에 디렉터리를 만들어버려 나중에 꼬이므로, 키 수령 후 활성화
-- [ ] **Firebase 프로젝트 생성 + Android 앱 등록** (**사용자 액션**)
-      패키지명 `com.ssafy.d105.dodam` (FE 확정)
-- [ ] 서비스 계정 키(JSON) 발급 → EC2 `infra/secrets/`로 전달 → 인프라가 마운트 활성화
+- [x] **Firebase 프로젝트 생성 + Android 앱 등록 (2026-09-10)**
+      패키지명 `com.ssafy.d105.dodam`. FE가 `google-services.json`을 받아
+      `app.json`에 연결하고 `.gitignore`로 차단했다 (MR !61)
+- [x] **서비스 계정 키(JSON) 발급 → EC2 `infra/secrets/` 전달 → 마운트 활성화 (2026-09-10)**
+      컨테이너 경로 `/run/secrets/fcm-service-account.json`.
+      키 없이 마운트를 걸면 Docker가 디렉터리를 만들어버리므로 수령 후에 활성화했다.
+      ⚠️ `scp`한 파일은 `ubuntu`(uid 1000) 소유라 비루트(uid 10001) 컨테이너가 **읽지 못한다.**
+      마운트는 성공하고 컨테이너도 healthy로 떠서 겉으로는 정상으로 보이는 유형의 결함 —
+      `sudo chown 10001:10001` 후 컨테이너 내부에서 실제 읽힘까지 확인했다
 - [ ] FE(Expo)에서 FCM 토큰 등록 흐름은 FE팀 담당, 인프라는 백엔드 쪽 서버 키 보관만 책임
+      (`expo-notifications` 설치 완료 ✅ / 토큰 발급·등록 구현은 대기)
 
 ### 4. 소셜 로그인 (Kakao/Google)
 - [x] 등록할 정확한 값 확정 — [[docs/external-integrations.md]]에 정리
@@ -52,14 +59,34 @@
 > - **nginx가 FE를 서빙할 일 없음** — `web.output: static` 기반 정적 배포 계획 폐기, `/` 라우팅은 상태 페이지로 확정
 > - **HTTPS가 선택이 아니라 필수** — Android는 targetSdk 28+부터 평문 HTTP를 기본 차단한다. Day 3에서 붙인 Let's Encrypt 인증서는 공개 신뢰 체인이라 앱에서 추가 설정 없이 동작한다 (자체서명이었다면 앱에 인증서를 심어야 했음)
 
-- [ ] **APK 빌드 방식 확정** (**사용자 액션**: FE팀 협의)
-  - EAS Build(클라우드, Expo 계정 필요) vs 로컬 빌드(`expo run:android` / `eas build --local`)
-  - 인프라 관점에서는 EC2와 무관하므로 개입할 것이 없다. 다만 **APK 배포처**(팀 공유 드라이브 등)는 정해둘 것
-- [ ] FE가 백엔드 API를 호출할 BaseURL을 환경변수로 관리하는 방식 합의 — **`https://j15D105.p.ssafy.io/api`**
-- [ ] **소셜 로그인 Redirect URI는 웹 방식이 아님** — 네이티브 앱은 커스텀 스킴(`frontend://`, `app.json`의 `scheme`) 또는 App Links를 쓴다. Kakao/Google 콘솔에 등록할 값이 웹과 다르므로 FE팀과 형식을 맞출 것
-- [ ] FCM 관련: `package.json`에 `expo-device`는 있으나 **`expo-notifications`가 아직 없음** → FE팀이 토큰 발급 흐름을 붙일 때 추가 필요함을 공유
+- [x] **APK 빌드 방식 확정 — EAS Build (2026-09-10)**
+      keystore를 Expo가 클라우드에서 관리하므로 **분실 위험이 없고**(로컬 빌드였다면 릴리즈
+      keystore를 잃는 순간 앱 업데이트가 불가능해진다) 팀원 누구나 같은 키로 빌드한다.
+      인프라가 보관할 서명 키는 없고, 대신 **Expo 공용 계정**이 그 자리를 대신한다.
+      소셜 로그인에 필요한 **SHA-1 조회 절차**까지 문서화했다 ([[docs/external-integrations.md]] §5)
+      - 남은 것: `eas.json` 작성·`eas init` (FE팀), **APK 배포처** 결정
+- [x] FE가 백엔드 API를 호출할 BaseURL 확정 — `EXPO_PUBLIC_API_BASE_URL=https://j15D105.p.ssafy.io/api`
+      (`EXPO_PUBLIC_` 변수는 APK에 그대로 박히므로 공개돼도 되는 값만 넣을 것)
+- [x] **소셜 로그인 Redirect URI 형식 확정** — 커스텀 스킴 `dodam://oauth/kakao`
+      (`app.json`의 `scheme: "dodam"`과 일치 확인). 웹 방식(`https://...`)이 아니다
+- [x] FCM 관련: `expo-notifications` **설치 완료** (`~57.0.17`) — 토큰 발급 흐름 구현은 FE팀 대기
 - [ ] OTA 업데이트(Expo Updates) 사용 여부는 시간 되면 검토, 이번 범위에서는 필수 아님(P2)
 
 ## 산출물
 - 외부 연동 시크릿/등록 상태 체크리스트 완료 (또는 담당자에게 위임된 액션 목록)
 - FE가 백엔드에 붙을 수 있는 BaseURL 확정
+
+## 진행 상태 (2026-09-11 기준)
+
+| 연동 | 상태 | 남은 것 |
+| --- | --- | --- |
+| SSAFY 금융망 | ✅ 키 설정 + 아웃바운드 200 확인 | 타임아웃/재시도 정책 담당 협의 |
+| OpenAI | ✅ 키 설정 + 연결 확인(401) | 사용량 한도·결제 담당자, 사용량 알림 (**사용자 액션**) |
+| FCM | ✅ 프로젝트·앱 등록 + 서버 키 마운트 | FE 토큰 발급 흐름, 백엔드 `user_device` 저장 API |
+| Kakao OAuth | ❌ 미발급 | 콘솔 등록 → 키/Secret 전달 (**사용자 액션**) |
+| Google OAuth | ❌ 미발급 | 콘솔 등록 → 값 전달 (**사용자 액션**) |
+| FE 빌드 | ✅ EAS Build 확정 + 절차 문서화 | `eas init`/`eas.json`, APK 배포처 (FE팀) |
+
+**인프라가 단독으로 끝낼 수 있는 일은 남아 있지 않다.** Kakao/Google은 콘솔 등록이 선행이고,
+등록 후 인프라 작업은 `.env`에 값을 넣고 backend를 재기동하는 것뿐이다.
+→ 다음은 [[day-08.md]] (통합 리허설·장애 대응·문서화).
