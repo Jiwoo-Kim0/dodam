@@ -67,7 +67,11 @@ public enum ErrorCode {
     /**
      * 허용되지 않은 상태 전이(예: PAUSED → ACHIEVED). 전이 규칙은 GoalStatus에 있다.
      */
-    GOAL_STATUS_TRANSITION_NOT_ALLOWED(HttpStatus.CONFLICT, "허용되지 않은 목표 상태 변경입니다.");
+    GOAL_STATUS_TRANSITION_NOT_ALLOWED(HttpStatus.CONFLICT, "허용되지 않은 목표 상태 변경입니다."),
+    /**
+     * 계좌는 한 목표에만 연결할 수 있다(`uk_goal_account_account`). 다른 목표에 이미 연결된 계좌를 지정한 경우(S15P21D105-509).
+     */
+    ACCOUNT_ALREADY_LINKED_TO_GOAL(HttpStatus.CONFLICT, "이미 다른 목표에 연결된 계좌입니다.");
 
     private final HttpStatus status;
     private final String message;

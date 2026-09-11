@@ -1,9 +1,12 @@
 package com.ssafy.dodam.domain.goal.controller;
 
 import com.ssafy.dodam.domain.goal.dto.request.CreateGoalRequest;
+import com.ssafy.dodam.domain.goal.dto.request.UpdateGoalAccountsRequest;
 import com.ssafy.dodam.domain.goal.dto.request.UpdateGoalRequest;
+import com.ssafy.dodam.domain.goal.dto.response.GoalAccountsResponse;
 import com.ssafy.dodam.domain.goal.dto.response.GoalResponse;
 import com.ssafy.dodam.domain.goal.dto.response.GoalSummaryResponse;
+import com.ssafy.dodam.domain.goal.service.GoalAccountService;
 import com.ssafy.dodam.domain.goal.service.GoalService;
 import com.ssafy.dodam.global.response.ApiResponse;
 import com.ssafy.dodam.global.response.PageResponse;
@@ -22,6 +25,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -29,8 +33,8 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * API 명세 12. Goal 중 S15P21D105-508 범위(목록·요약·생성·상세·수정·삭제).
- * 연결계좌(509), 진행률·필요 저축액·예상 달성일·소비목표 진행률·위험상태(510), 변화 이력(511)은 다음 티켓에서 이어 붙인다.
+ * API 명세 12. Goal 중 S15P21D105-508(목록·요약·생성·상세·수정·삭제), S15P21D105-509(연결계좌 조회·변경) 범위.
+ * 진행률·필요 저축액·예상 달성일·소비목표 진행률·위험상태(510), 변화 이력(511)은 다음 티켓에서 이어 붙인다.
  */
 @Validated
 @RestController
@@ -41,9 +45,11 @@ public class GoalController {
     private static final String CODE_PATTERN = "^\\s*$|^[A-Za-z0-9_]+$";
 
     private final GoalService goalService;
+    private final GoalAccountService goalAccountService;
 
-    public GoalController(GoalService goalService) {
+    public GoalController(GoalService goalService, GoalAccountService goalAccountService) {
         this.goalService = goalService;
+        this.goalAccountService = goalAccountService;
     }
 
     @GetMapping
@@ -95,5 +101,26 @@ public class GoalController {
     ) {
         goalService.delete(principal.userId(), goalId);
         return ApiResponse.success(null);
+    }
+
+    // ---------- S15P21D105-509 목표 연결계좌 ----------
+
+    @GetMapping("/{goalId}/accounts")
+    public ApiResponse<GoalAccountsResponse> getAccounts(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable @Positive Long goalId,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
+    ) {
+        return ApiResponse.success(goalAccountService.getAccounts(principal.userId(), goalId, page, size));
+    }
+
+    @PutMapping("/{goalId}/accounts")
+    public ApiResponse<GoalAccountsResponse> replaceAccounts(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable @Positive Long goalId,
+            @Valid @RequestBody UpdateGoalAccountsRequest request
+    ) {
+        return ApiResponse.success(goalAccountService.replaceAccounts(principal.userId(), goalId, request.accountNos()));
     }
 }
