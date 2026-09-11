@@ -45,7 +45,7 @@ export const styles = StyleSheet.create({
     paddingHorizontal: semanticSpacing.screenMargin,
   },
   overviewBackButton: {
-    alignItems: 'center',
+    alignItems: 'flex-start',
     height: componentSize.touchTarget,
     justifyContent: 'center',
     width: componentSize.touchTarget,
