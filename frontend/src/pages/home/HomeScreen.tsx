@@ -74,7 +74,7 @@ export function HomeScreen() {
           }
           style={styles.goalSection}>
           <LinearGradient
-            // 디자인 PDF/Figma에 지정된 그라데이션 값 (#FBFBFB → #F3F6E3), 이 배경에서만 사용한다.
+            // 상단의 흰 배경을 유지한 뒤 목표 영역에서 연두색으로 자연스럽게 전환한다.
             colors={[
               colors.white,
               colors.white,
