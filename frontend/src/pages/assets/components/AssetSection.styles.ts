@@ -20,8 +20,9 @@ export const styles = StyleSheet.create({
     gap: spacing[3],
   },
   title: {
-    ...typography.title,
+    ...typography.subtitle,
     flexShrink: 0,
+    fontFamily: fontFamily.semiBold,
     color: colors.textPrimary,
   },
   total: {

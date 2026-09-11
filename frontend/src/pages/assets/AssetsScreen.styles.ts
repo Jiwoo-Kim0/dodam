@@ -16,7 +16,7 @@ export const styles = StyleSheet.create({
     paddingTop: spacing[2],
   },
   sections: {
-    gap: spacing[5],
-    marginTop: spacing[6],
+    gap: spacing[4],
+    marginTop: spacing[4],
   },
 });
