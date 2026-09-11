@@ -134,6 +134,68 @@ class RestSsafyFinanceClientTest {
     }
 
     @Test
+    void demandDepositAccountListSendsUserKeyAndParsesRecArray() {
+        server.expect(requestTo(BASE_URL + "/ssafy/api/v1/edu/demandDeposit/inquireDemandDepositAccountList"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(jsonPath("$.Header.apiName").value("inquireDemandDepositAccountList"))
+                .andExpect(jsonPath("$.Header.apiServiceCode").value("inquireDemandDepositAccountList"))
+                .andExpect(jsonPath("$.Header.apiKey").value("test-api-key"))
+                .andExpect(jsonPath("$.Header.userKey").value("user-key-1"))
+                .andRespond(withSuccess("""
+                        {"Header":{"responseCode":"H0000","responseMessage":"정상처리 되었습니다."},
+                         "REC":[{"bankCode":"001","bankName":"한국은행","userName":"도담","accountNo":"0011234567890001",
+                                 "accountName":"한국은행 수시입출금 상품","accountTypeCode":"1","accountTypeName":"수시입출금",
+                                 "accountCreatedDate":"20260901","accountExpiryDate":"20310901",
+                                 "dailyTransferLimit":"500000000","oneTimeTransferLimit":"100000000",
+                                 "accountBalance":"1500000","lastTransactionDate":"20260910","currency":"KRW"},
+                                {"bankCode":"004","bankName":"국민은행","userName":"도담","accountNo":"0041234567890002",
+                                 "accountName":"KB 통장","accountTypeCode":"1","accountTypeName":"수시입출금",
+                                 "accountCreatedDate":"20260902","accountExpiryDate":"20310902",
+                                 "dailyTransferLimit":"500000000","oneTimeTransferLimit":"100000000",
+                                 "accountBalance":"0","lastTransactionDate":"","currency":"KRW"}]}
+                        """, MediaType.APPLICATION_JSON));
+
+        List<SsafyDemandDepositAccount> accounts = client.inquireDemandDepositAccountList("user-key-1");
+
+        assertThat(accounts).hasSize(2);
+        assertThat(accounts.get(0).accountNo()).isEqualTo("0011234567890001");
+        assertThat(accounts.get(0).accountBalance()).isEqualTo(1_500_000L);
+        assertThat(accounts.get(0).lastTransactionDate()).isEqualTo("20260910");
+        assertThat(accounts.get(1).accountBalance()).isZero();
+        assertThat(accounts.get(1).lastTransactionDate()).isEmpty();
+        server.verify();
+    }
+
+    @Test
+    void demandDepositAccountListWithoutRecIsEmpty() {
+        server.expect(requestTo(BASE_URL + "/ssafy/api/v1/edu/demandDeposit/inquireDemandDepositAccountList"))
+                .andRespond(withSuccess("""
+                        {"Header":{"responseCode":"H0000","responseMessage":"정상처리 되었습니다."}}
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThat(client.inquireDemandDepositAccountList("user-key-1")).isEmpty();
+
+        server.reset();
+        server.expect(requestTo(BASE_URL + "/ssafy/api/v1/edu/demandDeposit/inquireDemandDepositAccountList"))
+                .andRespond(withSuccess("""
+                        {"Header":{"responseCode":"H0000","responseMessage":"정상처리 되었습니다."},"REC":[]}
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThat(client.inquireDemandDepositAccountList("user-key-1")).isEmpty();
+    }
+
+    @Test
+    void demandDepositAccountListWithObjectRecIsUnavailable() {
+        server.expect(requestTo(BASE_URL + "/ssafy/api/v1/edu/demandDeposit/inquireDemandDepositAccountList"))
+                .andRespond(withSuccess("""
+                        {"Header":{"responseCode":"H0000"},"REC":{"bankCode":"001"}}
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> client.inquireDemandDepositAccountList("user-key-1"))
+                .isInstanceOf(SsafyUnavailableException.class);
+    }
+
+    @Test
     void transactionErrorResponseBecomesApiException() {
         server.expect(requestTo(BASE_URL + "/ssafy/api/v1/edu/loan/inquireMyCreditRating"))
                 .andRespond(withBadRequest()
