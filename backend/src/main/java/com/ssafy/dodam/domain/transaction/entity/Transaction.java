@@ -90,6 +90,125 @@ public class Transaction {
     protected Transaction() {
     }
 
+    private Transaction(
+            String id,
+            Long userId,
+            LocalDate transactionDate,
+            TransactionType transactionType,
+            long amount,
+            String merchantName,
+            Long categoryId,
+            SpendingType spendingType,
+            String paymentMethod,
+            String memo,
+            LocalDateTime now
+    ) {
+        this.id = id;
+        this.userId = userId;
+        this.transactionDate = transactionDate;
+        this.transactionType = transactionType;
+        this.amount = amount;
+        this.merchantName = merchantName;
+        this.categoryId = categoryId;
+        this.spendingType = spendingType;
+        this.paymentMethod = paymentMethod;
+        this.memo = memo;
+        this.hidden = false;
+        this.sourceType = TransactionSourceType.MANUAL;
+        this.createdAt = now;
+    }
+
+    /**
+     * 사용자가 직접 등록한 거래(S15P21D105-505). 계좌·카드에 연결되지 않고 잔액 정보도 없다.
+     * 값 검증(양수 금액, 미래 아닌 거래일, 카테고리 존재, 메모 규칙)은 서비스가 끝낸 상태여야 한다.
+     *
+     * @param category 선택. 있으면 기본 소비유형을 함께 적용한다
+     */
+    public static Transaction createManual(
+            String id,
+            Long userId,
+            LocalDate transactionDate,
+            TransactionType transactionType,
+            long amount,
+            String merchantName,
+            TransactionCategory category,
+            String paymentMethod,
+            String memo,
+            LocalDateTime now
+    ) {
+        return new Transaction(
+                id,
+                userId,
+                transactionDate,
+                transactionType,
+                amount,
+                merchantName,
+                category == null ? null : category.getId(),
+                category == null ? null : category.getDefaultSpendingType(),
+                paymentMethod,
+                memo,
+                now
+        );
+    }
+
+    public boolean isManual() {
+        return this.sourceType == TransactionSourceType.MANUAL;
+    }
+
+    /**
+     * 수동 거래의 기본 항목을 바꾼다. null은 "변경 없음"이다.
+     *
+     * @return 실제로 값이 바뀌었으면 true.
+     */
+    public boolean updateManualDetails(
+            LocalDate transactionDate,
+            TransactionType transactionType,
+            Long amount,
+            LocalDateTime now
+    ) {
+        boolean changed = false;
+        if (transactionDate != null && !transactionDate.equals(this.transactionDate)) {
+            this.transactionDate = transactionDate;
+            changed = true;
+        }
+        if (transactionType != null && transactionType != this.transactionType) {
+            this.transactionType = transactionType;
+            changed = true;
+        }
+        if (amount != null && amount != this.amount) {
+            this.amount = amount;
+            changed = true;
+        }
+        if (changed) {
+            this.updatedAt = now;
+        }
+        return changed;
+    }
+
+    /**
+     * 가맹점명을 바꾼다. 정규화(trim·빈 값 → null)는 호출자가 끝낸 상태여야 한다.
+     */
+    public boolean changeMerchantName(String normalizedMerchantName, LocalDateTime now) {
+        if (Objects.equals(this.merchantName, normalizedMerchantName)) {
+            return false;
+        }
+        this.merchantName = normalizedMerchantName;
+        this.updatedAt = now;
+        return true;
+    }
+
+    /**
+     * 결제수단을 바꾼다. 정규화(trim·대문자·빈 값 → null)는 호출자가 끝낸 상태여야 한다.
+     */
+    public boolean changePaymentMethod(String normalizedPaymentMethod, LocalDateTime now) {
+        if (Objects.equals(this.paymentMethod, normalizedPaymentMethod)) {
+            return false;
+        }
+        this.paymentMethod = normalizedPaymentMethod;
+        this.updatedAt = now;
+        return true;
+    }
+
     /**
      * 소비 카테고리를 바꾼다. 카테고리에 기본 소비유형이 있으면 `spending_type`도 그 값으로 맞춘다.
      * 기본 소비유형이 없는 카테고리면 기존 소비유형을 유지한다.

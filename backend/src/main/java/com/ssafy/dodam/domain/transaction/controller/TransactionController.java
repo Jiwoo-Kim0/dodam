@@ -1,10 +1,13 @@
 package com.ssafy.dodam.domain.transaction.controller;
 
+import com.ssafy.dodam.domain.transaction.dto.request.CreateManualTransactionRequest;
+import com.ssafy.dodam.domain.transaction.dto.request.UpdateManualTransactionRequest;
 import com.ssafy.dodam.domain.transaction.dto.request.UpdateTransactionCategoryRequest;
 import com.ssafy.dodam.domain.transaction.dto.request.UpdateTransactionMemoRequest;
 import com.ssafy.dodam.domain.transaction.dto.request.UpdateTransactionVisibilityRequest;
 import com.ssafy.dodam.domain.transaction.dto.response.TransactionCategoryResponse;
 import com.ssafy.dodam.domain.transaction.dto.response.TransactionResponse;
+import com.ssafy.dodam.domain.transaction.service.ManualTransactionService;
 import com.ssafy.dodam.domain.transaction.service.TransactionCommandService;
 import com.ssafy.dodam.domain.transaction.service.TransactionQueryService;
 import com.ssafy.dodam.global.response.ApiResponse;
@@ -18,19 +21,24 @@ import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
 import java.util.List;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * API 명세 6. Transaction 중 S15P21D105-504 범위(거래 조회·메모·카테고리·숨김).
- * 수동 거래 등록·수정·삭제와 `/spending/**` 집계는 다음 티켓에서 이어 붙인다.
+ * API 명세 6. Transaction 중 S15P21D105-504(거래 조회·메모·카테고리·숨김), S15P21D105-505(수동 거래 등록·수정·삭제) 범위.
+ * `/spending/**` 집계는 다음 티켓에서 이어 붙인다.
  */
 @Validated
 @RestController
@@ -39,18 +47,21 @@ public class TransactionController {
 
     /** 코드 계열 파라미터: 카테고리 코드·결제수단. 빈 값은 "전체"로 서비스가 해석한다. */
     private static final String CODE_PATTERN = "^\\s*$|^[A-Za-z0-9_]+$";
-    /** 거래 ID: 금융망 transactionUniqueNo, seed(`TX-...`), 수동 등록 ID를 모두 허용한다. */
+    /** 거래 ID: 금융망 transactionUniqueNo, seed(`TX-...`), 수동 등록 ID(`MN-<uuid>`)를 모두 허용한다. */
     private static final String TRANSACTION_ID_PATTERN = "^[A-Za-z0-9_-]+$";
 
     private final TransactionQueryService transactionQueryService;
     private final TransactionCommandService transactionCommandService;
+    private final ManualTransactionService manualTransactionService;
 
     public TransactionController(
             TransactionQueryService transactionQueryService,
-            TransactionCommandService transactionCommandService
+            TransactionCommandService transactionCommandService,
+            ManualTransactionService manualTransactionService
     ) {
         this.transactionQueryService = transactionQueryService;
         this.transactionCommandService = transactionCommandService;
+        this.manualTransactionService = manualTransactionService;
     }
 
     /**
@@ -138,5 +149,34 @@ public class TransactionController {
                 transactionId,
                 request.hidden()
         ));
+    }
+
+    // ---------- S15P21D105-505 수동 거래 등록·수정·삭제 ----------
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<TransactionResponse> createManual(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @Valid @RequestBody CreateManualTransactionRequest request
+    ) {
+        return ApiResponse.success(manualTransactionService.create(principal.userId(), request));
+    }
+
+    @PutMapping("/{transactionId}")
+    public ApiResponse<TransactionResponse> updateManual(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable @Size(max = 100) @Pattern(regexp = TRANSACTION_ID_PATTERN) String transactionId,
+            @Valid @RequestBody UpdateManualTransactionRequest request
+    ) {
+        return ApiResponse.success(manualTransactionService.update(principal.userId(), transactionId, request));
+    }
+
+    @DeleteMapping("/{transactionId}")
+    public ApiResponse<Void> deleteManual(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable @Size(max = 100) @Pattern(regexp = TRANSACTION_ID_PATTERN) String transactionId
+    ) {
+        manualTransactionService.delete(principal.userId(), transactionId);
+        return ApiResponse.success(null);
     }
 }

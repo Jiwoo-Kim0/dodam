@@ -51,7 +51,13 @@ public enum ErrorCode {
     REPAYMENT_AMOUNT_EXCEEDED(HttpStatus.BAD_REQUEST, "상환 가능 금액을 초과했습니다."),
     NO_ACCRUED_INTEREST(HttpStatus.BAD_REQUEST, "납부할 미수이자가 없습니다."),
     INSUFFICIENT_ACCOUNT_BALANCE(HttpStatus.CONFLICT, "출금계좌 잔액이 부족합니다."),
-    WITHDRAWAL_ACCOUNT_REQUIRED(HttpStatus.BAD_REQUEST, "출금계좌를 지정해 주세요.");
+    WITHDRAWAL_ACCOUNT_REQUIRED(HttpStatus.BAD_REQUEST, "출금계좌를 지정해 주세요."),
+
+    // ---------- Transaction (S15P21D105-505) ----------
+    /**
+     * 금융망·seed 출처 거래를 수정·삭제하려는 경우. 거래 존재 여부는 이미 확인된 뒤라 404가 아니라 400이다.
+     */
+    TRANSACTION_NOT_MANUAL(HttpStatus.BAD_REQUEST, "수동으로 등록한 거래만 수정·삭제할 수 있습니다.");
 
     private final HttpStatus status;
     private final String message;
