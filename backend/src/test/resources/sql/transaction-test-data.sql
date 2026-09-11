@@ -64,6 +64,7 @@ INSERT INTO transaction_category (category_id, code, name, default_spending_type
     (950, 'NO_DEFAULT', '기본 소비유형 없음', NULL, TRUE);
 
 -- 507 소비목표 비교: goal(V5)·spending_goal(V7)을 ERD 컬럼으로 만든다. Goal 엔티티가 아직 없어 H2에 없는 테이블이다.
+DROP TABLE IF EXISTS goal_history;
 DROP TABLE IF EXISTS goal_account;
 DROP TABLE IF EXISTS spending_goal;
 DROP TABLE IF EXISTS saving_goal;
