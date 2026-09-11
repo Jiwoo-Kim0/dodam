@@ -3,17 +3,24 @@ package com.ssafy.dodam.domain.cashflow.service;
 import com.ssafy.dodam.domain.cashflow.dto.response.CashflowDailyBalanceListResponse;
 import com.ssafy.dodam.domain.cashflow.dto.response.CashflowDailyBalanceResponse;
 import com.ssafy.dodam.domain.cashflow.dto.response.CashflowEventListResponse;
+import com.ssafy.dodam.domain.cashflow.dto.response.CashflowAvailableTodayResponse;
 import com.ssafy.dodam.domain.cashflow.dto.response.CashflowEventResponse;
+import com.ssafy.dodam.domain.cashflow.dto.response.CashflowRiskListResponse;
+import com.ssafy.dodam.domain.cashflow.dto.response.CashflowRiskResponse;
 import com.ssafy.dodam.domain.cashflow.dto.response.CashflowForecastResponse;
 import com.ssafy.dodam.domain.cashflow.entity.CashflowForecast;
+import com.ssafy.dodam.domain.cashflow.entity.CashflowRisk;
 import com.ssafy.dodam.domain.cashflow.entity.ForecastStatus;
+import com.ssafy.dodam.domain.cashflow.entity.RiskSeverity;
 import com.ssafy.dodam.domain.cashflow.repository.CashflowDailyBalanceRepository;
 import com.ssafy.dodam.domain.cashflow.repository.CashflowEventRepository;
 import com.ssafy.dodam.domain.cashflow.repository.CashflowForecastRepository;
+import com.ssafy.dodam.domain.cashflow.repository.CashflowRiskRepository;
 import com.ssafy.dodam.global.exception.ResourceNotFoundException;
 import com.ssafy.dodam.global.policy.PaymentSchedulePeriodPolicy;
 import com.ssafy.dodam.global.policy.QueryPeriod;
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,20 +39,40 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class CashflowQueryService {
 
+
+    /**
+     * 위험 정렬: 심각도 내림차순 → 날짜 오름차순 → `riskId` 오름차순.
+     *
+     * <p>DB에서 정렬하지 않고 메모리에서 정렬한다. `severity`가 문자열 컬럼이라 SQL의 사전순
+     * (`CRITICAL` < `HIGH` < `LOW` < `MEDIUM`)이 심각도순과 다르기 때문이다. enum 선언 순서를 쓰면
+     * 정렬 기준이 코드값 정의 한 곳에만 남는다(538이 542로 미뤄 둔 결정).
+     *
+     * <p>`riskDate`는 NULL을 허용하므로 날짜 없는 위험을 뒤로 보낸다.
+     */
+    private static final Comparator<CashflowRisk> SEVERITY_FIRST =
+            Comparator.comparing(CashflowRisk::getSeverity, Comparator.reverseOrder())
+                    .thenComparing(
+                            CashflowRisk::getRiskDate,
+                            Comparator.nullsLast(Comparator.naturalOrder()))
+                    .thenComparing(CashflowRisk::getRiskId);
+
     private final CashflowForecastRepository forecastRepository;
     private final CashflowDailyBalanceRepository dailyBalanceRepository;
     private final CashflowEventRepository eventRepository;
+    private final CashflowRiskRepository riskRepository;
     private final PaymentSchedulePeriodPolicy periodPolicy;
 
     public CashflowQueryService(
             CashflowForecastRepository forecastRepository,
             CashflowDailyBalanceRepository dailyBalanceRepository,
             CashflowEventRepository eventRepository,
+            CashflowRiskRepository riskRepository,
             PaymentSchedulePeriodPolicy periodPolicy
     ) {
         this.forecastRepository = forecastRepository;
         this.dailyBalanceRepository = dailyBalanceRepository;
         this.eventRepository = eventRepository;
+        this.riskRepository = riskRepository;
         this.periodPolicy = periodPolicy;
     }
 
@@ -87,6 +114,34 @@ public class CashflowQueryService {
                 type,
                 events
         );
+    }
+
+
+    /**
+     * 위험 목록. 명세의 선택 필터 `type`·`severity`는 null이면 조건에서 빠진다.
+     *
+     * <p>조회 기간 파라미터가 명세에 없으므로 <b>예측 구간 전체</b>의 위험을 돌려준다. 위험 행은 예측
+     * 1건당 예정 출금 건수를 넘지 않아(대부분 수십 건) 페이지를 나누지 않는다.
+     */
+    public CashflowRiskListResponse getRisks(Long userId, String type, RiskSeverity severity) {
+        CashflowForecast forecast = findLatestCompleted(userId, null);
+        List<CashflowRiskResponse> risks = riskRepository
+                .findOwned(userId, forecast.getForecastId(), type, severity)
+                .stream()
+                .sorted(SEVERITY_FIRST)
+                .map(CashflowRiskResponse::from)
+                .toList();
+        return new CashflowRiskListResponse(
+                CashflowForecastResponse.from(forecast), type, severity, risks);
+    }
+
+    /**
+     * 오늘 사용가능금액. 저장된 집계값을 그대로 읽고 여기서 다시 계산하지 않는다. 조회 시점에 계산하면
+     * 같은 예측을 두 번 조회했을 때 값이 달라질 수 있고, `daily-balances`와도 어긋난다.
+     */
+    public CashflowAvailableTodayResponse getAvailableToday(Long userId, LocalDate baseDate) {
+        return CashflowAvailableTodayResponse.from(
+                CashflowForecastResponse.from(findLatestCompleted(userId, baseDate)));
     }
 
     /**

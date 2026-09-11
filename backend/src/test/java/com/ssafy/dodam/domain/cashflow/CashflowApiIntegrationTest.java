@@ -1,6 +1,7 @@
 package com.ssafy.dodam.domain.cashflow;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -115,6 +116,67 @@ class CashflowApiIntegrationTest {
                 .andExpect(jsonPath("$.data.events[0].direction").value("OUTFLOW"))
                 .andExpect(jsonPath("$.data.events[0].amount").value(300_000))
                 .andExpect(jsonPath("$.data.events[1].type").value("SAVINGS_PAYMENT"));
+
+        // 예정 출금을 모두 감당하므로 위험이 없고, 가용금액은 구간 최소잔액과 같다.
+        mvc.perform(get(BASE + "/risks")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.forecast.forecastId").value(forecastId))
+                .andExpect(jsonPath("$.data.risks", hasSize(0)));
+
+        mvc.perform(get(BASE + "/available-today")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.forecast.forecastId").value(forecastId))
+                .andExpect(jsonPath("$.data.availableToday").value(500_000))
+                .andExpect(jsonPath("$.data.forecast.availableToday").value(500_000));
+    }
+
+    /**
+     * 위험 탐지와 가용금액의 계약. 정렬은 <b>심각도 우선</b>이라 날짜가 빠른 위험이 뒤로 갈 수 있다.
+     */
+    @Test
+    @WithMockUser(username = OWNER)
+    void detectsShortagesOrdersThemBySeverityAndZeroesAvailableToday() throws Exception {
+        when(eventCollector.collect(anyLong(), any(), any())).thenReturn(new CashflowEventCollection(
+                List.of(
+                        // 잔액 100만원에 120만원 출금 -> 20만원(필요액의 16.7%) 부족 = LOW
+                        plannedEvent(TODAY.plusDays(1), "CARD_PAYMENT", "카드대금", 1_200_000L, 1),
+                        // 이미 잔액이 음수인 상태의 출금 = CRITICAL
+                        plannedEvent(TODAY.plusDays(2), "SAVINGS_PAYMENT", "적금 납입", 100_000L, 2)
+                ),
+                List.of()
+        ));
+        int forecastId = runForecast(OWNER, "{\"horizonDays\":10}", false);
+
+        mvc.perform(get(BASE + "/risks")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.forecast.forecastId").value(forecastId))
+                .andExpect(jsonPath("$.data.risks", hasSize(2)))
+                // 날짜가 늦어도 심각도가 높은 쪽이 먼저 온다.
+                .andExpect(jsonPath("$.data.risks[0].severity").value("CRITICAL"))
+                .andExpect(jsonPath("$.data.risks[0].riskDate").value(TODAY.plusDays(2).toString()))
+                .andExpect(jsonPath("$.data.risks[0].type").value("BALANCE_SHORTAGE"))
+                .andExpect(jsonPath("$.data.risks[0].message").value(containsString("적금 납입")))
+                .andExpect(jsonPath("$.data.risks[1].severity").value("LOW"))
+                .andExpect(jsonPath("$.data.risks[1].riskDate").value(TODAY.plusDays(1).toString()))
+                // 출금 직전 잔액이며 그날 마감 잔액(-200,000)이 아니다.
+                .andExpect(jsonPath("$.data.risks[1].expectedBalance").value(STARTING_BALANCE));
+
+        // 최소잔액이 음수여도 가용금액은 0으로 막는다. 부족 사실은 minimumBalance가 전달한다.
+        mvc.perform(get(BASE + "/available-today")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.availableToday").value(0))
+                .andExpect(jsonPath("$.data.forecast.minimumBalance").value(-300_000))
+                .andExpect(jsonPath("$.data.forecast.riskDate").value(TODAY.plusDays(1).toString()));
+
+        mvc.perform(get(BASE + "/risks").param("severity", "CRITICAL"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.severity").value("CRITICAL"))
+                .andExpect(jsonPath("$.data.risks", hasSize(1)));
+
+        mvc.perform(get(BASE + "/risks").param("type", "BALANCE_SHORTAGE"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.risks", hasSize(2)));
+
+        // 형식이 맞지만 탐지된 적 없는 유형은 오류가 아니라 빈 결과다.
+        mvc.perform(get(BASE + "/risks").param("type", "UNKNOWN_TYPE"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.risks", hasSize(0)));
     }
 
     @Test
@@ -160,6 +222,8 @@ class CashflowApiIntegrationTest {
         mvc.perform(get(BASE + "/forecasts/latest")).andExpect(status().isUnauthorized());
         mvc.perform(get(BASE + "/daily-balances")).andExpect(status().isUnauthorized());
         mvc.perform(get(BASE + "/events")).andExpect(status().isUnauthorized());
+        mvc.perform(get(BASE + "/risks")).andExpect(status().isUnauthorized());
+        mvc.perform(get(BASE + "/available-today")).andExpect(status().isUnauthorized());
         mvc.perform(post(BASE + "/forecasts").contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isUnauthorized());
     }
@@ -175,6 +239,10 @@ class CashflowApiIntegrationTest {
         mvc.perform(get(BASE + "/daily-balances")).andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
         mvc.perform(get(BASE + "/events")).andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+        mvc.perform(get(BASE + "/risks")).andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+        mvc.perform(get(BASE + "/available-today")).andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
     }
 
@@ -203,6 +271,14 @@ class CashflowApiIntegrationTest {
         mvc.perform(get(BASE + "/events").param("type", "card-payment"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        mvc.perform(get(BASE + "/risks").param("type", "balance-shortage"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        // severity는 닫힌 코드 집합이라 형식이 아니라 값 자체를 막는다. enum 변환 실패는 필드 단위
+        // 오류를 만들 수 없어 전역 처리기가 INVALID_REQUEST로 응답한다(날짜 형식 오류와 같은 경로).
+        mvc.perform(get(BASE + "/risks").param("severity", "URGENT"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
     }
 
     @Test

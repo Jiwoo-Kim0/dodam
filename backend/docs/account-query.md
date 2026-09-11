@@ -195,7 +195,7 @@ Finance Data 동기화(499)의 ACCOUNT scope 구현 `AccountSyncHandler`가 맡�
 
 ## 스키마·엔티티
 
-`transaction`·`transaction_category`는 V5 마이그레이션이 만든다. V5는 API 6(S15P21D105-504) 작업 브랜치에서 먼저 작성된 것을
+`transaction`·`transaction_category`는 V6 마이그레이션이 만든다. V6은 API 6(S15P21D105-504) 작업 브랜치에서 먼저 작성된 것을
 이 브랜치로 가져온 것이며(cherry-pick), 두 브랜치가 모두 병합될 때 한쪽에서 중복 커밋을 정리해야 한다.
 `Transaction` 엔티티는 504가 소유하므로 여기서는 JDBC reader/writer만 둔다.
 

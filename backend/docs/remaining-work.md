@@ -2,7 +2,7 @@
 
 마지막 갱신: 2026-09-10
 
-백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538이다.
+백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542이다.
 
 ## S15P21D105-535 — 예·적금 ERD 제약 동기화
 
@@ -304,8 +304,8 @@
 ### 미확정 정책 반영
 
 - [ ] `calculation_version` 표기 규칙을 팀에서 정하고 `CashflowCalculationVersion.CURRENT`를 교체한다. 현재는 `"v1"` 상수다.
-- [ ] `cashflow_event.type`과 `cashflow_risk.type`의 값 집합을 539·542에서 확정하고 ERD 주요 코드값 표에 추가한다. ERD에 목록이 없어 `String`으로 두었다.
-- [ ] `request_hash` 생성 규칙(540)과 `available_today` 계산 정의(542)를 반영한다. 538은 컬럼과 조회 메서드만 제공한다.
+- [ ] `cashflow_event.type`과 `cashflow_risk.type`의 값 집합을 ERD 주요 코드값 표에 추가한다. 539·542가 코드에서 확정했고(`cashflow_risk.type`은 `BALANCE_SHORTAGE` 하나) ERD 반영만 남았다.
+- [x] `request_hash` 생성 규칙(540)과 `available_today` 계산 정의(542, `max(0, minimumBalance)`)를 반영했다.
 
 ### Jira 최신 완료 조건 대조
 
@@ -319,7 +319,7 @@
 
 - [ ] 540이 정한 기본값을 팀에서 확인한다. `horizonDays` 기본 90·상한 365, 완료 캐시 유효기간 당일,
   시작 잔액 = 활성 `DEMAND_DEPOSIT` 합계, 과거 기준일 거부. 모두 명세에 값이 없어 정한 기본안이다.
-- [ ] `request_hash` 생성 규칙은 540에서 확정했다(538의 남은 항목 해소). `available_today`는 542에 남아 있다.
+- [x] `request_hash` 생성 규칙은 540에서, `available_today`는 542에서 확정했다.
 
 ### 계산 정확도 한계
 
@@ -452,9 +452,10 @@
 - [ ] `inquireTransactionHistoryList` 요청 Body(`accountNo`, `startDate`, `endDate`, `transactionType = A`, `orderByType = DESC`)와 응답(`REC.totalCount`, `REC.list[].transactionType "1"/"2"`, 금액 문자열, 시각 HHmmss)을 실호출로 대조한다. API Key 문제(499 절)로 문서 예시만 따랐다.
 - [ ] 계좌에 거래가 없을 때 `REC`가 생략되는지 `list: []`로 오는지 확인한다. 구현은 둘 다 빈 목록으로 해석한다.
 
-### V5 마이그레이션 중복 정리
+### V6 마이그레이션과 504 브랜치 정리
 
-- [ ] `V5__create_transaction_category_and_transaction.sql`은 504 브랜치(`S15P21D105-504-api-6-transaction-query`) 커밋을 이 브랜치로 cherry-pick한 것이다. 두 브랜치가 모두 develop에 들어갈 때 뒤에 병합되는 쪽에서 중복 커밋을 rebase로 걷어낸다. 내용이 같으면 git이 자동으로 건너뛴다.
+- [ ] `V6__create_transaction_category_and_transaction.sql`은 504 브랜치(`S15P21D105-504-api-6-transaction-query`)의 V5 커밋을 cherry-pick한 뒤 **V6으로 번호를 옮긴 것**이다. develop 병합 시 543이 `V5__create_goal.sql`로 V5를 먼저 써서 충돌했다(2026-09-11).
+- 완료 조건: 504 브랜치를 이어갈 때 develop을 병합하고 그쪽의 V5 마이그레이션 커밋을 걷어낸다(테이블은 이미 V6으로 develop에 있다). `Transaction` 엔티티·fixture의 "V5" 표기도 V6으로 고친다.
 
 ### 카드·마이너스통장 거래내역과의 통합
 
@@ -483,3 +484,56 @@
 ### MySQL 검증
 
 - [ ] `JdbcAccountFlowReader`의 `YEAR()`/`MONTH()` GROUP BY와 `SUM(CASE …)`을 MySQL 8.0에서 실행한다. H2(MODE=MySQL)만 확인했다. `ONLY_FULL_GROUP_BY` 모드에서도 SELECT 항목이 모두 GROUP BY 식 또는 집계이므로 통과해야 한다.
+## S15P21D105-543 — Diagnosis 저장 구조·실행 골격
+
+구현 계약: [diagnosis.md](diagnosis.md)
+
+### V5 번호와 goal 테이블 확인(병합 전 필수)
+
+- [ ] `V5__create_goal.sql`의 번호와 선반영 자체를 BE-A와 확인한다.
+- 근거: `diagnosis.goal_id`가 ERD상 `goal(user_id, goal_id)`를 참조하는데 `goal` 마이그레이션이 없어
+  V17을 만들 수 없었다. V3의 `account` 선례대로 스키마만 먼저 추가했다. BE-A 구간(V1~V9)의 번호를
+  소비했으므로 `db/migration/README.md`의 "구간을 넘겨 써야 하면 담당자와 번호를 확인" 규칙이 걸린다.
+- 완료 조건: BE-A가 V5 번호를 확인하고, Goal API(508~511)가 `goal` 테이블을 다시 만들지 않는다는 것에
+  합의한다. 번호 충돌이 있으면 병합 전에 파일명을 바꾼다.
+
+### MySQL 검증
+
+- [x] `V5`·`V17`을 MySQL 8.0.46에서 적용하고 `DiagnosisMySqlIntegrationTest` 3건을 통과시켰다
+  (2026-09-10). `ddl-auto: validate`, `fk_diagnosis_goal`, JSON 컬럼 타입, CHECK 5개를 확인했다.
+- [x] 운영 배포 경로(V16까지 적용된 DB에 V5·V17이 뒤늦게 도착)를 실제 파일로 재현했다. V5가
+  `OUT_OF_ORDER`로 적용되고 FK가 정상 생성되며 재기동에도 문제가 없다.
+
+### 미확정 정책
+
+- [ ] `rule_version` 표기 규칙을 팀에서 정하고 `DiagnosisRuleVersion.CURRENT`를 교체한다. 현재는 `"v1"`
+  상수이며 cashflow의 `CashflowCalculationVersion`과 같은 상황이다. 두 값의 표기를 함께 정한다.
+- [ ] `diagnosis_issue.domain`과 `type`의 값 집합을 544·545에서 확정하고 ERD 주요 코드값 표에 추가한다.
+  ERD에 목록이 없어 `String`으로 두었다.
+- [ ] `input_snapshot`의 형식과 항목을 544에서 정한다.
+- [ ] 종합 상태(`overall_status`) 판정 규칙을 544에서 정한다. 현재는 호출자가 넘긴 값을 그대로 저장한다.
+- [ ] 544의 진단 실행에서 `goalId` 소유권을 애플리케이션 단계에서 검증한다. 복합 FK
+  `(user_id, goal_id)`가 남의 목표를 막아 주지만 DB까지 가서 막히므로 500이 된다. 400 또는
+  `RESOURCE_NOT_FOUND`로 바꿔야 한다. H2 테스트는 FK가 없어 이 경로를 재현하지 못한다.
+
+### 심각도 enum 통합 여부
+
+- [ ] `diagnosis`의 `IssueSeverity`와 `cashflow`의 `RiskSeverity`를 `global/`로 합칠지 정한다.
+- 근거: 값 집합(`LOW`/`MEDIUM`/`HIGH`/`CRITICAL`)이 같고 ERD 주요 코드값 표의 같은 항목을 가리킨다.
+  한쪽 도메인의 enum을 다른 도메인이 import하면 서로의 코드값 변경에 묶여 별도 enum을 두었다.
+- 선행 조건: cashflow 파일을 건드리면 병합 대기 중인 S15P21D105-542와 충돌한다. 542 병합 후에 판단한다.
+- 완료 조건: 합치기로 했다면 두 도메인이 같은 enum을 쓰고 ERD 코드값 표가 그 사실을 반영한다.
+
+### 실패 상태 표현
+
+- [ ] 진단 실행 실패를 어떻게 표현할지 정한다. ERD `diagnosis`에 상태 컬럼이 없어 실패한 진단이
+  접수된 채 `completed_at` NULL로 남고 진행 중인 진단과 구분되지 않는다.
+- 근거: cashflow는 `ForecastStatus`로 `FAILED`를 남기지만 diagnosis에는 대응 컬럼이 없다.
+- 선행 조건: 컬럼 추가가 필요하면 ERD 변경을 먼저 논의한다.
+- 완료 조건: 실패한 진단을 재시도 판단에서 진행 중인 진단과 구분할 수 있다.
+
+### Jira 최신 완료 조건 대조
+
+- [ ] 실제 Jira 접근이 가능해지면 최신 543 완료 조건과 구현 범위를 대조한다. 로컬
+  `SPRINT/Jira (4).csv`의 제목(`[API 14] Diagnosis 기반`)과 설명(`Diagnosis·Issue 관계와 실행 골격`)만
+  근거로 범위를 정했다.

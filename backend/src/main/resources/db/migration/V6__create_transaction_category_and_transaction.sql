@@ -1,12 +1,13 @@
--- Jira: S15P21D105-504 (API 6 거래 조회·메모·카테고리·숨김)
+-- Jira: S15P21D105-502 (API 5 계좌 거래내역 Adapter), S15P21D105-504 (API 6 거래 조회·메모·카테고리·숨김)
 -- Schema basis: docs/ERD/DODAM_ERDCLOUD_IMPORT.sql (revision 2026-09-07)
 --
 -- 범위: Transaction 도메인이 소유하는 `transaction_category`, `transaction`.
 -- 두 테이블은 카드(8)·마이너스통장(10-1)·상품 추천(18)이 이미 JDBC로 읽고 있으나 마이그레이션이
 -- 없어 MySQL에서는 조회가 실패하던 상태다. 이 버전이 BE-A 구간(V1~V9)에서 그 공백을 메운다.
+-- 번호: 원래 V5로 작성했으나 543이 `goal`을 V5로 먼저 병합해 V6으로 옮겼다(2026-09-11).
 --
 -- 선행 조건: `transaction`은 ERD대로 `account`(V3), `card`(V11)를 복합 외래키로 참조한다.
--- 기존 DB에는 V11까지 적용된 뒤 V5가 들어오므로 out-of-order 적용을 전제로 한다(README 참고).
+-- 기존 DB에는 V17까지 적용된 뒤 V6이 들어오므로 out-of-order 적용을 전제로 한다(README 참고).
 --
 -- `transaction_category`의 기준 행은 코드값 성격의 참조 데이터라 시연용 seed와 달리 여기서 함께 넣는다.
 -- 코드는 애플리케이션이 카테고리 필터와 소비유형 분류에 그대로 쓰므로 변경 시 ERD와 함께 조정한다.
