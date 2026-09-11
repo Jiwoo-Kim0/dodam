@@ -4,12 +4,19 @@ import com.ssafy.dodam.domain.transaction.dto.response.CategorySpendingResponse;
 import com.ssafy.dodam.domain.transaction.dto.response.CategorySpendingTrendResponse;
 import com.ssafy.dodam.domain.transaction.dto.response.DailySpendingResponse;
 import com.ssafy.dodam.domain.transaction.dto.response.PaymentMethodSpendingResponse;
+import com.ssafy.dodam.domain.transaction.dto.response.SavingRatioResponse;
+import com.ssafy.dodam.domain.transaction.dto.response.SpendingAnomalyResponse;
+import com.ssafy.dodam.domain.transaction.dto.response.SpendingGoalComparisonResponse;
 import com.ssafy.dodam.domain.transaction.dto.response.SpendingMonthlySummaryResponse;
 import com.ssafy.dodam.domain.transaction.dto.response.SpendingProgressResponse;
+import com.ssafy.dodam.domain.transaction.dto.response.SpendingTypeBreakdownResponse;
+import com.ssafy.dodam.domain.transaction.entity.SpendingType;
+import com.ssafy.dodam.domain.transaction.service.SpendingAnalysisService;
 import com.ssafy.dodam.domain.transaction.service.SpendingQueryService;
 import com.ssafy.dodam.global.response.ApiResponse;
 import com.ssafy.dodam.global.security.AuthPrincipal;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -21,8 +28,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * API 명세 6. Spending 중 S15P21D105-506 범위(월 소비 요약·월 누적 소비·일별 소비·카테고리별 소비·카테고리 소비 추이·결제수단별 소비).
- * 소비·저축 비율, 소비 급증, 소비목표 비교, 고정·변동지출은 다음 티켓에서 이어 붙인다.
+ * API 명세 6. Spending 전체.
+ * S15P21D105-506: 월 소비 요약·월 누적 소비·일별 소비·카테고리별 소비·카테고리 소비 추이·결제수단별 소비.
+ * S15P21D105-507: 소비·저축 비율·소비 급증·소비목표 비교·고정지출·변동지출.
  */
 @Validated
 @RestController
@@ -34,9 +42,11 @@ public class SpendingController {
     private static final String CODE_PATTERN = "^\\s*$|^[A-Za-z0-9_]+$";
 
     private final SpendingQueryService spendingQueryService;
+    private final SpendingAnalysisService spendingAnalysisService;
 
-    public SpendingController(SpendingQueryService spendingQueryService) {
+    public SpendingController(SpendingQueryService spendingQueryService, SpendingAnalysisService spendingAnalysisService) {
         this.spendingQueryService = spendingQueryService;
+        this.spendingAnalysisService = spendingAnalysisService;
     }
 
     @GetMapping("/monthly-summary")
@@ -90,5 +100,52 @@ public class SpendingController {
             @RequestParam(required = false) @Pattern(regexp = YEAR_MONTH_LOOSE_PATTERN) String yearMonth
     ) {
         return ApiResponse.success(spendingQueryService.getByPaymentMethod(principal.userId(), yearMonth));
+    }
+
+    // ---------- S15P21D105-507 소비 분석 ----------
+
+    @GetMapping("/saving-ratio")
+    public ApiResponse<SavingRatioResponse> getSavingRatio(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @RequestParam(required = false) @Pattern(regexp = YEAR_MONTH_LOOSE_PATTERN) String yearMonth
+    ) {
+        return ApiResponse.success(spendingAnalysisService.getSavingRatio(principal.userId(), yearMonth));
+    }
+
+    @GetMapping("/anomalies")
+    public ApiResponse<SpendingAnomalyResponse> getAnomalies(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @RequestParam(required = false) @Pattern(regexp = YEAR_MONTH_LOOSE_PATTERN) String startMonth,
+            @RequestParam(required = false) @Pattern(regexp = YEAR_MONTH_LOOSE_PATTERN) String endMonth,
+            @RequestParam(required = false) @Size(max = 50) @Pattern(regexp = CODE_PATTERN) String category
+    ) {
+        return ApiResponse.success(spendingAnalysisService.getAnomalies(principal.userId(), startMonth, endMonth, category));
+    }
+
+    @GetMapping("/goal-comparison")
+    public ApiResponse<SpendingGoalComparisonResponse> getGoalComparison(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @RequestParam(required = false) @Positive Long goalId,
+            @RequestParam(required = false) @Pattern(regexp = YEAR_MONTH_LOOSE_PATTERN) String yearMonth
+    ) {
+        return ApiResponse.success(spendingAnalysisService.getGoalComparison(principal.userId(), goalId, yearMonth));
+    }
+
+    @GetMapping("/fixed")
+    public ApiResponse<SpendingTypeBreakdownResponse> getFixed(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @RequestParam(required = false) @Pattern(regexp = YEAR_MONTH_LOOSE_PATTERN) String startMonth,
+            @RequestParam(required = false) @Pattern(regexp = YEAR_MONTH_LOOSE_PATTERN) String endMonth
+    ) {
+        return ApiResponse.success(spendingAnalysisService.getBreakdown(principal.userId(), SpendingType.FIXED, startMonth, endMonth));
+    }
+
+    @GetMapping("/variable")
+    public ApiResponse<SpendingTypeBreakdownResponse> getVariable(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @RequestParam(required = false) @Pattern(regexp = YEAR_MONTH_LOOSE_PATTERN) String startMonth,
+            @RequestParam(required = false) @Pattern(regexp = YEAR_MONTH_LOOSE_PATTERN) String endMonth
+    ) {
+        return ApiResponse.success(spendingAnalysisService.getBreakdown(principal.userId(), SpendingType.VARIABLE, startMonth, endMonth));
     }
 }
