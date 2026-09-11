@@ -19,6 +19,7 @@
 | V15 | `deposit_saving`, `savings_payment` 생성 | S15P21D105-535 |
 | V16 | `cashflow_forecast`, `cashflow_daily_balance`, `cashflow_event`, `cashflow_risk` 생성 | S15P21D105-538 |
 | V17 | `diagnosis`, `diagnosis_issue` 생성 | S15P21D105-543 |
+| V30 | `subscription`, `subscription_payment_history` 생성 (API 7 정기결제) | S15P21D105-512, S15P21D105-513, S15P21D105-514 |
 
 ## 버전 번호 할당
 
@@ -26,8 +27,14 @@
 
 | 구간 | 담당 영역 |
 | --- | --- |
-| V1~V9 | BE-A (Auth/User, Account, Transaction/Spending, Goal 등) |
-| V10~ | BE-B (금융상품, Card, Installment, Loan, 예적금, Cashflow 등) |
+| V1~V9 | BE-A (Auth/User, Account, Transaction/Spending, Goal 등) — V9로 소진 |
+| V10~V17 | BE-B (금융상품, Card, Installment, Loan, 예적금, Cashflow, Diagnosis) — V17까지 사용 |
+| V18~V29 | **BE-B·Infra 예비 구간** (Recommendation, Simulation, ProductSync, Dashboard, Improvement, Report 등). 아직 비어 있다 |
+| V30~V49 | **BE-A 2차 구간** (Subscription, Notification, Preference 등). 2026-09-11 V30부터 사용 시작 |
+
+2026-09-11 BE-A는 팀원 부재 중에 Subscription 마이그레이션이 필요해 V18을 건너뛰고 **V30**을 잡았다. 돌아온 팀원이 "마지막 다음 번호" V18을
+자연스럽게 잡아도 충돌하지 않게 하기 위한 것이다. `out-of-order: true`라 V17 → V30 다음에 V18이 들어와도 적용에 문제가 없다.
+V18~V29가 다 차면 V50 이후를 다시 나눈다. 다른 구간이 필요하면 이 표를 먼저 고치고 팀 채널에 공유한다.
 
 `V3`의 `account`는 BE-A 소관 테이블이지만, 이미 병합된 카드 도메인이 이 테이블을 매핑해 develop이
 기동하지 못하는 상태였으므로 스키마만 먼저 추가했습니다. 계좌 API(S15P21D105-501)는 BE-A에서

@@ -71,7 +71,17 @@ public enum ErrorCode {
     /**
      * 계좌는 한 목표에만 연결할 수 있다(`uk_goal_account_account`). 다른 목표에 이미 연결된 계좌를 지정한 경우(S15P21D105-509).
      */
-    ACCOUNT_ALREADY_LINKED_TO_GOAL(HttpStatus.CONFLICT, "이미 다른 목표에 연결된 계좌입니다.");
+    ACCOUNT_ALREADY_LINKED_TO_GOAL(HttpStatus.CONFLICT, "이미 다른 목표에 연결된 계좌입니다."),
+
+    // ---------- Subscription (S15P21D105-514) ----------
+    /**
+     * 종료 상태(CANCELED·EXPIRED) 정기결제를 수정·정지·재개·취소하려는 경우.
+     */
+    SUBSCRIPTION_NOT_EDITABLE(HttpStatus.CONFLICT, "종료된 정기결제는 변경할 수 없습니다."),
+    /**
+     * 허용되지 않은 상태 전이(예: ACTIVE → EXPIRED 직접 지정). 전이 규칙은 SubscriptionStatus에 있다.
+     */
+    SUBSCRIPTION_STATUS_TRANSITION_NOT_ALLOWED(HttpStatus.CONFLICT, "허용되지 않은 정기결제 상태 변경입니다.");
 
     private final HttpStatus status;
     private final String message;

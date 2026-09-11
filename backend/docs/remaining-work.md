@@ -748,7 +748,7 @@
 
 ### 구독 seed의 선행 마이그레이션
 
-- [ ] `DODAM_SUBSCRIPTION_SEED.sql`은 `subscription`·`subscription_payment_history` 테이블이 없어 지금은 실행할 수 없다(2026-09-11 확인: 임시 테이블 문제를 우회하면 첫 DELETE에서 `Table 'subscription_payment_history' doesn't exist`로 멈추고 아무것도 쓰지 않는다). API 7 Subscription 작업에서 마이그레이션(V18 이후, BE-B와 번호 확인)을 만든 뒤 적재한다. 거래 seed의 SUB 행(12일·25일, 9,900/12,400/14,900/4,900원)과 금액·날짜를 맞춰 두었다.
+- [x] `DODAM_SUBSCRIPTION_SEED.sql`은 V30(`subscription`·`subscription_payment_history`, 2026-09-11 S15P21D105-512)이 생긴 뒤 적재할 수 있다. 같은 날 Docker `mysql:8.0`에 V1~V17+V30 적용 → seed 1~7 → 8번 순으로 실행해 구독 6,000건(ACTIVE 5,840 / PAUSED 160), 결제 이력 36,000건, 카드 불일치 0, 거래 SUB 행과 불일치 0을 확인했다(약 1초). 거래 seed의 SUB 행(12일·25일, 9,900/12,400/14,900/4,900원)과 금액·날짜가 맞는다.
 
 ### 시연 사용자 데이터 결
 
@@ -773,3 +773,68 @@
 ### 줄이기 목표 예산 수준
 
 - [ ] SPENDING_FOCUSED·VOLATILE 사용자의 월 예산을 소득의 45%로 두어 대부분 WARNING/EXCEEDED가 나오게 했다(시연용). 진단(14)의 "줄이기 목표 초과 위험" 표본이 과다하면 비율을 조정한다.
+
+## S15P21D105-512 — Subscription 목록·상세·요약
+
+구현 계약: [subscription.md](subscription.md)
+
+### 금융망 동기화 부재
+
+- [ ] 정기결제 데이터는 시연 seed(`DODAM_SUBSCRIPTION_SEED.sql`)만 적재한다. 명세의 "SSAFY 연동"에 해당하는 동기화 핸들러(Finance Data `FinanceSyncScopeHandler`, 499 절)가 없어 실제 회원가입 계정에는 정기결제가 하나도 없다. 금융망에 정기결제 조회 API가 있는지 확인한 뒤 CARD 거래에서 파생하는 방식(513 후보 탐지 결과를 등록)으로 갈지 정한다.
+- 근거: SSAFY 금융망 문서에는 정기결제 도메인이 없다(카드 거래내역만 있음). 그래서 후보 탐지(513)를 "자체 탐지"로 뒀다.
+
+### EXPIRED 자동 전이
+
+- [ ] `end_date`가 지나도 상태는 ACTIVE로 남는다. EXPIRED는 seed·동기화가 넣는 값으로만 존재한다. 일 1회 배치(현금흐름 이벤트 수집과 함께)나 조회 시점 계산 중 하나를 정한다. 조회 시점 계산을 택하면 요약 금액에서 종료일 지난 건을 빼야 한다.
+
+### 목록 처리 방식
+
+- [ ] 목록 필터·정렬·페이지를 메모리에서 한다(사용자당 수십 건 전제, Goal과 같음). 동기화로 건수가 수백 건이 되면 `Specification` 조회로 바꾼다.
+- [ ] `category` 필터는 저장 문자열과 대문자 비교다. 금융망이 우리 enum 밖의 카테고리를 넣으면 카테고리 목록(513)에는 `ETC`로 세지만 필터로는 원래 코드로만 잡힌다. 적재 시 정규화 규칙을 정한다.
+
+### MySQL 검증
+
+- [x] 2026-09-11 Docker `mysql:8.0`(8.0.46)에 V1~V17 + V30을 적용(빈 DB라 V6 문제 때문에 out-of-order 순서로 손 적용, 502 절)하고 `local` 프로필(`ddl-auto: validate`, Flyway off)로 기동해 엔티티 34개 통과. 시연 seed 8번 적재: 구독 6,000·이력 36,000·불일치 0. seed 사용자 `seed.kmeans.u0001`로 로그인해 목록(1건, 카드 `My WE:SH 카드` 조인)·요약·상세(이력 6건 집계)·이력(2026-03~08, 6건)이 기대값과 같았다.
+
+## S15P21D105-513 — Subscription 반복결제 후보·서비스
+
+구현 계약: [subscription.md](subscription.md) "513"
+
+### 후보를 정기결제로 등록하는 경로
+
+- [ ] 명세 7에는 등록(POST) API가 없어 후보 탐지 결과를 정기결제로 만들 방법이 없다. 후보 응답에 `merchantName`·`amount`·`estimatedBillingCycle`·`suggestedPaymentDay`·`cardId`·`suggestedCategory`를 넣어 등록 Body를 바로 만들 수 있게 해 두었다. `POST /api/v1/subscriptions`를 명세에 추가할지 팀에서 정한다.
+
+### 탐지 임계값
+
+- [ ] 기본 3회·6개월, 주기 판정 범위(주 5~9일, 월 25~36일, 연 350~380일)는 seed 거래(매월 12일·25일 결제)가 잡히도록 잡은 값이다. 기획안 "정기결제 점검" 화면의 요구(예: 2회면 경고)에 맞춰 조정한다.
+- [ ] 가맹점명 정규화가 공백·대소문자 제거뿐이다. "넷플릭스"와 "NETFLIX.COM", "쿠팡와우"와 "쿠팡(와우멤버십)"은 다른 묶음이 된다. 카탈로그 키워드 매칭(`matchedServiceCode`)을 묶음 기준에도 쓸지 정한다.
+- [ ] 금액이 바뀐 요금제(예: 9,900 → 13,500)는 두 묶음으로 갈라져 각각 횟수가 줄어든다. 가맹점 단위로 묶고 금액 변동을 허용(±20%)하는 방식을 검토한다.
+
+### 서비스 카탈로그
+
+- [ ] `SubscriptionServiceCatalog`는 코드에 고정한 30개 정적 목록이다(2026-09-11 요금 기준). 서비스·요금이 바뀌면 코드 수정이 필요하다. 테이블(`subscription_service`)과 관리자 API로 옮길지, FE가 자체 목록을 갖는지 정한다. `iconKey`는 FE `assets/icons/payments`의 파일명과 맞춘 것이며 FE가 아이콘을 추가하면 같이 갱신한다.
+
+## S15P21D105-514 — Subscription 변경·정지·취소 + Goal 회귀
+
+구현 계약: [subscription.md](subscription.md) "514"
+
+### 금융망 반영 없음
+
+- [ ] 수정·정지/재개·취소는 우리 DB만 바꾼다. 금융망에 정기결제 변경 API가 없어 전달 경로가 없다. 실제 해지는 각 서비스에서 해야 하므로 FE 문구("도담 목록에서만 정리됩니다")를 맞춘다.
+
+### 다음 결제일 재계산
+
+- [ ] WEEKLY·YEARLY는 기존 다음 결제일(없으면 생성일)을 기준점으로 쓴다. seed는 MONTHLY만 만들어 WEEKLY·YEARLY 경로는 단위 규칙 수준으로만 검증했다(통합 테스트는 YEARLY 목록·요약만). 실데이터가 들어오면 기준점 규칙을 재확인한다.
+- [ ] 결제일이 바뀐 ACTIVE 정기결제만 다음 결제일을 다시 잡는다. PAUSED 상태에서 결제일을 바꾸면 재개 시점에 새 결제일로 계산된다(의도한 동작이지만 문서화만 했다).
+
+### 취소의 의미
+
+- [ ] DELETE는 soft(상태 CANCELED, `canceled_at`)라 목록·요약 건수에 계속 들어간다(금액 합계에는 빠짐). 사용자가 "목록에서 지우기"를 원하면 숨김 필드나 물리 삭제가 필요하다.
+
+### Goal 회귀 테스트
+
+- [x] 2026-09-11 `./gradlew test` 전체 833개 테스트 통과(실패·오류 0). Goal 통합 테스트 4종(`GoalApiIntegrationTest`, `GoalAccountApiIntegrationTest`, `GoalCalculationApiIntegrationTest`, `GoalHistoryApiIntegrationTest`) 포함. Subscription fixture가 `card`·`transaction`을 DROP CASCADE로 다시 만들지만 다른 클래스 fixture와 충돌하지 않았다.
+
+### MySQL 검증
+
+- [x] 2026-09-11 MySQL 8.0 seed 데이터(`SUB-U0001-01`, 다음 결제일 2026-09-12)로 확인: 정지(200, 다음 결제일 null) → 재개(200, 2026-09-12 재계산) → 종료일 2026-09-11 지정 400 `INVALID_REQUEST`(다음 결제일보다 앞, DB CHECK에 닿기 전에 막힘) → 종료일 2026-12-31·금액 13,900 수정 200 → 같은 금액 재요청 200(`updated_at` 유지) → 취소 200 → 재취소 409 `SUBSCRIPTION_NOT_EDITABLE` → 타인 건 404. 직접 UPDATE로 `chk_subscription_dates` 위반 시 MySQL이 3819로 막는 것도 확인했다. 후보 탐지는 seed 고정 지출 `도담 보험`(6회, 20일)·`도담 주거 관리사무소`(5회, 1일)를 MONTHLY로 잡고, 등록된 `도담 비디오`와 NON_SPENDING 저축 이체는 뺐다.
