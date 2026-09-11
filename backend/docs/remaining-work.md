@@ -537,3 +537,103 @@
 - [ ] 실제 Jira 접근이 가능해지면 최신 543 완료 조건과 구현 범위를 대조한다. 로컬
   `SPRINT/Jira (4).csv`의 제목(`[API 14] Diagnosis 기반`)과 설명(`Diagnosis·Issue 관계와 실행 골격`)만
   근거로 범위를 정했다.
+## S15P21D105-504 — 거래 조회·메모·카테고리·숨김
+
+구현 계약: [transaction-query.md](transaction-query.md)
+
+### 금융망 메모 API 반영
+
+- [ ] 명세 6은 거래 메모 수정을 "SSAFY" 연동으로 표기하지만 현재는 우리 DB `transaction.memo`만 갱신한다.
+- 근거: 금융망 거래 메모 API(2.4 거래내역 메모)에 넘길 `accountNo`·`transactionUniqueNo`와 우리 원장의 대응 규약이 501(계좌 동기화)에서 아직 정해지지 않았다. 2026-09-09 기준 전달받은 API Key가 거래 API에서 `H1008`로 거절돼 실호출 검증도 불가능했다.
+- 선행 조건: 501이 `transaction_id`를 금융망 `transactionUniqueNo`로 채우는지, 계좌 거래만 대상인지 확정.
+- 완료 조건: SSAFY 출처 계좌 거래의 메모 수정 시 금융망에도 반영되거나, 로컬 전용으로 확정해 명세의 "SSAFY" 표기를 고친다.
+
+### 거래 seed 데이터
+
+- [ ] `backend/database/seeds`에 `transaction` seed가 없다. 시연 계정으로 거래 목록·카드 사용내역·마이너스통장 거래·소비 기반 카드 추천을 보이려면 필요하다.
+- 근거: 카드·마이너스통장·상품 추천 도메인은 `transaction`을 JDBC로 읽지만 데이터 적재는 어느 티켓도 맡지 않았다. 카테고리 기준 행(V6)의 코드를 그대로 써야 한다.
+- 완료 조건: 시연 사용자별 3개월치 거래가 V6 카테고리 코드·`payment_method`(CARD/ACCOUNT) 규약으로 적재되고, 501 동기화가 `source_type = 'SEED'`를 덮어쓰지 않는 규칙(534에서 제기한 것과 같은 문제)이 정해진다.
+
+### MySQL 검증
+
+- [ ] V6를 MySQL 8.0에서 적용해 `ddl-auto: validate` 통과와 복합 외래키(`account`, `card`) 생성을 확인한다. H2 통합 테스트만 수행했다.
+- 근거: `hidden`·`active`는 TINYINT(1)↔boolean, `transaction_time`은 TIME↔LocalTime 매핑이며 H2와 MySQL의 타입 검증 결과가 다를 수 있다. 기존 DB에는 V17 뒤에 V6이 들어가므로 out-of-order 적용도 함께 본다.
+- 완료 조건: 빈 스키마에 V1~V16 적용 후 기동, 목록·상세·PATCH 3종 SQL을 MySQL에서 실행.
+
+### 명세 외 추가 항목 확정
+
+- [ ] `GET /api/v1/transactions/categories`와 목록 파라미터 `hidden`을 API 명세 6에 반영할지 팀에서 정한다.
+- 근거: FE가 카테고리 수정 Body의 `categoryId`와 필터 코드를 알 방법이 명세에 없었고, 숨긴 거래를 다시 보이게 할 목록도 없었다. 구현은 문서에 "명세 외 추가"로 표시했다.
+- [ ] 목록에 `transactionType`(INCOME/EXPENSE/TRANSFER) 필터를 추가할지 정한다. 가계부 화면의 기본 필터이지만 명세에 없어 넣지 않았다.
+
+### 카드·마이너스통장 fixture와의 스키마 차이
+
+- [ ] `card-query-test-data.sql`, `minus-account-test-data.sql`, `product-comparison-recommendation-test-data.sql`이 만드는 `transaction`에는 `balance_after`·`created_at`·`updated_at`이 없다. 이 fixture가 남은 상태에서 `Transaction` 엔티티로 쓰기를 하면 실패한다.
+- 현재 동작: 504 테스트는 자기 fixture로 V6 컬럼 전체를 다시 만들어 영향이 없다. 다른 도메인 테스트는 읽기만 하므로 역시 영향이 없다.
+- 완료 조건: 공용 fixture 하나로 합치거나, 각 fixture가 V6 컬럼을 모두 갖도록 맞춘다. 담당 이슈를 정해야 한다.
+
+## S15P21D105-505 — 수동 거래 CRUD
+
+구현 계약: [transaction-query.md](transaction-query.md) "수동 거래 등록·수정·삭제"
+
+### 계좌 연결 여부
+
+- [ ] 수동 거래는 계좌·카드에 연결되지 않는다(`account_id` null). 명세 Body에 계좌 필드가 없어서다. 그래서 계좌 거래내역(5)·계좌 잔액·`last_transaction_date`·현금흐름 예측에는 잡히지 않고, 전체 거래 목록(6)과 소비 집계에만 나타난다.
+- 선행 조건: FE가 수동 거래 화면에서 계좌를 고르게 할지 팀에서 정한다. 넣기로 하면 Body에 `accountId?`를 추가하고 소유권·계좌 유형(DEMAND_DEPOSIT) 검증, `last_transaction_date` 갱신 여부를 함께 정한다(503 휴면 판정 항목과 연결).
+- 완료 조건: 명세 6의 Body 정의와 구현이 일치한다.
+
+### 소비유형 재계산
+
+- [ ] 등록 시 `spending_type`은 카테고리 기본값에서만 채운다. 카테고리 없이 등록하면 null이라 고정·변동지출 집계(`/spending/fixed`, `/spending/variable`)에서 빠진다.
+- 완료 조건: 3 Preference(자동 분류)가 미분류 거래의 카테고리·소비유형을 채우는 규칙을 정하거나, 등록 시 거래 유형별 기본값(EXPENSE → VARIABLE 등)을 두기로 결정한다.
+
+### 삭제 방식
+
+- [ ] 물리 삭제로 구현했다. 삭제 이력이 필요하면(진단·리포트가 과거 집계를 다시 계산할 때) soft delete 컬럼이 없어 ERD 변경이 필요하다. 현재 ERD에는 `deleted_at`이 없다.
+
+## S15P21D105-506 — 소비 기간·카테고리 집계
+
+구현 계약: [spending-aggregation.md](spending-aggregation.md)
+
+### 티켓 범위 확정
+
+- [ ] 506을 `/spending/**` 11개 중 집계 6개(월 소비 요약, 월 누적 소비, 일별 소비, 카테고리별 소비, 카테고리 소비 추이, 결제수단별 소비)로 잡았다. 소비·저축 비율, 소비 급증, 소비목표 비교, 고정·변동지출은 다음 하위 태스크로 남겼다. Jira 하위 태스크 설명과 다르면 재배치한다.
+
+### "소비" 정의 합의
+
+- [ ] EXPENSE이면서 `spending_type`이 NON_SPENDING이 아닌 거래(미분류 포함)를 소비로 정의했다. 진단(14)·리포트(20)·소비 기반 카드 추천(18)이 같은 정의를 쓰는지 대조한다. 카드 추천 reader(`JdbcCardRecommendationSpendingReader`)는 현재 카드 거래만 본다.
+- 완료 조건: 소비 정의를 공용 문서(ERD 「데이터 무결성 규칙」 또는 spending-aggregation.md)에 한 번만 두고 각 도메인이 참조한다.
+
+### 소비 거래 seed
+
+- [ ] `transaction` seed가 없어 시연 계정의 소비 집계가 전부 0이다(504 절 "거래 seed 데이터"와 같은 항목). 카테고리·결제수단·`spending_type`이 골고루 들어간 3개월치가 필요하다.
+
+### MySQL 검증
+
+- [ ] `JdbcSpendingReader`의 다섯 SQL(월·일·카테고리·월×카테고리·결제수단 GROUP BY)을 MySQL 8.0 `ONLY_FULL_GROUP_BY`에서 실행한다. H2만 확인했다. SELECT 항목이 모두 GROUP BY 식 또는 집계라 통과해야 한다.
+
+## S15P21D105-507 — 목표·이상소비·결제수단 분석
+
+구현 계약: [spending-aggregation.md](spending-aggregation.md) 507 절
+
+### 급증 판정 기준값 확정
+
+- [ ] 기준 증가율 20%, 소액 보정 10,000원은 기획안 예시(38% 증가)가 잡히도록 잡은 기본값이다. 기획안이 남긴 "소액·고액 보정계수 + 물가상승률" 논의가 끝나면 값을 바꾸고, 필요하면 `application.yml` 설정으로 뺀다.
+- 완료 조건: 진단(14)의 "변동지출 급증" 이슈가 같은 기준으로 판정된다.
+
+### 저축률 정의
+
+- [ ] 저축률을 `(소득 − 소비) / 소득`(잔여)으로 정의했다. 실제 저축 이체(`savingTransfer`)는 참고 수치로만 준다. 어느 카테고리·이체를 "저축"으로 볼지 규약이 정해지면 저축률 분자를 실제 저축액으로 바꿀지 결정한다.
+- 근거: 기획안은 "소비 : 저축 목표 비율"을 말하지만 저축 거래 식별 규칙이 없다.
+
+### 소득 출처
+
+- [ ] `financial_profile.monthly_income`이 있으면 그 값을, 없으면 그 달 INCOME 거래 합을 소득으로 쓴다. 급여가 두 번 들어온 달이나 환급 입금이 있는 달은 거래 합이 과대평가될 수 있다. 3 Preference(패턴 분석)가 "급여" 입금을 식별하면 그 값으로 바꾼다.
+
+### V7 goal 하위행 선반영
+
+- [ ] `saving_goal`, `spending_goal`을 V7로 만들었다. Goal API(508~511)는 같은 테이블을 다시 만들지 않고 `goal_account`, `goal_history`만 추가한다. 소비목표에 카테고리가 없어 `goal-comparison`은 월 전체 소비와 비교한다. 카테고리별 예산이 필요하면 ERD 변경이다.
+
+### MySQL 검증
+
+- [ ] V7 적용과 `JdbcSpendingAnalysisReader`의 SQL(spending_type별 월·카테고리 집계, goal JOIN spending_goal)을 MySQL 8.0에서 실행한다. H2만 확인했다.
