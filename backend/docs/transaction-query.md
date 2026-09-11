@@ -1,8 +1,8 @@
-# Transaction API — 거래 조회·메모·카테고리·숨김
+# Transaction API — 거래 조회·메모·카테고리·숨김·수동 거래
 
-JIRA `S15P21D105-453` (D4 Account API 구현)의 하위 티켓 `S15P21D105-504`(API 6 거래 조회·메모·카테고리·숨김) 구현 기준이다.
-API 명세 6 Transaction / Spending 중 거래 원장 조회와 사용자 편집 3종을 다룬다. 수동 거래 등록·수정·삭제와
-`/api/v1/spending/**` 집계는 다음 티켓 범위이며 이 문서에 포함하지 않는다.
+JIRA `S15P21D105-454` (D5 Transaction·Spending API 구현)의 하위 티켓 `S15P21D105-504`(API 6 거래 조회·메모·카테고리·숨김),
+`S15P21D105-505`(API 6 수동 거래 CRUD) 구현 기준이다. API 명세 6 Transaction / Spending 중 `/api/v1/transactions/**` 9개를
+다룬다. `/api/v1/spending/**` 집계는 다음 티켓 범위이며 이 문서에 포함하지 않는다.
 
 ## API
 
@@ -16,13 +16,18 @@ API 명세 6 Transaction / Spending 중 거래 원장 조회와 사용자 편집
 | 소비 카테고리 수정 | PATCH | `/api/v1/transactions/{transactionId}/category` | 200 |
 | 거래 메모 수정 | PATCH | `/api/v1/transactions/{transactionId}/memo` | 200 |
 | 거래내역 숨김 상태 변경 | PATCH | `/api/v1/transactions/{transactionId}/visibility` | 200 |
+| 수동 거래 등록 (505) | POST | `/api/v1/transactions` | 201 |
+| 수동 거래 수정 (505) | PUT | `/api/v1/transactions/{transactionId}` | 200 |
+| 수동 거래 삭제 (505) | DELETE | `/api/v1/transactions/{transactionId}` | 200 (`data: null`) |
 
 ### 오류 코드
 
 | 코드 | HTTP | 발생 조건 |
 | --- | --- | --- |
-| `VALIDATION_ERROR` | 400 | page < 0, size가 1~100 밖, 거래 ID·코드 형식 위반, Body 필수값(`categoryId`, `hidden`) 누락 |
-| `INVALID_REQUEST` | 400 | 시작일 > 종료일, 종료일이 오늘 이후, 조회 기간 12개월 초과, 없는 카테고리 코드/ID, 비활성 카테고리, 메모 500자 초과·금칙문자 |
+| `VALIDATION_ERROR` | 400 | page < 0, size가 1~100 밖, 거래 ID·코드 형식 위반, Body 필수값(`categoryId`, `hidden`, 등록 시 `transactionDate`·`transactionType`·`amount`) 누락, `amount` ≤ 0, 가맹점명 255자 초과, 결제수단 형식 위반 |
+| `INVALID_REQUEST` | 400 | 시작일 > 종료일, 종료일이 오늘 이후, 조회 기간 12개월 초과, 없는 카테고리 코드/ID, 비활성 카테고리, 메모 500자 초과·금칙문자, 거래일이 오늘 이후, 알 수 없는 거래 유형 |
+| `NO_FIELDS_TO_UPDATE` | 400 | 수동 거래 수정 Body에 바꿀 필드가 하나도 없음 |
+| `TRANSACTION_NOT_MANUAL` | 400 | 금융망(SSAFY)·seed 출처 거래를 수정·삭제하려 함 |
 | `RESOURCE_NOT_FOUND` | 404 | 본인 소유가 아니거나 존재하지 않는 거래 |
 | `UNAUTHORIZED` | 401 | 토큰 없음·만료 |
 
@@ -104,6 +109,40 @@ SAVING, TRANSFER, INCOME, ETC).
 - 숨긴 거래는 목록 기본 조회에서 빠지고, 상세 조회와 `hidden=true` 목록에서는 보인다. 카드(8)·마이너스통장(10-1) 거래내역·집계도
   `hidden = FALSE`만 읽으므로 숨김은 원장 전체에 걸쳐 일관된다.
 
+## 수동 거래 등록·수정·삭제 (505)
+
+수동 거래는 계좌·카드에 연결되지 않은 사용자 입력 원장이다. `source_type = MANUAL`, `account_id`·`card_id`·`balance_after`·
+`transaction_time`은 null, `payment_method`는 사용자가 준 코드(CASH/CARD/ACCOUNT 등, 대문자 저장)다. 명세 Body에 계좌 지정 필드가
+없으므로 계좌 잔액·`last_transaction_date`·현금흐름에는 영향을 주지 않는다(534가 남긴 "원장 쓰기 규약 없음" 문제를 그대로 따른 것).
+
+### 등록 `POST /transactions` → 201
+
+| 필드 | 규칙 |
+| --- | --- |
+| `transactionDate` | 필수. 오늘 이후면 400 |
+| `transactionType` | 필수. INCOME / EXPENSE / TRANSFER, 대소문자 무시 |
+| `amount` | 필수. 1 이상 |
+| `merchantName` | 선택. 255자 이하, 앞뒤 공백 제거, 빈 값은 null |
+| `categoryId` | 선택. 활성 카테고리만. 지정하면 카테고리의 기본 소비유형이 `spendingType`으로 들어간다 |
+| `paymentMethod` | 선택. 영숫자·밑줄 30자 이하, 대문자로 저장 |
+| `memo` | 선택. 504와 같은 `TransactionMemoPolicy` |
+
+거래 ID는 `MN-<UUID>`(39자)로 서버가 만든다. 금융망 `transactionUniqueNo`(숫자)·seed(`TX-…`)와 겹치지 않는다.
+응답은 504와 같은 `TransactionResponse`다.
+
+### 수정 `PUT /transactions/{transactionId}` → 200
+
+- **MANUAL 거래만.** SSAFY·seed 거래는 400 `TRANSACTION_NOT_MANUAL`(그 거래의 메모·카테고리·숨김은 504 PATCH로).
+- 입력된 필드만 바꾼다. null(생략)은 변경 없음. 모든 필드가 비어 있으면 400 `NO_FIELDS_TO_UPDATE`.
+- `merchantName`·`paymentMethod`·`memo`는 빈 문자열을 보내면 값을 지운다. `categoryId`는 이 API로 지울 수 없다(다른 카테고리로 바꾸는 것만).
+- 검증(미래 거래일, 알 수 없는 유형, 없는 카테고리 등)에 하나라도 걸리면 어떤 필드도 바뀌지 않는다.
+- 값이 전부 같으면 `updated_at`을 건드리지 않고 현재 상태를 200으로 돌려준다(중복 요청 방지, 504와 같은 규칙).
+
+### 삭제 `DELETE /transactions/{transactionId}` → 200
+
+- MANUAL 거래만 물리 삭제한다. 응답은 `{ success: true, data: null }`(회원 탈퇴 API와 같은 형태).
+- 타인 거래·없는 거래는 404, SSAFY·seed 거래는 400 `TRANSACTION_NOT_MANUAL`.
+
 ## 스키마 (V6)
 
 `transaction_category`, `transaction`을 ERD 정의 그대로 만들고 카테고리 기준 행 20개를 넣는다.
@@ -120,6 +159,8 @@ SAVING, TRANSFER, INCOME, ETC).
   `sql/transaction-test-data.sql`이 V6 컬럼 전체로 두 테이블을 다시 만든다(다른 도메인 fixture는 `created_at` 등이 빠진 축소
   스키마를 만들기 때문).
 - `TransactionMemoPolicyTest`: 메모 정규화·길이·금칙문자 규칙.
+- `ManualTransactionApiIntegrationTest`(505): 등록(전체·최소 필드, 카테고리 기본 소비유형), 검증 실패(필수값·금액·미래 거래일·유형·카테고리·결제수단·메모),
+  부분 수정·빈 문자열로 지우기·중복 요청·빈 Body, SSAFY 거래 수정·삭제 거절, 타인 거래 404, 삭제 후 404.
 
 ## 남은 작업
 

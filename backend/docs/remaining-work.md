@@ -571,3 +571,22 @@
 - [ ] `card-query-test-data.sql`, `minus-account-test-data.sql`, `product-comparison-recommendation-test-data.sql`이 만드는 `transaction`에는 `balance_after`·`created_at`·`updated_at`이 없다. 이 fixture가 남은 상태에서 `Transaction` 엔티티로 쓰기를 하면 실패한다.
 - 현재 동작: 504 테스트는 자기 fixture로 V6 컬럼 전체를 다시 만들어 영향이 없다. 다른 도메인 테스트는 읽기만 하므로 역시 영향이 없다.
 - 완료 조건: 공용 fixture 하나로 합치거나, 각 fixture가 V6 컬럼을 모두 갖도록 맞춘다. 담당 이슈를 정해야 한다.
+
+## S15P21D105-505 — 수동 거래 CRUD
+
+구현 계약: [transaction-query.md](transaction-query.md) "수동 거래 등록·수정·삭제"
+
+### 계좌 연결 여부
+
+- [ ] 수동 거래는 계좌·카드에 연결되지 않는다(`account_id` null). 명세 Body에 계좌 필드가 없어서다. 그래서 계좌 거래내역(5)·계좌 잔액·`last_transaction_date`·현금흐름 예측에는 잡히지 않고, 전체 거래 목록(6)과 소비 집계에만 나타난다.
+- 선행 조건: FE가 수동 거래 화면에서 계좌를 고르게 할지 팀에서 정한다. 넣기로 하면 Body에 `accountId?`를 추가하고 소유권·계좌 유형(DEMAND_DEPOSIT) 검증, `last_transaction_date` 갱신 여부를 함께 정한다(503 휴면 판정 항목과 연결).
+- 완료 조건: 명세 6의 Body 정의와 구현이 일치한다.
+
+### 소비유형 재계산
+
+- [ ] 등록 시 `spending_type`은 카테고리 기본값에서만 채운다. 카테고리 없이 등록하면 null이라 고정·변동지출 집계(`/spending/fixed`, `/spending/variable`)에서 빠진다.
+- 완료 조건: 3 Preference(자동 분류)가 미분류 거래의 카테고리·소비유형을 채우는 규칙을 정하거나, 등록 시 거래 유형별 기본값(EXPENSE → VARIABLE 등)을 두기로 결정한다.
+
+### 삭제 방식
+
+- [ ] 물리 삭제로 구현했다. 삭제 이력이 필요하면(진단·리포트가 과거 집계를 다시 계산할 때) soft delete 컬럼이 없어 ERD 변경이 필요하다. 현재 ERD에는 `deleted_at`이 없다.
