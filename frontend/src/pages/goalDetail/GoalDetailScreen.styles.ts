@@ -5,6 +5,7 @@ import {
   componentSize,
   fontFamily,
   fontSize,
+  radius,
   semanticSpacing,
   spacing,
   typography,
@@ -31,6 +32,42 @@ export const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: semanticSpacing.screenMargin,
     paddingBottom: spacing[8],
+  },
+  actions: {
+    flexDirection: 'row',
+    gap: spacing[2],
+    paddingHorizontal: semanticSpacing.screenMargin,
+    paddingVertical: spacing[3],
+    backgroundColor: colors.background,
+  },
+  editButton: {
+    minHeight: componentSize.button.compact,
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.default,
+    backgroundColor: colors.primary.green,
+  },
+  editButtonLabel: {
+    ...typography.buttonSmall,
+    color: colors.white,
+  },
+  otherGoalsButton: {
+    minHeight: componentSize.button.compact,
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.primary.green,
+    borderRadius: radius.default,
+    backgroundColor: colors.white,
+  },
+  otherGoalsButtonLabel: {
+    ...typography.buttonSmall,
+    color: colors.primary.green,
+  },
+  actionPressed: {
+    opacity: componentSize.bottomSheet.pressedOpacity,
   },
   titleRow: {
     flexDirection: 'row',

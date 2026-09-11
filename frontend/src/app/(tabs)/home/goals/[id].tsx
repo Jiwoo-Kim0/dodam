@@ -6,5 +6,5 @@ export default function GoalDetailRoute() {
   const { id } = useLocalSearchParams<{ id: string | string[] }>();
   const goalId = Array.isArray(id) ? id[0] : id;
 
-  return <GoalDetailScreen goalId={goalId ?? ''} />;
+  return <GoalDetailScreen goalId={goalId ?? ''} key={goalId} />;
 }

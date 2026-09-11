@@ -1,16 +1,23 @@
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
+import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { BouncyScrollView } from '@/components/bouncyScrollView/BouncyScrollView';
+import { routes } from '@/constants/routes';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import { findGoalDetail } from '@/mocks/goalDetail';
 import { colors } from '@/styles';
 import { formatCurrency } from '@/utils/currency';
 import { calculateProgressPercent } from '@/utils/goal';
 
+import { GoalAccountManagementBottomSheet } from './components/GoalAccountManagementBottomSheet';
 import { GoalInsightCard } from './components/GoalInsightCard';
+import { GoalLinkedAccounts } from './components/GoalLinkedAccounts';
+import { GoalProgressChart } from './components/GoalProgressChart';
+import { GoalSpendingCategories } from './components/GoalSpendingCategories';
+import { OtherGoalsBottomSheet } from './components/OtherGoalsBottomSheet';
 import { styles } from './GoalDetailScreen.styles';
 
 interface GoalDetailScreenProps {
@@ -19,7 +26,16 @@ interface GoalDetailScreenProps {
 
 export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
   const router = useRouter();
+  const [isOtherGoalsVisible, setIsOtherGoalsVisible] = useState(false);
   const goal = findGoalDetail(goalId);
+  const initialAccountIds =
+    goal?.type === 'saving' ? [...goal.linkedAccountIds] : [];
+  const [linkedAccountIds, setLinkedAccountIds] =
+    useState<string[]>(initialAccountIds);
+  const [draftAccountIds, setDraftAccountIds] =
+    useState<string[]>(initialAccountIds);
+  const [isAccountManagementVisible, setIsAccountManagementVisible] =
+    useState(false);
 
   if (!goal) {
     return (
@@ -113,7 +129,75 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
         </View>
 
         <GoalInsightCard goal={goal} />
+        <GoalProgressChart goal={goal} />
+        {goal.type === 'saving' ? (
+          <GoalLinkedAccounts
+            accountIds={linkedAccountIds}
+            onManage={() => {
+              setDraftAccountIds(linkedAccountIds);
+              setIsAccountManagementVisible(true);
+            }}
+          />
+        ) : (
+          <GoalSpendingCategories categories={goal.categories} />
+        )}
       </BouncyScrollView>
+
+      <View style={styles.actions}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push(routes.goalSetupEdit(goal.id))}
+          style={({ pressed }) => [
+            styles.editButton,
+            pressed && styles.actionPressed,
+          ]}
+        >
+          <Text style={styles.editButtonLabel}>목표 수정</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setIsOtherGoalsVisible(true)}
+          style={({ pressed }) => [
+            styles.otherGoalsButton,
+            pressed && styles.actionPressed,
+          ]}
+        >
+          <Text style={styles.otherGoalsButtonLabel}>다른 목표 보기</Text>
+        </Pressable>
+      </View>
+
+      <OtherGoalsBottomSheet
+        currentGoalId={goal.id}
+        onClose={() => setIsOtherGoalsVisible(false)}
+        onCreateGoal={() => {
+          setIsOtherGoalsVisible(false);
+          router.push(routes.goalSetup);
+        }}
+        onSelectGoal={(selectedGoalId) => {
+          setIsOtherGoalsVisible(false);
+          if (selectedGoalId !== goal.id) {
+            router.replace(routes.goalDetail(selectedGoalId));
+          }
+        }}
+        visible={isOtherGoalsVisible}
+      />
+
+      <GoalAccountManagementBottomSheet
+        onClose={() => setIsAccountManagementVisible(false)}
+        onComplete={() => {
+          setLinkedAccountIds(draftAccountIds);
+          setIsAccountManagementVisible(false);
+        }}
+        onToggle={(accountId) =>
+          setDraftAccountIds((currentIds) =>
+            currentIds.includes(accountId)
+              ? currentIds.filter((id) => id !== accountId)
+              : [...currentIds, accountId],
+          )
+        }
+        selectedAccountIds={draftAccountIds}
+        visible={isAccountManagementVisible}
+      />
     </SafeAreaLayout>
   );
 }
