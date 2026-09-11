@@ -399,3 +399,39 @@
 - 근거: `MinusAccountOwner`가 `account.currency`를 `nullable = false`로 매핑하는데, H2는 엔티티 기준으로 스키마를 만들어 `V3`의 `DEFAULT 'KRW'`가 없다. 두 테스트의 seed SQL은 `currency`를 넣지 않는다.
 - 영향: Jenkins의 Build & Test 단계가 `./gradlew clean build`를 돌리므로 어느 브랜치의 MR이든 이 실패를 함께 본다.
 - 완료 조건: `card-query-test-data.sql`과 `deposit-saving-test-data.sql`의 `account` INSERT에 `currency`를 채우거나, 엔티티 매핑에 기본값을 반영한다. 담당 이슈를 정해야 한다.
+
+## S15P21D105-501 — 계좌 목록·상세·잔액
+
+구현 계약: [account-query.md](account-query.md)
+
+### 금융망 잔액 실시간 조회
+
+- [ ] `GET /api/v1/accounts/{accountNo}/balance`가 금융망(2.4 계좌 잔액 조회)을 호출할지, 우리 DB 값만 돌려줄지 확정한다.
+- 현재 동작: `account.balance`와 `updated_at`(`balanceAsOf`)을 돌려준다. 명세는 "SSAFY"로 표기하지만 카드·대출·예적금이 모두 로컬 테이블을 읽는 방식과 맞췼다.
+- 근거: 2026-09-09 기준 전달받은 API Key가 거래 API에서 `H1008`로 거절돼 실호출 검증이 불가능했고, 마이너스통장 상환(534)이 로컬 잔액만 바꾸므로 금융망 값을 그대로 보이면 상환 결과가 사라진 것처럼 보인다.
+- 완료 조건: 실시간 조회로 정하면 `SsafyFinanceClient`에 잔액 조회를 추가하고 응답에 조회 시각을 싣는다. 로컬로 확정하면 명세의 "SSAFY" 표기를 고친다.
+
+### ACCOUNT 동기화 핸들러
+
+- [ ] `FinanceSyncScopeHandler`의 ACCOUNT 구현이 없어 `POST /finance-data/sync`가 ACCOUNT를 SKIPPED로 보고한다. 금융망 계좌 목록(2.4 계좌 목록 조회)을 `account`에 적재·갱신하는 구현이 필요하다.
+- 선행 조건: 계좌번호 암호화(`FieldCryptor`)·해시(`SensitiveNumberHasher`)·마스킹 규칙을 seed(`DODAM_USER_ACCOUNT_FINANCIAL_PROFILE_SEED.sql`)와 같게 맞춘다. `source_type = 'SEED'` 계좌를 덮어쓰지 않는 규칙(534에서 제기)도 함께 정한다.
+- 완료 조건: 동기화 후 목록·상세·잔액이 금융망 값과 일치하고 `updated_at`이 갱신된다.
+
+### 부분 매핑 엔티티 교체
+
+- [ ] `CardWithdrawalAccount`(card), `MinusAccountOwner`(minusaccount), `JdbcAccountBalanceWriter`(minusaccount)를 `Account` 엔티티로 교체할지 정한다.
+- 현재 동작: 세 엔티티가 `account`를 함께 매핑한다. 읽기는 문제없지만 쓰기 엔티티가 둘(`MinusAccountOwner`, `Account`)이 되면 같은 행을 다른 영속성 컨텍스트 상태로 들고 있을 수 있다. 501은 읽기만 하므로 지금은 충돌이 없다.
+- 담당 근거: 카드·마이너스통장은 BE-B 영역이라 501에서 고치지 않았다.
+- 완료 조건: 마이너스통장 상환이 `Account`로 잔액을 쓰거나, 쓰기 주체를 하나로 명시한다.
+
+### 엔티티 nullable 완화
+
+- [ ] `Account.accountNoEncrypted`·`sourceType`이 DDL은 NOT NULL인데 엔티티는 nullable이다.
+- 근거: H2 테스트는 엔티티로 스키마를 만드는데 `deposit-saving-test-data.sql`, `savings-test-data.sql`, `deposit-detail-test-data.sql`, `CashflowBalanceReaderTest`가 두 컬럼 없이 `account`를 적재한다. NOT NULL로 매핑하면 그 테스트가 깨진다. local/prod `validate`는 NULL 허용 여부를 검사하지 않는다.
+- 완료 조건: 네 fixture가 두 컬럼을 채우도록 고친 뒤 엔티티를 NOT NULL로 되돌린다. 담당 이슈를 정해야 한다.
+
+### MySQL 검증
+
+- [ ] `Account` 엔티티가 V3 DDL과 `ddl-auto: validate`를 통과하는지 MySQL 8.0에서 확인한다. H2 통합 테스트만 수행했다.
+- 근거: `account_no_encrypted`는 `VARBINARY(512)`↔`byte[]`, `account_no_hash`·`currency`는 CHAR 고정 길이 매핑이다. 카드·대출과 같은 `columnDefinition` 처리를 했지만 실검증은 남았다.
+- 완료 조건: 빈 스키마에 V1~V16 적용 후 기동, 목록·상세·잔액 SQL을 MySQL에서 실행.
