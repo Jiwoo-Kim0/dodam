@@ -3,19 +3,19 @@ import { Image, Pressable, ScrollView, Text, View } from 'react-native';
 import { FINANCIAL_INSTITUTIONS } from '@/mocks/financeConnection';
 import type { GoalAccount } from '@/mocks/goalAccounts';
 
-import { styles } from './SavingAccountStep.styles';
+import { styles } from './GoalAccountSelectionList.styles';
 
-interface SavingAccountStepProps {
+interface GoalAccountSelectionListProps {
   accounts: readonly GoalAccount[];
   selectedAccountIds: readonly string[];
   onToggle: (accountId: string) => void;
 }
 
-export function SavingAccountStep({
+export function GoalAccountSelectionList({
   accounts,
   selectedAccountIds,
   onToggle,
-}: SavingAccountStepProps) {
+}: GoalAccountSelectionListProps) {
   return (
     <View style={styles.container}>
       <Text style={styles.sectionTitle}>연결된 계좌</Text>

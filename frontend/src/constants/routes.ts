@@ -12,4 +12,12 @@ export const routes = {
   discovery: '/discovery',
   report: '/report',
   goalSetup: '/goal-setup',
+  goalSetupEdit: (goalId: string) => ({
+    pathname: '/goal-setup' as const,
+    params: { goalId, mode: 'edit' },
+  }),
+  goalDetail: (goalId: string) => ({
+    pathname: '/home/goals/[id]' as const,
+    params: { id: goalId },
+  }),
 } as const;
