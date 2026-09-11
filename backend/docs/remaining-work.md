@@ -611,3 +611,29 @@
 ### MySQL 검증
 
 - [ ] `JdbcSpendingReader`의 다섯 SQL(월·일·카테고리·월×카테고리·결제수단 GROUP BY)을 MySQL 8.0 `ONLY_FULL_GROUP_BY`에서 실행한다. H2만 확인했다. SELECT 항목이 모두 GROUP BY 식 또는 집계라 통과해야 한다.
+
+## S15P21D105-507 — 목표·이상소비·결제수단 분석
+
+구현 계약: [spending-aggregation.md](spending-aggregation.md) 507 절
+
+### 급증 판정 기준값 확정
+
+- [ ] 기준 증가율 20%, 소액 보정 10,000원은 기획안 예시(38% 증가)가 잡히도록 잡은 기본값이다. 기획안이 남긴 "소액·고액 보정계수 + 물가상승률" 논의가 끝나면 값을 바꾸고, 필요하면 `application.yml` 설정으로 뺀다.
+- 완료 조건: 진단(14)의 "변동지출 급증" 이슈가 같은 기준으로 판정된다.
+
+### 저축률 정의
+
+- [ ] 저축률을 `(소득 − 소비) / 소득`(잔여)으로 정의했다. 실제 저축 이체(`savingTransfer`)는 참고 수치로만 준다. 어느 카테고리·이체를 "저축"으로 볼지 규약이 정해지면 저축률 분자를 실제 저축액으로 바꿀지 결정한다.
+- 근거: 기획안은 "소비 : 저축 목표 비율"을 말하지만 저축 거래 식별 규칙이 없다.
+
+### 소득 출처
+
+- [ ] `financial_profile.monthly_income`이 있으면 그 값을, 없으면 그 달 INCOME 거래 합을 소득으로 쓴다. 급여가 두 번 들어온 달이나 환급 입금이 있는 달은 거래 합이 과대평가될 수 있다. 3 Preference(패턴 분석)가 "급여" 입금을 식별하면 그 값으로 바꾼다.
+
+### V7 goal 하위행 선반영
+
+- [ ] `saving_goal`, `spending_goal`을 V7로 만들었다. Goal API(508~511)는 같은 테이블을 다시 만들지 않고 `goal_account`, `goal_history`만 추가한다. 소비목표에 카테고리가 없어 `goal-comparison`은 월 전체 소비와 비교한다. 카테고리별 예산이 필요하면 ERD 변경이다.
+
+### MySQL 검증
+
+- [ ] V7 적용과 `JdbcSpendingAnalysisReader`의 SQL(spending_type별 월·카테고리 집계, goal JOIN spending_goal)을 MySQL 8.0에서 실행한다. H2만 확인했다.
