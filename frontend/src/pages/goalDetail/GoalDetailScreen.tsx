@@ -1,9 +1,9 @@
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
+import { AppHeader } from '@/components/appHeader/AppHeader';
 import { BouncyScrollView } from '@/components/bouncyScrollView/BouncyScrollView';
 import { routes } from '@/constants/routes';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
@@ -59,40 +59,20 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
 
   return (
     <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
-      <View style={styles.header}>
-        <Pressable
-          accessibilityLabel="이전 화면으로 이동"
-          accessibilityRole="button"
-          hitSlop={8}
-          onPress={() => router.back()}
-          style={({ pressed }) => [
-            styles.backButton,
-            pressed && styles.backButtonPressed,
-          ]}
-        >
-          <SymbolView
-            name={{
-              android: 'arrow_back',
-              ios: 'chevron.left',
-              web: 'arrow_back',
-            }}
-            size={24}
-            tintColor={colors.textPrimary}
-          />
-        </Pressable>
-      </View>
-
-      <BouncyScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.titleRow}>
-          <Text style={styles.title}>{goal.title}</Text>
+      <AppHeader
+        showBackButton
+        subtitle={goal.dueDateLabel}
+        title={goal.title}
+        titleAccessory={
           <Image
             contentFit="contain"
             source={require('@/assets/icons/goal/acorn_icon.png')}
             style={styles.acornIcon}
           />
-        </View>
-        <Text style={styles.dueDate}>{goal.dueDateLabel}</Text>
+        }
+      />
 
+      <BouncyScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.statusRow}>
           <View style={styles.statusText}>
             <Text style={styles.dDay}>{`D-${goal.dDay}`}</Text>

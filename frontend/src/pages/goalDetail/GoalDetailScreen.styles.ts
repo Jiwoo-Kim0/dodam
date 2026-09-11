@@ -15,23 +15,10 @@ export const styles = StyleSheet.create({
   screen: {
     backgroundColor: colors.background,
   },
-  header: {
-    minHeight: componentSize.touchTarget,
-    justifyContent: 'center',
-    paddingHorizontal: semanticSpacing.screenMargin,
-  },
-  backButton: {
-    width: componentSize.touchTarget,
-    height: componentSize.touchTarget,
-    alignItems: 'flex-start',
-    justifyContent: 'center',
-  },
-  backButtonPressed: {
-    opacity: 0.5,
-  },
   scrollContent: {
-    paddingHorizontal: semanticSpacing.screenMargin,
     paddingBottom: spacing[8],
+    paddingHorizontal: semanticSpacing.screenMargin,
+    paddingTop: spacing[2],
   },
   actions: {
     flexDirection: 'row',
@@ -69,24 +56,9 @@ export const styles = StyleSheet.create({
   actionPressed: {
     opacity: componentSize.bottomSheet.pressedOpacity,
   },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-    marginTop: spacing[1],
-  },
-  title: {
-    ...typography.headline,
-    color: colors.textPrimary,
-  },
   acornIcon: {
     width: 22,
     height: 22,
-  },
-  dueDate: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: spacing[1],
   },
   statusRow: {
     minHeight: 120,
