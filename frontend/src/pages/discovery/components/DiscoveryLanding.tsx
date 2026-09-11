@@ -64,6 +64,9 @@ export function DiscoveryLanding({ onBack, onComplete }: DiscoveryLandingProps) 
               <Pressable accessibilityLabel="뒤로 가기" hitSlop={12} onPress={onBack}>
                 <Text style={styles.backIcon}>‹</Text>
               </Pressable>
+              <Text pointerEvents="none" style={styles.topBarTitle}>
+                발견
+              </Text>
               <StageSkip onPress={onComplete} />
             </View>
 
