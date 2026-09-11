@@ -6,7 +6,7 @@
 -- Dependency: S15P21D105-491 User/Account seed, S15P21D105-524 Deposit/Savings seed (DEPOSIT for odd users,
 --             SAVINGS for even users). DODAM_TRANSACTION_SEED.sql is not required but makes 510 spending-progress meaningful.
 -- Dataset: 4,000 saving goals (1 per user), 2,000 spending goals (SPENDING_FOCUSED + VOLATILE cohorts),
---          about 5,000 goal_account links, 28,000 saving-goal history rows + 2,000 spending-goal history rows
+--          4,750 goal_account links, 28,000 saving-goal history rows + 2,000 spending-goal history rows
 -- Snapshot: 2026-09-07
 --
 -- Rules (must match the Goal API, backend/docs/goal.md)
@@ -15,6 +15,7 @@
 --   goal_type in the child row always equals the parent type (composite FK).
 -- - goal_account links only SAVING goals to DEMAND_DEPOSIT / DEPOSIT / SAVINGS accounts of the same user; one account belongs
 --   to at most one goal (uk_goal_account_account). contribution_amount stays NULL (whole balance counts).
+--   CLOSED accounts are never linked (GoalAccountService rejects them with 400); INACTIVE is allowed.
 -- - goal.current_amount = SUM(balance) of the linked accounts, exactly what GoalAccountService / GoalCalculationService recompute.
 -- - goal_history: GOAL_CREATED on 2026-03-01 (0 won) + AMOUNT_UPDATED at each month end 2026-03-31 .. 2026-08-31 with the amount
 --   growing linearly to the current linked balance; progress_rate = amount / target * 100 (4 decimals, capped 100).
@@ -24,20 +25,30 @@
 -- Cohort mapping (MOD(seq-1,4): 0 BALANCED, 1 SPENDING_FOCUSED, 2 SAVING_FOCUSED, 3 VOLATILE)
 --   saving goal:   everyone. odd users link their DEPOSIT account, even users their SAVINGS account;
 --                  BALANCED users additionally link the primary demand-deposit account.
+--                  524 closes 500 deposits + 500 savings (users 25..32 of every 40, 250 per cohort): those 1,000 users
+--                  have no open DEPOSIT/SAVINGS and link the primary demand-deposit account instead (BALANCED: once).
+--                  Links: 3,000 DEPOSIT/SAVINGS + 1,750 DEMAND_DEPOSIT (1,000 fallback + 750 BALANCED extra) = 4,750.
 --                  target = monthly_income x (6 + MOD(seq,7)) rounded to 100,000; target_date = 2027-03-01 + MOD(seq,12) months
 --                  status: PAUSED for every 40th user, otherwise ACTIVE
 --   spending goal: SPENDING_FOCUSED and VOLATILE users. monthly_budget = monthly_income x 45% rounded to 10,000
 --                  (below their variable spending, so goal-comparison / risk show WARNING or EXCEEDED for demo)
 
+-- MySQL TEMPORARY-table constraint
+-- --------------------------------
+-- MySQL raises ER_CANT_REOPEN_TABLE (1137) when a single statement references
+-- the same TEMPORARY table more than once (self joins, two scalar subqueries,
+-- EXISTS gates). This file's scratch tables (tmp_dodam_*) are therefore regular
+-- tables, not TEMPORARY, and the cleanup section at the end drops them all. Verified on MySQL 8.0.46.
+--
 SET NAMES utf8mb4;
 SET time_zone = '+09:00';
 
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_493_digit;
-CREATE TEMPORARY TABLE tmp_dodam_493_digit (digit TINYINT NOT NULL, PRIMARY KEY (digit));
+DROP TABLE IF EXISTS tmp_dodam_493_digit;
+CREATE TABLE tmp_dodam_493_digit (digit TINYINT NOT NULL, PRIMARY KEY (digit));
 INSERT INTO tmp_dodam_493_digit (digit) VALUES (0), (1), (2), (3), (4), (5), (6), (7), (8), (9);
 
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_493_months;
-CREATE TEMPORARY TABLE tmp_dodam_493_months (month_no TINYINT NOT NULL, month_end DATE NOT NULL, PRIMARY KEY (month_no));
+DROP TABLE IF EXISTS tmp_dodam_493_months;
+CREATE TABLE tmp_dodam_493_months (month_no TINYINT NOT NULL, month_end DATE NOT NULL, PRIMARY KEY (month_no));
 INSERT INTO tmp_dodam_493_months (month_no, month_end)
 SELECT d.digit + 1, LAST_DAY(DATE_ADD('2026-03-01', INTERVAL d.digit MONTH))
 FROM tmp_dodam_493_digit d WHERE d.digit BETWEEN 0 AND 5;
@@ -45,8 +56,8 @@ FROM tmp_dodam_493_digit d WHERE d.digit BETWEEN 0 AND 5;
 -- ---------------------------------------------------------------------------
 -- 1. users and the accounts each goal will link
 -- ---------------------------------------------------------------------------
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_493_context;
-CREATE TEMPORARY TABLE tmp_dodam_493_context (
+DROP TABLE IF EXISTS tmp_dodam_493_context;
+CREATE TABLE tmp_dodam_493_context (
   sequence_no INT NOT NULL,
   synthetic_user_code CHAR(5) NOT NULL,
   behavior_index TINYINT NOT NULL,
@@ -69,8 +80,8 @@ SELECT
   user_row.user_id,
   COALESCE(profile_row.monthly_income, 2300000),
   primary_row.account_id,
-  saving_row.account_id,
-  saving_row.account_type
+  COALESCE(saving_row.account_id, primary_row.account_id),
+  COALESCE(saving_row.account_type, 'DEMAND_DEPOSIT')
 FROM (
   SELECT thousands.digit * 1000 + hundreds.digit * 100 + tens.digit * 10 + ones.digit + 1 AS sequence_no
   FROM tmp_dodam_493_digit thousands
@@ -87,6 +98,7 @@ JOIN `account` primary_row
  AND primary_row.source_type = 'SEED'
  AND primary_row.account_name = '주거래 입출금'
 -- odd users: DEPOSIT (524), even users: SAVINGS (524). Exactly one row per user in the 524 dataset; MIN() guards reruns.
+-- Users whose only DEPOSIT/SAVINGS account is CLOSED fall back to the primary demand-deposit account (COALESCE below).
 LEFT JOIN (
   SELECT a.user_id, MIN(a.account_id) AS account_id, MIN(a.account_type) AS account_type
   FROM `account` a
@@ -98,8 +110,8 @@ LEFT JOIN (
 WHERE numbers.sequence_no BETWEEN 1 AND 4000;
 
 -- expected goals
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_493_expected_goals;
-CREATE TEMPORARY TABLE tmp_dodam_493_expected_goals (
+DROP TABLE IF EXISTS tmp_dodam_493_expected_goals;
+CREATE TABLE tmp_dodam_493_expected_goals (
   seed_goal_code VARCHAR(50) NOT NULL,
   sequence_no INT NOT NULL,
   goal_type VARCHAR(20) NOT NULL,
@@ -143,9 +155,9 @@ SELECT
 FROM tmp_dodam_493_context c
 WHERE c.behavior_index IN (1, 3);
 
--- expected links: saving goal -> deposit/savings account (+ primary for BALANCED)
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_493_expected_links;
-CREATE TEMPORARY TABLE tmp_dodam_493_expected_links (
+-- expected links: saving goal -> deposit/savings account or the primary fallback (+ primary for BALANCED, once)
+DROP TABLE IF EXISTS tmp_dodam_493_expected_links;
+CREATE TABLE tmp_dodam_493_expected_links (
   seed_goal_code VARCHAR(50) NOT NULL,
   account_id BIGINT NOT NULL,
   account_type VARCHAR(30) NOT NULL,
@@ -159,13 +171,14 @@ WHERE c.saving_account_id IS NOT NULL
 UNION ALL
 SELECT CONCAT(c.synthetic_user_code, '_SAVING'), c.primary_account_id, 'DEMAND_DEPOSIT'
 FROM tmp_dodam_493_context c
-WHERE c.behavior_index = 0;
+WHERE c.behavior_index = 0
+  AND c.saving_account_id <> c.primary_account_id;
 
 -- ---------------------------------------------------------------------------
 -- 2. preflight
 -- ---------------------------------------------------------------------------
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_493_preflight;
-CREATE TEMPORARY TABLE tmp_dodam_493_preflight (
+DROP TABLE IF EXISTS tmp_dodam_493_preflight;
+CREATE TABLE tmp_dodam_493_preflight (
   ready TINYINT(1) NOT NULL,
   user_count INT NOT NULL,
   users_with_saving_account_count INT NOT NULL,
@@ -206,8 +219,8 @@ START TRANSACTION;
 -- ---------------------------------------------------------------------------
 -- 3. remove the previous run (children first). Seed goals: K-Means users + created_at marker.
 -- ---------------------------------------------------------------------------
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_493_old_goals;
-CREATE TEMPORARY TABLE tmp_dodam_493_old_goals (goal_id BIGINT NOT NULL PRIMARY KEY);
+DROP TABLE IF EXISTS tmp_dodam_493_old_goals;
+CREATE TABLE tmp_dodam_493_old_goals (goal_id BIGINT NOT NULL PRIMARY KEY);
 INSERT INTO tmp_dodam_493_old_goals (goal_id)
 SELECT g.goal_id
 FROM goal g
@@ -233,8 +246,8 @@ JOIN tmp_dodam_493_context ctx ON ctx.sequence_no = expected.sequence_no
 WHERE EXISTS (SELECT 1 FROM tmp_dodam_493_preflight preflight WHERE preflight.ready = 1);
 
 -- resolve the new goal ids back to the seed codes (user + type is unique inside this seed)
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_493_goal_ids;
-CREATE TEMPORARY TABLE tmp_dodam_493_goal_ids (
+DROP TABLE IF EXISTS tmp_dodam_493_goal_ids;
+CREATE TABLE tmp_dodam_493_goal_ids (
   seed_goal_code VARCHAR(50) NOT NULL PRIMARY KEY,
   goal_id BIGINT NOT NULL,
   UNIQUE KEY uk_tmp_dodam_493_goal_id (goal_id)
@@ -318,12 +331,20 @@ SELECT g.type, g.status, COUNT(*) AS goal_count
 FROM goal g JOIN tmp_dodam_493_goal_ids ids ON ids.goal_id = g.goal_id
 GROUP BY g.type, g.status ORDER BY g.type, g.status;
 
--- Expected: 4000 saving_goal, 2000 spending_goal, 5000 goal_account (4000 + 1000 BALANCED primaries), 4000*7 + 2000 = 30000 history rows.
+-- Expected: 4000 saving_goal, 2000 spending_goal, 4750 goal_account (3000 DEPOSIT/SAVINGS + 1750 DEMAND_DEPOSIT),
+--           4000*7 + 2000 = 30000 history rows.
 SELECT
   (SELECT COUNT(*) FROM saving_goal sg JOIN tmp_dodam_493_goal_ids ids ON ids.goal_id = sg.goal_id) AS saving_goal_count,
   (SELECT COUNT(*) FROM spending_goal pg JOIN tmp_dodam_493_goal_ids ids ON ids.goal_id = pg.goal_id) AS spending_goal_count,
   (SELECT COUNT(*) FROM goal_account ga JOIN tmp_dodam_493_goal_ids ids ON ids.goal_id = ga.goal_id) AS goal_account_count,
   (SELECT COUNT(*) FROM goal_history h JOIN tmp_dodam_493_goal_ids ids ON ids.goal_id = h.goal_id) AS goal_history_count;
+
+-- Expected: DEPOSIT 1500, SAVINGS 1500, DEMAND_DEPOSIT 1750; no CLOSED account linked.
+SELECT ga.account_type, COUNT(*) AS link_count, SUM(a.status = 'CLOSED') AS closed_account_link_count
+FROM goal_account ga
+JOIN tmp_dodam_493_goal_ids ids ON ids.goal_id = ga.goal_id
+JOIN `account` a ON a.account_id = ga.account_id
+GROUP BY ga.account_type ORDER BY ga.account_type;
 
 -- Expected: 0 — current_amount equals the linked balance sum, every link points to a SAVING goal of the same user,
 --           and progress_rate stays within 0..100.
@@ -356,3 +377,15 @@ LEFT JOIN spending_goal pg ON pg.goal_id = g.goal_id
 WHERE u.email IN ('seed.kmeans.u0001@dodam.invalid', 'seed.kmeans.u0002@dodam.invalid',
                   'seed.kmeans.u0003@dodam.invalid', 'seed.kmeans.u0004@dodam.invalid')
 ORDER BY u.email, g.type;
+
+-- ---------------------------------------------------------------------------
+-- cleanup: scratch tables and application fixture tables (regular tables; see header)
+-- ---------------------------------------------------------------------------
+DROP TABLE IF EXISTS tmp_dodam_493_context;
+DROP TABLE IF EXISTS tmp_dodam_493_digit;
+DROP TABLE IF EXISTS tmp_dodam_493_expected_goals;
+DROP TABLE IF EXISTS tmp_dodam_493_expected_links;
+DROP TABLE IF EXISTS tmp_dodam_493_goal_ids;
+DROP TABLE IF EXISTS tmp_dodam_493_months;
+DROP TABLE IF EXISTS tmp_dodam_493_old_goals;
+DROP TABLE IF EXISTS tmp_dodam_493_preflight;

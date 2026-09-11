@@ -46,14 +46,21 @@
 --
 -- Downstream: 493 Goal seed reads account balances only; Spending/Goal APIs read these rows.
 
+-- MySQL TEMPORARY-table constraint
+-- --------------------------------
+-- MySQL raises ER_CANT_REOPEN_TABLE (1137) when a single statement references
+-- the same TEMPORARY table more than once (self joins, two scalar subqueries,
+-- EXISTS gates). This file's scratch tables (tmp_dodam_*) are therefore regular
+-- tables, not TEMPORARY, and the cleanup section at the end drops them all. Verified on MySQL 8.0.46.
+--
 SET NAMES utf8mb4;
 SET time_zone = '+09:00';
 
 -- ---------------------------------------------------------------------------
 -- 0. helpers
 -- ---------------------------------------------------------------------------
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_492_digit;
-CREATE TEMPORARY TABLE tmp_dodam_492_digit (
+DROP TABLE IF EXISTS tmp_dodam_492_digit;
+CREATE TABLE tmp_dodam_492_digit (
   digit TINYINT NOT NULL,
   PRIMARY KEY (digit),
   CHECK (digit BETWEEN 0 AND 9)
@@ -61,8 +68,8 @@ CREATE TEMPORARY TABLE tmp_dodam_492_digit (
 INSERT INTO tmp_dodam_492_digit (digit) VALUES (0), (1), (2), (3), (4), (5), (6), (7), (8), (9);
 
 -- six-month window
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_492_months;
-CREATE TEMPORARY TABLE tmp_dodam_492_months (
+DROP TABLE IF EXISTS tmp_dodam_492_months;
+CREATE TABLE tmp_dodam_492_months (
   month_no TINYINT NOT NULL,
   month_start DATE NOT NULL,
   month_end DATE NOT NULL,
@@ -79,8 +86,8 @@ FROM tmp_dodam_492_digit d
 WHERE d.digit BETWEEN 0 AND 5;
 
 -- variable spending slots 0..15
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_492_slots;
-CREATE TEMPORARY TABLE tmp_dodam_492_slots (
+DROP TABLE IF EXISTS tmp_dodam_492_slots;
+CREATE TABLE tmp_dodam_492_slots (
   slot_no TINYINT NOT NULL,
   PRIMARY KEY (slot_no)
 );
@@ -91,8 +98,8 @@ CROSS JOIN tmp_dodam_492_digit ones
 WHERE tens.digit * 10 + ones.digit BETWEEN 0 AND 15;
 
 -- variable categories (index -> code, merchant). Weighted by repeating FOOD.
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_492_variable_categories;
-CREATE TEMPORARY TABLE tmp_dodam_492_variable_categories (
+DROP TABLE IF EXISTS tmp_dodam_492_variable_categories;
+CREATE TABLE tmp_dodam_492_variable_categories (
   pick_index TINYINT NOT NULL,
   category_code VARCHAR(50) NOT NULL,
   merchant_name VARCHAR(255) NOT NULL,
@@ -119,8 +126,8 @@ INSERT INTO tmp_dodam_492_variable_categories (pick_index, category_code, mercha
 -- ---------------------------------------------------------------------------
 -- 1. seed users (same formulas as 491) joined to their persisted rows
 -- ---------------------------------------------------------------------------
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_492_users;
-CREATE TEMPORARY TABLE tmp_dodam_492_users (
+DROP TABLE IF EXISTS tmp_dodam_492_users;
+CREATE TABLE tmp_dodam_492_users (
   sequence_no INT NOT NULL,
   synthetic_user_code CHAR(5) NOT NULL,
   email VARCHAR(255) NOT NULL,
@@ -145,8 +152,8 @@ FROM (
 WHERE numbers.sequence_no BETWEEN 1 AND 4000;
 
 -- Per-user generation context. Income / fixed expense / payday come from financial_profile (491 output).
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_492_context;
-CREATE TEMPORARY TABLE tmp_dodam_492_context (
+DROP TABLE IF EXISTS tmp_dodam_492_context;
+CREATE TABLE tmp_dodam_492_context (
   sequence_no INT NOT NULL,
   synthetic_user_code CHAR(5) NOT NULL,
   behavior_index TINYINT NOT NULL,
@@ -200,8 +207,8 @@ JOIN `account` account_row
 LEFT JOIN financial_profile profile_row ON profile_row.user_id = user_row.user_id;
 
 -- category lookup (V6 reference rows)
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_492_categories;
-CREATE TEMPORARY TABLE tmp_dodam_492_categories (
+DROP TABLE IF EXISTS tmp_dodam_492_categories;
+CREATE TABLE tmp_dodam_492_categories (
   code VARCHAR(50) NOT NULL,
   category_id BIGINT NOT NULL,
   PRIMARY KEY (code)
@@ -217,8 +224,8 @@ WHERE code IN ('FOOD', 'CAFE', 'GROCERY', 'PUBLIC_TRANSPORT', 'TAXI', 'SHOPPING'
 -- ---------------------------------------------------------------------------
 -- 2. preflight: every permanent write is gated by ready = 1
 -- ---------------------------------------------------------------------------
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_492_preflight;
-CREATE TEMPORARY TABLE tmp_dodam_492_preflight (
+DROP TABLE IF EXISTS tmp_dodam_492_preflight;
+CREATE TABLE tmp_dodam_492_preflight (
   ready TINYINT(1) NOT NULL,
   context_user_count INT NOT NULL,
   users_with_card_count INT NOT NULL,
@@ -485,3 +492,15 @@ FROM `account` account_row
 JOIN `user` user_row ON user_row.user_id = account_row.user_id
 WHERE user_row.email = 'seed.kmeans.u0002@dodam.invalid'
 ORDER BY account_row.account_id;
+
+-- ---------------------------------------------------------------------------
+-- cleanup: scratch tables and application fixture tables (regular tables; see header)
+-- ---------------------------------------------------------------------------
+DROP TABLE IF EXISTS tmp_dodam_492_categories;
+DROP TABLE IF EXISTS tmp_dodam_492_context;
+DROP TABLE IF EXISTS tmp_dodam_492_digit;
+DROP TABLE IF EXISTS tmp_dodam_492_months;
+DROP TABLE IF EXISTS tmp_dodam_492_preflight;
+DROP TABLE IF EXISTS tmp_dodam_492_slots;
+DROP TABLE IF EXISTS tmp_dodam_492_users;
+DROP TABLE IF EXISTS tmp_dodam_492_variable_categories;

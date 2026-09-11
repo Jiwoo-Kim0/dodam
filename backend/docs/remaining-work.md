@@ -724,13 +724,25 @@
 
 ### MySQL 실행 검증
 
-- [ ] 두 파일을 MySQL 8.0에서 실행해 파일 끝 검증 SELECT의 기대값(거래 348,192건, 성향별 소비·저축 비율, 계약 위반 0건, 주거래 계좌 `last_transaction_date` 4,000건)을 확인한다. 작업 환경에 MySQL이 없어 2026-09-11 기준 실행하지 않았다.
-- 근거: 491·522·524와 같은 집합 생성 방식(digit 교차곱, 결정적 해시)으로 작성했지만 `MAKETIME`·`DIV`·`DATE_ADD` 조합과 임시 테이블 조인 성능(약 35만 행 INSERT)은 실측이 필요하다.
-- 완료 조건: 실행 시간과 검증 SELECT 결과를 이 절에 기록한다. 1분을 넘으면 변동 슬롯을 8→6으로 줄이는 것을 검토한다.
+- [x] 2026-09-11 Docker `mysql:8.0`(8.0.46)에 V1~V17을 적용하고 525→491→522→523→524→492→493 순으로 실행했다. 계좌·카드번호 fixture는 SHA2 기반 더미(형식만 충족)를 썼다. 아래 "임시 테이블 재참조 오류"를 고친 뒤 원본 파일 그대로 1~7번이 43초에 오류 없이 끝났다.
+- 결과: 거래 348,192건(INC 24,000 / FIX 72,000 / SUB 36,000 / SAV 24,000 / VAR 192,192), 계약 위반 0건, 주거래 계좌 `last_transaction_date` 4,000건·휴면 계좌 NULL. 실행 시간 약 14초(변동 슬롯 축소 불필요). 재실행 후 건수·금액 합이 같아 멱등을 확인했다.
+- 성향별 소득 대비 소비 / 저축 비율: BALANCED 75.3 / 15.0, SPENDING_FOCUSED 100.4 / 3.0, SAVING_FOCUSED 65.3 / 30.0, VOLATILE 90.4 / 8.0.
+- [ ] SPENDING_FOCUSED는 소비(고정 약 45% + 변동 55%)가 소득의 100%를 넘는다. 의도한 과소비 시연이 아니면 변동 비율을 낮춘다.
+
+### 임시 테이블 재참조 오류 (491·492·493·522·523·524·구독 seed 공통)
+
+- [x] MySQL은 한 문장에서 같은 TEMPORARY 테이블을 두 번 참조할 수 없다(`ERROR 1137 Can't reopen table`). 자릿수 테이블 4중 CROSS JOIN, preflight의 스칼라 서브쿼리 다중 참조, `ctx`와 서브쿼리 `c`의 동일 테이블 조인(492 4c·4e), `EXISTS(... preflight)` 게이트가 모두 해당해 491·492·493·522·구독 seed는 사용자 목록 생성에서 실패했다. 8.0.46에서 자기 조인·스칼라 서브쿼리 2개·조인+파생 테이블·EXISTS 네 패턴 모두 실패함을 확인했다. 523·524는 처음부터 파생 테이블·단일 참조 문장으로 작성돼 영향이 없다.
+- 조치(2026-09-11): 다섯 파일의 `tmp_dodam_*` 작업 테이블과 491·522의 fixture 테이블을 일반 테이블로 바꾸고 파일 끝 cleanup 절에서 DROP한다. 머리말의 fixture 계약도 `CREATE TABLE`로 바꿨으므로 fixture 빌더는 TEMPORARY가 아닌 일반 테이블을 만들어야 한다(523·524 fixture는 TEMPORARY도 가능).
+- [ ] 파일이 중간에 멈추면 작업 테이블이 스키마에 남는다(다음 실행의 `DROP TABLE IF EXISTS`가 정리). 운영 DB에 적재할 때 `tmp_dodam_%` 잔여 테이블을 확인한다.
+
+### 525 금융상품 seed의 `product_sync_history`
+
+- [x] `DODAM_FINANCIAL_PRODUCTS_*_COMPAT_FIXED.sql` 두 파일은 COMMIT 직전에 `product_sync_history`에 INSERT했는데, 이 테이블은 ERD에만 있고 V1~V17 마이그레이션과 엔티티에 없다. Flyway로 만든 DB에서는 여기서 멈추고 트랜잭션이 롤백돼 상품이 하나도 들어가지 않았다. 2026-09-11 INSERT와 그 전용 변수(`@dodam_existing_before`)를 제거했다. 결과: 상품 198건·옵션 456건, 위반 0건.
+- [ ] 상품 동기화 이력이 필요해지면 `product_sync_history` 마이그레이션(BE-B 구간)과 엔티티를 만든 뒤 seed에 이력 INSERT를 되살린다.
 
 ### 구독 seed의 선행 마이그레이션
 
-- [ ] `DODAM_SUBSCRIPTION_SEED.sql`은 `subscription`·`subscription_payment_history` 테이블이 없어 지금은 실행할 수 없다. API 7 Subscription 작업에서 마이그레이션(V18 이후, BE-B와 번호 확인)을 만든 뒤 적재한다. 거래 seed의 SUB 행(12일·25일, 9,900/12,400/14,900/4,900원)과 금액·날짜를 맞춰 두었다.
+- [ ] `DODAM_SUBSCRIPTION_SEED.sql`은 `subscription`·`subscription_payment_history` 테이블이 없어 지금은 실행할 수 없다(2026-09-11 확인: 임시 테이블 문제를 우회하면 첫 DELETE에서 `Table 'subscription_payment_history' doesn't exist`로 멈추고 아무것도 쓰지 않는다). API 7 Subscription 작업에서 마이그레이션(V18 이후, BE-B와 번호 확인)을 만든 뒤 적재한다. 거래 seed의 SUB 행(12일·25일, 9,900/12,400/14,900/4,900원)과 금액·날짜를 맞춰 두었다.
 
 ### 시연 사용자 데이터 결
 
@@ -743,8 +755,10 @@
 
 ### MySQL 실행 검증
 
-- [ ] MySQL 8.0에서 실행해 검증 SELECT(모으기 4,000·줄이기 2,000, 연결 5,000, 이력 30,000, `current_amount` 불일치 0)를 확인한다. 2026-09-11 기준 미실행.
-- 근거: 새 목표의 `goal_id`를 (user_id, type, created_at 마커)로 되찾는 방식은 사용자당 유형별 목표가 하나라는 seed 전제에 의존한다. 사용자가 앱에서 같은 유형 목표를 `2026-03-01 09:00:00`에 만들 수는 없으므로 실무에서는 충돌하지 않는다.
+- [x] 2026-09-11 MySQL 8.0.46에서 실행했다(492 절 "임시 테이블 재참조 오류" 조치 포함). 최초 규칙으로는 preflight가 `users_with_saving_account_count = 3000`으로 실패했다. 524가 예금 500·적금 500 계좌를 CLOSED로 만들어 사용자 1,000명(40명 주기의 25~32번째, 성향별 250명)은 열린 예·적금 계좌가 없고, Goal API는 CLOSED 계좌 연결을 400으로 막는다([goal.md](goal.md) 계좌 연결 표).
+- 조치: 열린 예·적금이 없는 사용자는 주거래 입출금 계좌를 대신 연결한다(`COALESCE(saving_account_id, primary_account_id)`, BALANCED는 주거래 중복 연결 방지). 기대 연결 수는 5,000 → 4,750.
+- 결과: 모으기 4,000(ACTIVE 3,900 / PAUSED 100), 줄이기 2,000, 연결 4,750(예금 1,500 / 적금 1,500 / 주거래 1,750, CLOSED 연결 0), 이력 30,000, `current_amount` 불일치 0, 연결 계약 위반 0, 진행률 범위 위반 0, 실행 약 2초. 재실행 후 건수·금액 합 동일.
+- 참고: 재실행은 목표를 지우고 다시 만들므로 `goal_id`가 바뀐다. 시연 스크립트에 goal_id를 고정하지 않는다. `goal_id`를 (user_id, type, created_at 마커)로 되찾는 방식은 사용자당 유형별 목표가 하나라는 seed 전제에 의존하며, 앱에서 `2026-03-01 09:00:00`에 목표를 만들 수는 없으므로 실무에서는 충돌하지 않는다.
 
 ### 이력 스냅샷의 현실성
 

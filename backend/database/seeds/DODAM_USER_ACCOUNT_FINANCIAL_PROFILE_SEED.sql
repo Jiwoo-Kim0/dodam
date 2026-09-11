@@ -9,10 +9,10 @@
 -- ---------------------
 -- This file never creates account-number plaintext, guesses an encryption
 -- envelope, or stores encryption/HMAC keys. Before sourcing this file, the same
--- MySQL session must contain an application-generated temporary table with this
+-- MySQL session must contain an application-generated scratch table (a regular table, not TEMPORARY) with this
 -- contract:
 --
---   CREATE TEMPORARY TABLE tmp_dodam_491_account_crypto (
+--   CREATE TABLE tmp_dodam_491_account_crypto (
 --     seed_account_code VARCHAR(50) NOT NULL,
 --     account_no_encrypted VARBINARY(512) NOT NULL,
 --     account_no_hash CHAR(64) NOT NULL,
@@ -49,11 +49,19 @@
 --     AND a.account_no_hash = :applicationGeneratedAccountHash
 --     AND a.account_type = 'DEMAND_DEPOSIT';
 
+-- MySQL TEMPORARY-table constraint
+-- --------------------------------
+-- MySQL raises ER_CANT_REOPEN_TABLE (1137) when a single statement references
+-- the same TEMPORARY table more than once (self joins, two scalar subqueries,
+-- EXISTS gates). This file's scratch tables (tmp_dodam_*) and the application
+-- fixture tables above are therefore regular tables, not TEMPORARY, and the
+-- cleanup section at the end drops them all. Verified on MySQL 8.0.46.
+--
 SET NAMES utf8mb4;
 SET time_zone = '+09:00';
 
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_491_digit;
-CREATE TEMPORARY TABLE tmp_dodam_491_digit (
+DROP TABLE IF EXISTS tmp_dodam_491_digit;
+CREATE TABLE tmp_dodam_491_digit (
   digit TINYINT NOT NULL,
   PRIMARY KEY (digit),
   CHECK (digit BETWEEN 0 AND 9)
@@ -62,8 +70,8 @@ CREATE TEMPORARY TABLE tmp_dodam_491_digit (
 INSERT INTO tmp_dodam_491_digit (digit)
 VALUES (0), (1), (2), (3), (4), (5), (6), (7), (8), (9);
 
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_491_users;
-CREATE TEMPORARY TABLE tmp_dodam_491_users (
+DROP TABLE IF EXISTS tmp_dodam_491_users;
+CREATE TABLE tmp_dodam_491_users (
   sequence_no INT NOT NULL,
   synthetic_user_code CHAR(5) NOT NULL,
   expected_behavior_code VARCHAR(30) NOT NULL,
@@ -165,8 +173,8 @@ FROM (
   WHERE numbers.sequence_no BETWEEN 1 AND 4000
 ) base;
 
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_491_expected_accounts;
-CREATE TEMPORARY TABLE tmp_dodam_491_expected_accounts (
+DROP TABLE IF EXISTS tmp_dodam_491_expected_accounts;
+CREATE TABLE tmp_dodam_491_expected_accounts (
   seed_account_code VARCHAR(50) NOT NULL,
   user_email VARCHAR(255) NOT NULL,
   bank_code VARCHAR(20) NOT NULL,
@@ -223,8 +231,8 @@ SELECT
   20000,
   NULL;
 
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_491_preflight;
-CREATE TEMPORARY TABLE tmp_dodam_491_preflight (
+DROP TABLE IF EXISTS tmp_dodam_491_preflight;
+CREATE TABLE tmp_dodam_491_preflight (
   ready TINYINT(1) NOT NULL,
   expected_account_count INT NOT NULL,
   crypto_fixture_count INT NOT NULL,
@@ -591,3 +599,12 @@ JOIN `user` user_row ON user_row.user_id = account_row.user_id
 JOIN tmp_dodam_491_users seed ON seed.email = user_row.email
 WHERE account_row.account_type = 'DEMAND_DEPOSIT'
   AND account_row.source_type = 'SEED';
+
+-- ---------------------------------------------------------------------------
+-- cleanup: scratch tables and application fixture tables (regular tables; see header)
+-- ---------------------------------------------------------------------------
+DROP TABLE IF EXISTS tmp_dodam_491_account_crypto;
+DROP TABLE IF EXISTS tmp_dodam_491_digit;
+DROP TABLE IF EXISTS tmp_dodam_491_expected_accounts;
+DROP TABLE IF EXISTS tmp_dodam_491_preflight;
+DROP TABLE IF EXISTS tmp_dodam_491_users;

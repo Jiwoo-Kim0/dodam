@@ -19,22 +19,29 @@
 -- Status: ACTIVE for all, except every 25th user's first subscription is PAUSED (status variety for the API).
 -- subscription_id format: SUB-U0001-01 (<= 100 chars). Rerunning deletes and regenerates these ids.
 
+-- MySQL TEMPORARY-table constraint
+-- --------------------------------
+-- MySQL raises ER_CANT_REOPEN_TABLE (1137) when a single statement references
+-- the same TEMPORARY table more than once (self joins, two scalar subqueries,
+-- EXISTS gates). This file's scratch tables (tmp_dodam_*) are therefore regular
+-- tables, not TEMPORARY, and the cleanup section at the end drops them all. Verified on MySQL 8.0.46.
+--
 SET NAMES utf8mb4;
 SET time_zone = '+09:00';
 
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_492s_digit;
-CREATE TEMPORARY TABLE tmp_dodam_492s_digit (digit TINYINT NOT NULL, PRIMARY KEY (digit));
+DROP TABLE IF EXISTS tmp_dodam_492s_digit;
+CREATE TABLE tmp_dodam_492s_digit (digit TINYINT NOT NULL, PRIMARY KEY (digit));
 INSERT INTO tmp_dodam_492s_digit (digit) VALUES (0), (1), (2), (3), (4), (5), (6), (7), (8), (9);
 
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_492s_months;
-CREATE TEMPORARY TABLE tmp_dodam_492s_months (month_no TINYINT NOT NULL, month_start DATE NOT NULL, PRIMARY KEY (month_no));
+DROP TABLE IF EXISTS tmp_dodam_492s_months;
+CREATE TABLE tmp_dodam_492s_months (month_no TINYINT NOT NULL, month_start DATE NOT NULL, PRIMARY KEY (month_no));
 INSERT INTO tmp_dodam_492s_months (month_no, month_start)
 SELECT d.digit + 1, DATE_ADD('2026-03-01', INTERVAL d.digit MONTH)
 FROM tmp_dodam_492s_digit d WHERE d.digit BETWEEN 0 AND 5;
 
 -- users + primary card (same resolution as the transaction seed)
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_492s_context;
-CREATE TEMPORARY TABLE tmp_dodam_492s_context (
+DROP TABLE IF EXISTS tmp_dodam_492s_context;
+CREATE TABLE tmp_dodam_492s_context (
   sequence_no INT NOT NULL,
   synthetic_user_code CHAR(5) NOT NULL,
   user_id BIGINT NOT NULL,
@@ -65,8 +72,8 @@ JOIN `user` user_row
 WHERE numbers.sequence_no BETWEEN 1 AND 4000;
 
 -- expected subscriptions
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_492s_expected;
-CREATE TEMPORARY TABLE tmp_dodam_492s_expected (
+DROP TABLE IF EXISTS tmp_dodam_492s_expected;
+CREATE TABLE tmp_dodam_492s_expected (
   subscription_id VARCHAR(100) NOT NULL,
   sequence_no INT NOT NULL,
   name VARCHAR(150) NOT NULL,
@@ -91,8 +98,8 @@ SELECT
 FROM tmp_dodam_492s_context c
 WHERE MOD(c.sequence_no, 2) = 0;
 
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_492s_preflight;
-CREATE TEMPORARY TABLE tmp_dodam_492s_preflight (
+DROP TABLE IF EXISTS tmp_dodam_492s_preflight;
+CREATE TABLE tmp_dodam_492s_preflight (
   ready TINYINT(1) NOT NULL,
   user_count INT NOT NULL,
   users_with_card_count INT NOT NULL,
@@ -191,3 +198,12 @@ LEFT JOIN `transaction` tx
  AND tx.amount = history.payment_amount
  AND tx.transaction_id LIKE 'SEED-U%-SUB-%'
 WHERE sub.subscription_id LIKE 'SUB-U%' AND tx.transaction_id IS NULL;
+
+-- ---------------------------------------------------------------------------
+-- cleanup: scratch tables and application fixture tables (regular tables; see header)
+-- ---------------------------------------------------------------------------
+DROP TABLE IF EXISTS tmp_dodam_492s_context;
+DROP TABLE IF EXISTS tmp_dodam_492s_digit;
+DROP TABLE IF EXISTS tmp_dodam_492s_expected;
+DROP TABLE IF EXISTS tmp_dodam_492s_months;
+DROP TABLE IF EXISTS tmp_dodam_492s_preflight;
