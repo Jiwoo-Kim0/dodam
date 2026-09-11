@@ -400,44 +400,56 @@
 - 영향: Jenkins의 Build & Test 단계가 `./gradlew clean build`를 돌리므로 어느 브랜치의 MR이든 이 실패를 함께 본다.
 - 완료 조건: `card-query-test-data.sql`과 `deposit-saving-test-data.sql`의 `account` INSERT에 `currency`를 채우거나, 엔티티 매핑에 기본값을 반영한다. 담당 이슈를 정해야 한다.
 
-## S15P21D105-542 — 현금흐름 위험·가용금액
+## S15P21D105-543 — Diagnosis 저장 구조·실행 골격
 
-구현 계약: [cashflow-risk.md](cashflow-risk.md)
+구현 계약: [diagnosis.md](diagnosis.md)
 
-### 미확정 정책 확인
+### V5 번호와 goal 테이블 확인(병합 전 필수)
 
-- [ ] 542가 정한 기본안을 팀에서 확인한다. `available_today = max(0, 구간 최소잔액)`, 심각도 구간
-  (부족액/필요금액 0.2·0.5와 잔액 0 이하 CRITICAL), 위험 정렬 심각도 우선. 모두 명세에 값이 없다.
-- [ ] `cashflow_risk.type`의 값 `BALANCE_SHORTAGE`를 ERD 주요 코드값 표에 추가한다.
-
-### 탐지 범위 확대
-
-- [ ] 마이너스통장 한도 여력을 위험 판단에 반영한다. 현재는 현금(`DEMAND_DEPOSIT`)만 보므로 한도가
-  남아 실제로는 결제되는 출금도 부족으로 잡힌다.
-- 근거: 한도 여력은 minusaccount 도메인 정보다. cashflow가 직접 조회하면 도메인 경계를 넘고 테스트
-  범위가 늘어 이번 범위에서 제외했다.
-- 선행 조건: 두 도메인이 공유할 조회 계약(어느 쪽이 제공할지)을 정해야 한다.
-- 완료 조건: 부족액이 잔여 한도 안이면 심각도가 낮아지고, 그 판단 근거가 응답에 드러난다.
-
-- [ ] 탐지 규칙이 `BALANCE_SHORTAGE` 하나뿐이다. 기획안의 적금 납입일 부족 등 개별 시나리오가 유형으로
-  구분되지 않는다. 유형을 나눌지, 나눈다면 이벤트 유형과 어떤 관계인지 정해야 한다.
-- [ ] 심각도에 임박도(기준일로부터의 일수)를 반영할지 정한다. 현재는 부족 비율 한 축만 쓴다.
-- [ ] `available_today`의 구간을 좁힐지 정한다. 현재 예측 구간 전체(기본 90일)의 최소값이라 먼 미래의
-  큰 출금 한 건이 오늘 값을 끌어내린다.
+- [ ] `V5__create_goal.sql`의 번호와 선반영 자체를 BE-A와 확인한다.
+- 근거: `diagnosis.goal_id`가 ERD상 `goal(user_id, goal_id)`를 참조하는데 `goal` 마이그레이션이 없어
+  V17을 만들 수 없었다. V3의 `account` 선례대로 스키마만 먼저 추가했다. BE-A 구간(V1~V9)의 번호를
+  소비했으므로 `db/migration/README.md`의 "구간을 넘겨 써야 하면 담당자와 번호를 확인" 규칙이 걸린다.
+- 완료 조건: BE-A가 V5 번호를 확인하고, Goal API(508~511)가 `goal` 테이블을 다시 만들지 않는다는 것에
+  합의한다. 번호 충돌이 있으면 병합 전에 파일명을 바꾼다.
 
 ### MySQL 검증
 
-- [ ] `/risks`·`/available-today` 두 경로를 MySQL 8.0에서 실행한다. H2 통합 테스트만 수행했다.
-- 근거: 새 마이그레이션과 스키마 변경이 없어 검증할 DDL 변경은 없지만, H2 통과가 MySQL 제약·타입
-  검증을 대신하지 않는다.
-- 완료 조건: 위험 목록의 심각도 정렬과 `available_today` 값을 MySQL 데이터로 확인한다.
+- [x] `V5`·`V17`을 MySQL 8.0.46에서 적용하고 `DiagnosisMySqlIntegrationTest` 3건을 통과시켰다
+  (2026-09-10). `ddl-auto: validate`, `fk_diagnosis_goal`, JSON 컬럼 타입, CHECK 5개를 확인했다.
+- [x] 운영 배포 경로(V16까지 적용된 DB에 V5·V17이 뒤늦게 도착)를 실제 파일로 재현했다. V5가
+  `OUT_OF_ORDER`로 적용되고 FK가 정상 생성되며 재기동에도 문제가 없다.
 
-### 병합 순서
+### 미확정 정책
 
-- [ ] 541(`S15P21D105-541-api-15-cashflow`)이 `develop`에 병합된 뒤에 542를 병합한다. 542 브랜치는
-  `develop`이 아니라 541 tip에서 분기했다.
+- [ ] `rule_version` 표기 규칙을 팀에서 정하고 `DiagnosisRuleVersion.CURRENT`를 교체한다. 현재는 `"v1"`
+  상수이며 cashflow의 `CashflowCalculationVersion`과 같은 상황이다. 두 값의 표기를 함께 정한다.
+- [ ] `diagnosis_issue.domain`과 `type`의 값 집합을 544·545에서 확정하고 ERD 주요 코드값 표에 추가한다.
+  ERD에 목록이 없어 `String`으로 두었다.
+- [ ] `input_snapshot`의 형식과 항목을 544에서 정한다.
+- [ ] 종합 상태(`overall_status`) 판정 규칙을 544에서 정한다. 현재는 호출자가 넘긴 값을 그대로 저장한다.
+- [ ] 544의 진단 실행에서 `goalId` 소유권을 애플리케이션 단계에서 검증한다. 복합 FK
+  `(user_id, goal_id)`가 남의 목표를 막아 주지만 DB까지 가서 막히므로 500이 된다. 400 또는
+  `RESOURCE_NOT_FOUND`로 바꿔야 한다. H2 테스트는 FK가 없어 이 경로를 재현하지 못한다.
+
+### 심각도 enum 통합 여부
+
+- [ ] `diagnosis`의 `IssueSeverity`와 `cashflow`의 `RiskSeverity`를 `global/`로 합칠지 정한다.
+- 근거: 값 집합(`LOW`/`MEDIUM`/`HIGH`/`CRITICAL`)이 같고 ERD 주요 코드값 표의 같은 항목을 가리킨다.
+  한쪽 도메인의 enum을 다른 도메인이 import하면 서로의 코드값 변경에 묶여 별도 enum을 두었다.
+- 선행 조건: cashflow 파일을 건드리면 병합 대기 중인 S15P21D105-542와 충돌한다. 542 병합 후에 판단한다.
+- 완료 조건: 합치기로 했다면 두 도메인이 같은 enum을 쓰고 ERD 코드값 표가 그 사실을 반영한다.
+
+### 실패 상태 표현
+
+- [ ] 진단 실행 실패를 어떻게 표현할지 정한다. ERD `diagnosis`에 상태 컬럼이 없어 실패한 진단이
+  접수된 채 `completed_at` NULL로 남고 진행 중인 진단과 구분되지 않는다.
+- 근거: cashflow는 `ForecastStatus`로 `FAILED`를 남기지만 diagnosis에는 대응 컬럼이 없다.
+- 선행 조건: 컬럼 추가가 필요하면 ERD 변경을 먼저 논의한다.
+- 완료 조건: 실패한 진단을 재시도 판단에서 진행 중인 진단과 구분할 수 있다.
 
 ### Jira 최신 완료 조건 대조
 
-- [ ] 실제 Jira 접근이 가능해지면 최신 542 완료 조건과 구현 범위를 대조한다. 로컬
-  `SPRINT/Jira (4).csv`의 제목·설명만 근거로 범위를 정했다.
+- [ ] 실제 Jira 접근이 가능해지면 최신 543 완료 조건과 구현 범위를 대조한다. 로컬
+  `SPRINT/Jira (4).csv`의 제목(`[API 14] Diagnosis 기반`)과 설명(`Diagnosis·Issue 관계와 실행 골격`)만
+  근거로 범위를 정했다.
