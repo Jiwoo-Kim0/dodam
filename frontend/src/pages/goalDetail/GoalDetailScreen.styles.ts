@@ -61,19 +61,24 @@ export const styles = StyleSheet.create({
     height: 22,
   },
   statusRow: {
-    minHeight: 120,
+    minHeight: 96,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: spacing[3],
+    marginTop: spacing[2],
   },
   statusText: {
     flex: 1,
   },
+  dueDate: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginBottom: spacing[1],
+  },
   dDay: {
     fontFamily: fontFamily.bold,
-    fontSize: 42,
-    lineHeight: 52,
+    fontSize: 38,
+    lineHeight: 46,
     color: colors.textPrimary,
   },
   amountLabel: {
@@ -84,7 +89,7 @@ export const styles = StyleSheet.create({
   amountRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
-    marginTop: spacing[2],
+    marginTop: spacing[1],
   },
   currentAmount: {
     fontFamily: fontFamily.bold,
@@ -95,16 +100,16 @@ export const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   characterImage: {
-    width: spacing[24],
-    height: spacing[24],
+    width: spacing[20],
+    height: spacing[20],
   },
   progressRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing[3],
+    gap: spacing[2],
   },
   progressTrack: {
-    height: spacing[3],
+    height: spacing[2],
     flex: 1,
     overflow: 'hidden',
     borderRadius: spacing[2],

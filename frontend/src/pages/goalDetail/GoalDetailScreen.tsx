@@ -61,7 +61,6 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
     <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
       <AppHeader
         showBackButton
-        subtitle={goal.dueDateLabel}
         title={goal.title}
         titleAccessory={
           <Image
@@ -75,6 +74,7 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
       <BouncyScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.statusRow}>
           <View style={styles.statusText}>
+            <Text style={styles.dueDate}>{goal.dueDateLabel}</Text>
             <Text style={styles.dDay}>{`D-${goal.dDay}`}</Text>
             {goal.type === 'reducing' ? (
               <Text style={styles.amountLabel}>이번 달 소비 현황</Text>
