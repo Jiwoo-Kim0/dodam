@@ -1,8 +1,8 @@
-# Goal API — 목표 CRUD·요약·연결계좌
+# Goal API — 목표 CRUD·요약·연결계좌·계산
 
 JIRA `S15P21D105-455` (D6 Goal 기본 CRUD·계산 API 구현)의 하위 티켓 `S15P21D105-508`(API 12 Goal CRUD),
-`S15P21D105-509`(API 12 목표 연결계좌) 구현 기준이다. API 명세 12 Goal 14개 중 8개를 다룬다.
-진행률·필요 월 저축액·예상 달성일·소비목표 진행률·위험상태(510), 변화 이력(511)은 다음 티켓 범위다.
+`S15P21D105-509`(API 12 목표 연결계좌), `S15P21D105-510`(API 12 목표 진행률·필요 저축액) 구현 기준이다.
+API 명세 12 Goal 14개 중 13개를 다룬다. 변화 이력(511)은 다음 티켓 범위다.
 
 ## 모델
 
@@ -16,8 +16,9 @@ JIRA `S15P21D105-455` (D6 Goal 기본 CRUD·계산 API 구현)의 하위 티켓 
 - FE의 "모으기(saving)"가 SAVING, "줄이기(reducing)"가 SPENDING이다.
 - 세 엔티티는 연관관계 없이 같은 `goal_id`로 서비스가 묶는다. `goal_type` 컬럼은 복합 외래키 `(goal_id, goal_type) → goal(goal_id, type)`을
   위해 항상 부모의 `type`과 같은 값이 들어간다.
-- `current_amount`(모인 금액)는 연결 계좌 잔액 합이다. 연결을 바꾸는 PUT(509)이 갱신하고, 계좌 잔액이 동기화로 바뀐 뒤의 재계산은
-  510(진행률)에서 다룬다. 줄이기 목표는 0으로 둔다.
+- `current_amount`(모인 금액)는 연결 계좌 잔액 합이다. 연결을 바꾸는 PUT(509)과 계산 API(510: progress·required-saving·forecast·risk)를
+  호출할 때마다 다시 계산해 저장값도 갱신한다. 그래서 동기화로 잔액이 바뀐 뒤에도 계산 API를 한 번 부르면 목록·요약의 모인 금액이 맞아진다.
+  줄이기 목표는 0으로 둔다.
 - V5(`goal`)는 543이, V7(`saving_goal`·`spending_goal`)은 507이, V8(`goal_account`)은 509가 만들었다. `goal_history`는 511에서 V9로 추가한다.
 
 ### 상태 전이
@@ -47,13 +48,18 @@ ACHIEVED·CANCELED는 종료 상태다. 어디로도 옮길 수 없고 다른 �
 | DELETE | `/api/v1/goals/{goalId}` | 200 (`data: null`) |
 | GET | `/api/v1/goals/{goalId}/accounts?page&size` | 200 |
 | PUT | `/api/v1/goals/{goalId}/accounts` | 200 |
+| GET | `/api/v1/goals/{goalId}/progress` | 200 (SAVING만) |
+| GET | `/api/v1/goals/{goalId}/required-saving` | 200 (SAVING만) |
+| GET | `/api/v1/goals/{goalId}/forecast?baseDate&months` | 200 (SAVING만) |
+| GET | `/api/v1/goals/{goalId}/spending-progress` | 200 (SPENDING만) |
+| GET | `/api/v1/goals/{goalId}/risk` | 200 |
 
 ### 오류 코드
 
 | 코드 | HTTP | 발생 조건 |
 | --- | --- | --- |
 | `VALIDATION_ERROR` | 400 | 생성 시 `name`·`type` 누락, 이름 150자 초과, 금액 ≤ 0, `goalId` ≤ 0, page/size 범위 밖, 필터 형식 위반 |
-| `INVALID_REQUEST` | 400 | 알 수 없는 유형·상태, 유형에 맞지 않는 필드(아래 표), 목표일이 오늘 이전, 공백만인 이름 |
+| `INVALID_REQUEST` | 400 | 알 수 없는 유형·상태, 유형에 맞지 않는 필드(아래 표), 목표일이 오늘 이전, 공백만인 이름, 모으기 전용 API를 줄이기 목표로(또는 반대로) 호출, `baseDate` 형식 위반 |
 | `NO_FIELDS_TO_UPDATE` | 400 | 수정 Body에 바꿀 필드가 없음 |
 | `GOAL_NOT_EDITABLE` | 409 | 종료 상태(ACHIEVED·CANCELED) 목표 수정 |
 | `GOAL_STATUS_TRANSITION_NOT_ALLOWED` | 409 | 허용되지 않은 상태 전이 |
@@ -138,15 +144,75 @@ ACHIEVED·CANCELED는 종료 상태다. 어디로도 옮길 수 없고 다른 �
 - `contributionAmount`(계좌별 기여 금액)는 명세 Body에 대응 필드가 없어 null로 두고 잔액 전체를 기여로 본다.
 - 응답은 조회와 같은 형태(연결 계좌 전체, 1페이지).
 
+## 계산 (510)
+
+기획안 「모으기 목표 달성 위험」·「줄이기 목표 초과 위험」의 파생 데이터를 구현했다. 모두 조회 시점(`GoalClock`) 기준이다.
+
+| 용어 | 정의 |
+| --- | --- |
+| 현재 확보 금액 `currentAmount` | 연결 계좌 잔액 합(조회 시 다시 계산) |
+| 경과 개월 `monthsElapsed` | 목표 생성일 → 기준일, 최소 1 (첫 달에도 속도를 정의) |
+| 현재 저축속도 `averageMonthlySaving` | currentAmount / monthsElapsed |
+| 남은 개월 `monthsRemaining` | 기준일 → 목표일, 올림. 목표일이 지났으면 0 |
+| 필요 월 저축액 `requiredMonthlySaving` | 남은 금액 / 남은 개월(올림). 남은 개월 0이면 남은 금액 전체 |
+| 기대 진행률 `expectedProgressRatePercent` | 경과 일수 / (생성일→목표일 전체 일수) × 100, 0~100 |
+
+### 진행률 `GET /goals/{goalId}/progress` (SAVING만, 줄이기는 400)
+
+`targetAmount`, `currentAmount`, `remainingAmount`, `progressRatePercent`(100 상한), 기간(`startDate`=생성일, `targetDate`, `asOfDate`,
+`totalDays`, `daysElapsed`, `daysRemaining`), `expectedProgressRatePercent`, `gapPercentPoint`(실제 − 기대), `paceStatus`
+(ACHIEVED / AHEAD ≥ +5pt / ON_TRACK / BEHIND ≤ −5pt), `linkedAccountCount`.
+
+### 필요 월 저축액 `GET /goals/{goalId}/required-saving` (SAVING만)
+
+위 정의대로 `requiredMonthlySaving`, `requiredDailySaving`(남은 금액 / 남은 일수, 올림), `averageMonthlySaving`, `monthlyShortfall`
+(필요 − 속도, 양수면 지금 속도로는 미달), `feasibility`(ACHIEVED / SUFFICIENT / INSUFFICIENT / DEADLINE_PASSED),
+`requiredRatioOfIncomePercent`(필요 월 저축액 / 금융 기본정보 월 소득, 소득이 없으면 null). 기획안 예시 문장
+("매월 약 43만 원의 저축이 필요합니다. 현재 월평균 저축액은 35만 원…")을 이 응답으로 만들 수 있다.
+
+### 예상 달성일 `GET /goals/{goalId}/forecast?baseDate&months` (SAVING만)
+
+- `baseDate`(기본 오늘)에 `monthsToAchieve = ceil(남은 금액 / 저축속도)`개월을 더한 날이 `expectedAchievementDate`.
+  이미 달성했으면 0개월(= baseDate), 속도가 0이면 둘 다 null(현재 속도로는 달성 불가).
+- `daysDifference` = 예상일 − 목표일(음수면 조기 달성), `onSchedule` = 예상일 ≤ 목표일.
+- `projection[]`: baseDate 다음 달부터 `months`개월(기본 12, 1~120) 동안 `min(목표, 현재 + 속도 × n)`과 달성 여부.
+- 속도는 목표 생성 이후 평균이다. 이력(511)이 쌓이면 최근 N개월 속도로 바꿀 수 있다(남은 작업).
+
+### 소비목표 진행률 `GET /goals/{goalId}/spending-progress` (SPENDING만, 모으기는 400)
+
+이번 달 소비(506 정의, 오늘까지)를 월 예산과 비교한다. `spent`, `remainingBudget`, `usageRatePercent`, `dailyBudgetRemaining`(남은 예산 /
+남은 일수, 초과면 0, 남은 날이 없으면 null), `projectedMonthEnd`(소비 × 그 달 일수 / 경과 일수), `previousMonthSpending`,
+`expectedSavingAmount`(= max(0, 전월 소비 − 예상 월말 소비), FE "예상 절감액"), `status`(ON_TRACK < 80% ≤ WARNING ≤ 100% < EXCEEDED).
+`GET /spending/goal-comparison?goalId=`(507)와 같은 숫자를 목표 축으로 돌려준다.
+
+### 위험상태 `GET /goals/{goalId}/risk`
+
+| 유형 | 요인 코드 | 수준 |
+| --- | --- | --- |
+| 공통 | 종료 상태(ACHIEVED·CANCELED) 또는 모으기 목표 달성 | `NONE`, 요인 없음 |
+| SAVING | `DEADLINE_PASSED` 목표일 지남·남은 금액 있음 | HIGH |
+| SAVING | `PACE_INSUFFICIENT` 필요 월 저축액 > 저축속도 | 부족률 ≥ 30% HIGH, 미만 MEDIUM |
+| SAVING | `BEHIND_SCHEDULE` 기대 진행률 − 실제 > 10pt | MEDIUM |
+| SAVING | `NO_LINKED_ACCOUNTS` 연결 계좌 없음 | MEDIUM |
+| SPENDING | `OVER_BUDGET` 누적 소비 > 월 예산 | HIGH |
+| SPENDING | `PACE_EXCEEDS_BUDGET` 예상 월말 소비 > 월 예산 | MEDIUM |
+| 그 외 | — | LOW |
+
+`riskLevel`은 요인 중 가장 높은 수준이고, `metrics`에 판정에 쓴 수치(모으기: 필요·평균 저축액·실제·기대 진행률 / 줄이기: 예산·소비·예상·사용률)를 함께 준다.
+기준값(5pt, 10pt, 30%, 80%)은 `GoalCalculationService` 상수다. 진단(14)이 같은 규칙을 쓰도록 맞추는 일은 남은 작업.
+
 ## 테스트
 
 - `GoalApiIntegrationTest`(14건): 유형별 생성·검증 8종, 목록 정렬·필터·페이지·타인 제외·삭제 제외, 요약 합산(ACTIVE만), 상세·타인 404,
   부분 수정·중복 요청·유형 불일치·검증 실패 시 미반영, 상태 전이 허용/거절·종료 상태 잠금, soft delete.
 - `GoalAccountApiIntegrationTest`(9건): 연결·모인 금액·진행률 갱신, 페이지, 빈 목록, 집합 교체·전체 해제, 같은 집합 idempotent·잔액 재반영,
   유형·상태·소유권·형식 검증 시 미반영, 다른 목표 연결 409·삭제된 목표 이어받기, 줄이기·종료 목표·타인 거절.
+- `GoalCalculationApiIntegrationTest`(10건): 진행률(잔액 재계산·저장, 기대 진행률·BEHIND/AHEAD/ACHIEVED), 필요 저축액(남은 개월 올림, 속도 비교,
+  소득 비율, 목표일 지남), 예상 달성일(속도 기준, 기준일 변경, 속도 0, 파라미터 검증), 소비목표 진행률(숨김 제외, 예상·절감액), 위험 판정(요인·수준·NONE).
+  생성일은 JDBC로 "오늘 − N개월"로 되돌려 날짜 의존을 없앴다.
 - fixture `sql/goal-test-data.sql`이 `goal`·`saving_goal`·`spending_goal`·`goal_account`·`account`를 ERD 컬럼으로 다시 만든다. 507 fixture(`transaction-test-data.sql`)도
   같은 세 테이블을 다시 만들도록 맞췼다(한쪽만 DROP하면 뒤에 실행되는 테스트가 깨진다).
 
 ## 남은 작업
 
-[remaining-work.md](remaining-work.md)의 "S15P21D105-508", "S15P21D105-509" 절에 기록한다.
+[remaining-work.md](remaining-work.md)의 "S15P21D105-508" ~ "S15P21D105-510" 절에 기록한다.
