@@ -32,7 +32,7 @@ export const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    gap: spacing[5],
+    gap: spacing[3],
     paddingBottom: spacing[8],
     paddingHorizontal: semanticSpacing.screenMargin,
     paddingTop: spacing[2],
@@ -119,7 +119,7 @@ export const styles = StyleSheet.create({
   },
   expenseSummaryCard: {
     paddingHorizontal: spacing[5],
-    paddingVertical: spacing[5],
+    paddingVertical: spacing[4],
   },
   cardEyebrow: {
     color: colors.textPrimary,
@@ -130,7 +130,7 @@ export const styles = StyleSheet.create({
   expenseAmount: {
     ...typography.display,
     color: colors.textPrimary,
-    marginTop: spacing[2],
+    marginTop: spacing[1],
   },
   expenseAmountUnit: {
     ...typography.body1,
@@ -142,7 +142,8 @@ export const styles = StyleSheet.create({
     marginTop: spacing[1],
   },
   sectionCard: {
-    padding: spacing[5],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[5],
   },
   sectionTitle: {
     color: colors.textPrimary,
@@ -150,10 +151,16 @@ export const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 22,
   },
+  categorySectionTitle: {
+    color: colors.textPrimary,
+    fontFamily: fontFamily.medium,
+    fontSize: 15,
+    lineHeight: 20,
+  },
   categoryBar: {
     borderRadius: radius.round,
     flexDirection: 'row',
-    height: 16,
+    height: 10,
     marginTop: spacing[3],
     overflow: 'hidden',
     width: '100%',
@@ -162,34 +169,36 @@ export const styles = StyleSheet.create({
     height: '100%',
   },
   categoryLegend: {
-    gap: spacing[3],
+    gap: spacing[1],
     marginTop: spacing[4],
   },
   categoryLegendRow: {
     alignItems: 'center',
     flexDirection: 'row',
+    minHeight: 28,
   },
   categoryLegendDot: {
     borderRadius: radius.round,
-    height: 8,
+    height: 7,
     marginRight: spacing[2],
-    width: 8,
+    width: 7,
   },
   categoryLegendLabel: {
-    ...typography.body1,
-    color: colors.textPrimary,
+    ...typography.body2,
+    color: colors.textSecondary,
     flex: 1,
   },
   categoryLegendAmount: {
-    ...typography.body1,
+    ...typography.body2,
     color: colors.textPrimary,
+    fontFamily: fontFamily.medium,
   },
   glanceSection: {
     gap: spacing[2],
   },
   activityCard: {
-    gap: spacing[8],
-    padding: spacing[5],
+    gap: spacing[5],
+    padding: spacing[4],
   },
   glanceOuterCard: {
     backgroundColor: ledgerColors.softSurface,
@@ -205,9 +214,9 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.white,
     borderRadius: radius.default,
     flex: 1,
-    gap: spacing[2],
+    gap: spacing[1],
     paddingHorizontal: spacing[1],
-    paddingVertical: spacing[4],
+    paddingVertical: spacing[3],
   },
   glanceLabel: {
     ...typography.body2,
@@ -239,18 +248,24 @@ export const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   recentSection: {
-    gap: spacing[3],
+    borderTopColor: colors.divider,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: spacing[2],
+    paddingTop: spacing[4],
   },
   transactionList: {
     backgroundColor: 'transparent',
   },
   recentGroup: {
-    paddingTop: spacing[3],
+    paddingTop: spacing[2],
+  },
+  recentGroupSeparated: {
+    marginTop: spacing[3],
   },
   groupLabel: {
     ...typography.caption,
     color: colors.textTertiary,
-    marginBottom: spacing[2],
+    marginBottom: spacing[1],
     paddingHorizontal: spacing[1],
   },
   transactionRow: {
@@ -263,6 +278,7 @@ export const styles = StyleSheet.create({
   },
   transactionRowCompact: {
     borderBottomWidth: 0,
+    minHeight: 56,
     paddingHorizontal: spacing[1],
   },
   rowPressed: {

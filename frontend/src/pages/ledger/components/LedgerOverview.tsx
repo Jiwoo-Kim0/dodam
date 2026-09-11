@@ -81,7 +81,7 @@ export function LedgerOverview({
         </View>
 
         <View style={[styles.card, styles.sectionCard]}>
-          <Text style={styles.sectionTitle}>카테고리별 소비</Text>
+          <Text style={styles.categorySectionTitle}>카테고리별 소비</Text>
           <View style={styles.categoryBar}>
             {categorySummaries.map((item) => (
               <View
@@ -168,7 +168,7 @@ export function LedgerOverview({
                 ))}
               </View>
 
-              <View style={styles.recentGroup}>
+              <View style={[styles.recentGroup, styles.recentGroupSeparated]}>
                 <Text style={styles.groupLabel}>어제</Text>
                 {yesterdayTransactions.map((transaction) => (
                   <TransactionRow
