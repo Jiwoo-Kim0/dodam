@@ -99,7 +99,7 @@
 
 ### 도메인별 동기화 구현
 
-- [ ] `FinanceSyncScopeHandler` 구현을 도메인별로 등록한다. 현재 등록된 구현이 없어 `POST /finance-data/sync`는 모든 scope를 SKIPPED로 보고하고 `last_synced_at`을 갱신하지 않는다.
+- [ ] `FinanceSyncScopeHandler` 구현을 도메인별로 등록한다. ACCOUNT는 501에서 `AccountSyncHandler`로 등록했다(2026-09-11). CARD·LOAN·SAVING은 구현이 없어 SKIPPED로 보고된다.
 - 담당 근거: 테이블 소유 도메인이 구현한다. ACCOUNT는 BE-A(S15P21D105-501, `Account` 엔티티와 함께), CARD·LOAN·SAVING은 BE-B 영역이다. 새 담당 배정을 의미하지 않는다.
 - 선행 조건: 시연 데이터를 로컬 DB에서 읽는 현재 방식과 금융망 실시간 동기화의 역할 분담을 팀이 정한다. 금융망에서 받은 행은 `source_type = 'SSAFY'`, 시연 데이터는 `SEED`로 구분해 공존시키는 것을 전제로 한다.
 - 완료 조건: scope별 handler가 금융망 조회 → 로컬 upsert를 수행하고, 실행 응답의 `syncedCount`와 `last_synced_at` 갱신을 통합 테스트로 확인한다.
@@ -411,11 +411,12 @@
 - 근거: 2026-09-09 기준 전달받은 API Key가 거래 API에서 `H1008`로 거절돼 실호출 검증이 불가능했고, 마이너스통장 상환(534)이 로컬 잔액만 바꾸므로 금융망 값을 그대로 보이면 상환 결과가 사라진 것처럼 보인다.
 - 완료 조건: 실시간 조회로 정하면 `SsafyFinanceClient`에 잔액 조회를 추가하고 응답에 조회 시각을 싣는다. 로컬로 확정하면 명세의 "SSAFY" 표기를 고친다.
 
-### ACCOUNT 동기화 핸들러
+### 금융망 계좌 목록 실호출 검증
 
-- [ ] `FinanceSyncScopeHandler`의 ACCOUNT 구현이 없어 `POST /finance-data/sync`가 ACCOUNT를 SKIPPED로 보고한다. 금융망 계좌 목록(2.4 계좌 목록 조회)을 `account`에 적재·갱신하는 구현이 필요하다.
-- 선행 조건: 계좌번호 암호화(`FieldCryptor`)·해시(`SensitiveNumberHasher`)·마스킹 규칙을 seed(`DODAM_USER_ACCOUNT_FINANCIAL_PROFILE_SEED.sql`)와 같게 맞춘다. `source_type = 'SEED'` 계좌를 덮어쓰지 않는 규칙(534에서 제기)도 함께 정한다.
-- 완료 조건: 동기화 후 목록·상세·잔액이 금융망 값과 일치하고 `updated_at`이 갱신된다.
+- [x] ACCOUNT 동기화 핸들러(`AccountSyncHandler`)를 구현했다(2026-09-11). 금융망 2.4 계좌 목록 → `account` upsert, SEED·MANUAL 보존, 목록에서 사라진 SSAFY 계좌 CLOSED 처리까지 Mock 기반 통합 테스트로 확인했다.
+- [ ] 실제 금융망 호출로 `inquireDemandDepositAccountList` 응답 필드명·형식(`accountBalance` 문자열, `lastTransactionDate` yyyyMMdd·빈 문자열)을 대조한다. 2026-09-09 기준 API Key가 거래 API에서 `H1008`로 거절돼 실호출 검증을 못 했고, 응답 계약은 금융망 문서 예시를 따랐다.
+- [ ] 계좌가 하나도 없는 사용자에게 금융망이 `REC`를 생략하는지 빈 배열로 주는지 확인한다. 구현은 둘 다 빈 목록으로 해석한다.
+- 완료 조건: 시연 계정으로 `POST /finance-data/sync`(ACCOUNT) 실행 후 목록·상세·잔액이 금융망 값과 일치한다.
 
 ### 부분 매핑 엔티티 교체
 

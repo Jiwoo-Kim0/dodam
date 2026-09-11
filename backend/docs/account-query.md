@@ -63,11 +63,31 @@ API 명세 5 Account 중 세 개를 다룬다. 계좌 요약·거래내역·월�
   "이 잔액이 언제 기준인지"를 FE가 표시할 수 있다.
 - 잔액은 우리 DB 값이다. 명세의 "SSAFY" 표기와의 관계는 아래 남은 작업 참고.
 
-## 데이터 출처
+## 데이터 출처와 ACCOUNT 동기화
 
 세 API는 모두 우리 DB `account`(V3)만 읽는다. 명세는 "SSAFY" 연동으로 표기하지만, 금융망 계좌를 원장에 적재·갱신하는 일은
-Finance Data 동기화(499)의 ACCOUNT scope 구현(`FinanceSyncScopeHandler`)이 맡고 이 API는 그 결과를 조회한다.
+Finance Data 동기화(499)의 ACCOUNT scope 구현 `AccountSyncHandler`가 맡고 이 API는 그 결과를 조회한다.
 카드(8)·대출(10)·예적금(11)이 각자 테이블을 읽는 방식과 같다.
+
+### AccountSyncHandler (`POST /api/v1/finance-data/sync`, scope `ACCOUNT` 또는 `ALL`)
+
+`FinanceSyncScopeHandler`의 ACCOUNT 구현으로, 금융망 2.4 수시입출금 계좌 목록 조회(`inquireDemandDepositAccountList`)를
+호출해 `account`에 반영한다. 이 티켓에서 `SsafyFinanceClient`에 해당 호출을 추가했다.
+
+| 상황 | 처리 | `syncedCount` |
+| --- | --- | --- |
+| 금융망에만 있는 계좌 | INSERT. `source_type = SSAFY`, `status = ACTIVE`, `account_type = DEMAND_DEPOSIT`. 계좌번호는 암호문(`FieldCryptor`)·해시(`SensitiveNumberHasher`)·마스킹(`AccountNumberMasker`)으로만 저장 | +1 |
+| 양쪽에 있고 `source_type = SSAFY` | 은행·계좌명·잔액·최종거래일·통화를 최신 값으로 갱신, CLOSED였으면 ACTIVE로 복귀. 값이 같으면 `updated_at`도 유지 | 바뀐 경우 +1 |
+| 양쪽에 있고 `source_type = SEED / MANUAL` | **덮어쓰지 않는다.** 시연 데이터와 마이너스통장 상환(534) 결과 보존 | 0 |
+| 우리 DB의 SSAFY 출처 DEMAND_DEPOSIT 계좌가 금융망 목록에 없음 | `status = CLOSED`. 다음 동기화에 다시 나타나면 ACTIVE | +1 |
+| 금융망 계좌 목록이 비어 있음 | COMPLETED, 0건. 위 규칙대로 SSAFY 출처 계좌는 CLOSED 처리 | 해지 건수 |
+
+- 금융망 호출과 응답 해석(날짜 `yyyyMMdd`, 필수값 검사)은 트랜잭션 밖에서 끝내고 저장만 트랜잭션을 연다. 응답 한 건이라도
+  깨져 있으면 그 scope 전체가 FAILED고 부분 반영은 없다.
+- 금융망 오류 응답은 502 `FINANCE_API_ERROR`, 네트워크·해석 실패는 503 `FINANCE_API_UNAVAILABLE`의 메시지로 scope 결과
+  `message`에 실린다. 다른 scope는 계속 진행한다(499 규칙).
+- 예금·적금·마이너스통장 행은 이 핸들러가 건드리지 않는다. 금융망의 해당 API는 각 도메인(11, 10-1)이 맡는다.
+- 마스킹 형식: 12자리 이상은 앞 6 + `-**-**` + 뒤 4(`123456-**-**3456`), 그 미만은 앞 3 + `-***-` + 뒤 3.
 
 ## 엔티티
 
@@ -80,11 +100,16 @@ NULL 허용 여부를 검사하지 않고, H2 테스트는 엔티티로 스키�
 
 ## 테스트
 
-`AccountApiIntegrationTest`: 회원가입·로그인으로 실제 토큰을 발급받아 세 API를 호출한다. fixture `sql/account-test-data.sql`이
-V3 컬럼 전체로 `account`를 다시 만든다(다른 도메인 fixture는 컬럼 구성이 다르고, 카드 fixture처럼 `account_no_encrypted`를
-NOT NULL로 두어 읽기 경로가 원문 컬럼에 의존하지 않음을 확인한다).
+- `AccountApiIntegrationTest`: 회원가입·로그인으로 실제 토큰을 발급받아 세 API를 호출한다. fixture `sql/account-test-data.sql`이
+  V3 컬럼 전체로 `account`를 다시 만든다(다른 도메인 fixture는 컬럼 구성이 다르고, 카드 fixture처럼 `account_no_encrypted`를
+  NOT NULL로 두어 읽기 경로가 원문 컬럼에 의존하지 않음을 확인한다).
+- `AccountSyncIntegrationTest`: 금융망 Mock으로 `POST /finance-data/sync`(ACCOUNT)를 실행해 추가·갱신·해지·복귀, SEED 보존,
+  빈 목록, 금융망 오류·해석 실패 시 부분 반영 없음을 계좌 API로 확인한다. 저장된 암호문을 복호화해 원문과 대조한다.
+- `RestSsafyFinanceClientTest`: 계좌 목록 호출의 Header·경로와 REC 배열·REC 없음·REC 객체 응답 해석.
+- `AccountNumberMaskerTest`: 마스킹 형식.
+- `FinanceDataApiIntegrationTest`의 ACCOUNT 스텁은 제거했다. 이제 실제 핸들러가 돌고 Mock 계좌 3건으로 `syncedCount = 3`을 만든다.
 
 ## 남은 작업
 
 [remaining-work.md](remaining-work.md)의 "S15P21D105-501" 절에 기록한다. 요약하면 금융망 잔액 실시간 조회 여부,
-ACCOUNT 동기화 핸들러, 부분 매핑 엔티티 교체, MySQL 실검증이다.
+금융망 실호출 검증(API Key), 부분 매핑 엔티티 교체, MySQL 실검증이다.

@@ -89,7 +89,7 @@ MySQL은 부분 유니크 인덱스가 없어 "사용자당 RUNNING 1행"을 DB 
 - `userKey` 원문을 로그·응답·DB에 남기지 않는다.
 - 같은 scope 구현이 둘이면 기동에 실패한다. ALL을 대상으로 하는 구현은 등록할 수 없다.
 
-**2026-09-09 기준 등록된 구현은 없다.** 현재 팀 규칙상 계좌·카드·대출 데이터는 사전 생성된 시연 데이터를 로컬 DB에서 읽으므로(카드·대출 구현 문서의 「외부 연동 경계」), 동기화는 모든 scope를 SKIPPED로 보고하고 `last_synced_at`을 갱신하지 않는다. ACCOUNT 구현은 Account 도메인(`S15P21D105-501`)에서 `Account` 엔티티와 함께 추가할 예정이다.
+**2026-09-11 기준 ACCOUNT만 등록되어 있다** (`domain/account/service/AccountSyncHandler`, S15P21D105-501 — 규칙은 [account-query.md](account-query.md)). CARD·LOAN·SAVING은 아직 구현이 없어 SKIPPED로 보고된다. 현재 팀 규칙상 카드·대출·예적금 데이터는 사전 생성된 시연 데이터를 로컬 DB에서 읽는다(카드·대출 구현 문서의 「외부 연동 경계」). 시연 계좌(`source_type = SEED`)는 ACCOUNT 동기화가 덮어쓰지 않는다.
 
 ## 통합 요약 (500)
 
