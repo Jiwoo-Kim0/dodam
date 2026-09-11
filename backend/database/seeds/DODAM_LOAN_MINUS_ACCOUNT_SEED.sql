@@ -80,8 +80,9 @@
 -- the same TEMPORARY table more than once. Preflight metric collection and the
 -- verification summary are therefore split into single-reference statements, and
 -- the digit source for the 4,000-user cohort is an inline derived table instead
--- of a TEMPORARY table. The 491 and 522 seeds still use the multi-reference
--- form; verified on MySQL 8.0.46, 491 aborts on it before writing any rows.
+-- of a TEMPORARY table. The 491, 522, 492, 493 and subscription seeds keep the
+-- multi-reference form but use regular (non-TEMPORARY) scratch tables instead,
+-- dropped in their cleanup sections (see seeds/README.md).
 
 SET NAMES utf8mb4;
 SET time_zone = '+09:00';

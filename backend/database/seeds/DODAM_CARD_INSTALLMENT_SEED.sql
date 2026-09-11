@@ -10,11 +10,11 @@
 -- ----------------------
 -- This file never creates card/account-number plaintext, guesses an encryption
 -- envelope, or stores encryption/HMAC keys. Before sourcing this file, the same
--- MySQL session must contain both application-generated temporary tables below.
+-- MySQL session must contain both application-generated scratch tables (regular tables, not TEMPORARY) below.
 --
 -- 1. The 491 demand-deposit account natural keys:
 --
---   CREATE TEMPORARY TABLE tmp_dodam_522_account_keys (
+--   CREATE TABLE tmp_dodam_522_account_keys (
 --     user_email VARCHAR(255) NOT NULL PRIMARY KEY,
 --     account_no_hash CHAR(64) NOT NULL
 --   );
@@ -25,7 +25,7 @@
 --
 -- 2. Card-number crypto fixtures:
 --
---   CREATE TEMPORARY TABLE tmp_dodam_522_card_crypto (
+--   CREATE TABLE tmp_dodam_522_card_crypto (
 --     seed_card_code VARCHAR(50) NOT NULL PRIMARY KEY,
 --     card_no_encrypted VARBINARY(512) NOT NULL,
 --     card_no_hash CHAR(64) NOT NULL,
@@ -48,11 +48,19 @@
 -- when the existing finance_products SQL has been loaded. The ERD permits NULL,
 -- so Card/Installment seed execution does not depend on product-catalog loading.
 
+-- MySQL TEMPORARY-table constraint
+-- --------------------------------
+-- MySQL raises ER_CANT_REOPEN_TABLE (1137) when a single statement references
+-- the same TEMPORARY table more than once (self joins, two scalar subqueries,
+-- EXISTS gates). This file's scratch tables (tmp_dodam_*) and the application
+-- fixture tables above are therefore regular tables, not TEMPORARY, and the
+-- cleanup section at the end drops them all. Verified on MySQL 8.0.46.
+--
 SET NAMES utf8mb4;
 SET time_zone = '+09:00';
 
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_522_digit;
-CREATE TEMPORARY TABLE tmp_dodam_522_digit (
+DROP TABLE IF EXISTS tmp_dodam_522_digit;
+CREATE TABLE tmp_dodam_522_digit (
   digit TINYINT NOT NULL,
   PRIMARY KEY (digit),
   CHECK (digit BETWEEN 0 AND 9)
@@ -61,8 +69,8 @@ CREATE TEMPORARY TABLE tmp_dodam_522_digit (
 INSERT INTO tmp_dodam_522_digit (digit)
 VALUES (0), (1), (2), (3), (4), (5), (6), (7), (8), (9);
 
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_522_users;
-CREATE TEMPORARY TABLE tmp_dodam_522_users (
+DROP TABLE IF EXISTS tmp_dodam_522_users;
+CREATE TABLE tmp_dodam_522_users (
   sequence_no INT NOT NULL,
   synthetic_user_code CHAR(5) NOT NULL,
   user_email VARCHAR(255) NOT NULL,
@@ -95,8 +103,8 @@ FROM (
 ) numbers
 WHERE numbers.sequence_no BETWEEN 1 AND 4000;
 
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_522_expected_cards;
-CREATE TEMPORARY TABLE tmp_dodam_522_expected_cards (
+DROP TABLE IF EXISTS tmp_dodam_522_expected_cards;
+CREATE TABLE tmp_dodam_522_expected_cards (
   seed_card_code VARCHAR(50) NOT NULL,
   sequence_no INT NOT NULL,
   user_email VARCHAR(255) NOT NULL,
@@ -251,8 +259,8 @@ SELECT
 FROM tmp_dodam_522_users seed
 WHERE MOD(seed.sequence_no, 2) = 0;
 
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_522_expected_installments;
-CREATE TEMPORARY TABLE tmp_dodam_522_expected_installments (
+DROP TABLE IF EXISTS tmp_dodam_522_expected_installments;
+CREATE TABLE tmp_dodam_522_expected_installments (
   seed_installment_code VARCHAR(60) NOT NULL,
   seed_card_code VARCHAR(50) NOT NULL,
   merchant_name VARCHAR(255) NOT NULL,
@@ -372,8 +380,8 @@ SELECT
 FROM tmp_dodam_522_users seed
 WHERE MOD(seed.sequence_no, 4) = 0;
 
-DROP TEMPORARY TABLE IF EXISTS tmp_dodam_522_preflight;
-CREATE TEMPORARY TABLE tmp_dodam_522_preflight (
+DROP TABLE IF EXISTS tmp_dodam_522_preflight;
+CREATE TABLE tmp_dodam_522_preflight (
   ready TINYINT NOT NULL,
   expected_user_count INT NOT NULL,
   persisted_user_count INT NOT NULL,
@@ -805,3 +813,14 @@ SELECT
 FROM `card` card_row
 JOIN tmp_dodam_522_card_crypto crypto
   ON LOWER(crypto.card_no_hash) = card_row.card_no_hash;
+
+-- ---------------------------------------------------------------------------
+-- cleanup: scratch tables and application fixture tables (regular tables; see header)
+-- ---------------------------------------------------------------------------
+DROP TABLE IF EXISTS tmp_dodam_522_account_keys;
+DROP TABLE IF EXISTS tmp_dodam_522_card_crypto;
+DROP TABLE IF EXISTS tmp_dodam_522_digit;
+DROP TABLE IF EXISTS tmp_dodam_522_expected_cards;
+DROP TABLE IF EXISTS tmp_dodam_522_expected_installments;
+DROP TABLE IF EXISTS tmp_dodam_522_preflight;
+DROP TABLE IF EXISTS tmp_dodam_522_users;
