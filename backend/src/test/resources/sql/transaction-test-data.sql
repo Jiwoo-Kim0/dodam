@@ -64,6 +64,8 @@ INSERT INTO transaction_category (category_id, code, name, default_spending_type
     (950, 'NO_DEFAULT', '기본 소비유형 없음', NULL, TRUE);
 
 -- 507 소비목표 비교: goal(V5)·spending_goal(V7)을 ERD 컬럼으로 만든다. Goal 엔티티가 아직 없어 H2에 없는 테이블이다.
+DROP TABLE IF EXISTS goal_history;
+DROP TABLE IF EXISTS goal_account;
 DROP TABLE IF EXISTS spending_goal;
 DROP TABLE IF EXISTS saving_goal;
 DROP TABLE IF EXISTS goal;
@@ -90,4 +92,15 @@ CREATE TABLE spending_goal (
     CONSTRAINT chk_test_spending_goal_type CHECK (goal_type = 'SPENDING'),
     CONSTRAINT chk_test_spending_goal_budget CHECK (monthly_budget > 0),
     CONSTRAINT fk_test_spending_goal_goal FOREIGN KEY (goal_id, goal_type) REFERENCES goal (goal_id, type)
+);
+
+-- Goal 엔티티(508)가 이 테이블도 쓰므로 DROP만 하고 끝내지 않는다.
+CREATE TABLE saving_goal (
+    goal_id BIGINT PRIMARY KEY,
+    goal_type VARCHAR(20) NOT NULL,
+    target_amount BIGINT NOT NULL,
+    target_date DATE NOT NULL,
+    CONSTRAINT chk_test_saving_goal_type CHECK (goal_type = 'SAVING'),
+    CONSTRAINT chk_test_saving_goal_target CHECK (target_amount > 0),
+    CONSTRAINT fk_test_saving_goal_goal FOREIGN KEY (goal_id, goal_type) REFERENCES goal (goal_id, type)
 );

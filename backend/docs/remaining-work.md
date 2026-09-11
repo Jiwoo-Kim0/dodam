@@ -637,3 +637,83 @@
 ### MySQL 검증
 
 - [ ] V7 적용과 `JdbcSpendingAnalysisReader`의 SQL(spending_type별 월·카테고리 집계, goal JOIN spending_goal)을 MySQL 8.0에서 실행한다. H2만 확인했다.
+
+## S15P21D105-508 — Goal CRUD
+
+구현 계약: [goal.md](goal.md)
+
+### 명세 Body와 ERD의 불일치(줄이기 목표)
+
+- [ ] 명세 12 생성 Body는 `targetAmount`·`targetDate` 필수, `monthlyBudget` 선택인데 ERD `spending_goal`에는 `monthly_budget`만 있다. 줄이기(SPENDING) 목표에 목표 금액·목표일이 오면 400으로 거절하도록 구현했다. FE 목표 설정 화면(481·485)이 줄이기 목표에도 금액·기한을 받는다면 ERD에 컬럼을 추가하거나 명세를 고쳐야 한다.
+- 완료 조건: 명세 12 Body 정의와 ERD·구현이 일치한다.
+
+### 달성 자동 전이
+
+- [ ] 모인 금액이 목표 금액에 도달해도 상태는 ACTIVE로 남는다(510은 `paceStatus = ACHIEVED`, `riskLevel = NONE`으로만 알린다). 자동 ACHIEVED 전이를 넣을지, 사용자가 확인 후 PATCH로 바꾸게 둘지 팀 결정. 자유입출금 계좌는 잔액이 다시 줄 수 있어 자동 전이가 되돌아가는 문제가 있다.
+
+### 삭제 시 연결 해제
+
+- [x] 509에서 처리 방식을 정했다: 목표 soft delete 시 `goal_account` 행은 남기되, 다른 목표가 그 계좌를 연결하면 삭제된 목표의 연결을 해제하고 이어받는다(`GoalAccountService.replaceAccounts`). 삭제 시점에 바로 지우지 않은 이유는 삭제된 목표의 이력(511)이 연결 계좌를 참조할 수 있기 때문이다.
+
+### MySQL 검증
+
+- [ ] `Goal`·`SavingGoal`·`SpendingGoal` 엔티티가 V5·V7 DDL과 `ddl-auto: validate`를 통과하는지 MySQL 8.0에서 확인한다. H2만 확인했다.
+
+## S15P21D105-509 — 목표 연결계좌
+
+구현 계약: [goal.md](goal.md) "연결계좌"
+
+### 계좌 잔액 변경 시 모인 금액 재계산
+
+- [x] 510에서 처리했다: progress·required-saving·forecast·risk가 조회 시점에 연결 계좌 잔액 합으로 다시 계산하고 `goal.current_amount`도 갱신한다. 목록·요약(508)은 저장값을 그대로 쓰므로 계산 API를 한 번 부른 뒤에 맞아진다.
+- [ ] 목록·요약도 실시간으로 맞추려면 ACCOUNT 동기화(502) 뒤에 사용자 목표를 갱신하는 훅이 필요하다. 동기화 응답 시간에 영향이 있어 팀 결정으로 남긴다.
+
+### 기여 금액(contribution_amount)
+
+- [ ] 명세 Body가 `accountNos[]`만 받아 계좌별 기여 금액을 지정할 수 없다. 급여통장처럼 잔액 일부만 목표에 쓰는 경우를 위해 ERD가 둔 컬럼이다. FE에 입력 UI가 생기면 Body를 `[{accountNo, contributionAmount?}]`로 바꾸고 모인 금액 계산에 반영한다.
+
+### MySQL 검증
+
+- [ ] V8 적용(복합 외래키 3개: goal, saving_goal, account)과 `GoalAccount` 엔티티(`@IdClass`)의 `ddl-auto: validate` 통과를 MySQL 8.0에서 확인한다. H2 fixture는 외래키 없이 만들었다.
+
+## S15P21D105-510 — 목표 진행률·필요 저축액
+
+구현 계약: [goal.md](goal.md) "계산"
+
+### 저축속도 정의
+
+- [ ] 현재 저축속도를 "확보 금액 / 목표 생성 후 경과 개월(최소 1)"로 정의했다. 생성 전부터 있던 계좌 잔액이 첫 달 속도에 그대로 잡혀 과대평가된다(기획안 예시의 "현재 월평균 저축액"은 최근 저축 흐름을 뜻한다).
+- 완료 조건: 이력(511, `goal_history`)이 쌓이면 최근 3개월 `current_amount` 증분의 평균으로 바꾼다. 그 전까지는 현재 정의를 쓴다.
+
+### 위험 판정 기준값
+
+- [ ] 페이스 허용 ±5pt, 일정 지연 10pt, 속도 부족률 30%, 예산 경고 80%는 기본값이다. 진단(14 Diagnosis)의 "모으기 목표 달성 위험"·"줄이기 목표 초과 위험" 이슈가 같은 기준을 쓰도록 543 담당과 맞춘다. 543의 `diagnosis_issue` 심각도 enum과 `riskLevel`(LOW/MEDIUM/HIGH) 대응도 정한다.
+
+### 자유입출금 출금 경고
+
+- [ ] 기획안 "자유입출금통장의 경우 출금을 할 경우 경고메시지 출력"은 구현하지 않았다. 511 이력(`AMOUNT_UPDATED`의 `current_amount` 감소)으로 감지할 수 있게 됐으니, 위험 요인 `BALANCE_DECREASED`를 추가할지 정한다.
+
+### MySQL 검증
+
+- [ ] 계산 API는 새 SQL이 없다(엔티티 조회 + 507 reader 재사용). V8 검증(509 절)과 함께 확인한다.
+
+## S15P21D105-511 — 목표 예측·위험·이력
+
+구현 계약: [goal.md](goal.md) "변화 이력"
+
+### 티켓 범위
+
+- [ ] 511 제목의 "예측·위험"은 510(`forecast`, `risk`)에서 이미 구현했고 511에서는 `goal_history`(V9)와 이력 조회·기록만 추가했다. Jira 하위 태스크 설명과 다르면 재배치한다.
+
+### 주기적 스냅샷
+
+- [ ] 이력은 사용자 행동(생성·수정·연결·계산 API 호출)이 있을 때만 남는다. 아무 호출이 없는 달에는 행이 없어 "월별 진행 추이" 차트(FE `GoalHistoryPoint`)에 빈 달이 생긴다.
+- 완료 조건: 일 1회(또는 ACCOUNT 동기화 뒤) 모으기 목표의 `AMOUNT_UPDATED` 스냅샷을 남기는 스케줄러를 두거나, FE가 빈 달을 직전 값으로 채우기로 정한다.
+
+### 저축속도 재정의(510 절 후속)
+
+- [ ] 이력이 쌓이면 저축속도를 "최근 3개월 `current_amount` 증분 평균"으로 바꾼다(510 절 "저축속도 정의"). 지금은 생성 이후 평균이다.
+
+### MySQL 검증
+
+- [ ] V9 적용과 `GoalHistory` 엔티티(`DECIMAL(10,4)`↔`BigDecimal`)의 `ddl-auto: validate` 통과를 MySQL 8.0에서 확인한다.
