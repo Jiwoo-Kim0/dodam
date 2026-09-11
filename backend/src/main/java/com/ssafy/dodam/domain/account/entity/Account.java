@@ -10,6 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Objects;
 
 /**
  * ERD `account`(V3). 계좌 도메인이 소유하는 정식 매핑이다.
@@ -82,6 +83,144 @@ public class Account {
     private LocalDateTime updatedAt;
 
     protected Account() {
+    }
+
+    private Account(
+            Long userId,
+            String bankCode,
+            String bankName,
+            byte[] accountNoEncrypted,
+            String accountNoHash,
+            String accountNoMasked,
+            String accountName,
+            AccountType accountType,
+            long balance,
+            LocalDate lastTransactionDate,
+            String currency,
+            AccountSourceType sourceType,
+            LocalDateTime now
+    ) {
+        this.userId = userId;
+        this.bankCode = bankCode;
+        this.bankName = bankName;
+        this.accountNoEncrypted = accountNoEncrypted;
+        this.accountNoHash = accountNoHash;
+        this.accountNoMasked = accountNoMasked;
+        this.accountName = accountName;
+        this.accountType = accountType;
+        this.status = AccountStatus.ACTIVE;
+        this.balance = balance;
+        this.lastTransactionDate = lastTransactionDate;
+        this.currency = currency;
+        this.sourceType = sourceType;
+        this.createdAt = now;
+        this.updatedAt = now;
+    }
+
+    /**
+     * 금융망에서 처음 확인된 계좌를 만든다. 상태는 ACTIVE, 출처는 SSAFY다.
+     * 계좌번호 원문은 받지 않는다. 암호문·해시·마스킹은 호출자가 만들어 넘긴다.
+     */
+    public static Account fromFinance(
+            Long userId,
+            FinanceSnapshot snapshot,
+            byte[] accountNoEncrypted,
+            String accountNoHash,
+            String accountNoMasked,
+            LocalDateTime now
+    ) {
+        return new Account(
+                userId,
+                snapshot.bankCode(),
+                snapshot.bankName(),
+                accountNoEncrypted,
+                accountNoHash,
+                accountNoMasked,
+                snapshot.accountName(),
+                snapshot.accountType(),
+                snapshot.balance(),
+                snapshot.lastTransactionDate(),
+                snapshot.currency(),
+                AccountSourceType.SSAFY,
+                now
+        );
+    }
+
+    /**
+     * 금융망 최신 값을 반영한다. 금융망에 다시 나타난 계좌는 CLOSED였더라도 ACTIVE로 되돌린다.
+     *
+     * @return 실제로 값이 바뀌었으면 true. 같은 값이면 updated_at도 건드리지 않는다.
+     */
+    public boolean applyFinanceSnapshot(FinanceSnapshot snapshot, LocalDateTime now) {
+        boolean changed = false;
+        if (!Objects.equals(this.bankCode, snapshot.bankCode())) {
+            this.bankCode = snapshot.bankCode();
+            changed = true;
+        }
+        if (!Objects.equals(this.bankName, snapshot.bankName())) {
+            this.bankName = snapshot.bankName();
+            changed = true;
+        }
+        if (!Objects.equals(this.accountName, snapshot.accountName())) {
+            this.accountName = snapshot.accountName();
+            changed = true;
+        }
+        if (this.accountType != snapshot.accountType()) {
+            this.accountType = snapshot.accountType();
+            changed = true;
+        }
+        if (this.balance != snapshot.balance()) {
+            this.balance = snapshot.balance();
+            changed = true;
+        }
+        if (!Objects.equals(this.lastTransactionDate, snapshot.lastTransactionDate())) {
+            this.lastTransactionDate = snapshot.lastTransactionDate();
+            changed = true;
+        }
+        if (!Objects.equals(this.currency, snapshot.currency())) {
+            this.currency = snapshot.currency();
+            changed = true;
+        }
+        if (this.status != AccountStatus.ACTIVE) {
+            this.status = AccountStatus.ACTIVE;
+            changed = true;
+        }
+        if (changed) {
+            this.updatedAt = now;
+        }
+        return changed;
+    }
+
+    /**
+     * 금융망 목록에서 사라진 계좌를 해지 처리한다.
+     *
+     * @return 상태가 실제로 바뀌었으면 true.
+     */
+    public boolean close(LocalDateTime now) {
+        if (this.status == AccountStatus.CLOSED) {
+            return false;
+        }
+        this.status = AccountStatus.CLOSED;
+        this.updatedAt = now;
+        return true;
+    }
+
+    public boolean isFromFinance() {
+        return this.sourceType == AccountSourceType.SSAFY;
+    }
+
+    /**
+     * 금융망 응답에서 계좌번호를 뺀 값. 엔티티가 원문 문자열을 다루지 않게 하기 위한 경계다.
+     */
+    public record FinanceSnapshot(
+            String bankCode,
+            String bankName,
+            String accountName,
+            AccountType accountType,
+            long balance,
+            LocalDate lastTransactionDate,
+            String currency
+    ) {
     }
 
     public Long getId() {

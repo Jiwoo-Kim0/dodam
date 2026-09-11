@@ -26,6 +26,15 @@ public interface SsafyFinanceClient {
     SsafyMember searchMember(String email);
 
     /**
+     * 2.4 수시입출금 계좌 목록 조회 (inquireDemandDepositAccountList). 사용자 단위 API.
+     * 계좌가 없으면 빈 목록을 돌려준다.
+     *
+     * @throws SsafyApiException H1009(USER_KEY 무효) 등 금융망 오류 응답
+     * @throws SsafyUnavailableException 네트워크 오류·응답 해석 불가
+     */
+    List<SsafyDemandDepositAccount> inquireDemandDepositAccountList(String userKey);
+
+    /**
      * 2.7.4 내 신용등급 조회 (inquireMyCreditRating). 사용자 단위 API.
      *
      * @throws SsafyApiException H1009(USER_KEY 무효) 등 금융망 오류 응답
