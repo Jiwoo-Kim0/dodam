@@ -1,8 +1,7 @@
-import { SymbolView } from 'expo-symbols';
 import { Pressable, Text, View } from 'react-native';
 
+import { AppHeader } from '@/components/appHeader/AppHeader';
 import { BouncyScrollView } from '@/components/bouncyScrollView/BouncyScrollView';
-import { colors } from '@/styles';
 import type {
   LedgerCategory,
   LedgerCategorySummary,
@@ -56,27 +55,13 @@ export function LedgerOverview({
 
   return (
     <View style={styles.fill}>
-      <View style={styles.overviewTopRow}>
-        <Pressable
-          accessibilityLabel="홈으로 이동"
-          accessibilityRole="button"
-          hitSlop={8}
-          onPress={onBackPress}
-          style={({ pressed }) => [
-            styles.overviewBackButton,
-            pressed && styles.headerAddButtonPressed,
-          ]}>
-          <SymbolView
-            name={{ android: 'arrow_back', ios: 'chevron.left', web: 'arrow_back' }}
-            size={24}
-            tintColor={colors.textPrimary}
-          />
-        </Pressable>
-      </View>
+      <AppHeader
+        onBackPress={onBackPress}
+        showBackButton
+        title="가계부"
+      />
 
       <BouncyScrollView contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.overviewTitle}>가계부</Text>
-
         <MonthSelector
           month={month}
           onNext={onNextMonth}

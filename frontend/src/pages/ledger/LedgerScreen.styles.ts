@@ -2,7 +2,6 @@ import { StyleSheet } from 'react-native';
 
 import {
   colors,
-  componentSize,
   fontFamily,
   radius,
   semanticSpacing,
@@ -36,28 +35,10 @@ export const styles = StyleSheet.create({
     gap: spacing[5],
     paddingBottom: spacing[8],
     paddingHorizontal: semanticSpacing.screenMargin,
-  },
-  overviewTopRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    minHeight: componentSize.touchTarget,
-    paddingHorizontal: semanticSpacing.screenMargin,
-  },
-  overviewBackButton: {
-    alignItems: 'flex-start',
-    height: componentSize.touchTarget,
-    justifyContent: 'center',
-    width: componentSize.touchTarget,
+    paddingTop: spacing[2],
   },
   headerAddButtonPressed: {
     opacity: 0.82,
-  },
-  overviewTitle: {
-    ...typography.headline,
-    color: colors.textPrimary,
-    marginTop: spacing[2],
-    marginBottom: spacing[1],
   },
   centeredHeader: {
     alignItems: 'center',
