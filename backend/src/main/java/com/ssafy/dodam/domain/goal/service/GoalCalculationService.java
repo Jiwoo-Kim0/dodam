@@ -9,6 +9,7 @@ import com.ssafy.dodam.domain.goal.dto.response.RequiredSavingResponse;
 import com.ssafy.dodam.domain.goal.dto.response.SpendingGoalProgressResponse;
 import com.ssafy.dodam.domain.goal.entity.Goal;
 import com.ssafy.dodam.domain.goal.entity.GoalAccount;
+import com.ssafy.dodam.domain.goal.entity.GoalHistoryEvent;
 import com.ssafy.dodam.domain.goal.entity.GoalType;
 import com.ssafy.dodam.domain.goal.entity.SavingGoal;
 import com.ssafy.dodam.domain.goal.entity.SpendingGoal;
@@ -64,6 +65,7 @@ public class GoalCalculationService {
     private final AccountRepository accountRepository;
     private final FinancialProfileRepository financialProfileRepository;
     private final JdbcSpendingAnalysisReader spendingAnalysisReader;
+    private final GoalHistoryRecorder goalHistoryRecorder;
     private final GoalClock goalClock;
 
     public GoalCalculationService(
@@ -74,6 +76,7 @@ public class GoalCalculationService {
             AccountRepository accountRepository,
             FinancialProfileRepository financialProfileRepository,
             JdbcSpendingAnalysisReader spendingAnalysisReader,
+            GoalHistoryRecorder goalHistoryRecorder,
             GoalClock goalClock
     ) {
         this.goalRepository = goalRepository;
@@ -83,6 +86,7 @@ public class GoalCalculationService {
         this.accountRepository = accountRepository;
         this.financialProfileRepository = financialProfileRepository;
         this.spendingAnalysisReader = spendingAnalysisReader;
+        this.goalHistoryRecorder = goalHistoryRecorder;
         this.goalClock = goalClock;
     }
 
@@ -301,8 +305,11 @@ public class GoalCalculationService {
                 : accountRepository.findAllById(links.stream().map(GoalAccount::getAccountId).toList()).stream()
                         .mapToLong(Account::getBalance)
                         .sum();
-        // 동기화로 계좌 잔액이 바뀐 뒤에도 저장된 모인 금액이 실제와 맞게 유지되도록 조회 시점에 갱신한다
-        goal.updateCurrentAmount(Math.max(0L, current), goalClock.now());
+        // 동기화로 계좌 잔액이 바뀐 뒤에도 저장된 모인 금액이 실제와 맞게 유지되도록 조회 시점에 갱신하고, 바뀌었으면 이력을 남긴다
+        LocalDateTime now = goalClock.now();
+        if (goal.updateCurrentAmount(Math.max(0L, current), now)) {
+            goalHistoryRecorder.record(goal, savingGoal, GoalHistoryEvent.AMOUNT_UPDATED, now);
+        }
 
         return new SavingContext(goal, savingGoal, Math.max(0L, current), links.size(), today);
     }

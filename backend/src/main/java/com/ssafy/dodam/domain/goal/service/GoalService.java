@@ -5,6 +5,7 @@ import com.ssafy.dodam.domain.goal.dto.request.UpdateGoalRequest;
 import com.ssafy.dodam.domain.goal.dto.response.GoalResponse;
 import com.ssafy.dodam.domain.goal.dto.response.GoalSummaryResponse;
 import com.ssafy.dodam.domain.goal.entity.Goal;
+import com.ssafy.dodam.domain.goal.entity.GoalHistoryEvent;
 import com.ssafy.dodam.domain.goal.entity.GoalStatus;
 import com.ssafy.dodam.domain.goal.entity.GoalType;
 import com.ssafy.dodam.domain.goal.entity.SavingGoal;
@@ -60,17 +61,20 @@ public class GoalService {
     private final GoalRepository goalRepository;
     private final SavingGoalRepository savingGoalRepository;
     private final SpendingGoalRepository spendingGoalRepository;
+    private final GoalHistoryRecorder goalHistoryRecorder;
     private final GoalClock goalClock;
 
     public GoalService(
             GoalRepository goalRepository,
             SavingGoalRepository savingGoalRepository,
             SpendingGoalRepository spendingGoalRepository,
+            GoalHistoryRecorder goalHistoryRecorder,
             GoalClock goalClock
     ) {
         this.goalRepository = goalRepository;
         this.savingGoalRepository = savingGoalRepository;
         this.spendingGoalRepository = spendingGoalRepository;
+        this.goalHistoryRecorder = goalHistoryRecorder;
         this.goalClock = goalClock;
     }
 
@@ -175,6 +179,7 @@ public class GoalService {
         } else {
             spendingGoal = spendingGoalRepository.save(SpendingGoal.create(goal.getId(), request.monthlyBudget()));
         }
+        goalHistoryRecorder.record(goal, savingGoal, GoalHistoryEvent.GOAL_CREATED, now);
         return GoalResponse.from(goal, savingGoal, spendingGoal, now.toLocalDate());
     }
 
@@ -224,11 +229,11 @@ public class GoalService {
         if (spendingGoal != null && spendingGoal.update(request.monthlyBudget())) {
             changed = true;
         }
-        if (nextStatus != null) {
-            changed |= goal.changeStatus(nextStatus, now);
-        }
-        if (changed) {
+        boolean statusChanged = nextStatus != null && goal.changeStatus(nextStatus, now);
+        if (changed || statusChanged) {
             goal.touch(now);
+            goalHistoryRecorder.record(goal, savingGoal,
+                    statusChanged ? GoalHistoryEvent.STATUS_CHANGED : GoalHistoryEvent.GOAL_UPDATED, now);
         }
         return GoalResponse.from(goal, savingGoal, spendingGoal, now.toLocalDate());
     }
@@ -236,7 +241,11 @@ public class GoalService {
     // ---------- 삭제 ----------
 
     public void delete(Long userId, Long goalId) {
-        findOwned(userId, goalId).delete(goalClock.now());
+        Goal goal = findOwned(userId, goalId);
+        LocalDateTime now = goalClock.now();
+        goal.delete(now);
+        goalHistoryRecorder.record(goal, savingGoalRepository.findById(goal.getId()).orElse(null),
+                GoalHistoryEvent.GOAL_DELETED, now);
     }
 
     // ---------- helpers ----------

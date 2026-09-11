@@ -5,6 +5,7 @@ import com.ssafy.dodam.domain.goal.dto.request.UpdateGoalAccountsRequest;
 import com.ssafy.dodam.domain.goal.dto.request.UpdateGoalRequest;
 import com.ssafy.dodam.domain.goal.dto.response.GoalAccountsResponse;
 import com.ssafy.dodam.domain.goal.dto.response.GoalForecastResponse;
+import com.ssafy.dodam.domain.goal.dto.response.GoalHistoryResponse;
 import com.ssafy.dodam.domain.goal.dto.response.GoalProgressResponse;
 import com.ssafy.dodam.domain.goal.dto.response.GoalResponse;
 import com.ssafy.dodam.domain.goal.dto.response.GoalRiskResponse;
@@ -13,6 +14,7 @@ import com.ssafy.dodam.domain.goal.dto.response.RequiredSavingResponse;
 import com.ssafy.dodam.domain.goal.dto.response.SpendingGoalProgressResponse;
 import com.ssafy.dodam.domain.goal.service.GoalAccountService;
 import com.ssafy.dodam.domain.goal.service.GoalCalculationService;
+import com.ssafy.dodam.domain.goal.service.GoalHistoryService;
 import com.ssafy.dodam.domain.goal.service.GoalService;
 import com.ssafy.dodam.global.response.ApiResponse;
 import com.ssafy.dodam.global.response.PageResponse;
@@ -41,8 +43,9 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * API 명세 12. Goal 중 S15P21D105-508(목록·요약·생성·상세·수정·삭제), S15P21D105-509(연결계좌 조회·변경) 범위.
- * 진행률·필요 저축액·예상 달성일·소비목표 진행률·위험상태(510), 변화 이력(511)은 다음 티켓에서 이어 붙인다.
+ * API 명세 12. Goal 전체(14개).
+ * S15P21D105-508 목록·요약·생성·상세·수정·삭제, 509 연결계좌 조회·변경,
+ * 510 진행률·필요 저축액·예상 달성일·소비목표 진행률·위험상태, 511 변화 이력.
  */
 @Validated
 @RestController
@@ -55,15 +58,18 @@ public class GoalController {
     private final GoalService goalService;
     private final GoalAccountService goalAccountService;
     private final GoalCalculationService goalCalculationService;
+    private final GoalHistoryService goalHistoryService;
 
     public GoalController(
             GoalService goalService,
             GoalAccountService goalAccountService,
-            GoalCalculationService goalCalculationService
+            GoalCalculationService goalCalculationService,
+            GoalHistoryService goalHistoryService
     ) {
         this.goalService = goalService;
         this.goalAccountService = goalAccountService;
         this.goalCalculationService = goalCalculationService;
+        this.goalHistoryService = goalHistoryService;
     }
 
     @GetMapping
@@ -184,5 +190,19 @@ public class GoalController {
             @PathVariable @Positive Long goalId
     ) {
         return ApiResponse.success(goalCalculationService.getRisk(principal.userId(), goalId));
+    }
+
+    // ---------- S15P21D105-511 목표 변화 이력 ----------
+
+    @GetMapping("/{goalId}/history")
+    public ApiResponse<PageResponse<GoalHistoryResponse>> getHistory(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable @Positive Long goalId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
+    ) {
+        return ApiResponse.success(goalHistoryService.getHistory(principal.userId(), goalId, startDate, endDate, page, size));
     }
 }

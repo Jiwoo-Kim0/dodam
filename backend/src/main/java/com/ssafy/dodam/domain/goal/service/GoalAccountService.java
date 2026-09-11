@@ -7,7 +7,9 @@ import com.ssafy.dodam.domain.account.repository.AccountRepository;
 import com.ssafy.dodam.domain.goal.dto.response.GoalAccountsResponse;
 import com.ssafy.dodam.domain.goal.entity.Goal;
 import com.ssafy.dodam.domain.goal.entity.GoalAccount;
+import com.ssafy.dodam.domain.goal.entity.GoalHistoryEvent;
 import com.ssafy.dodam.domain.goal.entity.GoalType;
+import com.ssafy.dodam.domain.goal.repository.SavingGoalRepository;
 import com.ssafy.dodam.domain.goal.repository.GoalAccountRepository;
 import com.ssafy.dodam.domain.goal.repository.GoalRepository;
 import com.ssafy.dodam.global.exception.BusinessException;
@@ -32,8 +34,8 @@ import org.springframework.transaction.annotation.Transactional;
  * API 12 목표 연결계좌(S15P21D105-509).
  *
  * <p>모으기(SAVING) 목표에만 계좌를 연결할 수 있고(ERD `fk_goal_account_saving_goal`), 한 계좌는 한 목표에만 연결된다
- * (`uk_goal_account_account`). 연결이 바뀌면 목표의 모인 금액(`goal.current_amount`)을 연결 계좌 잔액 합으로 다시 놓는다.
- * 계좌 잔액이 동기화로 바뀐 뒤의 재계산은 510(진행률)에서 다룬다(remaining-work).
+ * (`uk_goal_account_account`). 연결이 바뀌면 목표의 모인 금액(`goal.current_amount`)을 연결 계좌 잔액 합으로 다시 놓고
+ * 이력(511)을 남긴다. 계좌 잔액이 동기화로 바뀐 뒤의 재계산은 510 계산 API가 조회 시점에 한다.
  */
 @Service
 @Transactional
@@ -50,21 +52,27 @@ public class GoalAccountService {
 
     private final GoalRepository goalRepository;
     private final GoalAccountRepository goalAccountRepository;
+    private final SavingGoalRepository savingGoalRepository;
     private final AccountRepository accountRepository;
     private final SensitiveNumberHasher sensitiveNumberHasher;
+    private final GoalHistoryRecorder goalHistoryRecorder;
     private final GoalClock goalClock;
 
     public GoalAccountService(
             GoalRepository goalRepository,
             GoalAccountRepository goalAccountRepository,
+            SavingGoalRepository savingGoalRepository,
             AccountRepository accountRepository,
             SensitiveNumberHasher sensitiveNumberHasher,
+            GoalHistoryRecorder goalHistoryRecorder,
             GoalClock goalClock
     ) {
         this.goalRepository = goalRepository;
         this.goalAccountRepository = goalAccountRepository;
+        this.savingGoalRepository = savingGoalRepository;
         this.accountRepository = accountRepository;
         this.sensitiveNumberHasher = sensitiveNumberHasher;
+        this.goalHistoryRecorder = goalHistoryRecorder;
         this.goalClock = goalClock;
     }
 
@@ -124,7 +132,8 @@ public class GoalAccountService {
         }
 
         LocalDateTime now = goalClock.now();
-        if (!existingIds.equals(requested.keySet())) {
+        boolean setChanged = !existingIds.equals(requested.keySet());
+        if (setChanged) {
             goalAccountRepository.deleteAll(staleLinks);
             goalAccountRepository.deleteAll(existing.stream()
                     .filter(link -> !requested.containsKey(link.getAccountId()))
@@ -138,7 +147,11 @@ public class GoalAccountService {
         }
 
         long total = requested.values().stream().mapToLong(Account::getBalance).sum();
-        goal.updateCurrentAmount(total, now);
+        boolean amountChanged = goal.updateCurrentAmount(total, now);
+        if (setChanged || amountChanged) {
+            goalHistoryRecorder.record(goal, savingGoalRepository.findById(goal.getId()).orElse(null),
+                    setChanged ? GoalHistoryEvent.ACCOUNTS_UPDATED : GoalHistoryEvent.AMOUNT_UPDATED, now);
+        }
 
         List<GoalAccount> links = goalAccountRepository.findAllByGoalIdOrderByAccountIdAsc(goal.getId());
         return toResponse(goal, links, 0, Math.max(1, Math.max(links.size(), 20)));
