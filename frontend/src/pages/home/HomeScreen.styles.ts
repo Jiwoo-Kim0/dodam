@@ -1,12 +1,23 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, semanticSpacing, spacing, typography } from '@/styles';
+import {
+  colors,
+  fontFamily,
+  fontSize,
+  semanticSpacing,
+  spacing,
+  typography,
+} from '@/styles';
 
 export const styles = StyleSheet.create({
   screen: {
+    backgroundColor: colors.white,
+  },
+  scroll: {
     backgroundColor: colors.background,
   },
   scrollContent: {
+    backgroundColor: colors.background,
     paddingBottom: spacing[5],
   },
   goalSection: {
@@ -24,8 +35,14 @@ export const styles = StyleSheet.create({
     marginTop: spacing[2],
   },
   greetingText: {
-    ...typography.body1,
+    fontFamily: fontFamily.medium,
+    fontSize: fontSize.body1,
     color: colors.textSecondary,
+    lineHeight: 21,
+  },
+  greetingName: {
+    color: colors.primary.brown,
+    fontFamily: fontFamily.semiBold,
   },
   greetingHeadline: {
     ...typography.headline,

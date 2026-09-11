@@ -45,6 +45,7 @@ type BouncyScrollViewProps = PropsWithChildren<{
   onRefresh?: () => void;
   refreshing?: boolean;
   refreshIndicatorColor?: string;
+  refreshBackgroundColor?: string;
   refreshThreshold?: number;
 }>;
 
@@ -73,6 +74,7 @@ export const BouncyScrollView = forwardRef<
     onRefresh,
     refreshing = false,
     refreshIndicatorColor,
+    refreshBackgroundColor,
     refreshThreshold = DEFAULT_REFRESH_THRESHOLD,
   },
   ref,
@@ -321,6 +323,15 @@ export const BouncyScrollView = forwardRef<
       <Animated.View
         onLayout={(event) => setContainerHeight(event.nativeEvent.layout.height)}
         style={[styles.container, style]}>
+        {refreshBackgroundColor ? (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.refreshBackground,
+              { backgroundColor: refreshBackgroundColor },
+            ]}
+          />
+        ) : null}
         {onRefresh ? (
           <Animated.View
             pointerEvents="none"
@@ -347,6 +358,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     height: REFRESH_HOLD_OFFSET,
     justifyContent: 'center',
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  refreshBackground: {
+    height: REFRESH_HOLD_OFFSET * 4,
     left: 0,
     position: 'absolute',
     right: 0,

@@ -11,7 +11,7 @@ const LOGO_TRANSPARENT_MARGIN_SCALE = 1.45;
 export const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
-    backgroundColor: colors.background,
+    backgroundColor: colors.white,
     flexDirection: 'row',
     height: HOME_HEADER_HEIGHT,
     justifyContent: 'space-between',
