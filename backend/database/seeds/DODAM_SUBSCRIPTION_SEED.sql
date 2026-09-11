@@ -3,10 +3,9 @@
 -- Dialect: MySQL 8.x
 -- Schema basis: docs/ERD/DODAM_ERDCLOUD_IMPORT.sql (revision 2026-09-07) — tables `subscription`, `subscription_payment_history`
 -- Dependency: S15P21D105-491 User/Account seed, S15P21D105-522 Card seed, DODAM_TRANSACTION_SEED.sql (same amounts / dates),
---             **the Subscription API migration** (`subscription`, `subscription_payment_history` tables).
---             As of 2026-09-11 that migration does not exist yet (API 7 Subscription is a later BE-A task, version >= V18 to be
---             agreed with BE-B). Running this file before the migration fails at the first INSERT with "table does not exist";
---             nothing else is written because every statement runs inside one transaction.
+--             V30__create_subscription_and_payment_history.sql (`subscription`, `subscription_payment_history`, added 2026-09-11).
+--             Running this file on a DB without V30 fails at the first DELETE with "table does not exist";
+--             nothing else is written because every permanent statement runs inside one transaction.
 -- Dataset: 6,000 subscriptions (1 per user + 1 more for even-numbered users), 36,000 payment history rows (6 months)
 -- Snapshot: 2026-09-07
 --

@@ -15,7 +15,7 @@
 | 5 | `DODAM_DEPOSIT_SAVING_SEED.sql` | 524 | 491, V15 |
 | 6 | `DODAM_TRANSACTION_SEED.sql` | 492 | 491, 522, V6 (카테고리 기준 행 20개) |
 | 7 | `DODAM_GOAL_SEED.sql` | 493 | 491, 524, V5·V7·V8·V9 |
-| 8 | `DODAM_SUBSCRIPTION_SEED.sql` | 492 | 491, 522, 6번, **Subscription 마이그레이션(미작성, V18 이후)** |
+| 8 | `DODAM_SUBSCRIPTION_SEED.sql` | 492 | 491, 522, 6번, V30 (`subscription`·`subscription_payment_history`, 2026-09-11 추가) |
 
 2~5는 계좌·카드번호 원문을 파일에 두지 않기 위해 애플리케이션 코덱으로 만든 fixture 테이블(`tmp_dodam_*_crypto`, `*_account_keys`)이
 같은 스키마에 있어야 한다. 각 파일 머리말에 정확한 계약이 있다. 6~8은 fixture 없이 자연키(사용자 이메일, 계좌 유형·이름)로 참조한다.
@@ -53,6 +53,6 @@ seed 목표는 `created_at = '2026-03-01 09:00:00'`으로 식별해 재실행 �
 
 - 1~7번 전부 오류 없이 종료, 총 43초(522 약 14초, 524 약 11초, 492 약 14초). 파일 끝 검증 SELECT의 위반·불일치·누락 항목 전부 0.
 - 전체 재실행 후 모든 테이블 건수와 거래 금액 합·목표 금액 합이 같다(멱등).
-- 8번은 Subscription 테이블 부재로 첫 DELETE에서 멈추고 아무것도 쓰지 않는다(예정된 상태).
+- 8번은 V30이 생기기 전에는 Subscription 테이블 부재로 첫 DELETE에서 멈추고 아무것도 쓰지 않았다. V30 추가 후 결과는 `remaining-work.md` 514 절.
 - 새 DB에 마이그레이션을 손으로 적용할 때는 V6이 V11의 `card`를 참조하므로 V1~V5 → V10~V11 → V6~V9 → V12~V17 순서가 필요하다(Flyway `out-of-order` 전제).
 - 1번은 마이그레이션에 없는 `product_sync_history` INSERT를 제거했다(ERD에만 있는 테이블).
