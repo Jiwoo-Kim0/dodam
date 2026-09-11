@@ -6,6 +6,11 @@
 | V2 | `user_setting`, `financial_profile`, `finance_connection` 생성 | S15P21D105-494, S15P21D105-497 |
 | V3 | `account` 생성 (BE-A 소관 테이블 선반영) | S15P21D105-501 |
 | V4 | `finance_sync` 생성 (금융 데이터 동기화 이력) | S15P21D105-499 |
+| V5 | `goal` 생성 (BE-A 소관 테이블 선반영) | S15P21D105-543 |
+| V6 | `transaction_category`, `transaction` 생성 + 카테고리 기준 행 적재 | S15P21D105-502, S15P21D105-504 |
+| V7 | `saving_goal`, `spending_goal` 생성 (goal 하위행, 소비목표 비교용 선반영) | S15P21D105-507 |
+| V8 | `goal_account` 생성 (목표 연결계좌) | S15P21D105-509 |
+| V9 | `goal_history` 생성 (목표 변화 이력) | S15P21D105-511 |
 | V10 | `financial_company`, `financial_product`, `financial_product_option` 생성 | S15P21D105-525, S15P21D105-526 |
 | V11 | `card`, `card_billing_statement` 생성 | S15P21D105-527, S15P21D105-529 |
 | V12 | `installment` 생성 | S15P21D105-530 |
@@ -13,6 +18,7 @@
 | V14 | `minus_account` 생성 | S15P21D105-534 |
 | V15 | `deposit_saving`, `savings_payment` 생성 | S15P21D105-535 |
 | V16 | `cashflow_forecast`, `cashflow_daily_balance`, `cashflow_event`, `cashflow_risk` 생성 | S15P21D105-538 |
+| V17 | `diagnosis`, `diagnosis_issue` 생성 | S15P21D105-543 |
 
 ## 버전 번호 할당
 
@@ -26,6 +32,13 @@
 `V3`의 `account`는 BE-A 소관 테이블이지만, 이미 병합된 카드 도메인이 이 테이블을 매핑해 develop이
 기동하지 못하는 상태였으므로 스키마만 먼저 추가했습니다. 계좌 API(S15P21D105-501)는 BE-A에서
 진행하며 같은 테이블을 다시 만드는 마이그레이션을 추가하지 않습니다.
+
+`V5`의 `goal`도 같은 처리입니다. `diagnosis.goal_id`가 ERD상 `goal(user_id, goal_id)`를 복합 외래키로
+참조하는데 `goal` 마이그레이션이 없어 V17을 만들 수 없었습니다. `goal` 한 테이블만 ERD 정의 그대로
+추가했고 `saving_goal`·`spending_goal`·`goal_account` 하위행은 넣지 않았습니다. Goal API
+(S15P21D105-508~511)는 BE-A에서 진행하며 같은 테이블을 다시 만들지 않습니다.
+**V5 번호는 BE-A와 확인이 필요합니다**(구간을 넘겨 쓴 것은 아니지만 BE-A 구간의 번호를 소비했습니다).
+→ 2026-09-11 BE-A 확인: V5(goal)를 그대로 두고, Transaction 테이블은 V6으로 올렸다(S15P21D105-502). BE-A 구간(V1~V9)은 V9 goal_history로 모두 소진됐다. 다음 BE-A 테이블은 V18 이후 번호를 BE-B와 확인해 쓴다.
 
 Flyway는 버전이 연속일 필요가 없으므로 빈 번호는 그대로 둡니다. 구간을 넘겨 써야 하면 먼저 해당 영역 담당자와 번호를 확인하세요.
 

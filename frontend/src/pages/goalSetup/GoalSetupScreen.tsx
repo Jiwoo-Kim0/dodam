@@ -3,9 +3,11 @@ import { useState } from 'react';
 import { View } from 'react-native';
 
 import { BottomActionButton } from '@/components/bottomActionButton/BottomActionButton';
+import { GoalAccountSelectionList } from '@/components/goalAccountSelectionList/GoalAccountSelectionList';
 import { routes } from '@/constants/routes';
 import { AuthScreenLayout } from '@/layout/authScreenLayout/AuthScreenLayout';
 import { MOCK_GOAL_ACCOUNTS } from '@/mocks/goalAccounts';
+import { findGoalDetail } from '@/mocks/goalDetail';
 
 import {
   GoalTypeStep,
@@ -15,7 +17,6 @@ import { GoalStepProgress } from './components/GoalStepProgress';
 import { ReductionAmountStep } from './components/ReductionAmountStep';
 import { ReductionCompleteStep } from './components/ReductionCompleteStep';
 import { SavingAmountStep } from './components/SavingAmountStep';
-import { SavingAccountStep } from './components/SavingAccountStep';
 import { SavingCompleteStep } from './components/SavingCompleteStep';
 import { SavingDeadlineStep } from './components/SavingDeadlineStep';
 import { SavingPurposeStep } from './components/SavingPurposeStep';
@@ -31,15 +32,55 @@ type GoalSetupStep =
   | 'reductionAmount'
   | 'reductionComplete';
 
-export function GoalSetupScreen() {
+interface GoalSetupScreenProps {
+  editGoalId?: string;
+}
+
+function parseGoalDeadline(dueDateLabel: string) {
+  const [year, month, day] = dueDateLabel.match(/\d+/g)?.map(Number) ?? [];
+
+  if (!year || !month || !day) {
+    return null;
+  }
+
+  return new Date(year, month - 1, day);
+}
+
+export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
   const router = useRouter();
-  const [step, setStep] = useState<GoalSetupStep>('goalType');
-  const [selectedType, setSelectedType] = useState<GoalType | null>(null);
-  const [goalName, setGoalName] = useState('');
-  const [savingAmount, setSavingAmount] = useState(0);
-  const [savingDeadline, setSavingDeadline] = useState<Date | null>(null);
-  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
-  const [reductionAmount, setReductionAmount] = useState(0);
+  const editGoal = editGoalId ? findGoalDetail(editGoalId) : undefined;
+  const isEditing = editGoal !== undefined;
+  const [step, setStep] = useState<GoalSetupStep>(() => {
+    if (editGoal?.type === 'saving') {
+      return 'savingPurpose';
+    }
+
+    if (editGoal?.type === 'reducing') {
+      return 'reductionAmount';
+    }
+
+    return 'goalType';
+  });
+  const [selectedType, setSelectedType] = useState<GoalType | null>(
+    editGoal?.type === 'reducing' ? 'spendingReduction' : editGoal?.type ?? null,
+  );
+  const [goalName, setGoalName] = useState(
+    editGoal?.type === 'saving' ? editGoal.title : '',
+  );
+  const [savingAmount, setSavingAmount] = useState(
+    editGoal?.type === 'saving' ? editGoal.targetAmount : 0,
+  );
+  const [savingDeadline, setSavingDeadline] = useState<Date | null>(() =>
+    editGoal?.type === 'saving'
+      ? parseGoalDeadline(editGoal.dueDateLabel)
+      : null,
+  );
+  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>(
+    editGoal?.type === 'saving' ? [...editGoal.linkedAccountIds] : [],
+  );
+  const [reductionAmount, setReductionAmount] = useState(
+    editGoal?.type === 'reducing' ? editGoal.targetAmount : 0,
+  );
 
   const handleGoalTypeSelect = (type: GoalType) => {
     setSelectedType(type);
@@ -67,7 +108,9 @@ export function GoalSetupScreen() {
         description="목표 이름을 입력해주세요."
         headerAccessory={<GoalStepProgress currentStep={1} totalSteps={4} />}
         showBackButton
-        onBackPress={() => setStep('goalType')}
+        onBackPress={() =>
+          isEditing ? router.back() : setStep('goalType')
+        }
         footer={
           <BottomActionButton
             label="다음"
@@ -144,7 +187,7 @@ export function GoalSetupScreen() {
             onPress={() => setStep('savingComplete')}
           />
         }>
-        <SavingAccountStep
+        <GoalAccountSelectionList
           accounts={MOCK_GOAL_ACCOUNTS}
           selectedAccountIds={selectedAccountIds}
           onToggle={handleAccountToggle}
@@ -170,7 +213,9 @@ export function GoalSetupScreen() {
         title="이번달은 얼마를 써볼까요?"
         description="목표 소비금액을 설정해요."
         showBackButton
-        onBackPress={() => setStep('goalType')}
+        onBackPress={() =>
+          isEditing ? router.back() : setStep('goalType')
+        }
         footer={
           <BottomActionButton
             label="다음"

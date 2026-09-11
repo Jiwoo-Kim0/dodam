@@ -5,7 +5,9 @@
 [cashflow-events.md](cashflow-events.md)(539), 실행·계산 로직은
 [cashflow-daily-balance.md](cashflow-daily-balance.md)(540)를 따른다.
 
-**위험 조회(`/risks`)와 오늘 사용가능금액(`/available-today`)은 이 작업에 없다.** 542 범위다.
+**위험 조회(`/risks`)와 오늘 사용가능금액(`/available-today`)은 이 작업에 없다.** 542 범위이며
+[cashflow-risk.md](cashflow-risk.md)에 있다. 542는 이 문서의 `CashflowForecastResponse`에
+`availableToday` 필드를 추가했다.
 
 ## 엔드포인트
 

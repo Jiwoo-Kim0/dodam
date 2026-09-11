@@ -1,5 +1,6 @@
 package com.ssafy.dodam.infrastructure.external.ssafy;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -24,6 +25,32 @@ public interface SsafyFinanceClient {
      * @throws SsafyUnavailableException 네트워크 오류
      */
     SsafyMember searchMember(String email);
+
+    /**
+     * 2.4 수시입출금 계좌 목록 조회 (inquireDemandDepositAccountList). 사용자 단위 API.
+     * 계좌가 없으면 빈 목록을 돌려준다.
+     *
+     * @throws SsafyApiException H1009(USER_KEY 무효) 등 금융망 오류 응답
+     * @throws SsafyUnavailableException 네트워크 오류·응답 해석 불가
+     */
+    List<SsafyDemandDepositAccount> inquireDemandDepositAccountList(String userKey);
+
+    /**
+     * 2.4 계좌 거래내역 조회 (inquireTransactionHistoryList). 사용자 단위 API. 입금·출금 모두, 최신순.
+     * 거래가 없으면 빈 목록을 돌려준다.
+     *
+     * @param accountNo 계좌번호 원문. 구현은 로그에 남기지 않는다.
+     * @param startDate 조회 시작일(포함)
+     * @param endDate   조회 종료일(포함)
+     * @throws SsafyApiException A1003(계좌 없음), H1009(USER_KEY 무효) 등 금융망 오류 응답
+     * @throws SsafyUnavailableException 네트워크 오류·응답 해석 불가
+     */
+    SsafyTransactionHistory inquireTransactionHistoryList(
+            String userKey,
+            String accountNo,
+            LocalDate startDate,
+            LocalDate endDate
+    );
 
     /**
      * 2.7.4 내 신용등급 조회 (inquireMyCreditRating). 사용자 단위 API.

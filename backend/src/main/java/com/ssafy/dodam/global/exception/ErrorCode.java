@@ -51,7 +51,27 @@ public enum ErrorCode {
     REPAYMENT_AMOUNT_EXCEEDED(HttpStatus.BAD_REQUEST, "상환 가능 금액을 초과했습니다."),
     NO_ACCRUED_INTEREST(HttpStatus.BAD_REQUEST, "납부할 미수이자가 없습니다."),
     INSUFFICIENT_ACCOUNT_BALANCE(HttpStatus.CONFLICT, "출금계좌 잔액이 부족합니다."),
-    WITHDRAWAL_ACCOUNT_REQUIRED(HttpStatus.BAD_REQUEST, "출금계좌를 지정해 주세요.");
+    WITHDRAWAL_ACCOUNT_REQUIRED(HttpStatus.BAD_REQUEST, "출금계좌를 지정해 주세요."),
+
+    // ---------- Transaction (S15P21D105-505) ----------
+    /**
+     * 금융망·seed 출처 거래를 수정·삭제하려는 경우. 거래 존재 여부는 이미 확인된 뒤라 404가 아니라 400이다.
+     */
+    TRANSACTION_NOT_MANUAL(HttpStatus.BAD_REQUEST, "수동으로 등록한 거래만 수정·삭제할 수 있습니다."),
+
+    // ---------- Goal (S15P21D105-508) ----------
+    /**
+     * 종료 상태(ACHIEVED·CANCELED) 목표를 수정하려는 경우.
+     */
+    GOAL_NOT_EDITABLE(HttpStatus.CONFLICT, "종료된 목표는 수정할 수 없습니다."),
+    /**
+     * 허용되지 않은 상태 전이(예: PAUSED → ACHIEVED). 전이 규칙은 GoalStatus에 있다.
+     */
+    GOAL_STATUS_TRANSITION_NOT_ALLOWED(HttpStatus.CONFLICT, "허용되지 않은 목표 상태 변경입니다."),
+    /**
+     * 계좌는 한 목표에만 연결할 수 있다(`uk_goal_account_account`). 다른 목표에 이미 연결된 계좌를 지정한 경우(S15P21D105-509).
+     */
+    ACCOUNT_ALREADY_LINKED_TO_GOAL(HttpStatus.CONFLICT, "이미 다른 목표에 연결된 계좌입니다.");
 
     private final HttpStatus status;
     private final String message;

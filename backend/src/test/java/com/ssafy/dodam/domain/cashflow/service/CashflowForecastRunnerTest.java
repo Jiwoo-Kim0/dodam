@@ -17,6 +17,7 @@ import com.ssafy.dodam.domain.cashflow.entity.ForecastStatus;
 import com.ssafy.dodam.domain.cashflow.repository.CashflowBalanceReader;
 import com.ssafy.dodam.domain.cashflow.repository.CashflowDailyBalanceRepository;
 import com.ssafy.dodam.domain.cashflow.repository.CashflowEventRepository;
+import com.ssafy.dodam.domain.cashflow.repository.CashflowRiskRepository;
 import com.ssafy.dodam.domain.cashflow.repository.CashflowForecastRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -47,6 +48,7 @@ class CashflowForecastRunnerTest {
     @Autowired private CashflowForecastRepository forecastRepository;
     @Autowired private CashflowDailyBalanceRepository dailyBalanceRepository;
     @Autowired private CashflowEventRepository eventRepository;
+    @Autowired private CashflowRiskRepository riskRepository;
 
     private final CashflowBalanceReader balanceReader = mock(CashflowBalanceReader.class);
     private final CashflowEventCollector eventCollector = mock(CashflowEventCollector.class);
@@ -62,6 +64,7 @@ class CashflowForecastRunnerTest {
                 balanceReader,
                 eventCollector,
                 new CashflowDailyBalanceCalculator(),
+                new CashflowRiskDetector(),
                 store);
         when(balanceReader.readStartingBalance(any())).thenReturn(1_000_000L);
         when(eventCollector.collect(any(), any(), any()))
@@ -81,8 +84,10 @@ class CashflowForecastRunnerTest {
         assertThat(forecast.getCurrentBalance()).isEqualTo(1_000_000L);
         assertThat(forecast.getMinimumBalance()).isEqualTo(-500_000L);
         assertThat(forecast.getRiskDate()).isEqualTo(BASE_DATE.plusDays(1));
-        // available_today 계산은 S15P21D105-542 범위다.
-        assertThat(forecast.getAvailableToday()).isNull();
+        // 최소잔액이 음수이므로 오늘 쓸 수 있는 돈은 0원이다(542).
+        assertThat(forecast.getAvailableToday()).isZero();
+        assertThat(riskRepository.findOwned(
+                userId, forecast.getForecastId(), null, null)).hasSize(1);
         assertThat(dailyBalanceRepository.findOwnedByPeriod(
                 userId, forecast.getForecastId(), BASE_DATE, BASE_DATE.plusDays(2))).hasSize(3);
         assertThat(eventRepository.findOwnedByPeriod(
