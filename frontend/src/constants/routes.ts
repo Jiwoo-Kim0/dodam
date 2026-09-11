@@ -7,6 +7,7 @@ export const routes = {
   financeSync: '/finance-sync',
   notificationPermission: '/notification-permission',
   home: '/home',
+  dailyBriefing: '/home/daily-briefing',
   ledger: '/ledger',
   assets: '/assets',
   discovery: '/discovery',

@@ -26,4 +26,16 @@ export const colors = {
       light: '#DCE9B9',
     },
   },
+  briefing: {
+    card: '#FFFFFF',
+    softCard: '#FEFBF2',
+    mutedCard: '#FAFAFA',
+    cardBorder: '#CBD99B',
+    statusBackground: '#F7FAE9',
+    statusText: '#6F9329',
+    decreaseTag: '#FFF0C9',
+    increaseTag: '#FFF0CB',
+    increaseText: '#FA9500',
+    progressTrack: '#F4F4F1',
+  },
 } as const;
