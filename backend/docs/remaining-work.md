@@ -436,3 +436,27 @@
 - [ ] `Account` 엔티티가 V3 DDL과 `ddl-auto: validate`를 통과하는지 MySQL 8.0에서 확인한다. H2 통합 테스트만 수행했다.
 - 근거: `account_no_encrypted`는 `VARBINARY(512)`↔`byte[]`, `account_no_hash`·`currency`는 CHAR 고정 길이 매핑이다. 카드·대출과 같은 `columnDefinition` 처리를 했지만 실검증은 남았다.
 - 완료 조건: 빈 스키마에 V1~V16 적용 후 기동, 목록·상세·잔액 SQL을 MySQL에서 실행.
+
+## S15P21D105-502 — 계좌 거래내역 Adapter
+
+구현 계약: [account-query.md](account-query.md) "계좌 거래내역·거래 단건", "거래내역 Adapter"
+
+### 거래내역 동기화 기간·증분 전략
+
+- [ ] 매 동기화마다 계좌별 최근 12개월 거래를 통째로 받아 없는 것만 넣는다. 거래가 많아지면 금융망 호출·응답이 커진다.
+- 선행 조건: 금융망 거래내역 API가 페이지네이션을 지원하는지(문서 예시에는 `totalCount`·`list`만 있다), 계좌별 마지막 동기화 시각을 어디에 둘지(`account` 컬럼 추가는 ERD 변경) 정한다.
+- 완료 조건: 두 번째 동기화부터는 마지막 적재 거래일 이후만 받거나, 페이지 단위로 받는다. 시연 규모(계좌 수 건, 거래 수백 건)에서는 현재 방식으로 충분하다.
+
+### 금융망 거래내역 실호출 검증
+
+- [ ] `inquireTransactionHistoryList` 요청 Body(`accountNo`, `startDate`, `endDate`, `transactionType = A`, `orderByType = DESC`)와 응답(`REC.totalCount`, `REC.list[].transactionType "1"/"2"`, 금액 문자열, 시각 HHmmss)을 실호출로 대조한다. API Key 문제(499 절)로 문서 예시만 따랐다.
+- [ ] 계좌에 거래가 없을 때 `REC`가 생략되는지 `list: []`로 오는지 확인한다. 구현은 둘 다 빈 목록으로 해석한다.
+
+### V5 마이그레이션 중복 정리
+
+- [ ] `V5__create_transaction_category_and_transaction.sql`은 504 브랜치(`S15P21D105-504-api-6-transaction-query`) 커밋을 이 브랜치로 cherry-pick한 것이다. 두 브랜치가 모두 develop에 들어갈 때 뒤에 병합되는 쪽에서 중복 커밋을 rebase로 걷어낸다. 내용이 같으면 git이 자동으로 건너뛴다.
+
+### 카드·마이너스통장 거래내역과의 통합
+
+- [ ] `GET /accounts/{accountNo}/transactions`(5), `GET /cards/{cardNo}/transactions`(8), `GET /minus-accounts/{accountNo}/transactions`(10-1)가 같은 원장을 계좌·카드 축으로 따로 읽는다. 응답 필드는 맞췼지만 reader 구현은 세 개다.
+- 완료 조건: 공용 reader로 합치거나 세 구현을 그대로 두기로 팀에서 정한다(534 "API 5 거래내역과의 중복" 항목과 함께).

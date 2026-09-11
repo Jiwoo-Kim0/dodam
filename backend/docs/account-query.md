@@ -1,26 +1,28 @@
-# Account API — 계좌 목록·상세·잔액
+# Account API — 계좌 목록·상세·잔액·거래내역
 
-JIRA `S15P21D105-453` (D4 Account API 구현)의 하위 티켓 `S15P21D105-501`(API 5 계좌 목록·상세·잔액) 구현 기준이다.
-API 명세 5 Account 중 세 개를 다룬다. 계좌 요약·거래내역·월별 입출금·입출금 추이·휴면성 계좌·현금성 자산 합계는
-다음 티켓 범위이며 이 문서에 포함하지 않는다.
+JIRA `S15P21D105-453` (D4 Account API 구현)의 하위 티켓 `S15P21D105-501`(API 5 계좌 목록·상세·잔액),
+`S15P21D105-502`(API 5 계좌 거래내역 Adapter) 구현 기준이다. API 명세 5 Account 중 다섯 개를 다룬다.
+계좌 요약·월별 입출금·입출금 추이·휴면성 계좌·현금성 자산 합계는 다음 티켓 범위이며 이 문서에 포함하지 않는다.
 
 ## API
 
 모든 API는 인증이 필요하고 본인 계좌만 다룬다. 타인 계좌·없는 계좌는 구분하지 않고 404다.
 
-| 기능 | Method | Endpoint | 상태 코드 |
-| --- | --- | --- | --- |
-| 계좌 전체 조회 | GET | `/api/v1/accounts?bankCode&accountType` | 200 |
-| 계좌 상세 조회 | GET | `/api/v1/accounts/{accountNo}` | 200 |
-| 계좌 잔액 조회 | GET | `/api/v1/accounts/{accountNo}/balance` | 200 |
+| 티켓 | 기능 | Method | Endpoint | 상태 코드 |
+| --- | --- | --- | --- | --- |
+| 501 | 계좌 전체 조회 | GET | `/api/v1/accounts?bankCode&accountType` | 200 |
+| 501 | 계좌 상세 조회 | GET | `/api/v1/accounts/{accountNo}` | 200 |
+| 501 | 계좌 잔액 조회 | GET | `/api/v1/accounts/{accountNo}/balance` | 200 |
+| 502 | 계좌 거래내역 조회 | GET | `/api/v1/accounts/{accountNo}/transactions?startDate&endDate&page&size` | 200 |
+| 502 | 거래 단건 조회 | GET | `/api/v1/accounts/{accountNo}/transactions/{transactionId}` | 200 |
 
 ### 오류 코드
 
 | 코드 | HTTP | 발생 조건 |
 | --- | --- | --- |
-| `VALIDATION_ERROR` | 400 | `bankCode`·`accountType` 형식 위반(영숫자·밑줄 외 문자), `accountNo`가 숫자 10~20자리가 아님 |
-| `INVALID_REQUEST` | 400 | `accountType`이 DEMAND_DEPOSIT / MINUS / DEPOSIT / SAVINGS 밖의 값 |
-| `RESOURCE_NOT_FOUND` | 404 | 본인 소유가 아니거나 존재하지 않는 계좌 |
+| `VALIDATION_ERROR` | 400 | `bankCode`·`accountType` 형식 위반(영숫자·밑줄 외 문자), `accountNo`가 숫자 10~20자리가 아님, `transactionId` 형식 위반, page < 0, size가 1~100 밖 |
+| `INVALID_REQUEST` | 400 | `accountType`이 DEMAND_DEPOSIT / MINUS / DEPOSIT / SAVINGS 밖의 값, 시작일 > 종료일, 종료일이 오늘 이후, 조회 기간 12개월 초과 |
+| `RESOURCE_NOT_FOUND` | 404 | 본인 소유가 아니거나 존재하지 않는 계좌("계좌를 찾을 수 없습니다."), 그 계좌에 없는 거래("거래를 찾을 수 없습니다.") |
 | `UNAUTHORIZED` | 401 | 토큰 없음·만료 |
 
 ## 계좌 전체 조회
@@ -63,6 +65,42 @@ API 명세 5 Account 중 세 개를 다룬다. 계좌 요약·거래내역·월�
   "이 잔액이 언제 기준인지"를 FE가 표시할 수 있다.
 - 잔액은 우리 DB 값이다. 명세의 "SSAFY" 표기와의 관계는 아래 남은 작업 참고.
 
+## 계좌 거래내역·거래 단건 (502)
+
+| 파라미터 | 기본값 | 규칙 |
+| --- | --- | --- |
+| `startDate`, `endDate` | 종료일 = 오늘, 시작일 = 종료일 − 3개월 + 1일 | `QueryPeriodPolicy`(카드(8)·마이너스통장(10-1) 거래내역과 동일). 최대 12개월 |
+| `page`, `size` | 0, 20 | page ≥ 0, size 1~100 (도담 정책) |
+
+- 우리 DB `transaction`에서 `user_id = 본인 AND account_id = 해당 계좌`로 읽는다. 소유권은 SQL 조건으로 강제한다.
+- 목록은 **숨긴 거래(`hidden = 1`)를 제외**하고, 단건 조회는 숨긴 거래도 돌려준다(숨김은 목록 노출 정책이지 접근 제한이 아니다).
+  같은 원장을 읽는 카드·마이너스통장 거래내역과 같은 규칙이다.
+- 정렬은 거래일 → 거래시각 → 거래 ID 내림차순. 시각이 없는 거래는 같은 날짜 안에서 뒤로 간다.
+- 단건 조회에서 다른 계좌의 거래 ID를 넣으면 계좌·거래가 함께 일치하지 않으므로 404("거래를 찾을 수 없습니다.")다.
+- 응답 `AccountTransactionResponse`는 마이너스통장 거래내역 응답과 필드 이름·순서를 맞췼다(534가 제기한 "응답 계약 불일치" 해소).
+  `transactionId`, `transactionDate`, `transactionTime`, `transactionType`(INCOME / EXPENSE / TRANSFER), `amount`(양수), `balanceAfter`,
+  `merchantName`, `summary`, `memo`, `categoryCode`, `categoryName`에 `hidden`만 추가했다.
+- 거래 메모·카테고리·숨김 편집은 API 6(`/api/v1/transactions/**`, S15P21D105-504)이 맡는다. 이 API는 읽기 전용이다.
+
+### 거래내역 Adapter (원장 적재)
+
+"Adapter"는 금융망 2.4 계좌 거래내역 조회(`inquireTransactionHistoryList`)를 우리 원장 `transaction`으로 옮기는 부분이다.
+`AccountSyncHandler`가 계좌 목록을 반영한 뒤 **금융망 출처(SSAFY) 계좌마다** 최근 12개월(조회 정책 최대 기간) 거래를 받아
+`JdbcAccountTransactionWriter`로 **없는 거래만 INSERT**한다. 아래 "ACCOUNT 동기화" 표 참고.
+
+| 금융망 필드 | `transaction` 컬럼 | 비고 |
+| --- | --- | --- |
+| `transactionUniqueNo` | `transaction_id` | 문자열 그대로 |
+| `transactionDate` yyyyMMdd / `transactionTime` HHmmss | `transaction_date` / `transaction_time` | 시각이 비면 null |
+| `transactionType` "1" 입금 / "2" 출금 | `transaction_type` INCOME / EXPENSE | 그 외 값은 계약 위반 → scope FAILED |
+| `transactionBalance` | `amount` | 0 이하면 ERD CHECK 위반이라 건너뛴다(warn 로그) |
+| `transactionAfterBalance` | `balance_after` | |
+| `transactionSummary` / `transactionMemo` | `summary` / `memo` | 빈 문자열은 null |
+| (고정) | `payment_method = 'ACCOUNT'`, `source_type = 'SSAFY'`, `hidden = 0`, `category_id = NULL`, `merchant_name = NULL` | 카테고리 분류는 3 Preference(자동 분류)·API 6(수동)에서 |
+
+이미 있는 거래는 어떤 컬럼도 덮어쓰지 않는다. 사용자가 API 6으로 바꾼 메모·카테고리·숨김이 동기화로 되돌아가지 않게 하기 위해서다.
+SEED·MANUAL 계좌의 거래는 받지도 넣지도 않는다.
+
 ## 데이터 출처와 ACCOUNT 동기화
 
 세 API는 모두 우리 DB `account`(V3)만 읽는다. 명세는 "SSAFY" 연동으로 표기하지만, 금융망 계좌를 원장에 적재·갱신하는 일은
@@ -81,15 +119,22 @@ Finance Data 동기화(499)의 ACCOUNT scope 구현 `AccountSyncHandler`가 맡�
 | 양쪽에 있고 `source_type = SEED / MANUAL` | **덮어쓰지 않는다.** 시연 데이터와 마이너스통장 상환(534) 결과 보존 | 0 |
 | 우리 DB의 SSAFY 출처 DEMAND_DEPOSIT 계좌가 금융망 목록에 없음 | `status = CLOSED`. 다음 동기화에 다시 나타나면 ACTIVE | +1 |
 | 금융망 계좌 목록이 비어 있음 | COMPLETED, 0건. 위 규칙대로 SSAFY 출처 계좌는 CLOSED 처리 | 해지 건수 |
+| SSAFY 출처 계좌의 거래내역(502) | 최근 12개월 거래 중 원장에 없는 것만 INSERT. 기존 거래는 어떤 컬럼도 건드리지 않음 | INSERT 건수 |
 
-- 금융망 호출과 응답 해석(날짜 `yyyyMMdd`, 필수값 검사)은 트랜잭션 밖에서 끝내고 저장만 트랜잭션을 연다. 응답 한 건이라도
-  깨져 있으면 그 scope 전체가 FAILED고 부분 반영은 없다.
+- `syncedCount`는 계좌 변경 + 거래 INSERT 합계이고, scope 결과 `message`에 "계좌 N건, 거래 M건 반영"으로 나눠 적는다.
+- 금융망 호출(계좌 목록 1회 + 계좌별 거래내역 1회씩)과 응답 해석(날짜 `yyyyMMdd`, 시각 `HHmmss`, 거래 구분, 필수값 검사)은
+  트랜잭션 밖에서 끝내고 저장만 한 트랜잭션에서 한다. 응답 한 건이라도 깨져 있으면 그 scope 전체가 FAILED고 계좌·거래 모두
+  부분 반영이 없다. 새 계좌의 `account_id`가 확정돼야 거래를 넣을 수 있으므로 계좌 저장을 flush한 뒤 거래를 넣는다.
 - 금융망 오류 응답은 502 `FINANCE_API_ERROR`, 네트워크·해석 실패는 503 `FINANCE_API_UNAVAILABLE`의 메시지로 scope 결과
   `message`에 실린다. 다른 scope는 계속 진행한다(499 규칙).
 - 예금·적금·마이너스통장 행은 이 핸들러가 건드리지 않는다. 금융망의 해당 API는 각 도메인(11, 10-1)이 맡는다.
 - 마스킹 형식: 12자리 이상은 앞 6 + `-**-**` + 뒤 4(`123456-**-**3456`), 그 미만은 앞 3 + `-***-` + 뒤 3.
 
-## 엔티티
+## 스키마·엔티티
+
+`transaction`·`transaction_category`는 V5 마이그레이션이 만든다. V5는 API 6(S15P21D105-504) 작업 브랜치에서 먼저 작성된 것을
+이 브랜치로 가져온 것이며(cherry-pick), 두 브랜치가 모두 병합될 때 한쪽에서 중복 커밋을 정리해야 한다.
+`Transaction` 엔티티는 504가 소유하므로 여기서는 JDBC reader/writer만 둔다.
 
 `Account`가 `account`의 정식 매핑이다. 같은 테이블을 카드(`CardWithdrawalAccount`, 읽기 전용)와 마이너스통장(`MinusAccountOwner`)이
 부분 매핑하고 있으며, 두 도메인이 Account 도메인 구현 전에 임시로 둔 것이다. 교체는 남은 작업으로 남겼다.
@@ -105,11 +150,13 @@ NULL 허용 여부를 검사하지 않고, H2 테스트는 엔티티로 스키�
   NOT NULL로 두어 읽기 경로가 원문 컬럼에 의존하지 않음을 확인한다).
 - `AccountSyncIntegrationTest`: 금융망 Mock으로 `POST /finance-data/sync`(ACCOUNT)를 실행해 추가·갱신·해지·복귀, SEED 보존,
   빈 목록, 금융망 오류·해석 실패 시 부분 반영 없음을 계좌 API로 확인한다. 저장된 암호문을 복호화해 원문과 대조한다.
-- `RestSsafyFinanceClientTest`: 계좌 목록 호출의 Header·경로와 REC 배열·REC 없음·REC 객체 응답 해석.
+  502: 거래내역 INSERT와 건수 메시지, 기존 거래(사용자 메모·숨김) 보존, SEED 계좌 거래 미적재, 깨진 거래로 인한 계좌 롤백.
+- `AccountTransactionApiIntegrationTest`: 계좌 거래내역 목록(기간·페이지·숨김 제외·소유권)과 거래 단건(숨긴 거래 포함, 다른 계좌 거래 404).
+- `RestSsafyFinanceClientTest`: 계좌 목록·거래내역 호출의 Header·Body(계좌번호·기간·구분)·경로와 REC 배열·REC 없음·REC 객체 응답 해석.
 - `AccountNumberMaskerTest`: 마스킹 형식.
 - `FinanceDataApiIntegrationTest`의 ACCOUNT 스텁은 제거했다. 이제 실제 핸들러가 돌고 Mock 계좌 3건으로 `syncedCount = 3`을 만든다.
 
 ## 남은 작업
 
 [remaining-work.md](remaining-work.md)의 "S15P21D105-501" 절에 기록한다. 요약하면 금융망 잔액 실시간 조회 여부,
-금융망 실호출 검증(API Key), 부분 매핑 엔티티 교체, MySQL 실검증이다.
+금융망 실호출 검증(API Key), 거래내역 동기화 기간·증분 전략, 부분 매핑 엔티티 교체, MySQL 실검증이다.
