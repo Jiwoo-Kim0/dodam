@@ -57,7 +57,17 @@ public enum ErrorCode {
     /**
      * 금융망·seed 출처 거래를 수정·삭제하려는 경우. 거래 존재 여부는 이미 확인된 뒤라 404가 아니라 400이다.
      */
-    TRANSACTION_NOT_MANUAL(HttpStatus.BAD_REQUEST, "수동으로 등록한 거래만 수정·삭제할 수 있습니다.");
+    TRANSACTION_NOT_MANUAL(HttpStatus.BAD_REQUEST, "수동으로 등록한 거래만 수정·삭제할 수 있습니다."),
+
+    // ---------- Goal (S15P21D105-508) ----------
+    /**
+     * 종료 상태(ACHIEVED·CANCELED) 목표를 수정하려는 경우.
+     */
+    GOAL_NOT_EDITABLE(HttpStatus.CONFLICT, "종료된 목표는 수정할 수 없습니다."),
+    /**
+     * 허용되지 않은 상태 전이(예: PAUSED → ACHIEVED). 전이 규칙은 GoalStatus에 있다.
+     */
+    GOAL_STATUS_TRANSITION_NOT_ALLOWED(HttpStatus.CONFLICT, "허용되지 않은 목표 상태 변경입니다.");
 
     private final HttpStatus status;
     private final String message;
