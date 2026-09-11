@@ -107,7 +107,7 @@
 ### MySQL 검증
 
 - [x] V13까지 적용된 MySQL에 V4를 추가하면 `FlywayValidateException`이 나는 문제(MR 리뷰, 2026-09-09)를 `spring.flyway.out-of-order: true`(local/prod)로 해결했다. 번호 구간 분할 자체가 이 옵션을 전제로 한다. `FlywayOutOfOrderTest`로 재현·검증.
-- [ ] `V4__create_finance_sync.sql`을 MySQL 8.0에 적용해 `ddl-auto: validate` 통과와 `FinanceSync` 엔티티 매핑(VARCHAR(30) enum, DATETIME)을 확인한다. H2 통합 테스트만 수행했다. out-of-order 적용은 리뷰어가 기존 DB에서 재확인 예정.
+- [x] `V4__create_finance_sync.sql`을 MySQL 8.0에 적용해 `ddl-auto: validate` 통과와 `FinanceSync` 엔티티 매핑(VARCHAR(30) enum, DATETIME)을 확인한다. 2026-09-11 확인: Docker `mysql:8.0`(8.0.46)에 V1~V17을 적용한 뒤 백엔드를 `local` 프로필(`ddl-auto: validate`, Flyway off)로 기동해 엔티티 32개 전부 통과, `Started DodamApplication`(6.2초). 오류·경고 없음. out-of-order 적용은 리뷰어가 기존 DB에서 재확인 예정.
 - [ ] `SELECT ... FOR UPDATE`(`findByUserIdForUpdate`) 기반 동시 실행 방지가 MySQL InnoDB에서 의도대로 직렬화되는지 동시 요청으로 확인한다.
 
 ## S15P21D105-500 — Finance Data 통합 요약·신용등급
@@ -433,7 +433,7 @@
 
 ### MySQL 검증
 
-- [ ] `Account` 엔티티가 V3 DDL과 `ddl-auto: validate`를 통과하는지 MySQL 8.0에서 확인한다. H2 통합 테스트만 수행했다.
+- [x] `Account` 엔티티가 V3 DDL과 `ddl-auto: validate`를 통과하는지 MySQL 8.0에서 확인한다. 2026-09-11 확인: Docker `mysql:8.0`(8.0.46)에 V1~V17을 적용한 뒤 백엔드를 `local` 프로필(`ddl-auto: validate`, Flyway off)로 기동해 엔티티 32개 전부 통과, `Started DodamApplication`(6.2초). 오류·경고 없음.
 - 근거: `account_no_encrypted`는 `VARBINARY(512)`↔`byte[]`, `account_no_hash`·`currency`는 CHAR 고정 길이 매핑이다. 카드·대출과 같은 `columnDefinition` 처리를 했지만 실검증은 남았다.
 - 완료 조건: 빈 스키마에 V1~V16 적용 후 기동, 목록·상세·잔액 SQL을 MySQL에서 실행.
 
@@ -456,6 +456,12 @@
 
 - [ ] `V6__create_transaction_category_and_transaction.sql`은 504 브랜치(`S15P21D105-504-api-6-transaction-query`)의 V5 커밋을 cherry-pick한 뒤 **V6으로 번호를 옮긴 것**이다. develop 병합 시 543이 `V5__create_goal.sql`로 V5를 먼저 써서 충돌했다(2026-09-11).
 - 완료 조건: 504 브랜치를 이어갈 때 develop을 병합하고 그쪽의 V5 마이그레이션 커밋을 걷어낸다(테이블은 이미 V6으로 develop에 있다). `Transaction` 엔티티·fixture의 "V5" 표기도 V6으로 고친다.
+
+### 빈 DB에서 Flyway가 V6에서 멈춤 (새 환경 기동 불가)
+
+- [ ] **빈 스키마에 Flyway를 돌리면 V6에서 실패한다.** V6의 `fk_transaction_card`가 V11이 만드는 `card`를 참조하는데, 빈 DB에서는 Flyway가 버전 순서로 V1→V6을 먼저 적용하므로 `Failed to open the referenced table 'card'`로 기동이 막힌다. 2026-09-11 Docker `mysql:8.0` 빈 스키마 + `local` 프로필로 재현했다(`Script V6__create_transaction_category_and_transaction.sql failed`). 운영 DB는 V11~V17이 먼저 적용된 뒤 V6이 out-of-order로 들어가 영향이 없었고, 534·538 절의 빈 스키마 검증(09-09·09-10)은 V6이 develop에 들어오기 전이라 통과했다.
+- 영향: 새 개발 PC, 재생성한 CI/테스트 DB, 볼륨을 지운 운영 DB에서 백엔드가 기동하지 않는다. 손으로 적용할 때는 V1~V5 → V10~V11 → V6~V9 → V12~V17 순서로 우회할 수 있다(`seeds/README.md` 검증 상태).
+- 수정 후보: (a) 새 마이그레이션(BE-B와 번호 협의)에서 `information_schema`로 존재 여부를 확인해 `fk_transaction_card`를 조건부로 추가하고, V6에서는 카드 외래키를 빼되 이미 적용된 운영 DB의 체크섬 불일치는 `flyway repair`로 맞춘다. (b) V6 파일은 그대로 두고 `card`만 만드는 최소 마이그레이션을 V6 앞 번호로 넣는 방법은 V1~V5 번호가 모두 찼으므로 불가. 팀에서 결정한다.
 
 ### 카드·마이너스통장 거래내역과의 통합
 
@@ -556,7 +562,7 @@
 
 ### MySQL 검증
 
-- [ ] V6를 MySQL 8.0에서 적용해 `ddl-auto: validate` 통과와 복합 외래키(`account`, `card`) 생성을 확인한다. H2 통합 테스트만 수행했다.
+- [x] V6를 MySQL 8.0에서 적용해 `ddl-auto: validate` 통과와 복합 외래키(`account`, `card`) 생성을 확인한다. 2026-09-11 확인: Docker `mysql:8.0`(8.0.46)에 V1~V17을 적용한 뒤 백엔드를 `local` 프로필(`ddl-auto: validate`, Flyway off)로 기동해 엔티티 32개 전부 통과, `Started DodamApplication`(6.2초). 오류·경고 없음. 복합 외래키 `fk_transaction_account`·`fk_transaction_card`는 V11 뒤에 V6을 적용하는 순서에서 생성됐다.
 - 근거: `hidden`·`active`는 TINYINT(1)↔boolean, `transaction_time`은 TIME↔LocalTime 매핑이며 H2와 MySQL의 타입 검증 결과가 다를 수 있다. 기존 DB에는 V17 뒤에 V6이 들어가므로 out-of-order 적용도 함께 본다.
 - 완료 조건: 빈 스키마에 V1~V16 적용 후 기동, 목록·상세·PATCH 3종 SQL을 MySQL에서 실행.
 
@@ -657,7 +663,7 @@
 
 ### MySQL 검증
 
-- [ ] `Goal`·`SavingGoal`·`SpendingGoal` 엔티티가 V5·V7 DDL과 `ddl-auto: validate`를 통과하는지 MySQL 8.0에서 확인한다. H2만 확인했다.
+- [x] `Goal`·`SavingGoal`·`SpendingGoal` 엔티티가 V5·V7 DDL과 `ddl-auto: validate`를 통과하는지 MySQL 8.0에서 확인한다. 2026-09-11 확인: Docker `mysql:8.0`(8.0.46)에 V1~V17을 적용한 뒤 백엔드를 `local` 프로필(`ddl-auto: validate`, Flyway off)로 기동해 엔티티 32개 전부 통과, `Started DodamApplication`(6.2초). 오류·경고 없음.
 
 ## S15P21D105-509 — 목표 연결계좌
 
@@ -674,7 +680,7 @@
 
 ### MySQL 검증
 
-- [ ] V8 적용(복합 외래키 3개: goal, saving_goal, account)과 `GoalAccount` 엔티티(`@IdClass`)의 `ddl-auto: validate` 통과를 MySQL 8.0에서 확인한다. H2 fixture는 외래키 없이 만들었다.
+- [x] V8 적용(복합 외래키 3개: goal, saving_goal, account)과 `GoalAccount` 엔티티(`@IdClass`)의 `ddl-auto: validate` 통과를 MySQL 8.0에서 확인한다. 2026-09-11 확인: Docker `mysql:8.0`(8.0.46)에 V1~V17을 적용한 뒤 백엔드를 `local` 프로필(`ddl-auto: validate`, Flyway off)로 기동해 엔티티 32개 전부 통과, `Started DodamApplication`(6.2초). 오류·경고 없음. 493 seed가 `goal_account` 4,750건을 외래키가 살아 있는 상태로 적재했다.
 
 ## S15P21D105-510 — 목표 진행률·필요 저축액
 
@@ -716,7 +722,7 @@
 
 ### MySQL 검증
 
-- [ ] V9 적용과 `GoalHistory` 엔티티(`DECIMAL(10,4)`↔`BigDecimal`)의 `ddl-auto: validate` 통과를 MySQL 8.0에서 확인한다.
+- [x] V9 적용과 `GoalHistory` 엔티티(`DECIMAL(10,4)`↔`BigDecimal`)의 `ddl-auto: validate` 통과를 MySQL 8.0에서 확인한다. 2026-09-11 확인: Docker `mysql:8.0`(8.0.46)에 V1~V17을 적용한 뒤 백엔드를 `local` 프로필(`ddl-auto: validate`, Flyway off)로 기동해 엔티티 32개 전부 통과, `Started DodamApplication`(6.2초). 오류·경고 없음.
 
 ## S15P21D105-492 — Transaction·Spending·Subscription Fixture
 
