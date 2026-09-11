@@ -1,8 +1,8 @@
-# Goal API — 목표 CRUD·요약
+# Goal API — 목표 CRUD·요약·연결계좌
 
-JIRA `S15P21D105-455` (D6 Goal 기본 CRUD·계산 API 구현)의 하위 티켓 `S15P21D105-508`(API 12 Goal CRUD) 구현 기준이다.
-API 명세 12 Goal 14개 중 목록·요약·생성·상세·수정·삭제 6개를 다룬다. 연결계좌(509), 진행률·필요 월 저축액·예상 달성일·
-소비목표 진행률·위험상태(510), 변화 이력(511)은 다음 티켓 범위다.
+JIRA `S15P21D105-455` (D6 Goal 기본 CRUD·계산 API 구현)의 하위 티켓 `S15P21D105-508`(API 12 Goal CRUD),
+`S15P21D105-509`(API 12 목표 연결계좌) 구현 기준이다. API 명세 12 Goal 14개 중 8개를 다룬다.
+진행률·필요 월 저축액·예상 달성일·소비목표 진행률·위험상태(510), 변화 이력(511)은 다음 티켓 범위다.
 
 ## 모델
 
@@ -11,12 +11,14 @@ API 명세 12 Goal 14개 중 목록·요약·생성·상세·수정·삭제 6개
 | `goal` (V5) | `Goal` | 공통: 이름, 유형(SAVING / SPENDING), 상태, 현재 모인 금액, soft delete(`deleted_at`) |
 | `saving_goal` (V7) | `SavingGoal` | 모으기 목표의 목표 금액·목표일. PK = `goal_id` |
 | `spending_goal` (V7) | `SpendingGoal` | 줄이기 목표의 월 예산. PK = `goal_id` |
+| `goal_account` (V8) | `GoalAccount` | 모으기 목표에 연결된 계좌. PK = (`goal_id`, `account_id`), 계좌당 목표 1개(`uk_goal_account_account`) |
 
 - FE의 "모으기(saving)"가 SAVING, "줄이기(reducing)"가 SPENDING이다.
 - 세 엔티티는 연관관계 없이 같은 `goal_id`로 서비스가 묶는다. `goal_type` 컬럼은 복합 외래키 `(goal_id, goal_type) → goal(goal_id, type)`을
   위해 항상 부모의 `type`과 같은 값이 들어간다.
-- `current_amount`(모인 금액)는 이 티켓에서 바꾸지 않는다. 연결 계좌 잔액 합으로 갱신하는 것은 509다. 줄이기 목표는 0으로 둔다.
-- V5(`goal`)는 543이, V7(`saving_goal`·`spending_goal`)은 507이 선반영했다. `goal_account`·`goal_history`는 509·511에서 V8로 추가한다.
+- `current_amount`(모인 금액)는 연결 계좌 잔액 합이다. 연결을 바꾸는 PUT(509)이 갱신하고, 계좌 잔액이 동기화로 바뀐 뒤의 재계산은
+  510(진행률)에서 다룬다. 줄이기 목표는 0으로 둔다.
+- V5(`goal`)는 543이, V7(`saving_goal`·`spending_goal`)은 507이, V8(`goal_account`)은 509가 만들었다. `goal_history`는 511에서 V9로 추가한다.
 
 ### 상태 전이
 
@@ -43,6 +45,8 @@ ACHIEVED·CANCELED는 종료 상태다. 어디로도 옮길 수 없고 다른 �
 | GET | `/api/v1/goals/{goalId}` | 200 |
 | PATCH | `/api/v1/goals/{goalId}` | 200 |
 | DELETE | `/api/v1/goals/{goalId}` | 200 (`data: null`) |
+| GET | `/api/v1/goals/{goalId}/accounts?page&size` | 200 |
+| PUT | `/api/v1/goals/{goalId}/accounts` | 200 |
 
 ### 오류 코드
 
@@ -53,7 +57,8 @@ ACHIEVED·CANCELED는 종료 상태다. 어디로도 옮길 수 없고 다른 �
 | `NO_FIELDS_TO_UPDATE` | 400 | 수정 Body에 바꿀 필드가 없음 |
 | `GOAL_NOT_EDITABLE` | 409 | 종료 상태(ACHIEVED·CANCELED) 목표 수정 |
 | `GOAL_STATUS_TRANSITION_NOT_ALLOWED` | 409 | 허용되지 않은 상태 전이 |
-| `RESOURCE_NOT_FOUND` | 404 | 본인 것이 아니거나 삭제된 목표 |
+| `ACCOUNT_ALREADY_LINKED_TO_GOAL` | 409 | 다른(삭제되지 않은) 목표에 이미 연결된 계좌를 지정 |
+| `RESOURCE_NOT_FOUND` | 404 | 본인 것이 아니거나 삭제된 목표, 본인 것이 아니거나 없는 계좌("계좌를 찾을 수 없습니다.") |
 
 ## 생성 `POST /goals`
 
@@ -99,15 +104,49 @@ ACHIEVED·CANCELED는 종료 상태다. 어디로도 옮길 수 없고 다른 �
 ## 삭제 `DELETE /goals/{goalId}`
 
 `deleted_at`을 찍는 soft delete. 하위행(`saving_goal`/`spending_goal`)은 남긴다. 이후 조회·수정·삭제는 404.
-소비목표 비교(507)와 진단(543)은 `deleted_at IS NULL`로 걸러 읽는다. 연결 계좌(509)를 만든 뒤에는 삭제 시 연결 해제도 함께 해야 한다.
+소비목표 비교(507)와 진단(543)은 `deleted_at IS NULL`로 걸러 읽는다. 연결 계좌(`goal_account`)는 삭제 시 지우지 않고, 다른 목표가
+그 계좌를 연결할 때 삭제된 목표의 연결을 해제하고 이어받는다(509 참고).
+
+## 연결계좌 (509)
+
+모으기 목표에 계좌를 연결하면 그 계좌들의 잔액 합이 목표의 `currentAmount`가 된다. ERD의 `fk_goal_account_saving_goal` 때문에
+줄이기 목표에는 연결할 수 없고, `uk_goal_account_account` 때문에 한 계좌는 한 목표에만 연결된다.
+
+### 조회 `GET /goals/{goalId}/accounts?page&size`
+
+- 계좌 ID 순. 각 항목은 계좌 응답(5)과 같은 필드(`accountId`, `bankCode`, `bankName`, `accountNoMasked`, `accountName`, `accountType`,
+  `status`, `balance`)에 `contributionAmount`를 더한 것이다. 계좌번호 원문은 주지 않는다.
+- `linkedCount`(전체 연결 수), `totalBalance`(연결 계좌 잔액 합)는 페이지와 무관한 전체 값이다.
+- 줄이기 목표나 연결이 없는 목표는 빈 목록(404 아님).
+
+### 변경 `PUT /goals/{goalId}/accounts` Body `{ "accountNos": ["1234567890123456", …] }`
+
+연결 계좌를 요청 목록으로 **통째로 교체**한다. 빈 배열은 모두 해제다. 중복은 한 번으로 본다. 최대 50개.
+
+| 검증 | 결과 |
+| --- | --- |
+| 줄이기(SPENDING) 목표 | 400 "줄이기 목표에는 계좌를 연결할 수 없습니다." |
+| 종료 상태(ACHIEVED·CANCELED) 목표 | 409 `GOAL_NOT_EDITABLE` |
+| 본인 계좌가 아니거나 없는 계좌번호 | 404 |
+| 마이너스통장(MINUS) | 400 "입출금·예금·적금 계좌만 목표에 연결할 수 있습니다." (ERD `chk_goal_account_type`) |
+| 해지(CLOSED) 계좌 | 400. INACTIVE는 허용(잔액은 유효) |
+| 다른 살아 있는 목표에 연결된 계좌 | 409 `ACCOUNT_ALREADY_LINKED_TO_GOAL`. 삭제(soft delete)된 목표의 연결은 해제하고 이어받는다 |
+
+- 검증을 모두 끝낸 뒤 반영하므로 부분 반영은 없다.
+- 반영 후 `goal.current_amount`를 연결 계좌 잔액 합으로 다시 놓는다(`updated_at` 갱신). 집합이 같고 잔액도 같으면 아무것도 바꾸지 않는다.
+  집합은 같아도 잔액이 바뀌었으면 모인 금액만 갱신되므로, FE가 "새로고침" 용도로 같은 목록을 다시 PUT해도 된다.
+- `contributionAmount`(계좌별 기여 금액)는 명세 Body에 대응 필드가 없어 null로 두고 잔액 전체를 기여로 본다.
+- 응답은 조회와 같은 형태(연결 계좌 전체, 1페이지).
 
 ## 테스트
 
 - `GoalApiIntegrationTest`(14건): 유형별 생성·검증 8종, 목록 정렬·필터·페이지·타인 제외·삭제 제외, 요약 합산(ACTIVE만), 상세·타인 404,
   부분 수정·중복 요청·유형 불일치·검증 실패 시 미반영, 상태 전이 허용/거절·종료 상태 잠금, soft delete.
-- fixture `sql/goal-test-data.sql`이 `goal`·`saving_goal`·`spending_goal`을 ERD 컬럼으로 다시 만든다. 507 fixture(`transaction-test-data.sql`)도
+- `GoalAccountApiIntegrationTest`(9건): 연결·모인 금액·진행률 갱신, 페이지, 빈 목록, 집합 교체·전체 해제, 같은 집합 idempotent·잔액 재반영,
+  유형·상태·소유권·형식 검증 시 미반영, 다른 목표 연결 409·삭제된 목표 이어받기, 줄이기·종료 목표·타인 거절.
+- fixture `sql/goal-test-data.sql`이 `goal`·`saving_goal`·`spending_goal`·`goal_account`·`account`를 ERD 컬럼으로 다시 만든다. 507 fixture(`transaction-test-data.sql`)도
   같은 세 테이블을 다시 만들도록 맞췼다(한쪽만 DROP하면 뒤에 실행되는 테스트가 깨진다).
 
 ## 남은 작업
 
-[remaining-work.md](remaining-work.md)의 "S15P21D105-508" 절에 기록한다.
+[remaining-work.md](remaining-work.md)의 "S15P21D105-508", "S15P21D105-509" 절에 기록한다.

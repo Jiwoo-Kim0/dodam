@@ -653,8 +653,25 @@
 
 ### 삭제 시 연결 해제
 
-- [ ] `goal_account`(509, V8 예정)가 생기면 목표 soft delete 시 연결 계좌 행도 정리해야 한다. `uk_goal_account_account`(계좌당 목표 1개) 때문에 삭제된 목표에 묶인 계좌를 다른 목표에 연결할 수 없게 된다.
+- [x] 509에서 처리 방식을 정했다: 목표 soft delete 시 `goal_account` 행은 남기되, 다른 목표가 그 계좌를 연결하면 삭제된 목표의 연결을 해제하고 이어받는다(`GoalAccountService.replaceAccounts`). 삭제 시점에 바로 지우지 않은 이유는 삭제된 목표의 이력(511)이 연결 계좌를 참조할 수 있기 때문이다.
 
 ### MySQL 검증
 
 - [ ] `Goal`·`SavingGoal`·`SpendingGoal` 엔티티가 V5·V7 DDL과 `ddl-auto: validate`를 통과하는지 MySQL 8.0에서 확인한다. H2만 확인했다.
+
+## S15P21D105-509 — 목표 연결계좌
+
+구현 계약: [goal.md](goal.md) "연결계좌"
+
+### 계좌 잔액 변경 시 모인 금액 재계산
+
+- [ ] `goal.current_amount`는 연결을 바꾸는 PUT에서만 갱신된다. ACCOUNT 동기화(502)가 계좌 잔액을 바꿔도 목표의 모인 금액은 그대로다.
+- 완료 조건: 510(진행률)이 조회 시점에 연결 계좌 잔액 합으로 다시 계산해 돌려주거나, 동기화 뒤 목표를 갱신하는 훅을 둔다. 전자가 단순하다(저장값은 이력용, 응답은 실시간).
+
+### 기여 금액(contribution_amount)
+
+- [ ] 명세 Body가 `accountNos[]`만 받아 계좌별 기여 금액을 지정할 수 없다. 급여통장처럼 잔액 일부만 목표에 쓰는 경우를 위해 ERD가 둔 컬럼이다. FE에 입력 UI가 생기면 Body를 `[{accountNo, contributionAmount?}]`로 바꾸고 모인 금액 계산에 반영한다.
+
+### MySQL 검증
+
+- [ ] V8 적용(복합 외래키 3개: goal, saving_goal, account)과 `GoalAccount` 엔티티(`@IdClass`)의 `ddl-auto: validate` 통과를 MySQL 8.0에서 확인한다. H2 fixture는 외래키 없이 만들었다.
