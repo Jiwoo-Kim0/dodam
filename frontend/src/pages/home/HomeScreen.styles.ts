@@ -52,7 +52,7 @@ export const styles = StyleSheet.create({
     marginTop: spacing[1],
   },
   body: {
-    gap: spacing[5],
+    gap: spacing[3],
     paddingHorizontal: semanticSpacing.screenMargin,
     paddingTop: spacing[4],
   },
