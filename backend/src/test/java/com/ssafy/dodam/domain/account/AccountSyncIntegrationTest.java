@@ -2,7 +2,9 @@ package com.ssafy.dodam.domain.account;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -22,7 +24,9 @@ import com.ssafy.dodam.global.security.SensitiveNumberHasher;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyApiException;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyDemandDepositAccount;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyFinanceClient;
+import com.ssafy.dodam.infrastructure.external.ssafy.SsafyAccountTransaction;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyMember;
+import com.ssafy.dodam.infrastructure.external.ssafy.SsafyTransactionHistory;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyUnavailableException;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -100,6 +104,7 @@ class AccountSyncIntegrationTest {
 
     @BeforeEach
     void setUp() throws Exception {
+        jdbcTemplate.update("DELETE FROM `transaction`");
         jdbcTemplate.update("DELETE FROM account");
         financeSyncRepository.deleteAll();
         authSessionRepository.deleteAll();
@@ -282,6 +287,114 @@ class AccountSyncIntegrationTest {
                 .andExpect(jsonPath("$.data.results[0].message")
                         .value("금융망에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요."));
         assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM account", Long.class)).isZero();
+    }
+
+    // ---------- S15P21D105-502 거래내역 적재 ----------
+
+    @Test
+    void insertsFinanceTransactionsForSyncedAccountsAndReportsCounts() throws Exception {
+        given(ssafyFinanceClient.inquireDemandDepositAccountList(USER_KEY)).willReturn(List.of(
+                financeAccount("001", "한국은행", MAIN_ACCOUNT_NO, "한국은행 수시입출금", 1_488_000L, "20260910")
+        ));
+        given(ssafyFinanceClient.inquireTransactionHistoryList(eq(USER_KEY), eq(MAIN_ACCOUNT_NO), any(), any()))
+                .willReturn(new SsafyTransactionHistory(2L, List.of(
+                        financeTransaction("1001", "20260910", "123045", "2", 12_000L, 1_488_000L, "스타벅스", ""),
+                        financeTransaction("1000", "20260905", "090000", "1", 1_500_000L, 1_500_000L, "급여", "9월 급여")
+                )));
+
+        syncAccounts()
+                .andExpect(jsonPath("$.data.results[0].status").value("COMPLETED"))
+                .andExpect(jsonPath("$.data.results[0].syncedCount").value(3))
+                .andExpect(jsonPath("$.data.results[0].message").value("계좌 1건, 거래 2건 반영"));
+
+        mockMvc.perform(get("/api/v1/accounts/" + MAIN_ACCOUNT_NO + "/transactions")
+                        .header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(2))
+                .andExpect(jsonPath("$.data.content[0].transactionId").value("1001"))
+                .andExpect(jsonPath("$.data.content[0].transactionType").value("EXPENSE"))
+                .andExpect(jsonPath("$.data.content[0].transactionDate").value("2026-09-10"))
+                .andExpect(jsonPath("$.data.content[0].transactionTime").value("12:30:45"))
+                .andExpect(jsonPath("$.data.content[0].amount").value(12000))
+                .andExpect(jsonPath("$.data.content[0].balanceAfter").value(1488000))
+                .andExpect(jsonPath("$.data.content[0].summary").value("스타벅스"))
+                .andExpect(jsonPath("$.data.content[0].memo").doesNotExist())
+                .andExpect(jsonPath("$.data.content[1].transactionId").value("1000"))
+                .andExpect(jsonPath("$.data.content[1].transactionType").value("INCOME"))
+                .andExpect(jsonPath("$.data.content[1].memo").value("9월 급여"));
+
+        Map<String, Object> row = jdbcTemplate.queryForMap(
+                "SELECT payment_method, source_type, hidden, category_id FROM `transaction` WHERE transaction_id = '1001'");
+        assertThat(row.get("payment_method")).isEqualTo("ACCOUNT");
+        assertThat(row.get("source_type")).isEqualTo("SSAFY");
+        assertThat(row.get("hidden")).isEqualTo(false);
+        assertThat(row.get("category_id")).isNull();
+    }
+
+    @Test
+    void neverOverwritesExistingTransactionsAndOnlyInsertsNewOnes() throws Exception {
+        given(ssafyFinanceClient.inquireDemandDepositAccountList(USER_KEY)).willReturn(List.of(
+                financeAccount("001", "한국은행", MAIN_ACCOUNT_NO, "한국은행 수시입출금", 1_488_000L, "20260910")
+        ));
+        given(ssafyFinanceClient.inquireTransactionHistoryList(eq(USER_KEY), eq(MAIN_ACCOUNT_NO), any(), any()))
+                .willReturn(new SsafyTransactionHistory(1L, List.of(
+                        financeTransaction("1000", "20260905", "090000", "1", 1_500_000L, 1_500_000L, "급여", "9월 급여")
+                )));
+        syncAccounts().andExpect(jsonPath("$.data.results[0].message").value("계좌 1건, 거래 1건 반영"));
+
+        // 사용자가 메모를 바꾼 뒤 금융망이 같은 거래를 다른 메모로 다시 주더라도 덮어쓰지 않는다
+        jdbcTemplate.update("UPDATE `transaction` SET memo = '내가 고친 메모', hidden = TRUE WHERE transaction_id = '1000'");
+        given(ssafyFinanceClient.inquireTransactionHistoryList(eq(USER_KEY), eq(MAIN_ACCOUNT_NO), any(), any()))
+                .willReturn(new SsafyTransactionHistory(2L, List.of(
+                        financeTransaction("1001", "20260910", "123045", "2", 12_000L, 1_488_000L, "스타벅스", ""),
+                        financeTransaction("1000", "20260905", "090000", "1", 1_500_000L, 1_500_000L, "급여", "금융망 메모")
+                )));
+        syncAccounts().andExpect(jsonPath("$.data.results[0].message").value("계좌 0건, 거래 1건 반영"));
+
+        mockMvc.perform(get("/api/v1/accounts/" + MAIN_ACCOUNT_NO + "/transactions/1000")
+                        .header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.memo").value("내가 고친 메모"))
+                .andExpect(jsonPath("$.data.hidden").value(true));
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM `transaction`", Long.class)).isEqualTo(2L);
+    }
+
+    @Test
+    void skipsTransactionsForSeedAccountsAndFailsWholeScopeOnBrokenTransaction() throws Exception {
+        insertSeedAccount(SEED_ACCOUNT_NO, 9_000_000L);
+        given(ssafyFinanceClient.inquireDemandDepositAccountList(USER_KEY)).willReturn(List.of(
+                financeAccount("004", "국민은행", SEED_ACCOUNT_NO, "금융망 이름", 1L, "20260910")
+        ));
+        given(ssafyFinanceClient.inquireTransactionHistoryList(eq(USER_KEY), eq(SEED_ACCOUNT_NO), any(), any()))
+                .willReturn(new SsafyTransactionHistory(1L, List.of(
+                        financeTransaction("2000", "20260905", "090000", "1", 1_000L, 1_000L, "seed 계좌 거래", "")
+                )));
+        syncAccounts().andExpect(jsonPath("$.data.results[0].message").value("계좌 0건, 거래 0건 반영"));
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM `transaction`", Long.class)).isZero();
+
+        given(ssafyFinanceClient.inquireDemandDepositAccountList(USER_KEY)).willReturn(List.of(
+                financeAccount("001", "한국은행", MAIN_ACCOUNT_NO, "한국은행 수시입출금", 1_000L, "20260910")
+        ));
+        given(ssafyFinanceClient.inquireTransactionHistoryList(eq(USER_KEY), eq(MAIN_ACCOUNT_NO), any(), any()))
+                .willReturn(new SsafyTransactionHistory(1L, List.of(
+                        financeTransaction("3000", "20260905", "090000", "9", 1_000L, 1_000L, "알 수 없는 유형", "")
+                )));
+        syncAccounts()
+                .andExpect(jsonPath("$.data.results[0].status").value("FAILED"))
+                .andExpect(jsonPath("$.data.results[0].message")
+                        .value("금융망에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요."));
+        // 계좌도 함께 롤백된다(부분 반영 없음)
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM account WHERE account_no_hash = ?", Long.class,
+                sensitiveNumberHasher.hash(MAIN_ACCOUNT_NO))).isZero();
+    }
+
+    private static SsafyAccountTransaction financeTransaction(
+            String uniqueNo, String date, String time, String type, long amount, long afterBalance,
+            String summary, String memo
+    ) {
+        return new SsafyAccountTransaction(uniqueNo, date, time, type, type.equals("1") ? "입금" : "출금", "",
+                amount, afterBalance, summary, memo);
     }
 
     // ---------- helpers ----------
