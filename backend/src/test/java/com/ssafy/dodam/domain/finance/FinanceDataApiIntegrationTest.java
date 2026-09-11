@@ -35,6 +35,7 @@ import com.ssafy.dodam.global.crypto.FieldCryptor;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyApiException;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyCreditRating;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyCreditRatingCriterion;
+import com.ssafy.dodam.infrastructure.external.ssafy.SsafyDemandDepositAccount;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyFinanceClient;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyMember;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyUnavailableException;
@@ -122,6 +123,12 @@ class FinanceDataApiIntegrationTest {
 
         given(ssafyFinanceClient.createMember(anyString())).willReturn(member(USER_KEY));
         given(ssafyFinanceClient.searchMember(anyString())).willReturn(member(USER_KEY));
+        // ACCOUNT scope는 실제 AccountSyncHandler가 돈다. 계좌 3건을 돌려줘 syncedCount 3을 만든다.
+        given(ssafyFinanceClient.inquireDemandDepositAccountList(anyString())).willReturn(List.of(
+                financeAccount("0011234567890001", "도담 주거래통장", 1_500_000L),
+                financeAccount("0011234567890002", "도담 생활비통장", 300_000L),
+                financeAccount("0011234567890003", "도담 비상금통장", 50_000L)
+        ));
         SyncHandlerStubs.DURING_CARD_SYNC.set(null);
 
         mockMvc.perform(post("/api/v1/auth/signup")
@@ -597,7 +604,8 @@ class FinanceDataApiIntegrationTest {
     }
 
     /**
-     * 동기화 확장점 검증용 스텁. ACCOUNT는 3건 성공, LOAN은 예외, CARD는 0건 성공(실행 중 훅 호출 가능), SAVING은 미등록(SKIPPED).
+     * 동기화 확장점 검증용 스텁. LOAN은 예외, CARD는 0건 성공(실행 중 훅 호출 가능), SAVING은 미등록(SKIPPED).
+     * ACCOUNT는 실제 {@code AccountSyncHandler}(S15P21D105-501)가 돌며, setUp이 금융망 Mock에 계좌 3건을 넣어 3건 성공을 만든다.
      */
     @TestConfiguration
     static class SyncHandlerStubs {
@@ -620,22 +628,6 @@ class FinanceDataApiIntegrationTest {
                         hook.run();
                     }
                     return FinanceSyncScopeResult.completed(FinanceSyncScope.CARD, 0);
-                }
-            };
-        }
-
-        @Bean
-        FinanceSyncScopeHandler accountSyncHandlerStub() {
-            return new FinanceSyncScopeHandler() {
-                @Override
-                public FinanceSyncScope scope() {
-                    return FinanceSyncScope.ACCOUNT;
-                }
-
-                @Override
-                public FinanceSyncScopeResult sync(Long userId, String userKey) {
-                    assertThat(userKey).isNotBlank();
-                    return FinanceSyncScopeResult.completed(FinanceSyncScope.ACCOUNT, 3);
                 }
             };
         }
@@ -817,6 +809,11 @@ class FinanceDataApiIntegrationTest {
 
     private static SsafyMember member(String userKey) {
         return new SsafyMember(EMAIL, "dodam", "00100", userKey);
+    }
+
+    private static SsafyDemandDepositAccount financeAccount(String accountNo, String accountName, long balance) {
+        return new SsafyDemandDepositAccount("001", "한국은행", "도담", accountNo, accountName, "1", "수시입출금",
+                "20260901", "20310901", 500_000_000L, 100_000_000L, balance, "20260910", "KRW");
     }
 
     private FinanceConnectionStatus connectionStatus() {

@@ -99,7 +99,7 @@
 
 ### 도메인별 동기화 구현
 
-- [ ] `FinanceSyncScopeHandler` 구현을 도메인별로 등록한다. 현재 등록된 구현이 없어 `POST /finance-data/sync`는 모든 scope를 SKIPPED로 보고하고 `last_synced_at`을 갱신하지 않는다.
+- [ ] `FinanceSyncScopeHandler` 구현을 도메인별로 등록한다. ACCOUNT는 501에서 `AccountSyncHandler`로 등록했다(2026-09-11). CARD·LOAN·SAVING은 구현이 없어 SKIPPED로 보고된다.
 - 담당 근거: 테이블 소유 도메인이 구현한다. ACCOUNT는 BE-A(S15P21D105-501, `Account` 엔티티와 함께), CARD·LOAN·SAVING은 BE-B 영역이다. 새 담당 배정을 의미하지 않는다.
 - 선행 조건: 시연 데이터를 로컬 DB에서 읽는 현재 방식과 금융망 실시간 동기화의 역할 분담을 팀이 정한다. 금융망에서 받은 행은 `source_type = 'SSAFY'`, 시연 데이터는 `SEED`로 구분해 공존시키는 것을 전제로 한다.
 - 완료 조건: scope별 handler가 금융망 조회 → 로컬 upsert를 수행하고, 실행 응답의 `syncedCount`와 `last_synced_at` 갱신을 통합 테스트로 확인한다.
@@ -400,6 +400,90 @@
 - 영향: Jenkins의 Build & Test 단계가 `./gradlew clean build`를 돌리므로 어느 브랜치의 MR이든 이 실패를 함께 본다.
 - 완료 조건: `card-query-test-data.sql`과 `deposit-saving-test-data.sql`의 `account` INSERT에 `currency`를 채우거나, 엔티티 매핑에 기본값을 반영한다. 담당 이슈를 정해야 한다.
 
+## S15P21D105-501 — 계좌 목록·상세·잔액
+
+구현 계약: [account-query.md](account-query.md)
+
+### 금융망 잔액 실시간 조회
+
+- [ ] `GET /api/v1/accounts/{accountNo}/balance`가 금융망(2.4 계좌 잔액 조회)을 호출할지, 우리 DB 값만 돌려줄지 확정한다.
+- 현재 동작: `account.balance`와 `updated_at`(`balanceAsOf`)을 돌려준다. 명세는 "SSAFY"로 표기하지만 카드·대출·예적금이 모두 로컬 테이블을 읽는 방식과 맞췼다.
+- 근거: 2026-09-09 기준 전달받은 API Key가 거래 API에서 `H1008`로 거절돼 실호출 검증이 불가능했고, 마이너스통장 상환(534)이 로컬 잔액만 바꾸므로 금융망 값을 그대로 보이면 상환 결과가 사라진 것처럼 보인다.
+- 완료 조건: 실시간 조회로 정하면 `SsafyFinanceClient`에 잔액 조회를 추가하고 응답에 조회 시각을 싣는다. 로컬로 확정하면 명세의 "SSAFY" 표기를 고친다.
+
+### 금융망 계좌 목록 실호출 검증
+
+- [x] ACCOUNT 동기화 핸들러(`AccountSyncHandler`)를 구현했다(2026-09-11). 금융망 2.4 계좌 목록 → `account` upsert, SEED·MANUAL 보존, 목록에서 사라진 SSAFY 계좌 CLOSED 처리까지 Mock 기반 통합 테스트로 확인했다.
+- [ ] 실제 금융망 호출로 `inquireDemandDepositAccountList` 응답 필드명·형식(`accountBalance` 문자열, `lastTransactionDate` yyyyMMdd·빈 문자열)을 대조한다. 2026-09-09 기준 API Key가 거래 API에서 `H1008`로 거절돼 실호출 검증을 못 했고, 응답 계약은 금융망 문서 예시를 따랐다.
+- [ ] 계좌가 하나도 없는 사용자에게 금융망이 `REC`를 생략하는지 빈 배열로 주는지 확인한다. 구현은 둘 다 빈 목록으로 해석한다.
+- 완료 조건: 시연 계정으로 `POST /finance-data/sync`(ACCOUNT) 실행 후 목록·상세·잔액이 금융망 값과 일치한다.
+
+### 부분 매핑 엔티티 교체
+
+- [ ] `CardWithdrawalAccount`(card), `MinusAccountOwner`(minusaccount), `JdbcAccountBalanceWriter`(minusaccount)를 `Account` 엔티티로 교체할지 정한다.
+- 현재 동작: 세 엔티티가 `account`를 함께 매핑한다. 읽기는 문제없지만 쓰기 엔티티가 둘(`MinusAccountOwner`, `Account`)이 되면 같은 행을 다른 영속성 컨텍스트 상태로 들고 있을 수 있다. 501은 읽기만 하므로 지금은 충돌이 없다.
+- 담당 근거: 카드·마이너스통장은 BE-B 영역이라 501에서 고치지 않았다.
+- 완료 조건: 마이너스통장 상환이 `Account`로 잔액을 쓰거나, 쓰기 주체를 하나로 명시한다.
+
+### 엔티티 nullable 완화
+
+- [ ] `Account.accountNoEncrypted`·`sourceType`이 DDL은 NOT NULL인데 엔티티는 nullable이다.
+- 근거: H2 테스트는 엔티티로 스키마를 만드는데 `deposit-saving-test-data.sql`, `savings-test-data.sql`, `deposit-detail-test-data.sql`, `CashflowBalanceReaderTest`가 두 컬럼 없이 `account`를 적재한다. NOT NULL로 매핑하면 그 테스트가 깨진다. local/prod `validate`는 NULL 허용 여부를 검사하지 않는다.
+- 완료 조건: 네 fixture가 두 컬럼을 채우도록 고친 뒤 엔티티를 NOT NULL로 되돌린다. 담당 이슈를 정해야 한다.
+
+### MySQL 검증
+
+- [ ] `Account` 엔티티가 V3 DDL과 `ddl-auto: validate`를 통과하는지 MySQL 8.0에서 확인한다. H2 통합 테스트만 수행했다.
+- 근거: `account_no_encrypted`는 `VARBINARY(512)`↔`byte[]`, `account_no_hash`·`currency`는 CHAR 고정 길이 매핑이다. 카드·대출과 같은 `columnDefinition` 처리를 했지만 실검증은 남았다.
+- 완료 조건: 빈 스키마에 V1~V16 적용 후 기동, 목록·상세·잔액 SQL을 MySQL에서 실행.
+
+## S15P21D105-502 — 계좌 거래내역 Adapter
+
+구현 계약: [account-query.md](account-query.md) "계좌 거래내역·거래 단건", "거래내역 Adapter"
+
+### 거래내역 동기화 기간·증분 전략
+
+- [ ] 매 동기화마다 계좌별 최근 12개월 거래를 통째로 받아 없는 것만 넣는다. 거래가 많아지면 금융망 호출·응답이 커진다.
+- 선행 조건: 금융망 거래내역 API가 페이지네이션을 지원하는지(문서 예시에는 `totalCount`·`list`만 있다), 계좌별 마지막 동기화 시각을 어디에 둘지(`account` 컬럼 추가는 ERD 변경) 정한다.
+- 완료 조건: 두 번째 동기화부터는 마지막 적재 거래일 이후만 받거나, 페이지 단위로 받는다. 시연 규모(계좌 수 건, 거래 수백 건)에서는 현재 방식으로 충분하다.
+
+### 금융망 거래내역 실호출 검증
+
+- [ ] `inquireTransactionHistoryList` 요청 Body(`accountNo`, `startDate`, `endDate`, `transactionType = A`, `orderByType = DESC`)와 응답(`REC.totalCount`, `REC.list[].transactionType "1"/"2"`, 금액 문자열, 시각 HHmmss)을 실호출로 대조한다. API Key 문제(499 절)로 문서 예시만 따랐다.
+- [ ] 계좌에 거래가 없을 때 `REC`가 생략되는지 `list: []`로 오는지 확인한다. 구현은 둘 다 빈 목록으로 해석한다.
+
+### V6 마이그레이션과 504 브랜치 정리
+
+- [ ] `V6__create_transaction_category_and_transaction.sql`은 504 브랜치(`S15P21D105-504-api-6-transaction-query`)의 V5 커밋을 cherry-pick한 뒤 **V6으로 번호를 옮긴 것**이다. develop 병합 시 543이 `V5__create_goal.sql`로 V5를 먼저 써서 충돌했다(2026-09-11).
+- 완료 조건: 504 브랜치를 이어갈 때 develop을 병합하고 그쪽의 V5 마이그레이션 커밋을 걷어낸다(테이블은 이미 V6으로 develop에 있다). `Transaction` 엔티티·fixture의 "V5" 표기도 V6으로 고친다.
+
+### 카드·마이너스통장 거래내역과의 통합
+
+- [ ] `GET /accounts/{accountNo}/transactions`(5), `GET /cards/{cardNo}/transactions`(8), `GET /minus-accounts/{accountNo}/transactions`(10-1)가 같은 원장을 계좌·카드 축으로 따로 읽는다. 응답 필드는 맞췼지만 reader 구현은 세 개다.
+- 완료 조건: 공용 reader로 합치거나 세 구현을 그대로 두기로 팀에서 정한다(534 "API 5 거래내역과의 중복" 항목과 함께).
+
+## S15P21D105-503 — 계좌 집계·휴면 탐지
+
+구현 계약: [account-query.md](account-query.md) "계좌 집계·휴면 탐지"
+
+### 휴면 기준 기본값 확정
+
+- [ ] `inactiveMonths` 기본값 6개월, `maxBalance` 기본 없음(잔액 > 0만 요구)으로 구현했다. 기획안 예시는 "최근 8개월"을 쓰고 금융권 휴면 기준은 1년이라 팀 확정이 필요하다.
+- 완료 조건: FE 기본 호출 값과 진단(14 Diagnosis)의 "휴면성 소액계좌" 이슈 판정이 같은 기준을 쓴다.
+
+### 현금성 자산 정의
+
+- [ ] 현금성 자산 = 수시입출금 잔액(CLOSED 제외, INACTIVE 포함)으로 정의했다. Finance Data 통합 요약(500)의 `totals.cashAssets`는 예·적금까지 포함하므로 두 값이 다르다. 명칭을 맞추거나 500의 필드명을 바꿀지 정한다.
+- 근거: 기획안 9-2가 현금성 자산과 저축성 자산을 구분한다.
+
+### 거래 원장 기반 휴면 판정
+
+- [ ] 휴면 판정은 `account.last_transaction_date`만 본다. 동기화 전 seed 계좌는 seed가 넣은 값에, 수동 거래(API 6 등록)는 이 컬럼을 갱신하지 않으면 판정에 반영되지 않는다.
+- 완료 조건: 수동 거래 등록(505)이 `last_transaction_date`를 갱신하거나, 판정 시 `transaction`의 최근 거래일과 비교해 더 최신 값을 쓴다.
+
+### MySQL 검증
+
+- [ ] `JdbcAccountFlowReader`의 `YEAR()`/`MONTH()` GROUP BY와 `SUM(CASE …)`을 MySQL 8.0에서 실행한다. H2(MODE=MySQL)만 확인했다. `ONLY_FULL_GROUP_BY` 모드에서도 SELECT 항목이 모두 GROUP BY 식 또는 집계이므로 통과해야 한다.
 ## S15P21D105-543 — Diagnosis 저장 구조·실행 골격
 
 구현 계약: [diagnosis.md](diagnosis.md)
