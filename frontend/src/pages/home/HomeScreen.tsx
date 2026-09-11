@@ -1,10 +1,14 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 
-import { BouncyScrollView } from '@/components/bouncyScrollView/BouncyScrollView';
+import {
+  BouncyScrollView,
+  type BouncyScrollViewHandle,
+} from '@/components/bouncyScrollView/BouncyScrollView';
+import { subscribeHomeTabReselect } from '@/components/bottomNavigation/homeTabReselectEvents';
 import { routes } from '@/constants/routes';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import { colors } from '@/styles';
@@ -19,16 +23,46 @@ import { styles } from './HomeScreen.styles';
 
 /** 로그인 연동 전까지 사용하는 임시 사용자명이다. */
 const MOCK_USER_NAME = '싸피';
+const MOCK_REFRESH_DURATION = 600;
 
 export function HomeScreen() {
   const router = useRouter();
+  const scrollRef = useRef<BouncyScrollViewHandle>(null);
   const [sectionSize, setSectionSize] = useState({ width: 0, height: 0 });
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (refreshTimeoutRef.current) {
+      clearTimeout(refreshTimeoutRef.current);
+    }
+  }, []);
+
+  const handleHomeRefresh = useCallback(() => {
+    if (isRefreshing) return;
+
+    scrollRef.current?.scrollToTop();
+    setIsRefreshing(true);
+
+    // API 연결 전에는 새로고침 동작을 확인할 수 있도록 짧은 피드백만 제공한다.
+    refreshTimeoutRef.current = setTimeout(() => {
+      setIsRefreshing(false);
+      refreshTimeoutRef.current = null;
+    }, MOCK_REFRESH_DURATION);
+  }, [isRefreshing]);
+
+  useEffect(() => subscribeHomeTabReselect(handleHomeRefresh), [handleHomeRefresh]);
 
   return (
     <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
-      <HomeHeader />
+      <HomeHeader onLogoPress={handleHomeRefresh} />
 
-      <BouncyScrollView contentContainerStyle={styles.scrollContent}>
+      <BouncyScrollView
+        contentContainerStyle={styles.scrollContent}
+        onRefresh={handleHomeRefresh}
+        ref={scrollRef}
+        refreshIndicatorColor={colors.primary.green}
+        refreshing={isRefreshing}>
         <View
           onLayout={(event) =>
             setSectionSize({
