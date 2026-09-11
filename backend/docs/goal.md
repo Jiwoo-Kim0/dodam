@@ -1,8 +1,9 @@
-# Goal API — 목표 CRUD·요약·연결계좌·계산
+# Goal API — 목표 CRUD·요약·연결계좌·계산·이력
 
 JIRA `S15P21D105-455` (D6 Goal 기본 CRUD·계산 API 구현)의 하위 티켓 `S15P21D105-508`(API 12 Goal CRUD),
-`S15P21D105-509`(API 12 목표 연결계좌), `S15P21D105-510`(API 12 목표 진행률·필요 저축액) 구현 기준이다.
-API 명세 12 Goal 14개 중 13개를 다룬다. 변화 이력(511)은 다음 티켓 범위다.
+`S15P21D105-509`(API 12 목표 연결계좌), `S15P21D105-510`(API 12 목표 진행률·필요 저축액),
+`S15P21D105-511`(API 12 목표 예측·위험·이력) 구현 기준이다. API 명세 12 Goal 14개를 모두 다룬다.
+511 제목의 "예측·위험"(forecast·risk)은 510에서 함께 구현했고, 511에서는 변화 이력(`goal_history`)을 추가했다.
 
 ## 모델
 
@@ -12,6 +13,7 @@ API 명세 12 Goal 14개 중 13개를 다룬다. 변화 이력(511)은 다음 �
 | `saving_goal` (V7) | `SavingGoal` | 모으기 목표의 목표 금액·목표일. PK = `goal_id` |
 | `spending_goal` (V7) | `SpendingGoal` | 줄이기 목표의 월 예산. PK = `goal_id` |
 | `goal_account` (V8) | `GoalAccount` | 모으기 목표에 연결된 계좌. PK = (`goal_id`, `account_id`), 계좌당 목표 1개(`uk_goal_account_account`) |
+| `goal_history` (V9) | `GoalHistory` | 변화 시점의 스냅샷(확보 금액·진행률·예상 달성일·event). 한 날짜에 여러 건 가능 |
 
 - FE의 "모으기(saving)"가 SAVING, "줄이기(reducing)"가 SPENDING이다.
 - 세 엔티티는 연관관계 없이 같은 `goal_id`로 서비스가 묶는다. `goal_type` 컬럼은 복합 외래키 `(goal_id, goal_type) → goal(goal_id, type)`을
@@ -19,7 +21,8 @@ API 명세 12 Goal 14개 중 13개를 다룬다. 변화 이력(511)은 다음 �
 - `current_amount`(모인 금액)는 연결 계좌 잔액 합이다. 연결을 바꾸는 PUT(509)과 계산 API(510: progress·required-saving·forecast·risk)를
   호출할 때마다 다시 계산해 저장값도 갱신한다. 그래서 동기화로 잔액이 바뀐 뒤에도 계산 API를 한 번 부르면 목록·요약의 모인 금액이 맞아진다.
   줄이기 목표는 0으로 둔다.
-- V5(`goal`)는 543이, V7(`saving_goal`·`spending_goal`)은 507이, V8(`goal_account`)은 509가 만들었다. `goal_history`는 511에서 V9로 추가한다.
+- V5(`goal`)는 543이, V7(`saving_goal`·`spending_goal`)은 507이, V8(`goal_account`)은 509가, V9(`goal_history`)는 511이 만들었다.
+  BE-A 구간(V1~V9)은 이것으로 소진됐다.
 
 ### 상태 전이
 
@@ -53,6 +56,7 @@ ACHIEVED·CANCELED는 종료 상태다. 어디로도 옮길 수 없고 다른 �
 | GET | `/api/v1/goals/{goalId}/forecast?baseDate&months` | 200 (SAVING만) |
 | GET | `/api/v1/goals/{goalId}/spending-progress` | 200 (SPENDING만) |
 | GET | `/api/v1/goals/{goalId}/risk` | 200 |
+| GET | `/api/v1/goals/{goalId}/history?startDate&endDate&page&size` | 200 |
 
 ### 오류 코드
 
@@ -201,6 +205,31 @@ ACHIEVED·CANCELED는 종료 상태다. 어디로도 옮길 수 없고 다른 �
 `riskLevel`은 요인 중 가장 높은 수준이고, `metrics`에 판정에 쓴 수치(모으기: 필요·평균 저축액·실제·기대 진행률 / 줄이기: 예산·소비·예상·사용률)를 함께 준다.
 기준값(5pt, 10pt, 30%, 80%)은 `GoalCalculationService` 상수다. 진단(14)이 같은 규칙을 쓰도록 맞추는 일은 남은 작업.
 
+## 변화 이력 (511)
+
+목표를 바꾸는 모든 경로가 반영 직후 `goal_history`에 스냅샷을 남긴다(`GoalHistoryRecorder`). 값이 실제로 바뀌지 않은 요청(같은 값 PATCH,
+같은 집합 PUT, 잔액 변화 없는 계산 API 호출)은 이력을 남기지 않는다.
+
+| event | 시점 | 기록 위치 |
+| --- | --- | --- |
+| `GOAL_CREATED` | 생성 (확보 금액 0) | `GoalService.create` |
+| `GOAL_UPDATED` | 이름·목표 금액·목표일·월 예산 수정 | `GoalService.update` |
+| `STATUS_CHANGED` | 상태 전이(다른 필드 수정과 함께 오면 이 값) | `GoalService.update` |
+| `ACCOUNTS_UPDATED` | 연결 계좌 집합 변경 | `GoalAccountService.replaceAccounts` |
+| `AMOUNT_UPDATED` | 연결 계좌 잔액 변화로 확보 금액이 달라짐(같은 집합 PUT, 510 계산 API 호출 시) | `GoalAccountService`, `GoalCalculationService` |
+| `GOAL_DELETED` | soft delete | `GoalService.delete` |
+
+각 행에는 그 시점의 `currentAmount`, `progressRatePercent`(모으기만, 4자리), `forecastDate`(모으기만, 510과 같은 규칙으로 계산한
+예상 달성일, 속도 0이면 null)가 함께 남는다. 이력을 이어 보면 기획안 「금융목표 예상 달성 시점 변화」("기존 예상 달성일 → 현재 예상 달성일")를
+만들 수 있다.
+
+### 조회 `GET /goals/{goalId}/history?startDate&endDate&page&size`
+
+- 기간 정책은 거래내역과 같은 `QueryPeriodPolicy`(기본 최근 3개월, 최대 12개월, 오늘까지). page ≥ 0, size 1~100.
+- `recordedDate` 내림차순, 같은 날이면 나중에 기록된 것 먼저. 공통 `PageResponse`.
+- 삭제된 목표의 이력은 행은 남지만 API로는 404다(목표 조회 규칙과 같음).
+- 응답 항목: `historyId`, `recordedDate`, `currentAmount`, `progressRatePercent`, `forecastDate`, `event`, `createdAt`.
+
 ## 테스트
 
 - `GoalApiIntegrationTest`(14건): 유형별 생성·검증 8종, 목록 정렬·필터·페이지·타인 제외·삭제 제외, 요약 합산(ACTIVE만), 상세·타인 404,
@@ -210,9 +239,11 @@ ACHIEVED·CANCELED는 종료 상태다. 어디로도 옮길 수 없고 다른 �
 - `GoalCalculationApiIntegrationTest`(10건): 진행률(잔액 재계산·저장, 기대 진행률·BEHIND/AHEAD/ACHIEVED), 필요 저축액(남은 개월 올림, 속도 비교,
   소득 비율, 목표일 지남), 예상 달성일(속도 기준, 기준일 변경, 속도 0, 파라미터 검증), 소비목표 진행률(숨김 제외, 예상·절감액), 위험 판정(요인·수준·NONE).
   생성일은 JDBC로 "오늘 − N개월"로 되돌려 날짜 의존을 없앴다.
-- fixture `sql/goal-test-data.sql`이 `goal`·`saving_goal`·`spending_goal`·`goal_account`·`account`를 ERD 컬럼으로 다시 만든다. 507 fixture(`transaction-test-data.sql`)도
+- `GoalHistoryApiIntegrationTest`(4건): 모으기 목표의 생성→연결→잔액 변화→수정→상태 변경이 event 순서대로 남고 값 없는 변경은 남지 않음,
+  줄이기 목표(진행률 null)·삭제 기록, 기간·페이지·최신순·검증, 타인 404.
+- fixture `sql/goal-test-data.sql`이 `goal`·`saving_goal`·`spending_goal`·`goal_account`·`goal_history`·`account`를 ERD 컬럼으로 다시 만든다. 507 fixture(`transaction-test-data.sql`)도
   같은 세 테이블을 다시 만들도록 맞췼다(한쪽만 DROP하면 뒤에 실행되는 테스트가 깨진다).
 
 ## 남은 작업
 
-[remaining-work.md](remaining-work.md)의 "S15P21D105-508" ~ "S15P21D105-510" 절에 기록한다.
+[remaining-work.md](remaining-work.md)의 "S15P21D105-508" ~ "S15P21D105-511" 절에 기록한다.
