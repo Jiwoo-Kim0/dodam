@@ -10,7 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 /**
- * ERD `transaction_category`. 소비 카테고리 기준 행으로 V5 마이그레이션이 초기값을 넣는다.
+ * ERD `transaction_category`. 소비 카테고리 기준 행으로 V6 마이그레이션이 초기값을 넣는다.
  * 코드(`code`)는 대문자 스네이크 케이스이며 API의 카테고리 필터 값으로 그대로 노출된다.
  */
 @Entity

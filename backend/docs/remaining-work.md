@@ -537,3 +537,37 @@
 - [ ] 실제 Jira 접근이 가능해지면 최신 543 완료 조건과 구현 범위를 대조한다. 로컬
   `SPRINT/Jira (4).csv`의 제목(`[API 14] Diagnosis 기반`)과 설명(`Diagnosis·Issue 관계와 실행 골격`)만
   근거로 범위를 정했다.
+## S15P21D105-504 — 거래 조회·메모·카테고리·숨김
+
+구현 계약: [transaction-query.md](transaction-query.md)
+
+### 금융망 메모 API 반영
+
+- [ ] 명세 6은 거래 메모 수정을 "SSAFY" 연동으로 표기하지만 현재는 우리 DB `transaction.memo`만 갱신한다.
+- 근거: 금융망 거래 메모 API(2.4 거래내역 메모)에 넘길 `accountNo`·`transactionUniqueNo`와 우리 원장의 대응 규약이 501(계좌 동기화)에서 아직 정해지지 않았다. 2026-09-09 기준 전달받은 API Key가 거래 API에서 `H1008`로 거절돼 실호출 검증도 불가능했다.
+- 선행 조건: 501이 `transaction_id`를 금융망 `transactionUniqueNo`로 채우는지, 계좌 거래만 대상인지 확정.
+- 완료 조건: SSAFY 출처 계좌 거래의 메모 수정 시 금융망에도 반영되거나, 로컬 전용으로 확정해 명세의 "SSAFY" 표기를 고친다.
+
+### 거래 seed 데이터
+
+- [ ] `backend/database/seeds`에 `transaction` seed가 없다. 시연 계정으로 거래 목록·카드 사용내역·마이너스통장 거래·소비 기반 카드 추천을 보이려면 필요하다.
+- 근거: 카드·마이너스통장·상품 추천 도메인은 `transaction`을 JDBC로 읽지만 데이터 적재는 어느 티켓도 맡지 않았다. 카테고리 기준 행(V6)의 코드를 그대로 써야 한다.
+- 완료 조건: 시연 사용자별 3개월치 거래가 V6 카테고리 코드·`payment_method`(CARD/ACCOUNT) 규약으로 적재되고, 501 동기화가 `source_type = 'SEED'`를 덮어쓰지 않는 규칙(534에서 제기한 것과 같은 문제)이 정해진다.
+
+### MySQL 검증
+
+- [ ] V6를 MySQL 8.0에서 적용해 `ddl-auto: validate` 통과와 복합 외래키(`account`, `card`) 생성을 확인한다. H2 통합 테스트만 수행했다.
+- 근거: `hidden`·`active`는 TINYINT(1)↔boolean, `transaction_time`은 TIME↔LocalTime 매핑이며 H2와 MySQL의 타입 검증 결과가 다를 수 있다. 기존 DB에는 V17 뒤에 V6이 들어가므로 out-of-order 적용도 함께 본다.
+- 완료 조건: 빈 스키마에 V1~V16 적용 후 기동, 목록·상세·PATCH 3종 SQL을 MySQL에서 실행.
+
+### 명세 외 추가 항목 확정
+
+- [ ] `GET /api/v1/transactions/categories`와 목록 파라미터 `hidden`을 API 명세 6에 반영할지 팀에서 정한다.
+- 근거: FE가 카테고리 수정 Body의 `categoryId`와 필터 코드를 알 방법이 명세에 없었고, 숨긴 거래를 다시 보이게 할 목록도 없었다. 구현은 문서에 "명세 외 추가"로 표시했다.
+- [ ] 목록에 `transactionType`(INCOME/EXPENSE/TRANSFER) 필터를 추가할지 정한다. 가계부 화면의 기본 필터이지만 명세에 없어 넣지 않았다.
+
+### 카드·마이너스통장 fixture와의 스키마 차이
+
+- [ ] `card-query-test-data.sql`, `minus-account-test-data.sql`, `product-comparison-recommendation-test-data.sql`이 만드는 `transaction`에는 `balance_after`·`created_at`·`updated_at`이 없다. 이 fixture가 남은 상태에서 `Transaction` 엔티티로 쓰기를 하면 실패한다.
+- 현재 동작: 504 테스트는 자기 fixture로 V6 컬럼 전체를 다시 만들어 영향이 없다. 다른 도메인 테스트는 읽기만 하므로 역시 영향이 없다.
+- 완료 조건: 공용 fixture 하나로 합치거나, 각 fixture가 V6 컬럼을 모두 갖도록 맞춘다. 담당 이슈를 정해야 한다.

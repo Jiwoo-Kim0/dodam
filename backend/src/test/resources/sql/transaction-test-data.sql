@@ -1,10 +1,10 @@
 -- S15P21D105-504: 거래 조회·메모·카테고리·숨김 API 테스트가 쓰는 H2 fixture다.
--- 실제 MySQL 마이그레이션(V5)을 대체하지 않는다.
+-- 실제 MySQL 마이그레이션(V6)을 대체하지 않는다.
 --
 -- `transaction`, `transaction_category`는 카드·마이너스통장·상품 추천 테스트도 자기 컬럼만으로 만들고 지운다
 -- (created_at 등 NOT NULL 컬럼이 빠져 있다). 클래스 실행 순서에 따라 그 스키마가 남아 있을 수 있으므로
--- 여기서 V5(ERD) 컬럼 전체로 다시 만든다. `account`·`card`·`user`로의 외래키는 다른 fixture와의 DROP 순서
--- 의존을 피하려고 걸지 않는다. 실제 V5에는 ERD대로 복합 외래키가 있다.
+-- 여기서 V6(ERD) 컬럼 전체로 다시 만든다. `account`·`card`·`user`로의 외래키는 다른 fixture와의 DROP 순서
+-- 의존을 피하려고 걸지 않는다. 실제 V6에는 ERD대로 복합 외래키가 있다.
 --
 -- 거래 행은 회원가입으로 만들어진 user_id를 알아야 하므로 테스트 코드가 넣는다.
 
@@ -50,8 +50,8 @@ CREATE TABLE `transaction` (
         FOREIGN KEY (category_id) REFERENCES transaction_category (category_id)
 );
 
--- V5 기준 행 중 테스트가 참조하는 것만 같은 ID·코드로 넣는다.
--- 900번대는 V5에 없는 검증용 행이다(비활성 카테고리, 기본 소비유형이 없는 카테고리).
+-- V6 기준 행 중 테스트가 참조하는 것만 같은 ID·코드로 넣는다.
+-- 900번대는 V6에 없는 검증용 행이다(비활성 카테고리, 기본 소비유형이 없는 카테고리).
 INSERT INTO transaction_category (category_id, code, name, default_spending_type, active) VALUES
     (1, 'FOOD', '식비', 'VARIABLE', TRUE),
     (2, 'CAFE', '카페', 'VARIABLE', TRUE),

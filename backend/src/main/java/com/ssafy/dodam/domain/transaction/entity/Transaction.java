@@ -16,7 +16,7 @@ import java.util.Objects;
  *
  * <p>`account`·`card`·`transaction_category`는 ID 컬럼만 들고 연관관계를 걸지 않는다. 계좌·카드는 다른
  * 티켓(501, 527)이 소유한 테이블이고, 같은 테이블을 여러 엔티티가 매핑하면 H2 테스트 스키마가 매핑 순서에
- * 따라 갈리는 문제가 이미 보고돼 있다(remaining-work.md). 복합 외래키는 V5 DDL이 보장한다.
+ * 따라 갈리는 문제가 이미 보고돼 있다(remaining-work.md). 복합 외래키는 V6 DDL이 보장한다.
  *
  * <p>거래 ID는 금융망 `transactionUniqueNo` 또는 seed·수동 등록 규칙으로 정해지는 문자열이라 자동 생성하지 않는다.
  */
