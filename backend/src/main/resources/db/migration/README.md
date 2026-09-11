@@ -10,6 +10,7 @@
 | V6 | `transaction_category`, `transaction` 생성 + 카테고리 기준 행 적재 | S15P21D105-502, S15P21D105-504 |
 | V7 | `saving_goal`, `spending_goal` 생성 (goal 하위행, 소비목표 비교용 선반영) | S15P21D105-507 |
 | V8 | `goal_account` 생성 (목표 연결계좌) | S15P21D105-509 |
+| V9 | `goal_history` 생성 (목표 변화 이력) | S15P21D105-511 |
 | V10 | `financial_company`, `financial_product`, `financial_product_option` 생성 | S15P21D105-525, S15P21D105-526 |
 | V11 | `card`, `card_billing_statement` 생성 | S15P21D105-527, S15P21D105-529 |
 | V12 | `installment` 생성 | S15P21D105-530 |
@@ -37,7 +38,7 @@
 추가했고 `saving_goal`·`spending_goal`·`goal_account` 하위행은 넣지 않았습니다. Goal API
 (S15P21D105-508~511)는 BE-A에서 진행하며 같은 테이블을 다시 만들지 않습니다.
 **V5 번호는 BE-A와 확인이 필요합니다**(구간을 넘겨 쓴 것은 아니지만 BE-A 구간의 번호를 소비했습니다).
-→ 2026-09-11 BE-A 확인: V5(goal)를 그대로 두고, Transaction 테이블은 V6으로 올렸다(S15P21D105-502). BE-A의 다음 번호는 V9부터다(V7 goal 하위행, V8 goal_account).
+→ 2026-09-11 BE-A 확인: V5(goal)를 그대로 두고, Transaction 테이블은 V6으로 올렸다(S15P21D105-502). BE-A 구간(V1~V9)은 V9 goal_history로 모두 소진됐다. 다음 BE-A 테이블은 V18 이후 번호를 BE-B와 확인해 쓴다.
 
 Flyway는 버전이 연속일 필요가 없으므로 빈 번호는 그대로 둡니다. 구간을 넘겨 써야 하면 먼저 해당 영역 담당자와 번호를 확인하세요.
 
