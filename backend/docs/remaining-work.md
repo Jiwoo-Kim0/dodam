@@ -833,8 +833,27 @@
 
 ### Goal 회귀 테스트
 
-- [x] 2026-09-11 `./gradlew test` 전체 833개 테스트 통과(실패·오류 0). Goal 통합 테스트 4종(`GoalApiIntegrationTest`, `GoalAccountApiIntegrationTest`, `GoalCalculationApiIntegrationTest`, `GoalHistoryApiIntegrationTest`) 포함. Subscription fixture가 `card`·`transaction`을 DROP CASCADE로 다시 만들지만 다른 클래스 fixture와 충돌하지 않았다.
+- Goal 회귀는 별도 티켓 515 절에 기록한다(H2 전체 테스트 + MySQL seed 데이터 API 회귀).
 
 ### MySQL 검증
 
 - [x] 2026-09-11 MySQL 8.0 seed 데이터(`SUB-U0001-01`, 다음 결제일 2026-09-12)로 확인: 정지(200, 다음 결제일 null) → 재개(200, 2026-09-12 재계산) → 종료일 2026-09-11 지정 400 `INVALID_REQUEST`(다음 결제일보다 앞, DB CHECK에 닿기 전에 막힘) → 종료일 2026-12-31·금액 13,900 수정 200 → 같은 금액 재요청 200(`updated_at` 유지) → 취소 200 → 재취소 409 `SUBSCRIPTION_NOT_EDITABLE` → 타인 건 404. 직접 UPDATE로 `chk_subscription_dates` 위반 시 MySQL이 3819로 막는 것도 확인했다. 후보 탐지는 seed 고정 지출 `도담 보험`(6회, 20일)·`도담 주거 관리사무소`(5회, 1일)를 MONTHLY로 잡고, 등록된 `도담 비디오`와 NON_SPENDING 저축 이체는 뺐다.
+
+## S15P21D105-515 — Goal 회귀 테스트 (D7 "12 Goal 완료")
+
+구현 계약: [goal.md](goal.md)
+
+### H2 전체 테스트
+
+- [x] 2026-09-11 Subscription(512~514) 추가 뒤 `./gradlew test` 전체 833개 통과(실패·오류 0). Goal 통합 테스트 4종(`GoalApiIntegrationTest`, `GoalAccountApiIntegrationTest`, `GoalCalculationApiIntegrationTest`, `GoalHistoryApiIntegrationTest`) 포함. Subscription fixture가 `card`·`transaction`을 DROP CASCADE로 다시 만들지만 Goal fixture(`goal-test-data.sql`)와 충돌하지 않았다.
+
+### MySQL seed 데이터 API 회귀
+
+- [x] 2026-09-11 Docker `mysql:8.0`(8.0.46)에 V1~V17+V30 적용, seed 1~8 적재(목표 6,000·연결 4,750·이력 30,000·거래 348,192) 후 `local` 프로필로 기동해 seed 사용자 u0001(BALANCED, 모으기 1개·연결 2건)·u0002(SPENDING_FOCUSED, 모으기+줄이기)로 Goal API 14개 중 13개를 호출했다. 앱 오류 로그 0건.
+- 조회 결과가 seed 기대값과 모두 일치했다.
+  - u0001 목표 1: `currentAmount` 29,160,000 = 연결 계좌(주거래 19,160,000 + KB 정기예금 10,000,000) 잔액 합, 목표 16,100,000 → 진행률 100%, `paceStatus = ACHIEVED`, 필요 월 저축액 0, 예상 달성일 = 기준일, 위험 NONE. 이력 7건(GOAL_CREATED + 월말 AMOUNT_UPDATED 6, 2026-03~08 선형 증가). 줄이기 전용 API 호출 시 400, 타인 목표 404.
+  - u0002 목표 2: 1,800,000 / 32,000,000 → 5.6%, 기대 진행률 45.5%, `BEHIND`, 위험 HIGH(`PACE_INSUFFICIENT`, `BEHIND_SCHEDULE`), 필요 월 저축액 3,775,000. 목표 3(줄이기 1,800,000): 9월 소비 0(거래 seed가 8월까지라 정상), `previousMonthSpending` 4,247,800 = 8월 EXPENSE·비 NON_SPENDING 합과 일치, 위험 LOW. 요약: 모으기 목표 합 32,000,000 / 1,800,000, 월 예산 합 1,800,000.
+- 쓰기 경로(MySQL CHECK·복합 외래키 살아 있는 상태): 모으기 생성 201 → 이름·목표 금액 수정 200 → PAUSED 200 → PAUSED→ACHIEVED 409 `GOAL_STATUS_TRANSITION_NOT_ALLOWED` → 모으기에 월 예산 400 → 이력에 GOAL_CREATED·GOAL_UPDATED·STATUS_CHANGED 기록 → 연결 계좌 0건·진행률·위험(`NO_LINKED_ACCOUNTS`) 200 → 삭제 200(soft, GOAL_DELETED 이력) → 조회 404. 줄이기 생성(예산 0은 400 `VALIDATION_ERROR`) → 소비 진행률 200 → 삭제 200. seed 목표 6,000건은 그대로다.
+- [ ] `PUT /goals/{goalId}/accounts`는 호출하지 못했다. Body가 계좌번호 원문(`accountNos`)을 받아 서버가 해시로 찾는데, seed 계좌의 해시는 검증용 더미라 원문이 없다. 애플리케이션 코덱으로 만든 fixture(491 계약)로 seed를 적재한 환경에서 다시 확인한다. H2 통합 테스트(`GoalAccountApiIntegrationTest`)로는 통과했다.
+- 참고: 계산 API(progress·required-saving·forecast·risk)는 금액이 바뀌지 않으면 `AMOUNT_UPDATED` 이력을 남기지 않아 seed 목표의 이력은 7건 그대로였다. 목표 1은 모인 금액이 목표를 넘었는데 상태는 ACTIVE로 남는다(508 절 "모인 금액 도달 시 상태" 미결 항목과 같음).
+- 검증 중 확인한 도구 문제: Windows Git Bash의 `curl -d '한글'`은 본문을 UTF-8이 아닌 코드페이지로 보내 서버가 400 `INVALID_REQUEST`(본문 해석 실패)를 돌려준다. 앱 문제가 아니며 `--data-binary @utf8파일`로 보내면 정상이다. 시연·수동 테스트 시 주의.

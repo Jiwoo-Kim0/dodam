@@ -247,3 +247,10 @@ ACHIEVED·CANCELED는 종료 상태다. 어디로도 옮길 수 없고 다른 �
 ## 남은 작업
 
 [remaining-work.md](remaining-work.md)의 "S15P21D105-508" ~ "S15P21D105-511" 절에 기록한다.
+
+## MySQL 회귀 (2026-09-11, S15P21D105-515)
+
+Subscription(V30) 추가 뒤 Docker `mysql:8.0`에 V1~V17+V30과 시연 seed(목표 6,000·연결 4,750·이력 30,000)를 적재하고 seed 사용자로 Goal API를 호출했다.
+조회 13개의 응답이 seed 기대값(연결 잔액 합 = `currentAmount`, 월말 이력 7건, 전월 소비 합)과 일치했고, 생성 → 수정 → 상태 전이(허용·거부) → 삭제 흐름이
+MySQL CHECK·복합 외래키가 살아 있는 상태에서 동작했다. `PUT /goals/{goalId}/accounts`만 seed 계좌번호 원문이 없어 MySQL에서는 확인하지 못했다(H2 통합 테스트로 확인).
+상세 수치는 [remaining-work.md](remaining-work.md) 515 절.
