@@ -637,3 +637,24 @@
 ### MySQL 검증
 
 - [ ] V7 적용과 `JdbcSpendingAnalysisReader`의 SQL(spending_type별 월·카테고리 집계, goal JOIN spending_goal)을 MySQL 8.0에서 실행한다. H2만 확인했다.
+
+## S15P21D105-508 — Goal CRUD
+
+구현 계약: [goal.md](goal.md)
+
+### 명세 Body와 ERD의 불일치(줄이기 목표)
+
+- [ ] 명세 12 생성 Body는 `targetAmount`·`targetDate` 필수, `monthlyBudget` 선택인데 ERD `spending_goal`에는 `monthly_budget`만 있다. 줄이기(SPENDING) 목표에 목표 금액·목표일이 오면 400으로 거절하도록 구현했다. FE 목표 설정 화면(481·485)이 줄이기 목표에도 금액·기한을 받는다면 ERD에 컬럼을 추가하거나 명세를 고쳐야 한다.
+- 완료 조건: 명세 12 Body 정의와 ERD·구현이 일치한다.
+
+### 달성 자동 전이
+
+- [ ] 모인 금액이 목표 금액에 도달해도 상태는 ACTIVE로 남는다. 자동 ACHIEVED 전이는 연결 계좌 잔액 합 갱신(509)·진행률(510) 흐름에서 정한다.
+
+### 삭제 시 연결 해제
+
+- [ ] `goal_account`(509, V8 예정)가 생기면 목표 soft delete 시 연결 계좌 행도 정리해야 한다. `uk_goal_account_account`(계좌당 목표 1개) 때문에 삭제된 목표에 묶인 계좌를 다른 목표에 연결할 수 없게 된다.
+
+### MySQL 검증
+
+- [ ] `Goal`·`SavingGoal`·`SpendingGoal` 엔티티가 V5·V7 DDL과 `ddl-auto: validate`를 통과하는지 MySQL 8.0에서 확인한다. H2만 확인했다.
