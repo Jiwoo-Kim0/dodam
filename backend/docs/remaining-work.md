@@ -590,3 +590,24 @@
 ### 삭제 방식
 
 - [ ] 물리 삭제로 구현했다. 삭제 이력이 필요하면(진단·리포트가 과거 집계를 다시 계산할 때) soft delete 컬럼이 없어 ERD 변경이 필요하다. 현재 ERD에는 `deleted_at`이 없다.
+
+## S15P21D105-506 — 소비 기간·카테고리 집계
+
+구현 계약: [spending-aggregation.md](spending-aggregation.md)
+
+### 티켓 범위 확정
+
+- [ ] 506을 `/spending/**` 11개 중 집계 6개(월 소비 요약, 월 누적 소비, 일별 소비, 카테고리별 소비, 카테고리 소비 추이, 결제수단별 소비)로 잡았다. 소비·저축 비율, 소비 급증, 소비목표 비교, 고정·변동지출은 다음 하위 태스크로 남겼다. Jira 하위 태스크 설명과 다르면 재배치한다.
+
+### "소비" 정의 합의
+
+- [ ] EXPENSE이면서 `spending_type`이 NON_SPENDING이 아닌 거래(미분류 포함)를 소비로 정의했다. 진단(14)·리포트(20)·소비 기반 카드 추천(18)이 같은 정의를 쓰는지 대조한다. 카드 추천 reader(`JdbcCardRecommendationSpendingReader`)는 현재 카드 거래만 본다.
+- 완료 조건: 소비 정의를 공용 문서(ERD 「데이터 무결성 규칙」 또는 spending-aggregation.md)에 한 번만 두고 각 도메인이 참조한다.
+
+### 소비 거래 seed
+
+- [ ] `transaction` seed가 없어 시연 계정의 소비 집계가 전부 0이다(504 절 "거래 seed 데이터"와 같은 항목). 카테고리·결제수단·`spending_type`이 골고루 들어간 3개월치가 필요하다.
+
+### MySQL 검증
+
+- [ ] `JdbcSpendingReader`의 다섯 SQL(월·일·카테고리·월×카테고리·결제수단 GROUP BY)을 MySQL 8.0 `ONLY_FULL_GROUP_BY`에서 실행한다. H2만 확인했다. SELECT 항목이 모두 GROUP BY 식 또는 집계라 통과해야 한다.

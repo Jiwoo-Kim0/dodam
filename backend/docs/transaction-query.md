@@ -2,7 +2,7 @@
 
 JIRA `S15P21D105-454` (D5 Transaction·Spending API 구현)의 하위 티켓 `S15P21D105-504`(API 6 거래 조회·메모·카테고리·숨김),
 `S15P21D105-505`(API 6 수동 거래 CRUD) 구현 기준이다. API 명세 6 Transaction / Spending 중 `/api/v1/transactions/**` 9개를
-다룬다. `/api/v1/spending/**` 집계는 다음 티켓 범위이며 이 문서에 포함하지 않는다.
+다룬다. `/api/v1/spending/**`는 [spending-aggregation.md](spending-aggregation.md)(506 집계)를 본다.
 
 ## API
 
