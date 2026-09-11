@@ -2,6 +2,7 @@
 export const radius = {
   default: 8,
   small: 4,
+  card: 18,
   sheet: 24,
   round: 999,
 } as const;

@@ -291,6 +291,56 @@ code와 errors는 null일 때만 생략하고 data와 message는 null이어도 �
 V15가 예·적금 상세·납입 테이블을 추가합니다. 기존 524번 seed는 별도 적재하며 SSAFY를
 호출하지 않습니다. 입력 기본값, 계산 가정과 검증은 [구현 문서](docs/deposit-savings.md)를 참고하세요.
 
+## 예금 상세와 예상금액
+
+536번은 예금 한 건의 상세, 시장금리 비교, 중도해지·만기 예상금액을 제공합니다. 모든 경로는
+인증이 필요하고 경로의 계좌번호는 HMAC 해시로만 본인 예금을 찾습니다. 응답에는 마스킹된
+계좌번호만 담습니다.
+
+| Method | 경로 | 기능 |
+| --- | --- | --- |
+| GET | /api/v1/deposits/{accountNo} | 계약 조건과 연결 상품 |
+| GET | /api/v1/deposits/{accountNo}/rate-comparison | term/industry/topN 기준 공시금리 비교 |
+| GET | /api/v1/deposits/{accountNo}/early-termination | 중도해지이율 기준 예상 수령액 |
+| GET | /api/v1/deposits/{accountNo}/maturity-forecast | 계약이율 기준 만기 예상 수령액 |
+
+없는 계좌, 타인 계좌, 예금이 아닌 계좌는 계좌 존재 여부를 숨기기 위해 모두 같은
+`RESOURCE_NOT_FOUND`를 반환합니다. 새 마이그레이션 없이 V3·V10·V15를 읽으며 SSAFY를
+호출하지 않습니다.
+
+이자는 단리·ACT/365로 계산하고 이자소득세 15.4%를 원천징수합니다. **중도해지이율 구간표는
+공시 자료가 없어 시중은행 관행으로 정한 서비스 추정치이며** 응답의 `ratePolicy`·`rateTier`와
+`ESTIMATED_EARLY_TERMINATION_RATE` 가정 코드로 드러냅니다. 금리비교의 `rateDifference`는
+예금이라 **양수가 유리**하며 부호 해석이 대출과 반대입니다(`comparisonDirection`).
+계산식, 사유 코드와 검증은 [구현 문서](docs/deposit-detail.md)를 참고하세요.
+
+## 적금 상세·납입·예상금액·현금흐름
+
+537번은 적금 한 건의 상세·납입내역·금리비교·예상금액과 사용자 단위의 납입 예정·월 저축액·현금흐름
+부담·가용금액을 제공합니다. 모든 경로는 인증이 필요하고 경로의 계좌번호는 HMAC 해시로만 본인 적금을
+찾습니다.
+
+| Method | 경로 | 기능 |
+| --- | --- | --- |
+| GET | /api/v1/savings/{accountNo} | 계약 조건과 납입 약정 |
+| GET | /api/v1/savings/{accountNo}/payments | 기간·페이지 납입내역 |
+| GET | /api/v1/savings/{accountNo}/rate-comparison | term/industry/topN 기준 공시금리 비교 |
+| GET | /api/v1/savings/{accountNo}/early-termination | 중도해지이율 기준 예상 수령액 |
+| GET | /api/v1/savings/{accountNo}/maturity-forecast | 계약이율 기준 만기 예상 수령액 |
+| GET | /api/v1/savings/payment-schedules | 기간 내 납입 예정 |
+| GET | /api/v1/savings/monthly-amount | 조회 월의 저축액 |
+| GET | /api/v1/savings/cashflow-burden | 소득 대비 저축·총 부담률 |
+| GET | /api/v1/savings/disposable-balance | 저축 후 가용금액 |
+
+없는 계좌, 타인 계좌, 적금이 아닌 계좌는 모두 같은 `RESOURCE_NOT_FOUND`를 반환합니다. 새 마이그레이션
+없이 V3·V10·V13·V15를 읽으며 SSAFY를 호출하지 않습니다.
+
+**같은 달에 저장된 회차가 있으면 월 약정액을 보충하지 않습니다.** 명세의 "예정 이벤트 중복 반영 금지"를
+이렇게 해석했고 월 저축액·현금흐름이 같은 계산을 재사용합니다. 예상금액은 회차마다 실제 예치일수를
+적용한 단리이며 **세금·수수료를 반영하지 않습니다**(예금 536은 세후를 반환하므로 나란히 비교할 때
+주의하세요). 중도해지이율 구간표는 공시 자료가 없어 정한 **서비스 추정치**이며 응답의
+`ratePolicy`·`rateTier`로 드러냅니다. 계산식과 사유 코드는 [구현 문서](docs/savings.md)를 참고하세요.
+
 ## 아직 결정되거나 구현되어야 할 항목
 
 - 도메인별 금융 데이터 동기화 구현(`FinanceSyncScopeHandler`) — 시연 데이터를 로컬 DB에서 읽는 현재 방식과 금융망 실시간 동기화의 역할 분담

@@ -7,9 +7,18 @@ export const routes = {
   financeSync: '/finance-sync',
   notificationPermission: '/notification-permission',
   home: '/home',
+  dailyBriefing: '/home/daily-briefing',
   ledger: '/ledger',
   assets: '/assets',
   discovery: '/discovery',
   report: '/report',
   goalSetup: '/goal-setup',
+  goalSetupEdit: (goalId: string) => ({
+    pathname: '/goal-setup' as const,
+    params: { goalId, mode: 'edit' },
+  }),
+  goalDetail: (goalId: string) => ({
+    pathname: '/home/goals/[id]' as const,
+    params: { id: goalId },
+  }),
 } as const;

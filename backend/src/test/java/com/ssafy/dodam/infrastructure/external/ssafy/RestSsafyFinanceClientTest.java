@@ -10,6 +10,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
+import java.time.LocalDate;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -131,6 +132,124 @@ class RestSsafyFinanceClientTest {
         assertThat(criteria.get(2).ratingName()).isEqualTo("E");
         assertThat(criteria.get(2).minAssetValue()).isZero();
         server.verify();
+    }
+
+    @Test
+    void demandDepositAccountListSendsUserKeyAndParsesRecArray() {
+        server.expect(requestTo(BASE_URL + "/ssafy/api/v1/edu/demandDeposit/inquireDemandDepositAccountList"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(jsonPath("$.Header.apiName").value("inquireDemandDepositAccountList"))
+                .andExpect(jsonPath("$.Header.apiServiceCode").value("inquireDemandDepositAccountList"))
+                .andExpect(jsonPath("$.Header.apiKey").value("test-api-key"))
+                .andExpect(jsonPath("$.Header.userKey").value("user-key-1"))
+                .andRespond(withSuccess("""
+                        {"Header":{"responseCode":"H0000","responseMessage":"정상처리 되었습니다."},
+                         "REC":[{"bankCode":"001","bankName":"한국은행","userName":"도담","accountNo":"0011234567890001",
+                                 "accountName":"한국은행 수시입출금 상품","accountTypeCode":"1","accountTypeName":"수시입출금",
+                                 "accountCreatedDate":"20260901","accountExpiryDate":"20310901",
+                                 "dailyTransferLimit":"500000000","oneTimeTransferLimit":"100000000",
+                                 "accountBalance":"1500000","lastTransactionDate":"20260910","currency":"KRW"},
+                                {"bankCode":"004","bankName":"국민은행","userName":"도담","accountNo":"0041234567890002",
+                                 "accountName":"KB 통장","accountTypeCode":"1","accountTypeName":"수시입출금",
+                                 "accountCreatedDate":"20260902","accountExpiryDate":"20310902",
+                                 "dailyTransferLimit":"500000000","oneTimeTransferLimit":"100000000",
+                                 "accountBalance":"0","lastTransactionDate":"","currency":"KRW"}]}
+                        """, MediaType.APPLICATION_JSON));
+
+        List<SsafyDemandDepositAccount> accounts = client.inquireDemandDepositAccountList("user-key-1");
+
+        assertThat(accounts).hasSize(2);
+        assertThat(accounts.get(0).accountNo()).isEqualTo("0011234567890001");
+        assertThat(accounts.get(0).accountBalance()).isEqualTo(1_500_000L);
+        assertThat(accounts.get(0).lastTransactionDate()).isEqualTo("20260910");
+        assertThat(accounts.get(1).accountBalance()).isZero();
+        assertThat(accounts.get(1).lastTransactionDate()).isEmpty();
+        server.verify();
+    }
+
+    @Test
+    void demandDepositAccountListWithoutRecIsEmpty() {
+        server.expect(requestTo(BASE_URL + "/ssafy/api/v1/edu/demandDeposit/inquireDemandDepositAccountList"))
+                .andRespond(withSuccess("""
+                        {"Header":{"responseCode":"H0000","responseMessage":"정상처리 되었습니다."}}
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThat(client.inquireDemandDepositAccountList("user-key-1")).isEmpty();
+
+        server.reset();
+        server.expect(requestTo(BASE_URL + "/ssafy/api/v1/edu/demandDeposit/inquireDemandDepositAccountList"))
+                .andRespond(withSuccess("""
+                        {"Header":{"responseCode":"H0000","responseMessage":"정상처리 되었습니다."},"REC":[]}
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThat(client.inquireDemandDepositAccountList("user-key-1")).isEmpty();
+    }
+
+    @Test
+    void demandDepositAccountListWithObjectRecIsUnavailable() {
+        server.expect(requestTo(BASE_URL + "/ssafy/api/v1/edu/demandDeposit/inquireDemandDepositAccountList"))
+                .andRespond(withSuccess("""
+                        {"Header":{"responseCode":"H0000"},"REC":{"bankCode":"001"}}
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> client.inquireDemandDepositAccountList("user-key-1"))
+                .isInstanceOf(SsafyUnavailableException.class);
+    }
+
+    @Test
+    void transactionHistoryListSendsAccountAndPeriodInBodyAndParsesList() {
+        server.expect(requestTo(BASE_URL + "/ssafy/api/v1/edu/demandDeposit/inquireTransactionHistoryList"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(jsonPath("$.Header.apiName").value("inquireTransactionHistoryList"))
+                .andExpect(jsonPath("$.Header.apiServiceCode").value("inquireTransactionHistoryList"))
+                .andExpect(jsonPath("$.Header.userKey").value("user-key-1"))
+                .andExpect(jsonPath("$.accountNo").value("0011234567890001"))
+                .andExpect(jsonPath("$.startDate").value("20250912"))
+                .andExpect(jsonPath("$.endDate").value("20260911"))
+                .andExpect(jsonPath("$.transactionType").value("A"))
+                .andExpect(jsonPath("$.orderByType").value("DESC"))
+                .andRespond(withSuccess("""
+                        {"Header":{"responseCode":"H0000","responseMessage":"정상처리 되었습니다."},
+                         "REC":{"totalCount":"2",
+                                "list":[{"transactionUniqueNo":"1001","transactionDate":"20260910","transactionTime":"123045",
+                                         "transactionType":"2","transactionTypeName":"출금","transactionAccountNo":"",
+                                         "transactionBalance":"12000","transactionAfterBalance":"1488000",
+                                         "transactionSummary":"스타벅스","transactionMemo":""},
+                                        {"transactionUniqueNo":"1000","transactionDate":"20260905","transactionTime":"090000",
+                                         "transactionType":"1","transactionTypeName":"입금","transactionAccountNo":"0041111111111111",
+                                         "transactionBalance":"1500000","transactionAfterBalance":"1500000",
+                                         "transactionSummary":"급여","transactionMemo":"9월 급여"}]}}
+                        """, MediaType.APPLICATION_JSON));
+
+        SsafyTransactionHistory history = client.inquireTransactionHistoryList(
+                "user-key-1", "0011234567890001", LocalDate.of(2025, 9, 12), LocalDate.of(2026, 9, 11));
+
+        assertThat(history.totalCount()).isEqualTo(2L);
+        assertThat(history.list()).hasSize(2);
+        assertThat(history.list().get(0).transactionUniqueNo()).isEqualTo("1001");
+        assertThat(history.list().get(0).transactionType()).isEqualTo("2");
+        assertThat(history.list().get(0).transactionBalance()).isEqualTo(12_000L);
+        assertThat(history.list().get(0).transactionAfterBalance()).isEqualTo(1_488_000L);
+        assertThat(history.list().get(1).transactionMemo()).isEqualTo("9월 급여");
+        server.verify();
+    }
+
+    @Test
+    void transactionHistoryListWithoutRecOrListIsEmpty() {
+        server.expect(requestTo(BASE_URL + "/ssafy/api/v1/edu/demandDeposit/inquireTransactionHistoryList"))
+                .andRespond(withSuccess("""
+                        {"Header":{"responseCode":"H0000"}}
+                        """, MediaType.APPLICATION_JSON));
+        assertThat(client.inquireTransactionHistoryList("user-key-1", "0011234567890001",
+                LocalDate.of(2026, 1, 1), LocalDate.of(2026, 9, 11)).list()).isEmpty();
+
+        server.reset();
+        server.expect(requestTo(BASE_URL + "/ssafy/api/v1/edu/demandDeposit/inquireTransactionHistoryList"))
+                .andRespond(withSuccess("""
+                        {"Header":{"responseCode":"H0000"},"REC":{"totalCount":"0","list":[]}}
+                        """, MediaType.APPLICATION_JSON));
+        assertThat(client.inquireTransactionHistoryList("user-key-1", "0011234567890001",
+                LocalDate.of(2026, 1, 1), LocalDate.of(2026, 9, 11)).list()).isEmpty();
     }
 
     @Test

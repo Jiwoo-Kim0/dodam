@@ -1,0 +1,193 @@
+import { StyleSheet } from 'react-native';
+
+import {
+  colors,
+  componentSize,
+  fontFamily,
+  radius,
+  spacing,
+  typography,
+} from '@/styles';
+
+export const styles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  backdrop: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: colors.overlay,
+  },
+  sheet: {
+    height: 580,
+    maxHeight: componentSize.bottomSheet.maxHeight,
+    paddingTop: spacing[5],
+    paddingHorizontal: spacing[5],
+    paddingBottom: spacing[5],
+    borderTopLeftRadius: radius.sheet,
+    borderTopRightRadius: radius.sheet,
+    backgroundColor: colors.white,
+  },
+  header: {
+    minHeight: componentSize.touchTarget,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  title: {
+    ...typography.title,
+    fontFamily: fontFamily.semiBold,
+    color: colors.textPrimary,
+  },
+  closeButton: {
+    width: componentSize.touchTarget,
+    height: componentSize.touchTarget,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  closeIcon: {
+    ...typography.title,
+    color: colors.textPrimary,
+  },
+  tipCard: {
+    minHeight: 64,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing[4],
+    paddingHorizontal: spacing[4],
+    borderWidth: 1,
+    borderColor: colors.home.secondaryRank,
+    borderRadius: radius.default,
+    backgroundColor: colors.background,
+  },
+  tipTextGroup: {
+    flex: 1,
+    gap: spacing[1],
+  },
+  tipTitle: {
+    ...typography.body2,
+    fontFamily: fontFamily.medium,
+    color: colors.textPrimary,
+  },
+  tipDescription: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  tipIcon: {
+    width: spacing[8],
+    height: spacing[8],
+    marginLeft: spacing[3],
+  },
+  goalList: {
+    gap: spacing[4],
+    paddingTop: spacing[5],
+    paddingBottom: spacing[5],
+  },
+  goalCard: {
+    minHeight: 92,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+    borderWidth: StyleSheet.hairlineWidth,
+    borderLeftWidth: spacing[1],
+    borderColor: colors.border,
+    borderRadius: radius.default,
+    backgroundColor: colors.white,
+  },
+  pressed: {
+    opacity: componentSize.bottomSheet.pressedOpacity,
+  },
+  characterBackground: {
+    width: 64,
+    height: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing[3],
+    borderRadius: radius.round,
+  },
+  goalImage: {
+    width: 52,
+    height: 52,
+  },
+  goalInformation: {
+    flex: 1,
+    minWidth: 0,
+  },
+  goalTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  goalType: {
+    ...typography.caption,
+    fontSize: 10,
+    lineHeight: 14,
+    paddingHorizontal: spacing[1],
+    borderWidth: 1,
+    borderRadius: radius.round,
+  },
+  goalDDay: {
+    ...typography.caption,
+    fontFamily: fontFamily.semiBold,
+  },
+  goalTitle: {
+    ...typography.body1,
+    fontFamily: fontFamily.medium,
+    marginTop: spacing[1],
+    color: colors.textPrimary,
+  },
+  goalAmount: {
+    ...typography.caption,
+    marginTop: spacing[1],
+    color: colors.textSecondary,
+  },
+  progressTrack: {
+    height: spacing[1],
+    overflow: 'hidden',
+    marginTop: spacing[2],
+    borderRadius: radius.round,
+    backgroundColor: colors.divider,
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: radius.round,
+  },
+  chevron: {
+    ...typography.title,
+    marginLeft: spacing[2],
+    color: colors.textSecondary,
+  },
+  createButton: {
+    minHeight: componentSize.button.compact,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing[2],
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.home.secondaryRank,
+    borderRadius: radius.default,
+  },
+  createIcon: {
+    width: spacing[6],
+    height: spacing[6],
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.round,
+    backgroundColor: colors.primary.lightGreen,
+  },
+  createIconLabel: {
+    ...typography.subtitle,
+    color: colors.primary.green,
+  },
+  createLabel: {
+    ...typography.subtitle,
+    fontFamily: fontFamily.semiBold,
+    color: colors.textPrimary,
+  },
+});

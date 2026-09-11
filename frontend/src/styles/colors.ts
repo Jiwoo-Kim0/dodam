@@ -16,4 +16,30 @@ export const colors = {
   textTertiary: 'rgba(34, 34, 34, 0.4)',
   disabledBackground: '#D6E1BC',
   overlay: 'rgba(0, 0, 0, 0.35)',
+  goal: {
+    savingCharacterBackground: '#FFF6D8',
+    reducingCharacterBackground: '#F7E4DB',
+  },
+  home: {
+    goalGradientEnd: '#F3F6E3',
+    goalCardShadow: '#28310F',
+    secondaryRank: '#BEDB80',
+    assetChart: {
+      strong: '#5E7F18',
+      medium: '#A9C46B',
+      light: '#DCE9B9',
+    },
+  },
+  briefing: {
+    card: '#FFFFFF',
+    softCard: '#FEFBF2',
+    mutedCard: '#FAFAFA',
+    cardBorder: '#CBD99B',
+    statusBackground: '#F7FAE9',
+    statusText: '#6F9329',
+    decreaseTag: '#FFF0C9',
+    increaseTag: '#FFF0CB',
+    increaseText: '#FA9500',
+    progressTrack: '#F4F4F1',
+  },
 } as const;

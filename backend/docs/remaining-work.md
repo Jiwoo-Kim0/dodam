@@ -2,7 +2,7 @@
 
 마지막 갱신: 2026-09-10
 
-백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535이다.
+백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542이다.
 
 ## S15P21D105-535 — 예·적금 ERD 제약 동기화
 
@@ -12,6 +12,78 @@
 - 근거: MySQL CHECK는 UNKNOWN을 허용한다. 원본은 출금계좌 ID가 있어도 유형 NULL로 복합 FK를 우회할 수 있어 V15에서 보완했다.
 - 선행 조건: 루트 docs 수정은 사용자 명시 요청 범위가 아니므로 이번에는 변경하지 않았다.
 - 완료 조건: ERD와 V15가 같은 출금계좌 NULL 조합·유형·소유권 제약을 표현한다.
+
+## S15P21D105-536 — 예금 상세·금리비교·예상금액
+
+구현 계약: [deposit-detail.md](deposit-detail.md)
+
+### 중도해지이율 공시값 확보
+
+- [ ] 상품별 공시 중도해지이율을 확보해 `DepositEarlyTerminationRatePolicy`의 구간표를 대체한다.
+- 근거: 명세 11-1에 계산식이 없고 ERD `deposit_saving`에는 계약이율만 있어 중도해지이율 컬럼이 없다. 현재 값은 시중은행 관행으로 정한 **서비스 추정치**이며 응답의 `ratePolicy`·`rateTier`와 `ESTIMATED_EARLY_TERMINATION_RATE`로 드러낸다.
+- 선행 조건: `financial_product_option`에 중도해지이율을 담을 컬럼이 없다. ERD 변경과 상품 동기화 범위를 팀이 정해야 한다.
+- 완료 조건: 상품별 공시값으로 계산하고 추정 가정 코드를 응답에서 제거한다. 자료가 없는 상품은 추정치로 떨어진다는 사실을 응답에서 구분한다.
+
+### 과세 구분 반영
+
+- [ ] 비과세·세금우대·분리과세를 반영한다. 현재는 일반과세 15.4% 단일 세율이다.
+- 근거: 사용자별 과세 구분을 담은 테이블이 없어 `GENERAL_INTEREST_INCOME_TAX_15_4` 하나로 계산한다.
+- 선행 조건: 과세 구분 저장 위치(사용자 프로필 또는 계좌 단위)를 정해야 한다.
+- 완료 조건: 과세 구분별 세액이 계산되고 적용한 구분을 응답에 표시한다.
+
+### MySQL 검증
+
+- [ ] 예금 조회 4개 경로를 MySQL 8.0에서 실행해 `DepositAccountReader`의 조회와 `ddl-auto: validate` 통과를 확인한다. H2 통합 테스트만 수행했다.
+- 근거: 새 마이그레이션과 새 테이블이 없어 검증할 DDL 변경은 없다. 그래도 H2 통과가 MySQL 제약·타입 검증을 대신하지는 않는다.
+- 선행 조건: 없다. 전용 빈 `dodam_536_test` 스키마를 쓴다.
+- 완료 조건: 상품 카탈로그와 524 seed를 적재한 MySQL에서 4개 경로의 응답과 금액을 확인한다.
+
+### 시연 데이터 실측 확인
+
+- [ ] 금융상품 카탈로그를 적재한 환경에서 금리비교가 실제 시연 예금 4종(3.15·3.05·3.30·3.20%)에 대해 성립하는지 확인한다.
+- 근거: 금리비교 테스트는 fixture 상품으로 검증했다. 카탈로그가 없으면 `COMPARISON_GROUP_UNKNOWN`으로 떨어지고 상세의 상품 필드가 null이 된다.
+- 선행 조건: `DODAM_FINANCIAL_PRODUCTS_CUMULATIVE_B01_B05` seed 적재.
+- 완료 조건: 시연 예금 4종의 `referenceRate`·`rateDifference`·후보 목록을 실제 데이터로 확인하고 문서의 예시를 실측값으로 갱신한다.
+
+### 기존 테스트 실패 해소(536 범위 밖, 머지 전 확인 필요)
+
+- [ ] `DepositSavingApiIntegrationTest` 29건이 실패해 `gradlew clean build`가 깨진다. 535 파일이라 이번에 수정하지 않았다.
+- 근거: fixture의 `account` INSERT가 `currency`·`created_at`·`updated_at`을 채우지 않는데, H2가 `MinusAccountOwner` 매핑으로 `account`를 만들면 이 컬럼이 NOT NULL이 된다. `account`를 부분 매핑한 엔티티가 둘(`CardWithdrawalAccount`, `MinusAccountOwner`)이라 어느 쪽으로 DDL이 생성되는지에 따라 결과가 갈린다. `origin/develop`(`aff8056`)을 별도 worktree로 복사해 같은 실패를 재현했으므로 536이 만든 문제가 아니다.
+- 선행 조건: 535 담당이 fixture를 고칠지, `account` 부분 매핑을 하나로 합칠지 정한다.
+- 완료 조건: `gradlew clean build`가 통과한다. `CardQueryApiIntegrationTest.getsBenefitsAndEstimatedBenefitUsage` 1건도 같은 빌드에서 실패하며 535 문서에 기록된 날짜 의존 문제다.
+
+## S15P21D105-537 — 적금 상세·납입·예상금액·현금흐름
+
+구현 계약: [savings.md](savings.md)
+
+### 예금과 적금의 세금 처리 통일
+
+- [ ] 적금 예상금액에도 이자소득세를 반영하거나, 예금·적금 모두 세전/세후를 함께 반환하도록 맞춘다.
+- 근거: 예금(536)은 15.4%를 원천징수한 세후 수령액을, 적금(537)은 세전 금액을 반환한다. 두 예상금액을 나란히 놓으면 적금이 유리해 보인다.
+- 선행 조건: 두 이슈가 모두 병합돼야 한다.
+- 완료 조건: 같은 원금·이율·기간에서 두 API의 세금 처리가 같고 문서의 가정 코드가 일치한다.
+
+### 중도해지이율 정책 통합과 공시값 확보
+
+- [ ] `SavingsEarlyTerminationRatePolicy`와 `DepositEarlyTerminationRatePolicy`를 공용 위치로 합친다.
+- [ ] 상품별 공시 중도해지이율을 확보해 두 표를 대체한다.
+- 근거: 같은 구간표를 두 도메인에 따로 두었다. 536과 537이 서로 다른 브랜치에서 병합될 수 있어 의존을 만들지 않았다. 현재 값은 시중은행 관행 기반 **서비스 추정치**다.
+- 선행 조건: 두 이슈 병합. 공시값은 `financial_product_option`에 담을 컬럼이 없어 ERD 변경 검토가 필요하다.
+- 완료 조건: 구간표가 한 곳에만 있고, 공시값이 있는 상품은 추정 가정 코드를 응답에서 제거한다.
+
+### 남은 대출 상환 일정 반영
+
+- [ ] 현금흐름 부담의 `remainingLoanRepaymentAmount`를 계산된 상환 일정으로 채운다.
+- 근거: 현재는 `loan_repayment`의 `SCHEDULED` 행만 더한다. 스키마 CHECK는 그 상태를 허용하지만 현재 seed에 예정 회차가 없다면 항상 0이 되어 월 중반의 부담이 실제보다 작게 나온다.
+- 선행 조건: 대출 도메인(532·533)의 `LoanRepaymentScheduleCalculator`를 적금에서 쓸지, 명세 15 Cashflow가 통합 계산을 소유할지 정해야 한다.
+- 완료 조건: 저장된 실적과 계산된 예정이 중복 없이 합산되고 그 근거가 응답에 표시된다.
+
+### MySQL 검증
+
+- [ ] 적금 9개 경로를 MySQL 8.0에서 실행해 조회와 `ddl-auto: validate` 통과를 확인한다. H2 통합 테스트만 수행했다.
+- 근거: 새 마이그레이션과 새 테이블이 없어 검증할 DDL 변경은 없다. `loan`·`loan_repayment`는 H2에 엔티티가 없어 테스트가 최소 테이블을 만들어 쓴다.
+- 선행 조건: 없다. 전용 빈 테스트 스키마를 쓴다.
+- 완료 조건: 상품 카탈로그와 524 seed를 적재한 MySQL에서 9개 경로의 응답과 금액을 확인한다.
 
 ## 기록 방식
 
@@ -27,7 +99,7 @@
 
 ### 도메인별 동기화 구현
 
-- [ ] `FinanceSyncScopeHandler` 구현을 도메인별로 등록한다. 현재 등록된 구현이 없어 `POST /finance-data/sync`는 모든 scope를 SKIPPED로 보고하고 `last_synced_at`을 갱신하지 않는다.
+- [ ] `FinanceSyncScopeHandler` 구현을 도메인별로 등록한다. ACCOUNT는 501에서 `AccountSyncHandler`로 등록했다(2026-09-11). CARD·LOAN·SAVING은 구현이 없어 SKIPPED로 보고된다.
 - 담당 근거: 테이블 소유 도메인이 구현한다. ACCOUNT는 BE-A(S15P21D105-501, `Account` 엔티티와 함께), CARD·LOAN·SAVING은 BE-B 영역이다. 새 담당 배정을 의미하지 않는다.
 - 선행 조건: 시연 데이터를 로컬 DB에서 읽는 현재 방식과 금융망 실시간 동기화의 역할 분담을 팀이 정한다. 금융망에서 받은 행은 `source_type = 'SSAFY'`, 시연 데이터는 `SEED`로 구분해 공존시키는 것을 전제로 한다.
 - 완료 조건: scope별 handler가 금융망 조회 → 로컬 upsert를 수행하고, 실행 응답의 `syncedCount`와 `last_synced_at` 갱신을 통합 테스트로 확인한다.
@@ -218,3 +290,480 @@
 - [ ] 실제 Jira 접근이 가능해지면 최신 534 완료 조건과 구현·남은 제한을 대조한다.
 - 현재 브랜치는 사용자가 지정한 `S15P21D105-534-api-10-1-minus-account-api`이며 develop `cf854be` 기준으로 로컬 생성했다. Jira `Create branch`가 아니므로 이슈 연결 확인이 남는다.
 - 로컬 `SPRINT/Jira (4).csv`의 제목·설명만 근거로 범위를 정했다.
+
+## S15P21D105-538 — Cashflow 저장 계층
+
+구현 계약: [cashflow.md](cashflow.md)
+
+### MySQL 검증
+
+- [x] `V16`을 MySQL 8.0에서 검증했다(2026-09-10). 빈 `dodam_538_test` 스키마에 Flyway가 `V1`~`V16`을 적용한 뒤 `ddl-auto: validate` 통과, CHECK 5개 생성, 유니크·금액·심각도·horizon 제약 동작, 조회 3종의 MySQL 방언 실행을 확인했다. 일회용 컨테이너에서 수행했고 운영 DB와 인프라 구성은 건드리지 않았다.
+- 검증 중 `dedupe_key`·`request_hash`의 `CHAR(64)` 매핑 누락을 발견해 고쳤다. 엔티티가 VARCHAR로 매핑돼 `validate`에 실패했다(529의 `card` CHAR 컬럼과 같은 사례).
+- [ ] 데이터 기준 동작은 확인하지 못했다. 위 테스트는 최소 fixture 기준이며 시연 seed를 적재한 상태는 검증하지 않았다.
+
+### 미확정 정책 반영
+
+- [ ] `calculation_version` 표기 규칙을 팀에서 정하고 `CashflowCalculationVersion.CURRENT`를 교체한다. 현재는 `"v1"` 상수다.
+- [ ] `cashflow_event.type`과 `cashflow_risk.type`의 값 집합을 ERD 주요 코드값 표에 추가한다. 539·542가 코드에서 확정했고(`cashflow_risk.type`은 `BALANCE_SHORTAGE` 하나) ERD 반영만 남았다.
+- [x] `request_hash` 생성 규칙(540)과 `available_today` 계산 정의(542, `max(0, minimumBalance)`)를 반영했다.
+
+### Jira 최신 완료 조건 대조
+
+- [ ] 실제 Jira 접근이 가능해지면 최신 538 완료 조건과 구현 범위를 대조한다. 로컬 `SPRINT/Jira (4).csv`의 제목·설명만 근거로 범위를 정했다.
+
+## S15P21D105-540 — 일별 잔액·캐시 정책
+
+구현 계약: [cashflow-daily-balance.md](cashflow-daily-balance.md)
+
+### 미확정 정책 반영
+
+- [ ] 540이 정한 기본값을 팀에서 확인한다. `horizonDays` 기본 90·상한 365, 완료 캐시 유효기간 당일,
+  시작 잔액 = 활성 `DEMAND_DEPOSIT` 합계, 과거 기준일 거부. 모두 명세에 값이 없어 정한 기본안이다.
+- [x] `request_hash` 생성 규칙은 540에서, `available_today`는 542에서 확정했다.
+
+### 계산 정확도 한계
+
+- [ ] 요일별 평균 변동지출을 반영하지 못한다. 입력이 될 `transaction` 테이블의 마이그레이션이 아직 없다
+  (현재 `V1`~`V4`, `V10`~`V16`). 그때까지 예상잔액은 실제보다 낙관적이다. 담당 이슈를 정해야 한다.
+- [ ] `AccountScheduledEventSource` 구현체가 없어 급여 등 예정 입금이 반영되지 않는다. 현재 예측은 확정
+  출금 위주다.
+- [ ] 수집 사유(`reasons`)를 저장할 컬럼이 ERD에 없다. 실행 응답에서만 노출되고 `latest` 조회와 캐시
+  재사용 응답에서는 사라진다. 컬럼 추가가 필요하면 ERD 변경을 먼저 논의한다.
+
+### 중복 요청 방지의 경합
+
+- [ ] 같은 요청이 동시에 들어오면 두 요청 모두 새 예측을 만들 수 있다. `(user_id, request_hash, status)`에
+  유니크 제약이 없고 조회와 생성이 한 트랜잭션이 아니다. 순차 재요청만 막는다.
+- [ ] 진행 중 인정 시간 10분은 임의값이다. 수집·계산의 실제 소요 시간을 측정한 뒤 조정한다.
+
+### 검증 범위
+
+- [x] H2 테스트로 기간 정책·지문·캐시 판정·잔액 계산·저장 경로를 검증했다(2026-09-10). 아래 H2 fixture
+  문제를 함께 고친 뒤 전체 `clean build`가 611건 전부 통과한다.
+- [ ] MySQL 검증은 하지 않았다. 스키마를 바꾸지 않고 538의 테이블만 읽고 쓴다. 새 SQL은
+  `CashflowBalanceReader`의 집계 한 건이다.
+
+### Jira 최신 완료 조건 대조
+
+- [ ] 실제 Jira 접근이 가능해지면 최신 540 완료 조건과 구현 범위를 대조한다. 로컬 `SPRINT/Jira (4).csv`의
+  제목·설명만 근거로 범위를 정했다.
+
+## S15P21D105-541 — 현금흐름 실행·조회 API
+
+구현 계약: [cashflow-query.md](cashflow-query.md)
+
+### 미확정 계약 반영
+
+- [ ] 조회 API가 **완료 시각 기준 최신 완료 예측 1건**을 대상으로 삼는 규칙은 이 작업에서 정한
+  기본안이다. 명세에 `forecastId` 파라미터가 없어 정했다. 팀 확인이 필요하다.
+- [x] 538이 정의한 기준일 내림차순 최신 조회를 완료 시각 기준으로 바꿨다(2026-09-10). 미래 기준일
+  예측이 계속 최신으로 남는 문제를 막는다. `CashflowForecastRepository`의 메서드 두 개를 이름까지
+  바꿨고 538 테스트의 호출부와 [cashflow.md](cashflow.md)의 계약 표를 함께 고쳤다.
+- [ ] 완료된 예측이 없을 때 404(`RESOURCE_NOT_FOUND`)로 응답한다. 빈 목록으로 바꿀지 확인이 필요하다.
+- [ ] `events`의 `type`은 형식만 검증하고 값 집합을 고정하지 않았다. 538의 남은 항목(`cashflow_event.type`
+  값 집합 확정)이 해소되면 허용값 검증으로 바꿀지 결정한다.
+- [ ] `availableToday`와 위험 목록은 응답에 없다. 542에서 계산이 정해지면 실행·최신 조회 응답에 추가한다.
+
+### 검증 범위
+
+- [x] H2 통합 테스트 7건으로 인증·소유권 격리·입력 검증·기본 기간·빈 결과·캐시 재실행·최신 판정을 검증했다
+  (2026-09-10). 전체 `test`도 통과한다.
+- [ ] MySQL 검증은 하지 않았다. 스키마를 바꾸지 않고 538의 테이블만 읽는다. 새 SQL은 없다.
+- [ ] 프론트엔드 연동은 확인하지 않았다. 응답 계약이 확정되면 `frontend/`의 API 타입 추가가 필요하다.
+
+### Jira 최신 완료 조건 대조
+
+- [ ] 실제 Jira 접근이 가능해지면 최신 541 완료 조건과 구현 범위를 대조한다. 로컬 `SPRINT/Jira (4).csv`의
+  제목·설명만 근거로 범위를 정했다.
+
+## 공통 — 테스트 소스 인코딩 (540 외부)
+
+- [ ] `build.gradle`에 `compileJava.options.encoding`이 없어 javac가 플랫폼 인코딩(MS949)으로 소스를 읽는다.
+  `gradle.properties`의 `-Dfile.encoding=UTF-8`은 Gradle 데몬 설정이라 컴파일 인코딩을 정하지 않는다.
+- 영향: 소스의 한글 문자열 리터럴이 깨진 채 컴파일된다. 테스트는 양쪽이 같이 깨져 비교가 통과하므로
+  드러나지 않지만, 이벤트 표시명처럼 응답·DB에 나가는 한글 상수도 같은 영향을 받는다.
+- 완료 조건: `compileJava`/`compileTestJava`에 `options.encoding = 'UTF-8'`을 추가하고 기존 한글 리터럴이
+  정상 출력되는지 확인한다. 빌드 설정 변경이라 540 범위 밖으로 두고 담당 이슈를 정해야 한다.
+
+## 공통 — develop의 H2 테스트 실패 (해결됨)
+
+- [x] 2026-09-10 해결했다. 원인이 하나가 아니라 둘이었다.
+  - `DepositSavingApiIntegrationTest` 29건: `deposit-saving-test-data.sql`의 `account` INSERT가
+    `currency`·`account_no_hash`·`created_at`·`updated_at`을 채우지 않아 NOT NULL 위반으로 실패했다.
+    `savings-test-data.sql`과 같은 방식으로 채웠다.
+  - `CardQueryApiIntegrationTest` 1건: `currency`와 무관했다. fixture가 자체 `CREATE TABLE`을 쓰므로
+    NOT NULL 문제가 없다. `TX-C1-003`을 `today.minusDays(40)`에 넣은 탓에 오늘 날짜에 따라 그 거래가
+    전월에 들어가고, 전월 실적이 0이라는 혜택 테스트의 전제가 매달 10일경부터 깨졌다.
+    `today.minusMonths(2)`로 바꿔 날짜 의존을 없앴다.
+- 아래 기록은 정정 전 내용이다. 30건을 모두 `currency` 문제로 본 것은 틀렸다.
+- 근거: `MinusAccountOwner`가 `account.currency`를 `nullable = false`로 매핑하는데, H2는 엔티티 기준으로 스키마를 만들어 `V3`의 `DEFAULT 'KRW'`가 없다. 두 테스트의 seed SQL은 `currency`를 넣지 않는다.
+- 영향: Jenkins의 Build & Test 단계가 `./gradlew clean build`를 돌리므로 어느 브랜치의 MR이든 이 실패를 함께 본다.
+- 완료 조건: `card-query-test-data.sql`과 `deposit-saving-test-data.sql`의 `account` INSERT에 `currency`를 채우거나, 엔티티 매핑에 기본값을 반영한다. 담당 이슈를 정해야 한다.
+
+## S15P21D105-501 — 계좌 목록·상세·잔액
+
+구현 계약: [account-query.md](account-query.md)
+
+### 금융망 잔액 실시간 조회
+
+- [ ] `GET /api/v1/accounts/{accountNo}/balance`가 금융망(2.4 계좌 잔액 조회)을 호출할지, 우리 DB 값만 돌려줄지 확정한다.
+- 현재 동작: `account.balance`와 `updated_at`(`balanceAsOf`)을 돌려준다. 명세는 "SSAFY"로 표기하지만 카드·대출·예적금이 모두 로컬 테이블을 읽는 방식과 맞췼다.
+- 근거: 2026-09-09 기준 전달받은 API Key가 거래 API에서 `H1008`로 거절돼 실호출 검증이 불가능했고, 마이너스통장 상환(534)이 로컬 잔액만 바꾸므로 금융망 값을 그대로 보이면 상환 결과가 사라진 것처럼 보인다.
+- 완료 조건: 실시간 조회로 정하면 `SsafyFinanceClient`에 잔액 조회를 추가하고 응답에 조회 시각을 싣는다. 로컬로 확정하면 명세의 "SSAFY" 표기를 고친다.
+
+### 금융망 계좌 목록 실호출 검증
+
+- [x] ACCOUNT 동기화 핸들러(`AccountSyncHandler`)를 구현했다(2026-09-11). 금융망 2.4 계좌 목록 → `account` upsert, SEED·MANUAL 보존, 목록에서 사라진 SSAFY 계좌 CLOSED 처리까지 Mock 기반 통합 테스트로 확인했다.
+- [ ] 실제 금융망 호출로 `inquireDemandDepositAccountList` 응답 필드명·형식(`accountBalance` 문자열, `lastTransactionDate` yyyyMMdd·빈 문자열)을 대조한다. 2026-09-09 기준 API Key가 거래 API에서 `H1008`로 거절돼 실호출 검증을 못 했고, 응답 계약은 금융망 문서 예시를 따랐다.
+- [ ] 계좌가 하나도 없는 사용자에게 금융망이 `REC`를 생략하는지 빈 배열로 주는지 확인한다. 구현은 둘 다 빈 목록으로 해석한다.
+- 완료 조건: 시연 계정으로 `POST /finance-data/sync`(ACCOUNT) 실행 후 목록·상세·잔액이 금융망 값과 일치한다.
+
+### 부분 매핑 엔티티 교체
+
+- [ ] `CardWithdrawalAccount`(card), `MinusAccountOwner`(minusaccount), `JdbcAccountBalanceWriter`(minusaccount)를 `Account` 엔티티로 교체할지 정한다.
+- 현재 동작: 세 엔티티가 `account`를 함께 매핑한다. 읽기는 문제없지만 쓰기 엔티티가 둘(`MinusAccountOwner`, `Account`)이 되면 같은 행을 다른 영속성 컨텍스트 상태로 들고 있을 수 있다. 501은 읽기만 하므로 지금은 충돌이 없다.
+- 담당 근거: 카드·마이너스통장은 BE-B 영역이라 501에서 고치지 않았다.
+- 완료 조건: 마이너스통장 상환이 `Account`로 잔액을 쓰거나, 쓰기 주체를 하나로 명시한다.
+
+### 엔티티 nullable 완화
+
+- [ ] `Account.accountNoEncrypted`·`sourceType`이 DDL은 NOT NULL인데 엔티티는 nullable이다.
+- 근거: H2 테스트는 엔티티로 스키마를 만드는데 `deposit-saving-test-data.sql`, `savings-test-data.sql`, `deposit-detail-test-data.sql`, `CashflowBalanceReaderTest`가 두 컬럼 없이 `account`를 적재한다. NOT NULL로 매핑하면 그 테스트가 깨진다. local/prod `validate`는 NULL 허용 여부를 검사하지 않는다.
+- 완료 조건: 네 fixture가 두 컬럼을 채우도록 고친 뒤 엔티티를 NOT NULL로 되돌린다. 담당 이슈를 정해야 한다.
+
+### MySQL 검증
+
+- [ ] `Account` 엔티티가 V3 DDL과 `ddl-auto: validate`를 통과하는지 MySQL 8.0에서 확인한다. H2 통합 테스트만 수행했다.
+- 근거: `account_no_encrypted`는 `VARBINARY(512)`↔`byte[]`, `account_no_hash`·`currency`는 CHAR 고정 길이 매핑이다. 카드·대출과 같은 `columnDefinition` 처리를 했지만 실검증은 남았다.
+- 완료 조건: 빈 스키마에 V1~V16 적용 후 기동, 목록·상세·잔액 SQL을 MySQL에서 실행.
+
+## S15P21D105-502 — 계좌 거래내역 Adapter
+
+구현 계약: [account-query.md](account-query.md) "계좌 거래내역·거래 단건", "거래내역 Adapter"
+
+### 거래내역 동기화 기간·증분 전략
+
+- [ ] 매 동기화마다 계좌별 최근 12개월 거래를 통째로 받아 없는 것만 넣는다. 거래가 많아지면 금융망 호출·응답이 커진다.
+- 선행 조건: 금융망 거래내역 API가 페이지네이션을 지원하는지(문서 예시에는 `totalCount`·`list`만 있다), 계좌별 마지막 동기화 시각을 어디에 둘지(`account` 컬럼 추가는 ERD 변경) 정한다.
+- 완료 조건: 두 번째 동기화부터는 마지막 적재 거래일 이후만 받거나, 페이지 단위로 받는다. 시연 규모(계좌 수 건, 거래 수백 건)에서는 현재 방식으로 충분하다.
+
+### 금융망 거래내역 실호출 검증
+
+- [ ] `inquireTransactionHistoryList` 요청 Body(`accountNo`, `startDate`, `endDate`, `transactionType = A`, `orderByType = DESC`)와 응답(`REC.totalCount`, `REC.list[].transactionType "1"/"2"`, 금액 문자열, 시각 HHmmss)을 실호출로 대조한다. API Key 문제(499 절)로 문서 예시만 따랐다.
+- [ ] 계좌에 거래가 없을 때 `REC`가 생략되는지 `list: []`로 오는지 확인한다. 구현은 둘 다 빈 목록으로 해석한다.
+
+### V6 마이그레이션과 504 브랜치 정리
+
+- [ ] `V6__create_transaction_category_and_transaction.sql`은 504 브랜치(`S15P21D105-504-api-6-transaction-query`)의 V5 커밋을 cherry-pick한 뒤 **V6으로 번호를 옮긴 것**이다. develop 병합 시 543이 `V5__create_goal.sql`로 V5를 먼저 써서 충돌했다(2026-09-11).
+- 완료 조건: 504 브랜치를 이어갈 때 develop을 병합하고 그쪽의 V5 마이그레이션 커밋을 걷어낸다(테이블은 이미 V6으로 develop에 있다). `Transaction` 엔티티·fixture의 "V5" 표기도 V6으로 고친다.
+
+### 카드·마이너스통장 거래내역과의 통합
+
+- [ ] `GET /accounts/{accountNo}/transactions`(5), `GET /cards/{cardNo}/transactions`(8), `GET /minus-accounts/{accountNo}/transactions`(10-1)가 같은 원장을 계좌·카드 축으로 따로 읽는다. 응답 필드는 맞췼지만 reader 구현은 세 개다.
+- 완료 조건: 공용 reader로 합치거나 세 구현을 그대로 두기로 팀에서 정한다(534 "API 5 거래내역과의 중복" 항목과 함께).
+
+## S15P21D105-503 — 계좌 집계·휴면 탐지
+
+구현 계약: [account-query.md](account-query.md) "계좌 집계·휴면 탐지"
+
+### 휴면 기준 기본값 확정
+
+- [ ] `inactiveMonths` 기본값 6개월, `maxBalance` 기본 없음(잔액 > 0만 요구)으로 구현했다. 기획안 예시는 "최근 8개월"을 쓰고 금융권 휴면 기준은 1년이라 팀 확정이 필요하다.
+- 완료 조건: FE 기본 호출 값과 진단(14 Diagnosis)의 "휴면성 소액계좌" 이슈 판정이 같은 기준을 쓴다.
+
+### 현금성 자산 정의
+
+- [ ] 현금성 자산 = 수시입출금 잔액(CLOSED 제외, INACTIVE 포함)으로 정의했다. Finance Data 통합 요약(500)의 `totals.cashAssets`는 예·적금까지 포함하므로 두 값이 다르다. 명칭을 맞추거나 500의 필드명을 바꿀지 정한다.
+- 근거: 기획안 9-2가 현금성 자산과 저축성 자산을 구분한다.
+
+### 거래 원장 기반 휴면 판정
+
+- [ ] 휴면 판정은 `account.last_transaction_date`만 본다. 동기화 전 seed 계좌는 seed가 넣은 값에, 수동 거래(API 6 등록)는 이 컬럼을 갱신하지 않으면 판정에 반영되지 않는다.
+- 완료 조건: 수동 거래 등록(505)이 `last_transaction_date`를 갱신하거나, 판정 시 `transaction`의 최근 거래일과 비교해 더 최신 값을 쓴다.
+
+### MySQL 검증
+
+- [ ] `JdbcAccountFlowReader`의 `YEAR()`/`MONTH()` GROUP BY와 `SUM(CASE …)`을 MySQL 8.0에서 실행한다. H2(MODE=MySQL)만 확인했다. `ONLY_FULL_GROUP_BY` 모드에서도 SELECT 항목이 모두 GROUP BY 식 또는 집계이므로 통과해야 한다.
+## S15P21D105-543 — Diagnosis 저장 구조·실행 골격
+
+구현 계약: [diagnosis.md](diagnosis.md)
+
+### V5 번호와 goal 테이블 확인(병합 전 필수)
+
+- [ ] `V5__create_goal.sql`의 번호와 선반영 자체를 BE-A와 확인한다.
+- 근거: `diagnosis.goal_id`가 ERD상 `goal(user_id, goal_id)`를 참조하는데 `goal` 마이그레이션이 없어
+  V17을 만들 수 없었다. V3의 `account` 선례대로 스키마만 먼저 추가했다. BE-A 구간(V1~V9)의 번호를
+  소비했으므로 `db/migration/README.md`의 "구간을 넘겨 써야 하면 담당자와 번호를 확인" 규칙이 걸린다.
+- 완료 조건: BE-A가 V5 번호를 확인하고, Goal API(508~511)가 `goal` 테이블을 다시 만들지 않는다는 것에
+  합의한다. 번호 충돌이 있으면 병합 전에 파일명을 바꾼다.
+
+### MySQL 검증
+
+- [x] `V5`·`V17`을 MySQL 8.0.46에서 적용하고 `DiagnosisMySqlIntegrationTest` 3건을 통과시켰다
+  (2026-09-10). `ddl-auto: validate`, `fk_diagnosis_goal`, JSON 컬럼 타입, CHECK 5개를 확인했다.
+- [x] 운영 배포 경로(V16까지 적용된 DB에 V5·V17이 뒤늦게 도착)를 실제 파일로 재현했다. V5가
+  `OUT_OF_ORDER`로 적용되고 FK가 정상 생성되며 재기동에도 문제가 없다.
+
+### 미확정 정책
+
+- [ ] `rule_version` 표기 규칙을 팀에서 정하고 `DiagnosisRuleVersion.CURRENT`를 교체한다. 현재는 `"v1"`
+  상수이며 cashflow의 `CashflowCalculationVersion`과 같은 상황이다. 두 값의 표기를 함께 정한다.
+- [ ] `diagnosis_issue.domain`과 `type`의 값 집합을 544·545에서 확정하고 ERD 주요 코드값 표에 추가한다.
+  ERD에 목록이 없어 `String`으로 두었다.
+- [ ] `input_snapshot`의 형식과 항목을 544에서 정한다.
+- [ ] 종합 상태(`overall_status`) 판정 규칙을 544에서 정한다. 현재는 호출자가 넘긴 값을 그대로 저장한다.
+- [ ] 544의 진단 실행에서 `goalId` 소유권을 애플리케이션 단계에서 검증한다. 복합 FK
+  `(user_id, goal_id)`가 남의 목표를 막아 주지만 DB까지 가서 막히므로 500이 된다. 400 또는
+  `RESOURCE_NOT_FOUND`로 바꿔야 한다. H2 테스트는 FK가 없어 이 경로를 재현하지 못한다.
+
+### 심각도 enum 통합 여부
+
+- [ ] `diagnosis`의 `IssueSeverity`와 `cashflow`의 `RiskSeverity`를 `global/`로 합칠지 정한다.
+- 근거: 값 집합(`LOW`/`MEDIUM`/`HIGH`/`CRITICAL`)이 같고 ERD 주요 코드값 표의 같은 항목을 가리킨다.
+  한쪽 도메인의 enum을 다른 도메인이 import하면 서로의 코드값 변경에 묶여 별도 enum을 두었다.
+- 선행 조건: cashflow 파일을 건드리면 병합 대기 중인 S15P21D105-542와 충돌한다. 542 병합 후에 판단한다.
+- 완료 조건: 합치기로 했다면 두 도메인이 같은 enum을 쓰고 ERD 코드값 표가 그 사실을 반영한다.
+
+### 실패 상태 표현
+
+- [ ] 진단 실행 실패를 어떻게 표현할지 정한다. ERD `diagnosis`에 상태 컬럼이 없어 실패한 진단이
+  접수된 채 `completed_at` NULL로 남고 진행 중인 진단과 구분되지 않는다.
+- 근거: cashflow는 `ForecastStatus`로 `FAILED`를 남기지만 diagnosis에는 대응 컬럼이 없다.
+- 선행 조건: 컬럼 추가가 필요하면 ERD 변경을 먼저 논의한다.
+- 완료 조건: 실패한 진단을 재시도 판단에서 진행 중인 진단과 구분할 수 있다.
+
+### Jira 최신 완료 조건 대조
+
+- [ ] 실제 Jira 접근이 가능해지면 최신 543 완료 조건과 구현 범위를 대조한다. 로컬
+  `SPRINT/Jira (4).csv`의 제목(`[API 14] Diagnosis 기반`)과 설명(`Diagnosis·Issue 관계와 실행 골격`)만
+  근거로 범위를 정했다.
+## S15P21D105-504 — 거래 조회·메모·카테고리·숨김
+
+구현 계약: [transaction-query.md](transaction-query.md)
+
+### 금융망 메모 API 반영
+
+- [ ] 명세 6은 거래 메모 수정을 "SSAFY" 연동으로 표기하지만 현재는 우리 DB `transaction.memo`만 갱신한다.
+- 근거: 금융망 거래 메모 API(2.4 거래내역 메모)에 넘길 `accountNo`·`transactionUniqueNo`와 우리 원장의 대응 규약이 501(계좌 동기화)에서 아직 정해지지 않았다. 2026-09-09 기준 전달받은 API Key가 거래 API에서 `H1008`로 거절돼 실호출 검증도 불가능했다.
+- 선행 조건: 501이 `transaction_id`를 금융망 `transactionUniqueNo`로 채우는지, 계좌 거래만 대상인지 확정.
+- 완료 조건: SSAFY 출처 계좌 거래의 메모 수정 시 금융망에도 반영되거나, 로컬 전용으로 확정해 명세의 "SSAFY" 표기를 고친다.
+
+### 거래 seed 데이터
+
+- [ ] `backend/database/seeds`에 `transaction` seed가 없다. 시연 계정으로 거래 목록·카드 사용내역·마이너스통장 거래·소비 기반 카드 추천을 보이려면 필요하다.
+- 근거: 카드·마이너스통장·상품 추천 도메인은 `transaction`을 JDBC로 읽지만 데이터 적재는 어느 티켓도 맡지 않았다. 카테고리 기준 행(V6)의 코드를 그대로 써야 한다.
+- 완료 조건: 시연 사용자별 3개월치 거래가 V6 카테고리 코드·`payment_method`(CARD/ACCOUNT) 규약으로 적재되고, 501 동기화가 `source_type = 'SEED'`를 덮어쓰지 않는 규칙(534에서 제기한 것과 같은 문제)이 정해진다.
+
+### MySQL 검증
+
+- [ ] V6를 MySQL 8.0에서 적용해 `ddl-auto: validate` 통과와 복합 외래키(`account`, `card`) 생성을 확인한다. H2 통합 테스트만 수행했다.
+- 근거: `hidden`·`active`는 TINYINT(1)↔boolean, `transaction_time`은 TIME↔LocalTime 매핑이며 H2와 MySQL의 타입 검증 결과가 다를 수 있다. 기존 DB에는 V17 뒤에 V6이 들어가므로 out-of-order 적용도 함께 본다.
+- 완료 조건: 빈 스키마에 V1~V16 적용 후 기동, 목록·상세·PATCH 3종 SQL을 MySQL에서 실행.
+
+### 명세 외 추가 항목 확정
+
+- [ ] `GET /api/v1/transactions/categories`와 목록 파라미터 `hidden`을 API 명세 6에 반영할지 팀에서 정한다.
+- 근거: FE가 카테고리 수정 Body의 `categoryId`와 필터 코드를 알 방법이 명세에 없었고, 숨긴 거래를 다시 보이게 할 목록도 없었다. 구현은 문서에 "명세 외 추가"로 표시했다.
+- [ ] 목록에 `transactionType`(INCOME/EXPENSE/TRANSFER) 필터를 추가할지 정한다. 가계부 화면의 기본 필터이지만 명세에 없어 넣지 않았다.
+
+### 카드·마이너스통장 fixture와의 스키마 차이
+
+- [ ] `card-query-test-data.sql`, `minus-account-test-data.sql`, `product-comparison-recommendation-test-data.sql`이 만드는 `transaction`에는 `balance_after`·`created_at`·`updated_at`이 없다. 이 fixture가 남은 상태에서 `Transaction` 엔티티로 쓰기를 하면 실패한다.
+- 현재 동작: 504 테스트는 자기 fixture로 V6 컬럼 전체를 다시 만들어 영향이 없다. 다른 도메인 테스트는 읽기만 하므로 역시 영향이 없다.
+- 완료 조건: 공용 fixture 하나로 합치거나, 각 fixture가 V6 컬럼을 모두 갖도록 맞춘다. 담당 이슈를 정해야 한다.
+
+## S15P21D105-505 — 수동 거래 CRUD
+
+구현 계약: [transaction-query.md](transaction-query.md) "수동 거래 등록·수정·삭제"
+
+### 계좌 연결 여부
+
+- [ ] 수동 거래는 계좌·카드에 연결되지 않는다(`account_id` null). 명세 Body에 계좌 필드가 없어서다. 그래서 계좌 거래내역(5)·계좌 잔액·`last_transaction_date`·현금흐름 예측에는 잡히지 않고, 전체 거래 목록(6)과 소비 집계에만 나타난다.
+- 선행 조건: FE가 수동 거래 화면에서 계좌를 고르게 할지 팀에서 정한다. 넣기로 하면 Body에 `accountId?`를 추가하고 소유권·계좌 유형(DEMAND_DEPOSIT) 검증, `last_transaction_date` 갱신 여부를 함께 정한다(503 휴면 판정 항목과 연결).
+- 완료 조건: 명세 6의 Body 정의와 구현이 일치한다.
+
+### 소비유형 재계산
+
+- [ ] 등록 시 `spending_type`은 카테고리 기본값에서만 채운다. 카테고리 없이 등록하면 null이라 고정·변동지출 집계(`/spending/fixed`, `/spending/variable`)에서 빠진다.
+- 완료 조건: 3 Preference(자동 분류)가 미분류 거래의 카테고리·소비유형을 채우는 규칙을 정하거나, 등록 시 거래 유형별 기본값(EXPENSE → VARIABLE 등)을 두기로 결정한다.
+
+### 삭제 방식
+
+- [ ] 물리 삭제로 구현했다. 삭제 이력이 필요하면(진단·리포트가 과거 집계를 다시 계산할 때) soft delete 컬럼이 없어 ERD 변경이 필요하다. 현재 ERD에는 `deleted_at`이 없다.
+
+## S15P21D105-506 — 소비 기간·카테고리 집계
+
+구현 계약: [spending-aggregation.md](spending-aggregation.md)
+
+### 티켓 범위 확정
+
+- [ ] 506을 `/spending/**` 11개 중 집계 6개(월 소비 요약, 월 누적 소비, 일별 소비, 카테고리별 소비, 카테고리 소비 추이, 결제수단별 소비)로 잡았다. 소비·저축 비율, 소비 급증, 소비목표 비교, 고정·변동지출은 다음 하위 태스크로 남겼다. Jira 하위 태스크 설명과 다르면 재배치한다.
+
+### "소비" 정의 합의
+
+- [ ] EXPENSE이면서 `spending_type`이 NON_SPENDING이 아닌 거래(미분류 포함)를 소비로 정의했다. 진단(14)·리포트(20)·소비 기반 카드 추천(18)이 같은 정의를 쓰는지 대조한다. 카드 추천 reader(`JdbcCardRecommendationSpendingReader`)는 현재 카드 거래만 본다.
+- 완료 조건: 소비 정의를 공용 문서(ERD 「데이터 무결성 규칙」 또는 spending-aggregation.md)에 한 번만 두고 각 도메인이 참조한다.
+
+### 소비 거래 seed
+
+- [ ] `transaction` seed가 없어 시연 계정의 소비 집계가 전부 0이다(504 절 "거래 seed 데이터"와 같은 항목). 카테고리·결제수단·`spending_type`이 골고루 들어간 3개월치가 필요하다.
+
+### MySQL 검증
+
+- [ ] `JdbcSpendingReader`의 다섯 SQL(월·일·카테고리·월×카테고리·결제수단 GROUP BY)을 MySQL 8.0 `ONLY_FULL_GROUP_BY`에서 실행한다. H2만 확인했다. SELECT 항목이 모두 GROUP BY 식 또는 집계라 통과해야 한다.
+
+## S15P21D105-507 — 목표·이상소비·결제수단 분석
+
+구현 계약: [spending-aggregation.md](spending-aggregation.md) 507 절
+
+### 급증 판정 기준값 확정
+
+- [ ] 기준 증가율 20%, 소액 보정 10,000원은 기획안 예시(38% 증가)가 잡히도록 잡은 기본값이다. 기획안이 남긴 "소액·고액 보정계수 + 물가상승률" 논의가 끝나면 값을 바꾸고, 필요하면 `application.yml` 설정으로 뺀다.
+- 완료 조건: 진단(14)의 "변동지출 급증" 이슈가 같은 기준으로 판정된다.
+
+### 저축률 정의
+
+- [ ] 저축률을 `(소득 − 소비) / 소득`(잔여)으로 정의했다. 실제 저축 이체(`savingTransfer`)는 참고 수치로만 준다. 어느 카테고리·이체를 "저축"으로 볼지 규약이 정해지면 저축률 분자를 실제 저축액으로 바꿀지 결정한다.
+- 근거: 기획안은 "소비 : 저축 목표 비율"을 말하지만 저축 거래 식별 규칙이 없다.
+
+### 소득 출처
+
+- [ ] `financial_profile.monthly_income`이 있으면 그 값을, 없으면 그 달 INCOME 거래 합을 소득으로 쓴다. 급여가 두 번 들어온 달이나 환급 입금이 있는 달은 거래 합이 과대평가될 수 있다. 3 Preference(패턴 분석)가 "급여" 입금을 식별하면 그 값으로 바꾼다.
+
+### V7 goal 하위행 선반영
+
+- [ ] `saving_goal`, `spending_goal`을 V7로 만들었다. Goal API(508~511)는 같은 테이블을 다시 만들지 않고 `goal_account`, `goal_history`만 추가한다. 소비목표에 카테고리가 없어 `goal-comparison`은 월 전체 소비와 비교한다. 카테고리별 예산이 필요하면 ERD 변경이다.
+
+### MySQL 검증
+
+- [ ] V7 적용과 `JdbcSpendingAnalysisReader`의 SQL(spending_type별 월·카테고리 집계, goal JOIN spending_goal)을 MySQL 8.0에서 실행한다. H2만 확인했다.
+
+## S15P21D105-508 — Goal CRUD
+
+구현 계약: [goal.md](goal.md)
+
+### 명세 Body와 ERD의 불일치(줄이기 목표)
+
+- [ ] 명세 12 생성 Body는 `targetAmount`·`targetDate` 필수, `monthlyBudget` 선택인데 ERD `spending_goal`에는 `monthly_budget`만 있다. 줄이기(SPENDING) 목표에 목표 금액·목표일이 오면 400으로 거절하도록 구현했다. FE 목표 설정 화면(481·485)이 줄이기 목표에도 금액·기한을 받는다면 ERD에 컬럼을 추가하거나 명세를 고쳐야 한다.
+- 완료 조건: 명세 12 Body 정의와 ERD·구현이 일치한다.
+
+### 달성 자동 전이
+
+- [ ] 모인 금액이 목표 금액에 도달해도 상태는 ACTIVE로 남는다(510은 `paceStatus = ACHIEVED`, `riskLevel = NONE`으로만 알린다). 자동 ACHIEVED 전이를 넣을지, 사용자가 확인 후 PATCH로 바꾸게 둘지 팀 결정. 자유입출금 계좌는 잔액이 다시 줄 수 있어 자동 전이가 되돌아가는 문제가 있다.
+
+### 삭제 시 연결 해제
+
+- [x] 509에서 처리 방식을 정했다: 목표 soft delete 시 `goal_account` 행은 남기되, 다른 목표가 그 계좌를 연결하면 삭제된 목표의 연결을 해제하고 이어받는다(`GoalAccountService.replaceAccounts`). 삭제 시점에 바로 지우지 않은 이유는 삭제된 목표의 이력(511)이 연결 계좌를 참조할 수 있기 때문이다.
+
+### MySQL 검증
+
+- [ ] `Goal`·`SavingGoal`·`SpendingGoal` 엔티티가 V5·V7 DDL과 `ddl-auto: validate`를 통과하는지 MySQL 8.0에서 확인한다. H2만 확인했다.
+
+## S15P21D105-509 — 목표 연결계좌
+
+구현 계약: [goal.md](goal.md) "연결계좌"
+
+### 계좌 잔액 변경 시 모인 금액 재계산
+
+- [x] 510에서 처리했다: progress·required-saving·forecast·risk가 조회 시점에 연결 계좌 잔액 합으로 다시 계산하고 `goal.current_amount`도 갱신한다. 목록·요약(508)은 저장값을 그대로 쓰므로 계산 API를 한 번 부른 뒤에 맞아진다.
+- [ ] 목록·요약도 실시간으로 맞추려면 ACCOUNT 동기화(502) 뒤에 사용자 목표를 갱신하는 훅이 필요하다. 동기화 응답 시간에 영향이 있어 팀 결정으로 남긴다.
+
+### 기여 금액(contribution_amount)
+
+- [ ] 명세 Body가 `accountNos[]`만 받아 계좌별 기여 금액을 지정할 수 없다. 급여통장처럼 잔액 일부만 목표에 쓰는 경우를 위해 ERD가 둔 컬럼이다. FE에 입력 UI가 생기면 Body를 `[{accountNo, contributionAmount?}]`로 바꾸고 모인 금액 계산에 반영한다.
+
+### MySQL 검증
+
+- [ ] V8 적용(복합 외래키 3개: goal, saving_goal, account)과 `GoalAccount` 엔티티(`@IdClass`)의 `ddl-auto: validate` 통과를 MySQL 8.0에서 확인한다. H2 fixture는 외래키 없이 만들었다.
+
+## S15P21D105-510 — 목표 진행률·필요 저축액
+
+구현 계약: [goal.md](goal.md) "계산"
+
+### 저축속도 정의
+
+- [ ] 현재 저축속도를 "확보 금액 / 목표 생성 후 경과 개월(최소 1)"로 정의했다. 생성 전부터 있던 계좌 잔액이 첫 달 속도에 그대로 잡혀 과대평가된다(기획안 예시의 "현재 월평균 저축액"은 최근 저축 흐름을 뜻한다).
+- 완료 조건: 이력(511, `goal_history`)이 쌓이면 최근 3개월 `current_amount` 증분의 평균으로 바꾼다. 그 전까지는 현재 정의를 쓴다.
+
+### 위험 판정 기준값
+
+- [ ] 페이스 허용 ±5pt, 일정 지연 10pt, 속도 부족률 30%, 예산 경고 80%는 기본값이다. 진단(14 Diagnosis)의 "모으기 목표 달성 위험"·"줄이기 목표 초과 위험" 이슈가 같은 기준을 쓰도록 543 담당과 맞춘다. 543의 `diagnosis_issue` 심각도 enum과 `riskLevel`(LOW/MEDIUM/HIGH) 대응도 정한다.
+
+### 자유입출금 출금 경고
+
+- [ ] 기획안 "자유입출금통장의 경우 출금을 할 경우 경고메시지 출력"은 구현하지 않았다. 511 이력(`AMOUNT_UPDATED`의 `current_amount` 감소)으로 감지할 수 있게 됐으니, 위험 요인 `BALANCE_DECREASED`를 추가할지 정한다.
+
+### MySQL 검증
+
+- [ ] 계산 API는 새 SQL이 없다(엔티티 조회 + 507 reader 재사용). V8 검증(509 절)과 함께 확인한다.
+
+## S15P21D105-511 — 목표 예측·위험·이력
+
+구현 계약: [goal.md](goal.md) "변화 이력"
+
+### 티켓 범위
+
+- [ ] 511 제목의 "예측·위험"은 510(`forecast`, `risk`)에서 이미 구현했고 511에서는 `goal_history`(V9)와 이력 조회·기록만 추가했다. Jira 하위 태스크 설명과 다르면 재배치한다.
+
+### 주기적 스냅샷
+
+- [ ] 이력은 사용자 행동(생성·수정·연결·계산 API 호출)이 있을 때만 남는다. 아무 호출이 없는 달에는 행이 없어 "월별 진행 추이" 차트(FE `GoalHistoryPoint`)에 빈 달이 생긴다.
+- 완료 조건: 일 1회(또는 ACCOUNT 동기화 뒤) 모으기 목표의 `AMOUNT_UPDATED` 스냅샷을 남기는 스케줄러를 두거나, FE가 빈 달을 직전 값으로 채우기로 정한다.
+
+### 저축속도 재정의(510 절 후속)
+
+- [ ] 이력이 쌓이면 저축속도를 "최근 3개월 `current_amount` 증분 평균"으로 바꾼다(510 절 "저축속도 정의"). 지금은 생성 이후 평균이다.
+
+### MySQL 검증
+
+- [ ] V9 적용과 `GoalHistory` 엔티티(`DECIMAL(10,4)`↔`BigDecimal`)의 `ddl-auto: validate` 통과를 MySQL 8.0에서 확인한다.
+
+## S15P21D105-492 — Transaction·Spending·Subscription Fixture
+
+산출물: `database/seeds/DODAM_TRANSACTION_SEED.sql`, `database/seeds/DODAM_SUBSCRIPTION_SEED.sql`, `database/seeds/README.md`
+
+### MySQL 실행 검증
+
+- [x] 2026-09-11 Docker `mysql:8.0`(8.0.46)에 V1~V17을 적용하고 525→491→522→523→524→492→493 순으로 실행했다. 계좌·카드번호 fixture는 SHA2 기반 더미(형식만 충족)를 썼다. 아래 "임시 테이블 재참조 오류"를 고친 뒤 원본 파일 그대로 1~7번이 43초에 오류 없이 끝났다.
+- 결과: 거래 348,192건(INC 24,000 / FIX 72,000 / SUB 36,000 / SAV 24,000 / VAR 192,192), 계약 위반 0건, 주거래 계좌 `last_transaction_date` 4,000건·휴면 계좌 NULL. 실행 시간 약 14초(변동 슬롯 축소 불필요). 재실행 후 건수·금액 합이 같아 멱등을 확인했다.
+- 성향별 소득 대비 소비 / 저축 비율: BALANCED 75.3 / 15.0, SPENDING_FOCUSED 100.4 / 3.0, SAVING_FOCUSED 65.3 / 30.0, VOLATILE 90.4 / 8.0.
+- [ ] SPENDING_FOCUSED는 소비(고정 약 45% + 변동 55%)가 소득의 100%를 넘는다. 의도한 과소비 시연이 아니면 변동 비율을 낮춘다.
+
+### 임시 테이블 재참조 오류 (491·492·493·522·523·524·구독 seed 공통)
+
+- [x] MySQL은 한 문장에서 같은 TEMPORARY 테이블을 두 번 참조할 수 없다(`ERROR 1137 Can't reopen table`). 자릿수 테이블 4중 CROSS JOIN, preflight의 스칼라 서브쿼리 다중 참조, `ctx`와 서브쿼리 `c`의 동일 테이블 조인(492 4c·4e), `EXISTS(... preflight)` 게이트가 모두 해당해 491·492·493·522·구독 seed는 사용자 목록 생성에서 실패했다. 8.0.46에서 자기 조인·스칼라 서브쿼리 2개·조인+파생 테이블·EXISTS 네 패턴 모두 실패함을 확인했다. 523·524는 처음부터 파생 테이블·단일 참조 문장으로 작성돼 영향이 없다.
+- 조치(2026-09-11): 다섯 파일의 `tmp_dodam_*` 작업 테이블과 491·522의 fixture 테이블을 일반 테이블로 바꾸고 파일 끝 cleanup 절에서 DROP한다. 머리말의 fixture 계약도 `CREATE TABLE`로 바꿨으므로 fixture 빌더는 TEMPORARY가 아닌 일반 테이블을 만들어야 한다(523·524 fixture는 TEMPORARY도 가능).
+- [ ] 파일이 중간에 멈추면 작업 테이블이 스키마에 남는다(다음 실행의 `DROP TABLE IF EXISTS`가 정리). 운영 DB에 적재할 때 `tmp_dodam_%` 잔여 테이블을 확인한다.
+
+### 525 금융상품 seed의 `product_sync_history`
+
+- [x] `DODAM_FINANCIAL_PRODUCTS_*_COMPAT_FIXED.sql` 두 파일은 COMMIT 직전에 `product_sync_history`에 INSERT했는데, 이 테이블은 ERD에만 있고 V1~V17 마이그레이션과 엔티티에 없다. Flyway로 만든 DB에서는 여기서 멈추고 트랜잭션이 롤백돼 상품이 하나도 들어가지 않았다. 2026-09-11 INSERT와 그 전용 변수(`@dodam_existing_before`)를 제거했다. 결과: 상품 198건·옵션 456건, 위반 0건.
+- [ ] 상품 동기화 이력이 필요해지면 `product_sync_history` 마이그레이션(BE-B 구간)과 엔티티를 만든 뒤 seed에 이력 INSERT를 되살린다.
+
+### 구독 seed의 선행 마이그레이션
+
+- [ ] `DODAM_SUBSCRIPTION_SEED.sql`은 `subscription`·`subscription_payment_history` 테이블이 없어 지금은 실행할 수 없다(2026-09-11 확인: 임시 테이블 문제를 우회하면 첫 DELETE에서 `Table 'subscription_payment_history' doesn't exist`로 멈추고 아무것도 쓰지 않는다). API 7 Subscription 작업에서 마이그레이션(V18 이후, BE-B와 번호 확인)을 만든 뒤 적재한다. 거래 seed의 SUB 행(12일·25일, 9,900/12,400/14,900/4,900원)과 금액·날짜를 맞춰 두었다.
+
+### 시연 사용자 데이터 결
+
+- [ ] 거래는 seed 사용자(`seed.kmeans.u0001~u4000`)에만 생긴다. 실제 회원가입 계정으로 시연하려면 금융망 동기화(ACCOUNT scope)로 거래를 받아야 하는데 API Key 문제(499 절)가 남아 있다. 시연 계정을 seed 사용자 중 하나로 정하고 비밀번호를 애플리케이션으로 세팅하는 절차(491의 `password_hash NULL` 항목)가 필요하다.
+- [ ] `balance_after`는 NULL이다. 계좌 거래내역(5)·마이너스통장(10-1) 응답의 `balanceAfter`가 seed 데이터에서는 비어 보인다. 잔액 재생(replay)을 넣을지 정한다.
+
+## S15P21D105-493 — Goal·GoalAccount·GoalHistory Seed
+
+산출물: `database/seeds/DODAM_GOAL_SEED.sql`
+
+### MySQL 실행 검증
+
+- [x] 2026-09-11 MySQL 8.0.46에서 실행했다(492 절 "임시 테이블 재참조 오류" 조치 포함). 최초 규칙으로는 preflight가 `users_with_saving_account_count = 3000`으로 실패했다. 524가 예금 500·적금 500 계좌를 CLOSED로 만들어 사용자 1,000명(40명 주기의 25~32번째, 성향별 250명)은 열린 예·적금 계좌가 없고, Goal API는 CLOSED 계좌 연결을 400으로 막는다([goal.md](goal.md) 계좌 연결 표).
+- 조치: 열린 예·적금이 없는 사용자는 주거래 입출금 계좌를 대신 연결한다(`COALESCE(saving_account_id, primary_account_id)`, BALANCED는 주거래 중복 연결 방지). 기대 연결 수는 5,000 → 4,750.
+- 결과: 모으기 4,000(ACTIVE 3,900 / PAUSED 100), 줄이기 2,000, 연결 4,750(예금 1,500 / 적금 1,500 / 주거래 1,750, CLOSED 연결 0), 이력 30,000, `current_amount` 불일치 0, 연결 계약 위반 0, 진행률 범위 위반 0, 실행 약 2초. 재실행 후 건수·금액 합 동일.
+- 참고: 재실행은 목표를 지우고 다시 만들므로 `goal_id`가 바뀐다. 시연 스크립트에 goal_id를 고정하지 않는다. `goal_id`를 (user_id, type, created_at 마커)로 되찾는 방식은 사용자당 유형별 목표가 하나라는 seed 전제에 의존하며, 앱에서 `2026-03-01 09:00:00`에 목표를 만들 수는 없으므로 실무에서는 충돌하지 않는다.
+
+### 이력 스냅샷의 현실성
+
+- [ ] 월말 이력은 현재 연결 잔액을 6등분해 선형으로 채운 것이다(계좌 잔액 이력이 없어 실제 추이를 만들 수 없음). `forecast_date`는 NULL이고 API가 실시간 계산한다. 시연에서 "예상 달성일 변화"를 보이려면 이력에 `forecast_date`를 채우는 규칙을 정한다.
+
+### 줄이기 목표 예산 수준
+
+- [ ] SPENDING_FOCUSED·VOLATILE 사용자의 월 예산을 소득의 45%로 두어 대부분 WARNING/EXCEEDED가 나오게 했다(시연용). 진단(14)의 "줄이기 목표 초과 위험" 표본이 과다하면 비율을 조정한다.
