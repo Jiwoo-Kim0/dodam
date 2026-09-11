@@ -1,8 +1,8 @@
-# Account API — 계좌 목록·상세·잔액·거래내역
+# Account API — 계좌 목록·상세·잔액·거래내역·집계·휴면 탐지
 
 JIRA `S15P21D105-453` (D4 Account API 구현)의 하위 티켓 `S15P21D105-501`(API 5 계좌 목록·상세·잔액),
-`S15P21D105-502`(API 5 계좌 거래내역 Adapter) 구현 기준이다. API 명세 5 Account 중 다섯 개를 다룬다.
-계좌 요약·월별 입출금·입출금 추이·휴면성 계좌·현금성 자산 합계는 다음 티켓 범위이며 이 문서에 포함하지 않는다.
+`S15P21D105-502`(API 5 계좌 거래내역 Adapter), `S15P21D105-503`(API 5 계좌 집계·휴면 탐지) 구현 기준이다.
+API 명세 5 Account의 10개 엔드포인트를 모두 다룬다.
 
 ## API
 
@@ -11,17 +11,25 @@ JIRA `S15P21D105-453` (D4 Account API 구현)의 하위 티켓 `S15P21D105-501`(
 | 티켓 | 기능 | Method | Endpoint | 상태 코드 |
 | --- | --- | --- | --- | --- |
 | 501 | 계좌 전체 조회 | GET | `/api/v1/accounts?bankCode&accountType` | 200 |
+| 503 | 계좌 요약 조회 | GET | `/api/v1/accounts/summary` | 200 |
+| 503 | 현금성 자산 합계 | GET | `/api/v1/accounts/balance-summary` | 200 |
+| 503 | 휴면성 계좌 | GET | `/api/v1/accounts/inactive?inactiveMonths&maxBalance` | 200 |
 | 501 | 계좌 상세 조회 | GET | `/api/v1/accounts/{accountNo}` | 200 |
 | 501 | 계좌 잔액 조회 | GET | `/api/v1/accounts/{accountNo}/balance` | 200 |
 | 502 | 계좌 거래내역 조회 | GET | `/api/v1/accounts/{accountNo}/transactions?startDate&endDate&page&size` | 200 |
 | 502 | 거래 단건 조회 | GET | `/api/v1/accounts/{accountNo}/transactions/{transactionId}` | 200 |
+| 503 | 월별 입출금 요약 | GET | `/api/v1/accounts/{accountNo}/monthly-summary?yearMonth` | 200 |
+| 503 | 입출금 추이 | GET | `/api/v1/accounts/{accountNo}/trend?startMonth&endMonth` | 200 |
+
+`/summary`, `/balance-summary`, `/inactive`는 `/{accountNo}`보다 구체적인 리터럴 경로라 Spring MVC가 먼저 매칭한다.
+계좌번호 패턴이 숫자만 허용하므로 실제로 겹치지도 않는다.
 
 ### 오류 코드
 
 | 코드 | HTTP | 발생 조건 |
 | --- | --- | --- |
-| `VALIDATION_ERROR` | 400 | `bankCode`·`accountType` 형식 위반(영숫자·밑줄 외 문자), `accountNo`가 숫자 10~20자리가 아님, `transactionId` 형식 위반, page < 0, size가 1~100 밖 |
-| `INVALID_REQUEST` | 400 | `accountType`이 DEMAND_DEPOSIT / MINUS / DEPOSIT / SAVINGS 밖의 값, 시작일 > 종료일, 종료일이 오늘 이후, 조회 기간 12개월 초과 |
+| `VALIDATION_ERROR` | 400 | `bankCode`·`accountType` 형식 위반(영숫자·밑줄 외 문자), `accountNo`가 숫자 10~20자리가 아님, `transactionId` 형식 위반, page < 0, size가 1~100 밖, `inactiveMonths`가 1~120 밖, `maxBalance` < 0 |
+| `INVALID_REQUEST` | 400 | `accountType`이 DEMAND_DEPOSIT / MINUS / DEPOSIT / SAVINGS 밖의 값, 시작일 > 종료일, 종료일이 오늘 이후, 조회 기간 12개월 초과, 연월 형식(YYYY-MM) 위반, 미래 월, 시작월 > 종료월 |
 | `RESOURCE_NOT_FOUND` | 404 | 본인 소유가 아니거나 존재하지 않는 계좌("계좌를 찾을 수 없습니다."), 그 계좌에 없는 거래("거래를 찾을 수 없습니다.") |
 | `UNAUTHORIZED` | 401 | 토큰 없음·만료 |
 
@@ -101,6 +109,61 @@ JIRA `S15P21D105-453` (D4 Account API 구현)의 하위 티켓 `S15P21D105-501`(
 이미 있는 거래는 어떤 컬럼도 덮어쓰지 않는다. 사용자가 API 6으로 바꾼 메모·카테고리·숨김이 동기화로 되돌아가지 않게 하기 위해서다.
 SEED·MANUAL 계좌의 거래는 받지도 넣지도 않는다.
 
+## 계좌 집계·휴면 탐지 (503)
+
+모두 우리 DB 기준 자체 계산이다. 계좌 단위(요약·현금성 자산·휴면)는 사용자 계좌를 한 번 읽어 메모리에서 계산하고,
+거래 단위(월별 요약·추이)는 `transaction`을 월별로 묶어 읽는다(`JdbcAccountFlowReader`). 거래 집계는 **숨긴 거래를 제외**한다.
+
+### 계좌 요약 `GET /accounts/summary`
+
+Finance Data 통합 요약(500)의 `accounts` 절과 같은 합산 규칙이다. CLOSED 계좌는 개수·잔액에서 빼고(`closedCount`로만 보고),
+마이너스통장 `balance`(0 이하)는 부호를 뒤집어 `minusUsedAmount`(부채)로 본다.
+
+| 필드 | 값 |
+| --- | --- |
+| `count` | CLOSED 제외 계좌 수(마이너스통장 포함) |
+| `activeCount`, `inactiveCount`, `closedCount` | 상태별 계좌 수 |
+| `demandDepositCount/Balance`, `depositCount/Balance`, `savingsCount/Balance` | 유형별 개수·잔액 합(CLOSED 제외) |
+| `minusAccountCount`, `minusUsedAmount` | 마이너스통장 수, 사용액 합(양수) |
+| `totalAssets` | 입출금 + 예금 + 적금 잔액 |
+| `netAssets` | `totalAssets − minusUsedAmount` |
+
+### 현금성 자산 합계 `GET /accounts/balance-summary`
+
+기획안 9-2의 "현금성 자산"을 **즉시 인출 가능한 수시입출금(DEMAND_DEPOSIT) 잔액**으로 정의했다. 예금·적금은 저축성 자산,
+마이너스통장은 부채라 넣지 않는다. CLOSED는 제외하고 INACTIVE는 포함한다(잔액은 그대로 인출 가능하기 때문).
+응답은 `totalCash`, `accountCount`, `accounts[]`(잔액 내림차순, `sharePercent`는 `totalCash` 대비 비중을 소수 첫째 자리까지)다.
+
+### 휴면성 계좌 `GET /accounts/inactive?inactiveMonths&maxBalance`
+
+기획안 「휴면성 소액계좌」 확정 규칙 **"잔액 > 0 AND 최근 N개월간 입출금 거래 없음"** 을 수시입출금 계좌에 적용한다.
+
+| 파라미터 | 기본값 | 규칙 |
+| --- | --- | --- |
+| `inactiveMonths` | 6 | 1~120. 이 개월 수 이상 거래가 없으면 휴면 |
+| `maxBalance` | 없음 | 0 이상. 지정하면 이 금액 이하만 "소액"으로 잡는다 |
+
+- 판정: `lastActivityDate <= 기준일 − inactiveMonths`. `lastActivityDate`는 `account.last_transaction_date`이고, 거래 이력이 없어
+  null이면 **계좌 적재일(`created_at`)**을 쓴다. 방금 연동한 새 계좌가 휴면으로 잡히지 않게 하기 위해서다.
+- 잔액 0 이하·CLOSED·예금·적금·마이너스통장은 어떤 기준에서도 잡히지 않는다.
+- 응답은 적용한 `criteria`(inactiveMonths, maxBalance, asOfDate)와 `count`, `totalBalance`, `accounts[]`(거래 없는 기간이 긴 순,
+  각 항목에 `lastActivityDate`·`inactiveMonths`)다. FE가 "최근 N개월간 거래가 없는 계좌 M개에 … 원" 문구를 만들 수 있다.
+- `transaction` 원장이 아니라 `account.last_transaction_date`를 기준으로 한다. 동기화(502)가 이 컬럼을 금융망 값으로 갱신하고,
+  ERD가 `idx_account_user_inactive (user_id, last_transaction_date, balance)`를 이 용도로 두었기 때문이다.
+
+### 월별 입출금 요약 `GET /accounts/{accountNo}/monthly-summary?yearMonth`
+
+- `yearMonth`는 YYYY-MM, 생략하면 이번 달. 미래 월은 400(`YearMonthPolicy`, 카드 월 사용액과 동일).
+- `incomeTotal/Count`(INCOME), `expenseTotal/Count`(EXPENSE), `transferTotal/Count`(TRANSFER), `netChange = income − expense`,
+  `transactionCount = 세 건수 합`. ERD의 TRANSFER는 방향이 없어 `netChange`에 넣지 않고 따로 보고한다.
+- 거래가 없는 달은 모두 0이다(404가 아니다).
+
+### 입출금 추이 `GET /accounts/{accountNo}/trend?startMonth&endMonth`
+
+- 기간 정책은 카드 청구서와 같은 `YearMonthPeriodPolicy`(기본 최근 3개월, 최대 12개월, 종료월은 이번 달까지).
+- 기간 안의 모든 달을 오래된 순으로 채우고 거래가 없는 달은 0이다. `months[]` 각 항목은 월별 요약과 같은 필드(건수는 합계만)이며,
+  `totalIncome`·`totalExpense`·`totalNetChange`로 기간 합을 함께 준다.
+
 ## 데이터 출처와 ACCOUNT 동기화
 
 세 API는 모두 우리 DB `account`(V3)만 읽는다. 명세는 "SSAFY" 연동으로 표기하지만, 금융망 계좌를 원장에 적재·갱신하는 일은
@@ -152,6 +215,9 @@ NULL 허용 여부를 검사하지 않고, H2 테스트는 엔티티로 스키�
   빈 목록, 금융망 오류·해석 실패 시 부분 반영 없음을 계좌 API로 확인한다. 저장된 암호문을 복호화해 원문과 대조한다.
   502: 거래내역 INSERT와 건수 메시지, 기존 거래(사용자 메모·숨김) 보존, SEED 계좌 거래 미적재, 깨진 거래로 인한 계좌 롤백.
 - `AccountTransactionApiIntegrationTest`: 계좌 거래내역 목록(기간·페이지·숨김 제외·소유권)과 거래 단건(숨긴 거래 포함, 다른 계좌 거래 404).
+- `AccountAnalysisApiIntegrationTest`: 요약(유형·상태별 합산, CLOSED 제외, 마이너스 부호 반전), 현금성 자산(수시입출금만, 비중),
+  휴면 탐지(기본 6개월, 개월·소액 상한 조정, 거래일 없는 계좌의 적재일 기준, 잔액 0·CLOSED·타 유형 제외), 월별 요약(숨김·타 계좌 제외,
+  거래 없는 달 0, 미래 월·형식 오류), 추이(빈 달 채움, 기간 정책).
 - `RestSsafyFinanceClientTest`: 계좌 목록·거래내역 호출의 Header·Body(계좌번호·기간·구분)·경로와 REC 배열·REC 없음·REC 객체 응답 해석.
 - `AccountNumberMaskerTest`: 마스킹 형식.
 - `FinanceDataApiIntegrationTest`의 ACCOUNT 스텁은 제거했다. 이제 실제 핸들러가 돌고 Mock 계좌 3건으로 `syncedCount = 3`을 만든다.

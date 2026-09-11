@@ -460,3 +460,26 @@
 
 - [ ] `GET /accounts/{accountNo}/transactions`(5), `GET /cards/{cardNo}/transactions`(8), `GET /minus-accounts/{accountNo}/transactions`(10-1)가 같은 원장을 계좌·카드 축으로 따로 읽는다. 응답 필드는 맞췼지만 reader 구현은 세 개다.
 - 완료 조건: 공용 reader로 합치거나 세 구현을 그대로 두기로 팀에서 정한다(534 "API 5 거래내역과의 중복" 항목과 함께).
+
+## S15P21D105-503 — 계좌 집계·휴면 탐지
+
+구현 계약: [account-query.md](account-query.md) "계좌 집계·휴면 탐지"
+
+### 휴면 기준 기본값 확정
+
+- [ ] `inactiveMonths` 기본값 6개월, `maxBalance` 기본 없음(잔액 > 0만 요구)으로 구현했다. 기획안 예시는 "최근 8개월"을 쓰고 금융권 휴면 기준은 1년이라 팀 확정이 필요하다.
+- 완료 조건: FE 기본 호출 값과 진단(14 Diagnosis)의 "휴면성 소액계좌" 이슈 판정이 같은 기준을 쓴다.
+
+### 현금성 자산 정의
+
+- [ ] 현금성 자산 = 수시입출금 잔액(CLOSED 제외, INACTIVE 포함)으로 정의했다. Finance Data 통합 요약(500)의 `totals.cashAssets`는 예·적금까지 포함하므로 두 값이 다르다. 명칭을 맞추거나 500의 필드명을 바꿀지 정한다.
+- 근거: 기획안 9-2가 현금성 자산과 저축성 자산을 구분한다.
+
+### 거래 원장 기반 휴면 판정
+
+- [ ] 휴면 판정은 `account.last_transaction_date`만 본다. 동기화 전 seed 계좌는 seed가 넣은 값에, 수동 거래(API 6 등록)는 이 컬럼을 갱신하지 않으면 판정에 반영되지 않는다.
+- 완료 조건: 수동 거래 등록(505)이 `last_transaction_date`를 갱신하거나, 판정 시 `transaction`의 최근 거래일과 비교해 더 최신 값을 쓴다.
+
+### MySQL 검증
+
+- [ ] `JdbcAccountFlowReader`의 `YEAR()`/`MONTH()` GROUP BY와 `SUM(CASE …)`을 MySQL 8.0에서 실행한다. H2(MODE=MySQL)만 확인했다. `ONLY_FULL_GROUP_BY` 모드에서도 SELECT 항목이 모두 GROUP BY 식 또는 집계이므로 통과해야 한다.
