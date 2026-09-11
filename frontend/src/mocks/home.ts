@@ -1,20 +1,5 @@
-import type { ImageSourcePropType } from 'react-native';
-
 import type { AssetComposition } from '@/types/asset.types';
-
-export type GoalType = 'saving' | 'reducing';
-
-export interface HomeGoal {
-  id: string;
-  type: GoalType;
-  title: string;
-  dueDateLabel: string;
-  dDay: number;
-  currentAmount: number;
-  targetAmount: number;
-  message: string;
-  characterImage: ImageSourcePropType;
-}
+import type { HomeGoal } from '@/types/goal.types';
 
 export const HOME_GOALS: readonly HomeGoal[] = [
   {
@@ -33,8 +18,8 @@ export const HOME_GOALS: readonly HomeGoal[] = [
     type: 'reducing',
     title: '지출 줄이기',
     dueDateLabel: '2027.01.01까지',
-    dDay: 120,
-    currentAmount: 120000,
+    dDay: 13,
+    currentAmount: 148000,
     targetAmount: 300000,
     message: '작은 지출도 모이면\n큰 돈이 돼요!',
     characterImage: require('@/assets/characters/tori/tori_reducing_home.png'),

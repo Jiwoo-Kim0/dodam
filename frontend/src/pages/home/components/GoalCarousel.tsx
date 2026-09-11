@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useRouter } from 'expo-router';
 import type { AccessibilityActionEvent, LayoutChangeEvent } from 'react-native';
 import { View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -15,6 +16,7 @@ import {
   SPRING_BACK_CONFIG,
   withRubberBand,
 } from '@/components/bouncyScrollView/scrollPhysics';
+import { routes } from '@/constants/routes';
 import { HOME_GOALS } from '@/mocks/home';
 import { semanticSpacing, spacing } from '@/styles';
 
@@ -25,6 +27,7 @@ const NEXT_CARD_PEEK = spacing[3];
 const PAGE_TRAILING_SPACE = semanticSpacing.screenMargin + NEXT_CARD_PEEK;
 
 export function GoalCarousel() {
+  const router = useRouter();
   const [pageWidth, setPageWidth] = useState(0);
   const [activeIndex, setActiveIndex] = useState(0);
   const translateX = useSharedValue(0);
@@ -49,6 +52,14 @@ export function GoalCarousel() {
     setActiveIndex(nextIndex);
   };
 
+  const openActiveGoal = () => {
+    const goal = HOME_GOALS[activeIndex];
+
+    if (goal) {
+      router.push(routes.goalDetail(goal.id));
+    }
+  };
+
   const handleAccessibilityAction = (event: AccessibilityActionEvent) => {
     if (event.nativeEvent.actionName === 'increment') {
       snapToPage(activeIndex + 1);
@@ -56,6 +67,10 @@ export function GoalCarousel() {
 
     if (event.nativeEvent.actionName === 'decrement') {
       snapToPage(activeIndex - 1);
+    }
+
+    if (event.nativeEvent.actionName === 'activate') {
+      openActiveGoal();
     }
   };
 
@@ -85,6 +100,16 @@ export function GoalCarousel() {
       runOnJS(updateActiveIndex)(nextIndex);
     });
 
+  const tapGesture = Gesture.Tap()
+    .maxDistance(10)
+    .onEnd((_event, success) => {
+      if (success) {
+        runOnJS(openActiveGoal)();
+      }
+    });
+
+  const carouselGesture = Gesture.Race(panGesture, tapGesture);
+
   const animatedTrackStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.value }],
   }));
@@ -94,7 +119,7 @@ export function GoalCarousel() {
       onLayout={handleLayout}
       style={styles.container}>
       {pageWidth > 0 ? (
-        <GestureDetector gesture={panGesture}>
+        <GestureDetector gesture={carouselGesture}>
           <View style={styles.viewport}>
             <Animated.View style={[styles.track, animatedTrackStyle]}>
               {HOME_GOALS.map((goal) => (
@@ -109,10 +134,11 @@ export function GoalCarousel() {
 
       <View
         accessibilityActions={[
+          { name: 'activate', label: '목표 상세 보기' },
           { name: 'increment', label: '다음 목표' },
           { name: 'decrement', label: '이전 목표' },
         ]}
-        accessibilityHint="위아래로 쓸어 목표 카드를 전환합니다"
+        accessibilityHint="좌우로 쓸어 목표 카드를 전환합니다"
         accessibilityLabel="목표 카드 선택"
         accessibilityRole="adjustable"
         accessibilityValue={{

@@ -1,28 +1,16 @@
 import { Image } from 'expo-image';
 import { Text, View } from 'react-native';
 
-import type { HomeGoal } from '@/mocks/home';
 import { colors } from '@/styles';
+import type { HomeGoal } from '@/types/goal.types';
 import { formatCurrency } from '@/utils/currency';
+import { calculateProgressPercent } from '@/utils/goal';
 
 import { styles } from './GoalCard.styles';
 
 type GoalCardProps = {
   goal: HomeGoal;
 };
-
-function calculateProgressPercent(currentAmount: number, targetAmount: number) {
-  if (
-    !Number.isFinite(currentAmount) ||
-    !Number.isFinite(targetAmount) ||
-    targetAmount <= 0
-  ) {
-    return 0;
-  }
-
-  const percentage = Math.floor((currentAmount / targetAmount) * 100);
-  return Math.min(100, Math.max(0, percentage));
-}
 
 export function GoalCard({ goal }: GoalCardProps) {
   const progressColor = goal.type === 'saving' ? colors.primary.yellow : colors.primary.orange;
