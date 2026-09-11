@@ -4,9 +4,15 @@ import com.ssafy.dodam.domain.goal.dto.request.CreateGoalRequest;
 import com.ssafy.dodam.domain.goal.dto.request.UpdateGoalAccountsRequest;
 import com.ssafy.dodam.domain.goal.dto.request.UpdateGoalRequest;
 import com.ssafy.dodam.domain.goal.dto.response.GoalAccountsResponse;
+import com.ssafy.dodam.domain.goal.dto.response.GoalForecastResponse;
+import com.ssafy.dodam.domain.goal.dto.response.GoalProgressResponse;
 import com.ssafy.dodam.domain.goal.dto.response.GoalResponse;
+import com.ssafy.dodam.domain.goal.dto.response.GoalRiskResponse;
 import com.ssafy.dodam.domain.goal.dto.response.GoalSummaryResponse;
+import com.ssafy.dodam.domain.goal.dto.response.RequiredSavingResponse;
+import com.ssafy.dodam.domain.goal.dto.response.SpendingGoalProgressResponse;
 import com.ssafy.dodam.domain.goal.service.GoalAccountService;
+import com.ssafy.dodam.domain.goal.service.GoalCalculationService;
 import com.ssafy.dodam.domain.goal.service.GoalService;
 import com.ssafy.dodam.global.response.ApiResponse;
 import com.ssafy.dodam.global.response.PageResponse;
@@ -17,6 +23,8 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
+import java.time.LocalDate;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
@@ -46,10 +54,16 @@ public class GoalController {
 
     private final GoalService goalService;
     private final GoalAccountService goalAccountService;
+    private final GoalCalculationService goalCalculationService;
 
-    public GoalController(GoalService goalService, GoalAccountService goalAccountService) {
+    public GoalController(
+            GoalService goalService,
+            GoalAccountService goalAccountService,
+            GoalCalculationService goalCalculationService
+    ) {
         this.goalService = goalService;
         this.goalAccountService = goalAccountService;
+        this.goalCalculationService = goalCalculationService;
     }
 
     @GetMapping
@@ -122,5 +136,53 @@ public class GoalController {
             @Valid @RequestBody UpdateGoalAccountsRequest request
     ) {
         return ApiResponse.success(goalAccountService.replaceAccounts(principal.userId(), goalId, request.accountNos()));
+    }
+
+    // ---------- S15P21D105-510 목표 진행률·필요 저축액·예상 달성일·소비목표 진행률·위험상태 ----------
+
+    @GetMapping("/{goalId}/progress")
+    public ApiResponse<GoalProgressResponse> getProgress(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable @Positive Long goalId
+    ) {
+        return ApiResponse.success(goalCalculationService.getProgress(principal.userId(), goalId));
+    }
+
+    @GetMapping("/{goalId}/required-saving")
+    public ApiResponse<RequiredSavingResponse> getRequiredSaving(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable @Positive Long goalId
+    ) {
+        return ApiResponse.success(goalCalculationService.getRequiredSaving(principal.userId(), goalId));
+    }
+
+    /**
+     * @param baseDate 예측 기준일(기본 오늘)
+     * @param months   예측 구간 개월 수(기본 12, 1~120)
+     */
+    @GetMapping("/{goalId}/forecast")
+    public ApiResponse<GoalForecastResponse> getForecast(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable @Positive Long goalId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate baseDate,
+            @RequestParam(required = false) @Min(1) @Max(120) Integer months
+    ) {
+        return ApiResponse.success(goalCalculationService.getForecast(principal.userId(), goalId, baseDate, months));
+    }
+
+    @GetMapping("/{goalId}/spending-progress")
+    public ApiResponse<SpendingGoalProgressResponse> getSpendingProgress(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable @Positive Long goalId
+    ) {
+        return ApiResponse.success(goalCalculationService.getSpendingProgress(principal.userId(), goalId));
+    }
+
+    @GetMapping("/{goalId}/risk")
+    public ApiResponse<GoalRiskResponse> getRisk(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable @Positive Long goalId
+    ) {
+        return ApiResponse.success(goalCalculationService.getRisk(principal.userId(), goalId));
     }
 }
