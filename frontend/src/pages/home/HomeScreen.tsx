@@ -61,8 +61,7 @@ export function HomeScreen() {
 
         <View style={styles.body}>
           <ExpenseSummaryCard onDetailPress={() => router.push(routes.ledger)} />
-          {/* 도담 브리핑 전용 화면은 추후 별도로 만들 예정이라 아직 라우팅을 연결하지 않는다. */}
-          <BriefingCard onDetailPress={() => {}} />
+          <BriefingCard onDetailPress={() => router.push(routes.dailyBriefing)} />
           <AssetSummaryCard onDetailPress={() => router.push(routes.assets)} />
           <SpendingTopList />
         </View>
