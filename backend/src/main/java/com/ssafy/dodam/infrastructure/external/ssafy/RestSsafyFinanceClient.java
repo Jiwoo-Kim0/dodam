@@ -4,6 +4,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -35,6 +38,13 @@ public class RestSsafyFinanceClient implements SsafyFinanceClient {
     static final String DEMAND_DEPOSIT_ACCOUNT_LIST_PATH =
             "/ssafy/api/v1/edu/demandDeposit/inquireDemandDepositAccountList";
     static final String API_INQUIRE_DEMAND_DEPOSIT_ACCOUNT_LIST = "inquireDemandDepositAccountList";
+    static final String TRANSACTION_HISTORY_LIST_PATH =
+            "/ssafy/api/v1/edu/demandDeposit/inquireTransactionHistoryList";
+    static final String API_INQUIRE_TRANSACTION_HISTORY_LIST = "inquireTransactionHistoryList";
+    /** 2.4 거래내역 조회의 transactionType: 입금·출금 모두. */
+    static final String TRANSACTION_TYPE_ALL = "A";
+    static final String ORDER_BY_DESC = "DESC";
+    private static final DateTimeFormatter FINANCE_DATE = DateTimeFormatter.BASIC_ISO_DATE;
     static final String CREDIT_RATING_PATH = "/ssafy/api/v1/edu/loan/inquireMyCreditRating";
     static final String CREDIT_RATING_LIST_PATH = "/ssafy/api/v1/edu/loan/inquireAssetBasedCreditRatingList";
     static final String API_INQUIRE_MY_CREDIT_RATING = "inquireMyCreditRating";
@@ -121,6 +131,34 @@ public class RestSsafyFinanceClient implements SsafyFinanceClient {
         );
     }
 
+    /**
+     * 2.4 계좌 거래내역 조회. 입금·출금을 모두 최신순으로 받는다. REC는 {totalCount, list}이며 거래가 없으면 list가 비어 있다.
+     */
+    @Override
+    public SsafyTransactionHistory inquireTransactionHistoryList(
+            String userKey,
+            String accountNo,
+            LocalDate startDate,
+            LocalDate endDate
+    ) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("accountNo", accountNo);
+        body.put("startDate", startDate.format(FINANCE_DATE));
+        body.put("endDate", endDate.format(FINANCE_DATE));
+        body.put("transactionType", TRANSACTION_TYPE_ALL);
+        body.put("orderByType", ORDER_BY_DESC);
+        JsonNode rec = extractRec(
+                post(TRANSACTION_HISTORY_LIST_PATH, API_INQUIRE_TRANSACTION_HISTORY_LIST, userKey, body),
+                TRANSACTION_HISTORY_LIST_PATH,
+                true
+        );
+        if (rec == null) {
+            return SsafyTransactionHistory.empty();
+        }
+        SsafyTransactionHistory history = convert(rec, SsafyTransactionHistory.class, TRANSACTION_HISTORY_LIST_PATH);
+        return history.list() == null ? SsafyTransactionHistory.empty() : history;
+    }
+
     @Override
     public SsafyCreditRating inquireMyCreditRating(String userKey) {
         JsonNode rec = inquire(CREDIT_RATING_PATH, API_INQUIRE_MY_CREDIT_RATING, userKey);
@@ -147,7 +185,7 @@ public class RestSsafyFinanceClient implements SsafyFinanceClient {
      * Header만 있는 조회 요청을 보내고 REC 노드를 돌려준다. REC가 없으면 예외다.
      */
     private JsonNode inquire(String path, String apiName, String userKey) {
-        JsonNode rec = extractRec(post(path, apiName, userKey), path, false);
+        JsonNode rec = extractRec(post(path, apiName, userKey, Map.of()), path, false);
         if (rec == null) {
             throw new SsafyUnavailableException("SSAFY finance API returned no REC for " + path, null);
         }
@@ -158,7 +196,7 @@ public class RestSsafyFinanceClient implements SsafyFinanceClient {
      * 목록 API용. REC가 없거나 null이면 빈 목록, 배열이 아니면 해석 실패로 본다.
      */
     private <T> List<T> inquireList(String path, String apiName, String userKey, Class<T> elementType) {
-        JsonNode rec = extractRec(post(path, apiName, userKey), path, true);
+        JsonNode rec = extractRec(post(path, apiName, userKey, Map.of()), path, true);
         if (rec == null) {
             return List.of();
         }
@@ -172,12 +210,18 @@ public class RestSsafyFinanceClient implements SsafyFinanceClient {
         }
     }
 
-    private String post(String path, String apiName, String userKey) {
+    /**
+     * @param extraBody Header 외에 Body에 실을 항목(계좌번호·기간 등). 순서를 유지해 문서 예시와 같은 형태로 보낸다.
+     */
+    private String post(String path, String apiName, String userKey, Map<String, Object> extraBody) {
         SsafyRequestHeader header = headerFactory.create(apiName, userKey);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("Header", header);
+        body.putAll(extraBody);
         try {
             return restClient.post()
                     .uri(path)
-                    .body(Map.of("Header", header))
+                    .body(body)
                     .retrieve()
                     .body(String.class);
         } catch (RestClientResponseException exception) {
