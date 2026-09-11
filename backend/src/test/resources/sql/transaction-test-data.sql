@@ -91,3 +91,14 @@ CREATE TABLE spending_goal (
     CONSTRAINT chk_test_spending_goal_budget CHECK (monthly_budget > 0),
     CONSTRAINT fk_test_spending_goal_goal FOREIGN KEY (goal_id, goal_type) REFERENCES goal (goal_id, type)
 );
+
+-- Goal 엔티티(508)가 이 테이블도 쓰므로 DROP만 하고 끝내지 않는다.
+CREATE TABLE saving_goal (
+    goal_id BIGINT PRIMARY KEY,
+    goal_type VARCHAR(20) NOT NULL,
+    target_amount BIGINT NOT NULL,
+    target_date DATE NOT NULL,
+    CONSTRAINT chk_test_saving_goal_type CHECK (goal_type = 'SAVING'),
+    CONSTRAINT chk_test_saving_goal_target CHECK (target_amount > 0),
+    CONSTRAINT fk_test_saving_goal_goal FOREIGN KEY (goal_id, goal_type) REFERENCES goal (goal_id, type)
+);
