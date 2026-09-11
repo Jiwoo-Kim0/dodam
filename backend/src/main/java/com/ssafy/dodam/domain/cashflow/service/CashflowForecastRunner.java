@@ -4,6 +4,7 @@ import com.ssafy.dodam.domain.cashflow.dto.CashflowBalanceProjection;
 import com.ssafy.dodam.domain.cashflow.dto.CashflowEventCollection;
 import com.ssafy.dodam.domain.cashflow.dto.CashflowForecastPeriod;
 import com.ssafy.dodam.domain.cashflow.dto.CashflowForecastResult;
+import com.ssafy.dodam.domain.cashflow.dto.CashflowRiskAssessment;
 import com.ssafy.dodam.domain.cashflow.dto.CashflowPlannedEvent;
 import com.ssafy.dodam.domain.cashflow.entity.CashflowEvent;
 import com.ssafy.dodam.domain.cashflow.entity.CashflowForecast;
@@ -49,6 +50,7 @@ public class CashflowForecastRunner {
     private final CashflowBalanceReader balanceReader;
     private final CashflowEventCollector eventCollector;
     private final CashflowDailyBalanceCalculator calculator;
+    private final CashflowRiskDetector riskDetector;
     private final CashflowForecastStore store;
 
     public CashflowForecastRunner(
@@ -57,6 +59,7 @@ public class CashflowForecastRunner {
             CashflowBalanceReader balanceReader,
             CashflowEventCollector eventCollector,
             CashflowDailyBalanceCalculator calculator,
+            CashflowRiskDetector riskDetector,
             CashflowForecastStore store
     ) {
         this.periodPolicy = periodPolicy;
@@ -64,6 +67,7 @@ public class CashflowForecastRunner {
         this.balanceReader = balanceReader;
         this.eventCollector = eventCollector;
         this.calculator = calculator;
+        this.riskDetector = riskDetector;
         this.store = store;
     }
 
@@ -156,15 +160,18 @@ public class CashflowForecastRunner {
             CashflowBalanceProjection projection = calculator.calculate(
                     forecast.getForecastId(), period, startingBalance, events);
 
-            // 위험 행과 available_today는 S15P21D105-542 범위다. 여기서는 잔액 시퀀스에서 바로 파생되는
-            // 최소잔액과 최초 부족일만 채운다.
+            CashflowRiskAssessment assessment = riskDetector.assess(forecast.getForecastId(), projection);
+
+            // `risk_date`는 잔액이 처음 음수가 되는 날이다. 첫 부족 사건의 날짜와 언제나 같으므로
+            // (잔액은 출금으로만 줄고, 음수로 넘어가는 출금은 반드시 부족으로 잡힌다) 계산기가 이미
+            // 구한 값을 그대로 쓴다.
             store.complete(
                     forecast,
                     projection.dailyBalances(),
                     events,
-                    List.of(),
+                    assessment.risks(),
                     startingBalance,
-                    null,
+                    assessment.availableToday(),
                     projection.minimumBalance(),
                     projection.firstShortageDate(),
                     now);

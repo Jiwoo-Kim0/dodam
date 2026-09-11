@@ -2,7 +2,7 @@
 
 마지막 갱신: 2026-09-10
 
-백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538이다.
+백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542이다.
 
 ## S15P21D105-535 — 예·적금 ERD 제약 동기화
 
@@ -304,8 +304,8 @@
 ### 미확정 정책 반영
 
 - [ ] `calculation_version` 표기 규칙을 팀에서 정하고 `CashflowCalculationVersion.CURRENT`를 교체한다. 현재는 `"v1"` 상수다.
-- [ ] `cashflow_event.type`과 `cashflow_risk.type`의 값 집합을 539·542에서 확정하고 ERD 주요 코드값 표에 추가한다. ERD에 목록이 없어 `String`으로 두었다.
-- [ ] `request_hash` 생성 규칙(540)과 `available_today` 계산 정의(542)를 반영한다. 538은 컬럼과 조회 메서드만 제공한다.
+- [ ] `cashflow_event.type`과 `cashflow_risk.type`의 값 집합을 ERD 주요 코드값 표에 추가한다. 539·542가 코드에서 확정했고(`cashflow_risk.type`은 `BALANCE_SHORTAGE` 하나) ERD 반영만 남았다.
+- [x] `request_hash` 생성 규칙(540)과 `available_today` 계산 정의(542, `max(0, minimumBalance)`)를 반영했다.
 
 ### Jira 최신 완료 조건 대조
 
@@ -319,7 +319,7 @@
 
 - [ ] 540이 정한 기본값을 팀에서 확인한다. `horizonDays` 기본 90·상한 365, 완료 캐시 유효기간 당일,
   시작 잔액 = 활성 `DEMAND_DEPOSIT` 합계, 과거 기준일 거부. 모두 명세에 값이 없어 정한 기본안이다.
-- [ ] `request_hash` 생성 규칙은 540에서 확정했다(538의 남은 항목 해소). `available_today`는 542에 남아 있다.
+- [x] `request_hash` 생성 규칙은 540에서, `available_today`는 542에서 확정했다.
 
 ### 계산 정확도 한계
 
