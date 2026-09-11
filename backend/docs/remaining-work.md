@@ -717,3 +717,39 @@
 ### MySQL 검증
 
 - [ ] V9 적용과 `GoalHistory` 엔티티(`DECIMAL(10,4)`↔`BigDecimal`)의 `ddl-auto: validate` 통과를 MySQL 8.0에서 확인한다.
+
+## S15P21D105-492 — Transaction·Spending·Subscription Fixture
+
+산출물: `database/seeds/DODAM_TRANSACTION_SEED.sql`, `database/seeds/DODAM_SUBSCRIPTION_SEED.sql`, `database/seeds/README.md`
+
+### MySQL 실행 검증
+
+- [ ] 두 파일을 MySQL 8.0에서 실행해 파일 끝 검증 SELECT의 기대값(거래 348,192건, 성향별 소비·저축 비율, 계약 위반 0건, 주거래 계좌 `last_transaction_date` 4,000건)을 확인한다. 작업 환경에 MySQL이 없어 2026-09-11 기준 실행하지 않았다.
+- 근거: 491·522·524와 같은 집합 생성 방식(digit 교차곱, 결정적 해시)으로 작성했지만 `MAKETIME`·`DIV`·`DATE_ADD` 조합과 임시 테이블 조인 성능(약 35만 행 INSERT)은 실측이 필요하다.
+- 완료 조건: 실행 시간과 검증 SELECT 결과를 이 절에 기록한다. 1분을 넘으면 변동 슬롯을 8→6으로 줄이는 것을 검토한다.
+
+### 구독 seed의 선행 마이그레이션
+
+- [ ] `DODAM_SUBSCRIPTION_SEED.sql`은 `subscription`·`subscription_payment_history` 테이블이 없어 지금은 실행할 수 없다. API 7 Subscription 작업에서 마이그레이션(V18 이후, BE-B와 번호 확인)을 만든 뒤 적재한다. 거래 seed의 SUB 행(12일·25일, 9,900/12,400/14,900/4,900원)과 금액·날짜를 맞춰 두었다.
+
+### 시연 사용자 데이터 결
+
+- [ ] 거래는 seed 사용자(`seed.kmeans.u0001~u4000`)에만 생긴다. 실제 회원가입 계정으로 시연하려면 금융망 동기화(ACCOUNT scope)로 거래를 받아야 하는데 API Key 문제(499 절)가 남아 있다. 시연 계정을 seed 사용자 중 하나로 정하고 비밀번호를 애플리케이션으로 세팅하는 절차(491의 `password_hash NULL` 항목)가 필요하다.
+- [ ] `balance_after`는 NULL이다. 계좌 거래내역(5)·마이너스통장(10-1) 응답의 `balanceAfter`가 seed 데이터에서는 비어 보인다. 잔액 재생(replay)을 넣을지 정한다.
+
+## S15P21D105-493 — Goal·GoalAccount·GoalHistory Seed
+
+산출물: `database/seeds/DODAM_GOAL_SEED.sql`
+
+### MySQL 실행 검증
+
+- [ ] MySQL 8.0에서 실행해 검증 SELECT(모으기 4,000·줄이기 2,000, 연결 5,000, 이력 30,000, `current_amount` 불일치 0)를 확인한다. 2026-09-11 기준 미실행.
+- 근거: 새 목표의 `goal_id`를 (user_id, type, created_at 마커)로 되찾는 방식은 사용자당 유형별 목표가 하나라는 seed 전제에 의존한다. 사용자가 앱에서 같은 유형 목표를 `2026-03-01 09:00:00`에 만들 수는 없으므로 실무에서는 충돌하지 않는다.
+
+### 이력 스냅샷의 현실성
+
+- [ ] 월말 이력은 현재 연결 잔액을 6등분해 선형으로 채운 것이다(계좌 잔액 이력이 없어 실제 추이를 만들 수 없음). `forecast_date`는 NULL이고 API가 실시간 계산한다. 시연에서 "예상 달성일 변화"를 보이려면 이력에 `forecast_date`를 채우는 규칙을 정한다.
+
+### 줄이기 목표 예산 수준
+
+- [ ] SPENDING_FOCUSED·VOLATILE 사용자의 월 예산을 소득의 45%로 두어 대부분 WARNING/EXCEEDED가 나오게 했다(시연용). 진단(14)의 "줄이기 목표 초과 위험" 표본이 과다하면 비율을 조정한다.
