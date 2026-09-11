@@ -43,12 +43,31 @@
       (`expo-notifications` 설치 완료 ✅ / 토큰 발급·등록 구현은 대기)
 
 ### 4. 소셜 로그인 (Kakao/Google)
-- [x] 등록할 정확한 값 확정 — [[docs/external-integrations.md]]에 정리
-      Redirect URI: **`dodam://oauth/kakao`** (커스텀 스킴, 웹 방식 아님)
-      Android 패키지명: `com.ssafy.d105.dodam`
-- [ ] Kakao Developers 등록 + REST API 키/Secret 발급 (**사용자 액션**)
-- [ ] Google Cloud Console OAuth 클라이언트 생성 (**사용자 액션**)
-      Android 유형은 Client Secret이 없으므로, 백엔드가 secret을 요구하면 웹 클라이언트도 함께 생성 필요
+- [x] **인증 흐름 확정 (2026-09-11, 백엔드)** — 앱이 네이티브 SDK로 로그인하고
+      서버는 `POST /api/v1/auth/oauth/{provider}`로 받은 토큰만 provider에 검증한 뒤
+      `user_oauth_account`로 매핑해 기존 JWT를 발급한다.
+      **서버 Redirect(Authorization Code Flow) 방식은 쓰지 않는다** — RN에서 웹뷰·딥링크
+      왕복이 필요해 UX가 나쁘고, ERD도 provider 토큰을 저장하지 않는 구조다.
+      `build.gradle`의 `spring-boot-starter-oauth2-client`는 향후 확장용으로 남긴 것이며
+      이 흐름에서는 쓰이지 않는다
+- [x] ~~Redirect URI `dodam://oauth/kakao` 확정~~ → **정정**: 이 흐름에서는 Redirect URI를
+      **등록하지 않는다.** 네이티브 SDK는 콘솔의 Redirect URI 항목을 쓰지 않고
+      고정 스킴 `kakao{네이티브앱키}://oauth`로 돌아온다 (`app.json`의 `scheme`과 무관).
+      → **FE 작업 필요**: AndroidManifest에 해당 intent-filter 추가.
+      빠지면 로그인 후 앱으로 복귀하지 못한다 (09-11 현재 `app.json`에 없음)
+- [x] **Client Secret은 Kakao/Google 양쪽 모두 불필요** — 서버가 authorization code를
+      교환하지 않으므로 쓸 자리가 없다. `.env`에서 두 변수를 제거했다
+- [ ] Kakao Developers 등록 (**사용자 액션**)
+      **플랫폼 → Android**(패키지명 + 키 해시)가 콘솔에 필요한 핵심.
+      카카오 로그인 활성화 ON, OIDC 쓸 경우 **OpenID Connect 활성화 ON**(기본 OFF).
+      서버에 필요한 값: `GET /v2/user/me` 방식이면 **없음**, OIDC 방식이면 aud 비교용 앱 키 1개
+      (앱 키가 4종이므로 실제 `id_token`을 디코드해 확인 후 넣을 것)
+- [ ] Google Cloud Console (**사용자 액션**)
+      **웹 애플리케이션 유형 클라이언트의 ID**가 필요하다 — Credential Manager가 `id_token`을
+      받을 때 `serverClientId`로 쓰고, 서버는 `aud` 비교에만 쓴다. **Secret은 배포하지 않는다.**
+      Android 유형 클라이언트(패키지명 + SHA-1)와 OAuth 동의 화면(+ 테스트 사용자 전원)도 필요.
+      ⚠️ Firebase에 SHA-1을 추가하면 Android·웹 클라이언트가 **자동 생성**되므로
+      수동 생성 전에 GCP 사용자 인증 정보 목록을 먼저 확인할 것
 
 ### 5. FE 빌드/배포 파이프라인
 현재 FE 구성 실측: **Expo SDK 57 / React Native 0.86 / expo-router**.
@@ -83,8 +102,8 @@
 | SSAFY 금융망 | ✅ 키 설정 + 아웃바운드 200 확인 | 타임아웃/재시도 정책 담당 협의 |
 | OpenAI | ✅ 키 설정 + 연결 확인(401) | 사용량 한도·결제 담당자, 사용량 알림 (**사용자 액션**) |
 | FCM | ✅ 프로젝트·앱 등록 + 서버 키 마운트 | FE 토큰 발급 흐름, 백엔드 `user_device` 저장 API |
-| Kakao OAuth | ❌ 미발급 | 콘솔 등록 → 키/Secret 전달 (**사용자 액션**) |
-| Google OAuth | ❌ 미발급 | 콘솔 등록 → 값 전달 (**사용자 액션**) |
+| Kakao OAuth | ❌ 미발급 | Android 플랫폼 등록 + 네이티브 앱 키 (**사용자 액션**) |
+| Google OAuth | ❌ 미발급 | 웹 클라이언트 ID + Android 클라이언트 + 동의화면 (**사용자 액션**) |
 | FE 빌드 | ✅ EAS Build 확정 + 절차 문서화 | `eas init`/`eas.json`, APK 배포처 (FE팀) |
 
 **인프라가 단독으로 끝낼 수 있는 일은 남아 있지 않다.** Kakao/Google은 콘솔 등록이 선행이고,
