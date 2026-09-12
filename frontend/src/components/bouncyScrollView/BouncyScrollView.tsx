@@ -28,10 +28,14 @@ type BouncyScrollViewProps = PropsWithChildren<{
   onEndReached?: () => void;
   endReachedThreshold?: number;
   onScrollOffsetChange?: (offsetY: number) => void;
+  /** true면 드래그가 끝날 때 가장 가까운 pageSize 배수 오프셋으로 스냅한다. */
+  pagingEnabled?: boolean;
+  pageSize?: number;
 }>;
 
 export interface BouncyScrollViewHandle {
   scrollToTop: () => void;
+  scrollToOffset: (offset: number) => void;
 }
 
 /**
@@ -49,6 +53,8 @@ export const BouncyScrollView = forwardRef<
     onEndReached,
     endReachedThreshold = 240,
     onScrollOffsetChange,
+    pagingEnabled = false,
+    pageSize = 0,
   },
   ref,
 ) {
@@ -94,6 +100,10 @@ export const BouncyScrollView = forwardRef<
       nativeScrollRef.current?.scrollTo({ animated: true, y: 0 });
       translateY.value = withSpring(0, SPRING_BACK_CONFIG);
     },
+    scrollToOffset: (offset: number) => {
+      nativeScrollRef.current?.scrollTo({ animated: true, y: offset });
+      translateY.value = withSpring(-offset, SPRING_BACK_CONFIG);
+    },
   }));
 
   useEffect(() => {
@@ -134,6 +144,24 @@ export const BouncyScrollView = forwardRef<
 
       if (translateY.value < -maxScroll) {
         translateY.value = withSpring(-maxScroll, SPRING_BACK_CONFIG);
+        return;
+      }
+
+      if (pagingEnabled && pageSize > 0) {
+        const startPage = Math.round(-dragStartY.value / pageSize);
+        const swipeThreshold = pageSize * 0.2;
+        const flingThreshold = 500;
+
+        let targetPage = startPage;
+        if (event.translationY < -swipeThreshold || event.velocityY < -flingThreshold) {
+          targetPage = startPage + 1;
+        } else if (event.translationY > swipeThreshold || event.velocityY > flingThreshold) {
+          targetPage = startPage - 1;
+        }
+
+        const maxPage = Math.round(maxScroll / pageSize);
+        targetPage = Math.min(Math.max(targetPage, 0), maxPage);
+        translateY.value = withSpring(-targetPage * pageSize, SPRING_BACK_CONFIG);
         return;
       }
 
