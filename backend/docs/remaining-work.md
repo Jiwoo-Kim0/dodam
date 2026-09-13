@@ -857,3 +857,10 @@
 - [ ] `PUT /goals/{goalId}/accounts`는 호출하지 못했다. Body가 계좌번호 원문(`accountNos`)을 받아 서버가 해시로 찾는데, seed 계좌의 해시는 검증용 더미라 원문이 없다. 애플리케이션 코덱으로 만든 fixture(491 계약)로 seed를 적재한 환경에서 다시 확인한다. H2 통합 테스트(`GoalAccountApiIntegrationTest`)로는 통과했다.
 - 참고: 계산 API(progress·required-saving·forecast·risk)는 금액이 바뀌지 않으면 `AMOUNT_UPDATED` 이력을 남기지 않아 seed 목표의 이력은 7건 그대로였다. 목표 1은 모인 금액이 목표를 넘었는데 상태는 ACTIVE로 남는다(508 절 "모인 금액 도달 시 상태" 미결 항목과 같음).
 - 검증 중 확인한 도구 문제: Windows Git Bash의 `curl -d '한글'`은 본문을 UTF-8이 아닌 코드페이지로 보내 서버가 400 `INVALID_REQUEST`(본문 해석 실패)를 돌려준다. 앱 문제가 아니며 `--data-binary @utf8파일`로 보내면 정상이다. 시연·수동 테스트 시 주의.
+## 544·545 진행 현황 (2026-09-13)
+
+- 진단 실행·이력·latest·상세·summary·문제 목록/상세 API 추가. 현재 계약: [diagnosis-api.md](diagnosis-api.md).
+- 목표/당일 저장 현금흐름 위험은 연결했으나 기획안 전체 규칙은 미완료. 미정 임계값·규칙은 coverage로 공개한다.
+- 군집 공급자·적격 조건 검사·동일 카테고리 근거 병합은 후속 구현이며 저장 군집 근거 조회만 지원한다.
+- MySQL에서 사용자 잠금·만료 경쟁 테스트 필요. 실행 실패는 미완료 접수만 삭제하며 실패 이력을 보존하지 않는다.
+- 과거 543 항목의 input_snapshot·종합 상태·goalId 검증은 현재 API 문서의 부분 구현 범위와 함께 해석한다.

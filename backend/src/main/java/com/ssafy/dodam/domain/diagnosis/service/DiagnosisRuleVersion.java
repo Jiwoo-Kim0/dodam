@@ -11,7 +11,7 @@ package com.ssafy.dodam.domain.diagnosis.service;
  */
 public final class DiagnosisRuleVersion {
 
-    public static final String CURRENT = "v1";
+    public static final String CURRENT = "v2-goal-cashflow";
 
     private DiagnosisRuleVersion() {
     }

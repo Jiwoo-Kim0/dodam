@@ -3,6 +3,8 @@ package com.ssafy.dodam.global.exception;
 import org.springframework.http.HttpStatus;
 
 public enum ErrorCode {
+    DIAGNOSIS_IN_PROGRESS(HttpStatus.CONFLICT, "진단이 이미 진행 중입니다."),
+    DIAGNOSIS_EXPIRED(HttpStatus.CONFLICT, "진단 실행이 만료되었습니다. 다시 요청해 주세요."),
     VALIDATION_ERROR(HttpStatus.BAD_REQUEST, "요청 값이 올바르지 않습니다."),
     INVALID_REQUEST(HttpStatus.BAD_REQUEST, "요청 값이 올바르지 않습니다."),
     RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND, "요청한 리소스를 찾을 수 없습니다."),
