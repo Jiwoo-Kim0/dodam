@@ -1,9 +1,9 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
 import { type LayoutChangeEvent, Pressable, Text, View } from 'react-native';
 
+import { AppHeader } from '@/components/appHeader/AppHeader';
 import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import { DISCOVERY_INSIGHTS, DISCOVERY_SUMMARY } from '@/mocks/discovery';
@@ -29,24 +29,10 @@ export function DiscoveryHome({ onBack, onViewAll }: DiscoveryHomeProps) {
 
   return (
     <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
-      <View style={styles.header}>
-        <Pressable
-          accessibilityLabel="이전 화면으로 이동"
-          accessibilityRole="button"
-          hitSlop={8}
-          onPress={onBack}
-          style={({ pressed }) => [styles.backButton, pressed && styles.backButtonPressed]}>
-          <SymbolView
-            name={{ android: 'arrow_back', ios: 'chevron.left', web: 'arrow_back' }}
-            size={24}
-            tintColor={colors.textPrimary}
-          />
-        </Pressable>
-      </View>
+      <AppHeader onBackPress={onBack} showBackButton title="발견" />
 
       <RefreshableBouncyScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.titleGroup}>
-          <Text style={styles.title}>발견</Text>
           <Text style={styles.subtitle}>
             {DISCOVERY_SUMMARY.userName}님의 절약 잠재력{' '}
             <Text style={styles.subtitleHighlight}>{DISCOVERY_INSIGHTS.length}건</Text>

@@ -36,14 +36,6 @@ export const styles = StyleSheet.create({
     justifyContent: 'space-between',
     position: 'relative',
   },
-  topBarTitle: {
-    ...typography.title,
-    color: colors.textPrimary,
-    left: 0,
-    position: 'absolute',
-    right: 0,
-    textAlign: 'center',
-  },
   backIcon: {
     color: colors.textPrimary,
     fontFamily: fontFamily.regular,

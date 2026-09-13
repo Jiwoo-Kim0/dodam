@@ -25,30 +25,12 @@ export const styles = StyleSheet.create({
     right: -semanticSpacing.screenMargin,
     top: 190,
   },
-  header: {
-    justifyContent: 'center',
-    minHeight: componentSize.touchTarget,
-    paddingHorizontal: semanticSpacing.screenMargin,
-  },
-  backButton: {
-    alignItems: 'flex-start',
-    height: componentSize.touchTarget,
-    justifyContent: 'center',
-    width: componentSize.touchTarget,
-  },
-  backButtonPressed: {
-    opacity: 0.5,
-  },
   scrollContent: {
     paddingHorizontal: semanticSpacing.screenMargin,
   },
   titleGroup: {
     gap: spacing[2],
     marginTop: spacing[2],
-  },
-  title: {
-    ...typography.headline,
-    color: colors.textPrimary,
   },
   subtitle: {
     ...typography.title,
