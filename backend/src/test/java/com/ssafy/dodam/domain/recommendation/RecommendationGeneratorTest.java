@@ -13,6 +13,8 @@ import com.ssafy.dodam.domain.recommendation.dto.RecommendationInput;
 import com.ssafy.dodam.domain.recommendation.entity.Recommendation;
 import com.ssafy.dodam.domain.recommendation.service.RecommendationCandidateGenerator.Outcome;
 import com.ssafy.dodam.domain.recommendation.service.RecommendationPriorityPolicy;
+import com.ssafy.dodam.domain.recommendation.service.RecommendationTransitionPolicy;
+import com.ssafy.dodam.domain.recommendation.entity.RecommendationStatus;
 import com.ssafy.dodam.domain.recommendation.service.generator.CashflowShortageGenerator;
 import com.ssafy.dodam.domain.recommendation.service.generator.SavingGoalRiskGenerator;
 import com.ssafy.dodam.domain.recommendation.service.generator.SpendingGoalRiskGenerator;
@@ -22,7 +24,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
- * 생성기·우선순위를 DB 없이 검증한다. 문제 JSON은 DiagnosisEvaluator가 저장하는 형식을 손으로 만든 것이며,
+ * 생성기·우선순위·전이표를 DB 없이 검증한다. 문제 JSON은 DiagnosisEvaluator가 저장하는 형식을 손으로 만든 것이며,
  * 실제 진단 실행으로 만든 형식과의 정합은 RecommendationApiTest가 맡는다.
  */
 class RecommendationGeneratorTest {
@@ -169,5 +171,19 @@ class RecommendationGeneratorTest {
         List<RecommendationPriorityPolicy.Scored> tie = RecommendationPriorityPolicy.rank(input, List.of(sameIssueOtherKey, c), BASE);
         assertThat(tie).extracting(RecommendationPriorityPolicy.Scored::score).containsExactly(16, 16);
         assertThat(tie.get(0).candidate().candidateKey()).isEqualTo("REDUCE_SPENDING:9");
+    }
+
+    @Test
+    void transitionTableMatchesSpec() {
+        assertThat(RecommendationTransitionPolicy.canTransition(RecommendationStatus.PENDING, RecommendationStatus.ACCEPTED)).isTrue();
+        assertThat(RecommendationTransitionPolicy.canTransition(RecommendationStatus.PENDING, RecommendationStatus.COMPLETED)).isFalse();
+        assertThat(RecommendationTransitionPolicy.canTransition(RecommendationStatus.PENDING, RecommendationStatus.PENDING)).isFalse();
+        assertThat(RecommendationTransitionPolicy.canTransition(RecommendationStatus.DEFERRED, RecommendationStatus.DEFERRED)).isFalse();
+        assertThat(RecommendationTransitionPolicy.canTransition(RecommendationStatus.ACCEPTED, RecommendationStatus.COMPLETED)).isTrue();
+        assertThat(RecommendationTransitionPolicy.canTransition(RecommendationStatus.ACCEPTED, RecommendationStatus.DEFERRED)).isTrue();
+        for (RecommendationStatus to : RecommendationStatus.values()) {
+            assertThat(RecommendationTransitionPolicy.canTransition(RecommendationStatus.REJECTED, to)).isFalse();
+            assertThat(RecommendationTransitionPolicy.canTransition(RecommendationStatus.COMPLETED, to)).isFalse();
+        }
     }
 }
