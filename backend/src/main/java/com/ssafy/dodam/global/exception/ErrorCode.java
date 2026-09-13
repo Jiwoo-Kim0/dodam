@@ -85,7 +85,15 @@ public enum ErrorCode {
      */
     SUBSCRIPTION_STATUS_TRANSITION_NOT_ALLOWED(HttpStatus.CONFLICT, "허용되지 않은 정기결제 상태 변경입니다."),
 
-    // ---------- Simulation (S15P21D105-550) ----------
+    // ---------- Simulation (S15P21D105-550, 551) ----------
+    /**
+     * 월 감소액이 기준 구간(직전 3개월)의 월평균 지출을 넘는 경우. 줄일 수 없는 금액을 줄인 결과를 만들지 않는다.
+     */
+    SIMULATION_REDUCTION_EXCEEDS_SPENDING(HttpStatus.BAD_REQUEST, "월 감소액이 최근 월평균 지출을 초과합니다."),
+    /**
+     * 새 월 저축액이 등록된 월 소득을 넘는 경우. 소득이 등록되지 않았으면 검사하지 않는다.
+     */
+    SIMULATION_SAVING_EXCEEDS_INCOME(HttpStatus.BAD_REQUEST, "월 저축액이 월 소득을 초과합니다."),
     /**
      * 계산기가 등록되지 않은 시뮬레이션 유형. 공개 경로는 유형별로 열려 있어 정상 흐름에서는 발생하지 않는다.
      */
