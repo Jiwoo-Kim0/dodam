@@ -83,7 +83,17 @@ public enum ErrorCode {
     /**
      * 허용되지 않은 상태 전이(예: ACTIVE → EXPIRED 직접 지정). 전이 규칙은 SubscriptionStatus에 있다.
      */
-    SUBSCRIPTION_STATUS_TRANSITION_NOT_ALLOWED(HttpStatus.CONFLICT, "허용되지 않은 정기결제 상태 변경입니다.");
+    SUBSCRIPTION_STATUS_TRANSITION_NOT_ALLOWED(HttpStatus.CONFLICT, "허용되지 않은 정기결제 상태 변경입니다."),
+
+    // ---------- Recommendation (S15P21D105-548) ----------
+    /**
+     * 아직 완료되지 않은 진단으로 개선안을 만들려는 경우. 진단은 존재하므로 404가 아니라 409다.
+     */
+    DIAGNOSIS_NOT_COMPLETED(HttpStatus.CONFLICT, "완료된 진단이 아닙니다."),
+    /**
+     * 요청 goalId가 진단의 goalId와 다른 경우. 다른 목표로 진단한 근거를 이 목표의 개선안에 쓰면 목표기여 계산이 틀어진다.
+     */
+    RECOMMENDATION_GOAL_MISMATCH(HttpStatus.BAD_REQUEST, "진단의 목표와 다른 목표를 지정할 수 없습니다.");
 
     private final HttpStatus status;
     private final String message;

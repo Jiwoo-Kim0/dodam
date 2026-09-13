@@ -24,7 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
  * goalId가 진단 goalId와 다르면 거부한다. 다른 목표로 진단한 근거를 이 목표의 추천에 재사용하면 목표기여
  * 계산이 틀어진다. 허용 여부를 넓힐지는 548에서 확정한다.
  *
- * <p>미완료 진단·goalId 불일치는 {@link ErrorCode#INVALID_REQUEST}로, 타인·없는 진단과 타인·없는·삭제된
+ * <p>미완료 진단은 {@link ErrorCode#DIAGNOSIS_NOT_COMPLETED}, goalId 불일치는 {@link ErrorCode#RECOMMENDATION_GOAL_MISMATCH}로, 타인·없는 진단과 타인·없는·삭제된
  * 목표는 {@link ResourceNotFoundException}으로 거부한다. 전용 ErrorCode는 HTTP 계약을 만드는 548에서 추가한다.
  */
 @Service
@@ -49,8 +49,7 @@ public class RecommendationInputReader {
         Diagnosis diagnosis = diagnoses.findByDiagnosisIdAndUserId(diagnosisId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("진단을 찾을 수 없습니다."));
         if (!diagnosis.isCompleted()) {
-            // 미완료 진단은 입력이 아직 없다. 전용 코드(예: DIAGNOSIS_NOT_COMPLETED)는 548의 HTTP 계약에서 정한다.
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            throw new BusinessException(ErrorCode.DIAGNOSIS_NOT_COMPLETED);
         }
         Long goalId = resolveGoalId(userId, diagnosis.getGoalId(), requestedGoalId);
 
@@ -76,7 +75,7 @@ public class RecommendationInputReader {
         goals.findByIdAndUserIdAndDeletedAtIsNull(goalId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("목표를 찾을 수 없습니다."));
         if (requestedGoalId != null && !Objects.equals(requestedGoalId, diagnosisGoalId)) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            throw new BusinessException(ErrorCode.RECOMMENDATION_GOAL_MISMATCH);
         }
         return goalId;
     }
