@@ -1,17 +1,13 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, fontFamily, fontSize, radius, spacing } from '@/styles';
+import { colors, fontFamily, fontSize, radius, shadows, spacing } from '@/styles';
 
 export const styles = StyleSheet.create({
   card: {
+    ...shadows.softCard,
     backgroundColor: colors.white,
     borderRadius: radius.card,
-    elevation: 1,
     padding: spacing[3],
-    shadowColor: colors.textPrimary,
-    shadowOffset: { height: 2, width: 0 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
   },
   cardPressed: {
     opacity: 0.65,
@@ -41,7 +37,7 @@ export const styles = StyleSheet.create({
   rankBadgeText: {
     color: colors.white,
     fontFamily: fontFamily.semiBold,
-    fontSize: 10,
+    fontSize: fontSize.micro,
   },
   categoryBadge: {
     backgroundColor: colors.background,
@@ -52,7 +48,7 @@ export const styles = StyleSheet.create({
   categoryBadgeText: {
     color: colors.textSecondary,
     fontFamily: fontFamily.medium,
-    fontSize: 10,
+    fontSize: fontSize.micro,
   },
   title: {
     color: colors.textPrimary,
@@ -74,7 +70,7 @@ export const styles = StyleSheet.create({
   amountLabel: {
     color: colors.textTertiary,
     fontFamily: fontFamily.regular,
-    fontSize: 11,
+    fontSize: fontSize.detail,
   },
   amountValueRow: {
     alignItems: 'center',
@@ -88,7 +84,7 @@ export const styles = StyleSheet.create({
   amountUnit: {
     color: colors.textPrimary,
     fontFamily: fontFamily.regular,
-    fontSize: 11,
+    fontSize: fontSize.detail,
   },
   chevron: {
     marginLeft: spacing[1],

@@ -39,7 +39,7 @@ export const styles = StyleSheet.create({
   backIcon: {
     color: colors.textPrimary,
     fontFamily: fontFamily.regular,
-    fontSize: 34,
+    fontSize: fontSize.display,
     lineHeight: 36,
   },
   heroCopy: {

@@ -70,7 +70,7 @@ export const styles = StyleSheet.create({
   changeLabel: {
     color: colors.textSecondary,
     fontFamily: fontFamily.regular,
-    fontSize: 10,
+    fontSize: fontSize.micro,
     lineHeight: 14,
   },
 });

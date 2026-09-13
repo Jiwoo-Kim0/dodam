@@ -40,7 +40,7 @@ export const styles = StyleSheet.create({
   goalLabel: {
     color: colors.textTertiary,
     fontFamily: fontFamily.regular,
-    fontSize: 11,
+    fontSize: fontSize.detail,
     lineHeight: 15,
   },
   goalValue: {

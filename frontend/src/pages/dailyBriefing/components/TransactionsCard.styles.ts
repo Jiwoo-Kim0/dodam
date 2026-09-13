@@ -56,13 +56,13 @@ export const styles = StyleSheet.create({
   transactionCategory: {
     color: colors.textTertiary,
     fontFamily: fontFamily.regular,
-    fontSize: 11,
+    fontSize: fontSize.detail,
     lineHeight: 15,
   },
   transactionAmount: {
     color: colors.textPrimary,
     fontFamily: fontFamily.medium,
-    fontSize: 15,
+    fontSize: fontSize.buttonSmall,
     letterSpacing: -0.3,
     marginLeft: spacing[2],
   },

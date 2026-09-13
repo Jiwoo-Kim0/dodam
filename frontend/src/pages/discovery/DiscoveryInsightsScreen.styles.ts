@@ -1,10 +1,12 @@
 import { StyleSheet } from 'react-native';
 
 import {
+  fontSize,
   colors,
   fontFamily,
   radius,
   semanticSpacing,
+  shadows,
   spacing,
   typography,
 } from '@/styles';
@@ -31,15 +33,11 @@ export const styles = StyleSheet.create({
     right: -semanticSpacing.screenMargin,
   },
   summaryCard: {
+    ...shadows.softCard,
     backgroundColor: colors.white,
     borderRadius: radius.card,
-    elevation: 1,
     gap: spacing[2],
     padding: spacing[4],
-    shadowColor: colors.textPrimary,
-    shadowOffset: { height: 2, width: 0 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
     zIndex: 2,
   },
   summaryHeaderRow: {
@@ -50,12 +48,12 @@ export const styles = StyleSheet.create({
   summaryLabel: {
     color: colors.textSecondary,
     fontFamily: fontFamily.regular,
-    fontSize: 12,
+    fontSize: fontSize.caption,
   },
   summaryCount: {
     color: colors.primary.green,
     fontFamily: fontFamily.semiBold,
-    fontSize: 13,
+    fontSize: fontSize.body2,
   },
   summaryHeadline: {
     ...typography.title,
@@ -77,12 +75,12 @@ export const styles = StyleSheet.create({
   summaryPillLabel: {
     color: colors.textSecondary,
     fontFamily: fontFamily.regular,
-    fontSize: 12,
+    fontSize: fontSize.caption,
   },
   summaryPillValue: {
     color: colors.textPrimary,
     fontFamily: fontFamily.semiBold,
-    fontSize: 13,
+    fontSize: fontSize.body2,
   },
   listSection: {
     gap: spacing[2],
@@ -91,7 +89,7 @@ export const styles = StyleSheet.create({
   sectionTitle: {
     color: colors.textPrimary,
     fontFamily: fontFamily.medium,
-    fontSize: 14,
+    fontSize: fontSize.body1,
     lineHeight: 19,
   },
 });

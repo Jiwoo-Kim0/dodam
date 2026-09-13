@@ -21,7 +21,7 @@ export const styles = StyleSheet.create({
   upcomingLabel: {
     color: colors.textSecondary,
     fontFamily: fontFamily.regular,
-    fontSize: 11,
+    fontSize: fontSize.detail,
     lineHeight: 15,
   },
   upcomingTitle: {
@@ -34,7 +34,7 @@ export const styles = StyleSheet.create({
   upcomingDescription: {
     color: colors.textTertiary,
     fontFamily: fontFamily.regular,
-    fontSize: 11,
+    fontSize: fontSize.detail,
     lineHeight: 15,
   },
 });

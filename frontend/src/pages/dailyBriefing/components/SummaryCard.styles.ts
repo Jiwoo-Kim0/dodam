@@ -56,13 +56,13 @@ export const styles = StyleSheet.create({
   statusBadgeText: {
     color: colors.briefing.statusText,
     fontFamily: fontFamily.semiBold,
-    fontSize: 11,
+    fontSize: fontSize.detail,
     lineHeight: 15,
   },
   summaryAmount: {
     color: colors.primary.brown,
     fontFamily: fontFamily.bold,
-    fontSize: 26,
+    fontSize: fontSize.headline,
     letterSpacing: -0.6,
     lineHeight: 34,
     marginTop: spacing[2],
@@ -74,7 +74,7 @@ export const styles = StyleSheet.create({
   averageText: {
     color: colors.textTertiary,
     fontFamily: fontFamily.regular,
-    fontSize: 11,
+    fontSize: fontSize.detail,
     lineHeight: 16,
   },
 });

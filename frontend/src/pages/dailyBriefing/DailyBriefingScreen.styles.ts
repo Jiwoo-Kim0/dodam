@@ -1,6 +1,6 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, fontFamily, radius, semanticSpacing, spacing } from '@/styles';
+import { colors, fontFamily, radius, semanticSpacing, spacing, fontSize } from '@/styles';
 
 export const styles = StyleSheet.create({
   screen: {
@@ -24,7 +24,7 @@ export const styles = StyleSheet.create({
   sectionTitle: {
     color: colors.textPrimary,
     fontFamily: fontFamily.medium,
-    fontSize: 15,
+    fontSize: fontSize.buttonSmall,
     lineHeight: 20,
   },
 });

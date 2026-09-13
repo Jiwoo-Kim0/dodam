@@ -37,7 +37,7 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.goal.reducingCharacterBackground,
   },
   rankSecond: {
-    backgroundColor: colors.briefing.increaseTag,
+    backgroundColor: colors.discovery.insightIncreaseTag,
   },
   rankThird: {
     backgroundColor: colors.goal.savingCharacterBackground,
@@ -68,20 +68,20 @@ export const styles = StyleSheet.create({
   category: {
     color: colors.textSecondary,
     fontFamily: fontFamily.medium,
-    fontSize: 11,
+    fontSize: fontSize.detail,
     lineHeight: 15,
   },
   title: {
     color: colors.textPrimary,
     fontFamily: fontFamily.semiBold,
-    fontSize: 12,
+    fontSize: fontSize.caption,
     lineHeight: 16,
     marginTop: 2,
   },
   description: {
     color: colors.textTertiary,
     fontFamily: fontFamily.regular,
-    fontSize: 10,
+    fontSize: fontSize.micro,
     lineHeight: 14,
     marginTop: 2,
   },
@@ -99,11 +99,11 @@ export const styles = StyleSheet.create({
   amount: {
     color: colors.textPrimary,
     fontFamily: fontFamily.semiBold,
-    fontSize: 10,
+    fontSize: fontSize.micro,
   },
   amountUnit: {
     fontFamily: fontFamily.regular,
-    fontSize: 8,
+    fontSize: fontSize.tiny,
   },
   amountLabel: {
     color: colors.textTertiary,

@@ -1,6 +1,7 @@
 import { StyleSheet } from 'react-native';
 
 import {
+  fontSize,
   colors,
   componentSize,
   fontFamily,
@@ -79,7 +80,7 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.primary.lightGreen,
     color: colors.primary.green,
     fontFamily: fontFamily.semiBold,
-    fontSize: 20,
+    fontSize: fontSize.button,
   },
   summarySubtext: {
     ...typography.body2,
@@ -152,7 +153,7 @@ export const styles = StyleSheet.create({
   footnote: {
     color: colors.textTertiary,
     fontFamily: fontFamily.regular,
-    fontSize: 10,
+    fontSize: fontSize.micro,
     lineHeight: 14,
   },
   viewAllButton: {

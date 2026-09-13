@@ -32,7 +32,7 @@ export const styles = StyleSheet.create({
   insightTagText: {
     color: colors.primary.brown,
     fontFamily: fontFamily.medium,
-    fontSize: 11,
+    fontSize: fontSize.detail,
     lineHeight: 15,
   },
   insightIncreaseText: {
@@ -68,7 +68,7 @@ export const styles = StyleSheet.create({
   insightDescription: {
     color: colors.textTertiary,
     fontFamily: fontFamily.regular,
-    fontSize: 11,
+    fontSize: fontSize.detail,
     lineHeight: 15,
     marginTop: 2,
   },

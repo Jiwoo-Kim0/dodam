@@ -41,7 +41,7 @@ export const styles = StyleSheet.create({
   label: {
     color: colors.white,
     fontFamily: fontFamily.regular,
-    fontSize: 10,
+    fontSize: fontSize.micro,
     lineHeight: 14,
   },
   amount: {
@@ -68,7 +68,7 @@ export const styles = StyleSheet.create({
     color: colors.textPrimary,
     flex: 1,
     fontFamily: fontFamily.regular,
-    fontSize: 10,
+    fontSize: fontSize.micro,
     lineHeight: 15,
   },
 });
