@@ -1,14 +1,21 @@
 package com.ssafy.dodam.domain.simulation.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.ssafy.dodam.domain.simulation.dto.SimulationInput;
+import com.ssafy.dodam.domain.simulation.dto.request.SavingSimulationRequest;
+import com.ssafy.dodam.domain.simulation.dto.request.SpendingSimulationRequest;
 import com.ssafy.dodam.domain.simulation.dto.response.SimulationGoalImpactResponse;
 import com.ssafy.dodam.domain.simulation.dto.response.SimulationResponse;
+import com.ssafy.dodam.domain.simulation.dto.response.SimulationRunResponse;
 import com.ssafy.dodam.domain.simulation.dto.response.SimulationSummaryResponse;
 import com.ssafy.dodam.domain.simulation.entity.SimulationType;
+import com.ssafy.dodam.domain.simulation.service.SimulationInputResolver;
 import com.ssafy.dodam.domain.simulation.service.SimulationQueryService;
+import com.ssafy.dodam.domain.simulation.service.SimulationRunner;
 import com.ssafy.dodam.global.response.ApiResponse;
 import com.ssafy.dodam.global.response.PageResponse;
 import com.ssafy.dodam.global.security.AuthenticatedUserIdResolver;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Positive;
@@ -19,24 +26,51 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * API 17 Simulation 공통 조회·삭제(550). 유형별 실행 경로는 계산기가 있는 유형만 연다(551부터).
- * 구현 전인 실행 경로는 존재하지 않는다 — 404가 "미구현"을 뜻한다.
+ * API 17 Simulation. 유형별 실행 경로는 계산기가 있는 유형만 연다(현재 spending·saving).
+ * 명세의 나머지 8개 실행 경로는 구현 전이라 존재하지 않는다 — 404가 "미구현"을 뜻한다.
  */
 @Validated
 @RestController
 @RequestMapping("/api/v1/simulations")
 public class SimulationController {
+    private final SimulationRunner runner;
+    private final SimulationInputResolver resolver;
     private final SimulationQueryService query;
     private final AuthenticatedUserIdResolver users;
 
-    public SimulationController(SimulationQueryService query, AuthenticatedUserIdResolver users) {
+    public SimulationController(SimulationRunner runner, SimulationInputResolver resolver, SimulationQueryService query,
+            AuthenticatedUserIdResolver users) {
+        this.runner = runner;
+        this.resolver = resolver;
         this.query = query;
         this.users = users;
+    }
+
+    @PostMapping("/spending")
+    public ResponseEntity<ApiResponse<SimulationRunResponse>> spending(@Valid @RequestBody SpendingSimulationRequest request,
+            Authentication authentication) {
+        return run(users.resolve(authentication), resolver.resolve(request));
+    }
+
+    @PostMapping("/saving")
+    public ResponseEntity<ApiResponse<SimulationRunResponse>> saving(@Valid @RequestBody SavingSimulationRequest request,
+            Authentication authentication) {
+        Long userId = users.resolve(authentication);
+        return run(userId, resolver.resolve(userId, request));
+    }
+
+    private ResponseEntity<ApiResponse<SimulationRunResponse>> run(Long userId, SimulationInput input) {
+        SimulationRunner.Outcome outcome = runner.run(userId, input);
+        SimulationResponse simulation = query.toResponse(userId, outcome.simulation());
+        return ResponseEntity.status(outcome.created() ? 201 : 200)
+                .body(ApiResponse.success(new SimulationRunResponse(simulation, outcome.created())));
     }
 
     @GetMapping
