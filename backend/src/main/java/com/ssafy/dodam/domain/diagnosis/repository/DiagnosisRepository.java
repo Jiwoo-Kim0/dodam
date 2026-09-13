@@ -17,6 +17,12 @@ import org.springframework.data.jpa.repository.JpaRepository;
  * <p>완료 여부는 `completedAt`의 NULL 여부로 판별한다. ERD에 진단 실행 상태 컬럼이 없다.
  */
 public interface DiagnosisRepository extends JpaRepository<Diagnosis, Long> {
+    Page<Diagnosis> findByUserIdAndCompletedAtIsNotNullOrderByCreatedAtDescDiagnosisIdDesc(Long userId, Pageable pageable);
+
+    Optional<Diagnosis> findFirstByUserIdAndGoalIdAndRuleVersionAndCompletedAtIsNotNullOrderByCompletedAtDescDiagnosisIdDesc(
+            Long userId, Long goalId, String ruleVersion);
+
+    boolean existsByUserIdAndDiagnosisIdGreaterThan(Long userId, Long diagnosisId);
 
     Optional<Diagnosis> findByDiagnosisIdAndUserId(Long diagnosisId, Long userId);
 
