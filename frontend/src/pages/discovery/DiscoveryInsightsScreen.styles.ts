@@ -13,12 +13,16 @@ export const styles = StyleSheet.create({
   screen: {
     backgroundColor: colors.background,
   },
+  scroll: {
+    backgroundColor: colors.home.goalGradientEnd,
+  },
   scrollContent: {
+    backgroundColor: colors.background,
     paddingHorizontal: semanticSpacing.screenMargin,
   },
   gradientContainer: {
-    marginTop: spacing[8],
-    paddingBottom: spacing[5],
+    marginTop: spacing[6],
+    paddingBottom: spacing[4],
     position: 'relative',
   },
   gradientOverlay: {
@@ -29,13 +33,13 @@ export const styles = StyleSheet.create({
   summaryCard: {
     backgroundColor: colors.white,
     borderRadius: radius.card,
-    elevation: 3,
-    gap: spacing[3],
-    padding: spacing[5],
+    elevation: 1,
+    gap: spacing[2],
+    padding: spacing[4],
     shadowColor: colors.textPrimary,
-    shadowOffset: { height: 3, width: 0 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
+    shadowOffset: { height: 2, width: 0 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
     zIndex: 2,
   },
   summaryHeaderRow: {
@@ -67,8 +71,8 @@ export const styles = StyleSheet.create({
     borderRadius: radius.round,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[3],
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
   },
   summaryPillLabel: {
     color: colors.textSecondary,
@@ -82,7 +86,7 @@ export const styles = StyleSheet.create({
   },
   listSection: {
     gap: spacing[2],
-    marginTop: spacing[8],
+    marginTop: spacing[6],
   },
   sectionTitle: {
     color: colors.textPrimary,

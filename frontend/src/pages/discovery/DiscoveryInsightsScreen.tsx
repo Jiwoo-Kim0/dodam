@@ -31,7 +31,9 @@ export function DiscoveryInsightsScreen() {
     <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
       <AppHeader showBackButton title="발견" />
 
-      <RefreshableBouncyScrollView contentContainerStyle={styles.scrollContent}>
+      <RefreshableBouncyScrollView
+        contentContainerStyle={styles.scrollContent}
+        style={styles.scroll}>
         <View onLayout={handleGradientContainerLayout} style={styles.gradientContainer}>
           {summaryCardHeight > 0 && gradientContainerHeight > summaryCardHeight ? (
             <LinearGradient
