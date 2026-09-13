@@ -11,6 +11,7 @@ export const routes = {
   ledger: '/ledger',
   assets: '/assets',
   discovery: '/discovery',
+  discoveryInsights: '/discovery/insights',
   report: '/report',
   goalSetup: '/goal-setup',
   goalSetupEdit: (goalId: string) => ({

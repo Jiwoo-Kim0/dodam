@@ -6,6 +6,9 @@ export const styles = StyleSheet.create({
   safeArea: {
     backgroundColor: colors.white,
   },
+  scrollArea: {
+    flex: 1,
+  },
   scrollContent: {
     backgroundColor: colors.white,
   },

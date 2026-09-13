@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
 
-import { MainLayout } from '@/layout/mainLayout/MainLayout';
+import { routes } from '@/constants/routes';
 
+import { DiscoveryHome } from './components/DiscoveryHome';
 import { DiscoveryLanding } from './components/DiscoveryLanding';
 
 export function DiscoveryScreen() {
@@ -10,7 +11,12 @@ export function DiscoveryScreen() {
   const [hasEnteredDiscovery, setHasEnteredDiscovery] = useState(false);
 
   if (hasEnteredDiscovery) {
-    return <MainLayout title="발견" />;
+    return (
+      <DiscoveryHome
+        onBack={() => setHasEnteredDiscovery(false)}
+        onViewAll={() => router.push(routes.discoveryInsights)}
+      />
+    );
   }
 
   return (
