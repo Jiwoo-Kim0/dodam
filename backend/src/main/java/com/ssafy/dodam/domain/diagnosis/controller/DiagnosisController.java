@@ -1,8 +1,12 @@
 package com.ssafy.dodam.domain.diagnosis.controller;
 
+import com.ssafy.dodam.domain.diagnosis.dto.DiagnosisChangesResponse;
+import com.ssafy.dodam.domain.diagnosis.dto.DiagnosisGoalImpactResponse;
 import com.ssafy.dodam.domain.diagnosis.dto.DiagnosisResponse;
 import com.ssafy.dodam.domain.diagnosis.dto.DiagnosisIssueResponse;
 import com.ssafy.dodam.domain.diagnosis.entity.IssueSeverity;
+import com.ssafy.dodam.domain.diagnosis.service.DiagnosisChangeService;
+import com.ssafy.dodam.domain.diagnosis.service.DiagnosisGoalImpactService;
 import com.ssafy.dodam.domain.diagnosis.service.DiagnosisQueryService;
 import com.ssafy.dodam.domain.diagnosis.service.DiagnosisRunner;
 import com.ssafy.dodam.global.response.ApiResponse;
@@ -31,11 +35,16 @@ public class DiagnosisController {
     private static final String CODE = "^[A-Z][A-Z0-9_]{0,49}$";
     private final DiagnosisQueryService query;
     private final DiagnosisRunner runner;
+    private final DiagnosisGoalImpactService goalImpact;
+    private final DiagnosisChangeService changes;
     private final AuthenticatedUserIdResolver users;
 
-    public DiagnosisController(DiagnosisQueryService query, DiagnosisRunner runner, AuthenticatedUserIdResolver users) {
+    public DiagnosisController(DiagnosisQueryService query, DiagnosisRunner runner,
+            DiagnosisGoalImpactService goalImpact, DiagnosisChangeService changes, AuthenticatedUserIdResolver users) {
         this.query = query;
         this.runner = runner;
+        this.goalImpact = goalImpact;
+        this.changes = changes;
         this.users = users;
     }
 
@@ -85,6 +94,18 @@ public class DiagnosisController {
     public ApiResponse<DiagnosisIssueResponse> issue(@PathVariable @Positive Long diagnosisId,
             @PathVariable @Positive Long issueId, Authentication authentication) {
         return ApiResponse.success(query.issue(users.resolve(authentication), diagnosisId, issueId));
+    }
+
+    @GetMapping("/{diagnosisId}/goal-impact")
+    public ApiResponse<DiagnosisGoalImpactResponse> goalImpact(@PathVariable @Positive Long diagnosisId,
+            Authentication authentication) {
+        return ApiResponse.success(goalImpact.goalImpact(users.resolve(authentication), diagnosisId));
+    }
+
+    @GetMapping("/{diagnosisId}/changes")
+    public ApiResponse<DiagnosisChangesResponse> changes(@PathVariable @Positive Long diagnosisId,
+            Authentication authentication) {
+        return ApiResponse.success(changes.changes(users.resolve(authentication), diagnosisId));
     }
 
     public record Request(@Positive Long goalId, Boolean forceRefresh) { }

@@ -59,7 +59,12 @@ public class DiagnosisEvaluator {
             var risk = goalCalculation.getRisk(diagnosis.getUserId(), goal.getId(), diagnosis.getCreatedAt().toLocalDate());
             ObjectNode input = json.valueToTree(risk);
             input.set("goalSnapshot", json.valueToTree(goal));
-            savingGoals.findById(goal.getId()).ifPresent(g -> input.set("savingGoalSnapshot", json.valueToTree(g)));
+            savingGoals.findById(goal.getId()).ifPresent(g -> {
+                input.set("savingGoalSnapshot", json.valueToTree(g));
+                // 546 goal-impact가 조회 시점에 재계산하지 않도록 예상 달성일·남은 금액을 진단 시점 값으로 보존한다.
+                input.set("forecast", json.valueToTree(
+                        goalCalculation.getForecast(diagnosis.getUserId(), goal.getId(), diagnosis.getCreatedAt().toLocalDate())));
+            });
             spendingGoals.findById(goal.getId()).ifPresent(g -> input.set("spendingGoalSnapshot", json.valueToTree(g)));
             inputs.add(input);
             if (!risk.factors().isEmpty()) {
