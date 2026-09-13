@@ -31,6 +31,15 @@ export const colors = {
       light: '#DCE9B9',
     },
   },
+  report: {
+    patternSurface: '#F7F8EE',
+    scoreStrong: '#67812B',
+    scoreLight: '#C3D1A2',
+    checkBadge: '#FDEFC5',
+    forecastLiving: '#DBE8BB',
+    forecastCard: '#FDDA6B',
+    chartBar: '#EAEAEA',
+  },
   briefing: {
     card: '#FFFFFF',
     softCard: '#FEFBF2',
