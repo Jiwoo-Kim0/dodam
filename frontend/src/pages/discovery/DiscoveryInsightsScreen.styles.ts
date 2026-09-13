@@ -2,7 +2,6 @@ import { StyleSheet } from 'react-native';
 
 import {
   colors,
-  componentSize,
   fontFamily,
   radius,
   semanticSpacing,
@@ -14,27 +13,8 @@ export const styles = StyleSheet.create({
   screen: {
     backgroundColor: colors.background,
   },
-  header: {
-    justifyContent: 'center',
-    minHeight: componentSize.touchTarget,
-    paddingHorizontal: semanticSpacing.screenMargin,
-  },
-  backButton: {
-    alignItems: 'flex-start',
-    height: componentSize.touchTarget,
-    justifyContent: 'center',
-    width: componentSize.touchTarget,
-  },
-  backButtonPressed: {
-    opacity: 0.5,
-  },
   scrollContent: {
     paddingHorizontal: semanticSpacing.screenMargin,
-  },
-  title: {
-    ...typography.headline,
-    color: colors.textPrimary,
-    marginTop: spacing[2],
   },
   gradientContainer: {
     marginTop: spacing[8],

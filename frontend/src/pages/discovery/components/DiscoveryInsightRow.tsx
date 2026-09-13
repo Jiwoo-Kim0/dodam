@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { SymbolView } from 'expo-symbols';
-import { Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import type { DiscoveryInsight } from '@/mocks/discovery';
 import { colors } from '@/styles';
@@ -11,11 +11,20 @@ import { styles } from './DiscoveryInsightRow.styles';
 type DiscoveryInsightRowProps = {
   insight: DiscoveryInsight;
   isLast: boolean;
+  onPress: () => void;
 };
 
-export function DiscoveryInsightRow({ insight, isLast }: DiscoveryInsightRowProps) {
+export function DiscoveryInsightRow({ insight, isLast, onPress }: DiscoveryInsightRowProps) {
   return (
-    <View style={[styles.row, !isLast && styles.divider]}>
+    <Pressable
+      accessibilityLabel={`${insight.title} 상세 보기`}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.row,
+        !isLast && styles.divider,
+        pressed && styles.rowPressed,
+      ]}>
       <View style={styles.rankBadge}>
         <View
           style={[
@@ -60,6 +69,6 @@ export function DiscoveryInsightRow({ insight, isLast }: DiscoveryInsightRowProp
           tintColor={colors.textSecondary}
         />
       </View>
-    </View>
+    </Pressable>
   );
 }

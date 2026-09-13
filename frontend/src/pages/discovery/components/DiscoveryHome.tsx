@@ -15,12 +15,13 @@ import { styles } from './DiscoveryHome.styles';
 
 type DiscoveryHomeProps = {
   onBack: () => void;
+  onInsightPress: (insightId: string) => void;
   onViewAll: () => void;
 };
 
 const GRADIENT_TOP_OFFSET = 190;
 
-export function DiscoveryHome({ onBack, onViewAll }: DiscoveryHomeProps) {
+export function DiscoveryHome({ onBack, onInsightPress, onViewAll }: DiscoveryHomeProps) {
   const [gradientContainerHeight, setGradientContainerHeight] = useState(0);
 
   const handleGradientContainerLayout = (event: LayoutChangeEvent) => {
@@ -111,6 +112,7 @@ export function DiscoveryHome({ onBack, onViewAll }: DiscoveryHomeProps) {
                   insight={insight}
                   isLast={index === DISCOVERY_INSIGHTS.length - 1}
                   key={insight.id}
+                  onPress={() => onInsightPress(insight.id)}
                 />
               ))}
             </View>

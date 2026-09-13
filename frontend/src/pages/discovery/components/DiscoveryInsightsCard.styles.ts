@@ -13,6 +13,9 @@ export const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 3,
   },
+  cardPressed: {
+    opacity: 0.65,
+  },
   badgeRow: {
     flexDirection: 'row',
     gap: spacing[2],

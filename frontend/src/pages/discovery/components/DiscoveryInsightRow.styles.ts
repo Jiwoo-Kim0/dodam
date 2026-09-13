@@ -12,6 +12,9 @@ export const styles = StyleSheet.create({
     paddingHorizontal: spacing[3],
     paddingVertical: spacing[2],
   },
+  rowPressed: {
+    opacity: 0.65,
+  },
   divider: {
     borderBottomColor: colors.divider,
     borderBottomWidth: StyleSheet.hairlineWidth,
