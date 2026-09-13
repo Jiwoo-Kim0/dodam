@@ -1,6 +1,6 @@
-# Recommendation API — 생성·조회 (S15P21D105-548)
+# Recommendation API — 생성·조회 (S15P21D105-548) · 상태변경·이력 (S15P21D105-549)
 
-작성일: 2026-09-13. 547 저장 기반([recommendation.md](recommendation.md)) 위에 API 16의 생성·조회 경로 8개를 구현했다. 상태 변경·이력 5개는 549.
+작성일: 2026-09-13. 547 저장 기반([recommendation.md](recommendation.md)) 위에 API 16의 HTTP 경로 13개를 구현했다.
 계획과 결정 배경은 [recommendation-api-plan.md](recommendation-api-plan.md)에 있다.
 
 기준 자료: [API 16](../../docs/API명세서/16%20Recommendation%203cdbb6ea3564801eb1bbc55201aee86a.csv),
@@ -13,7 +13,7 @@
 | 운영 생성기 3종(진단이 만드는 3개 문제 유형 대응) | 대출·카드·계좌·예적금 추천 — 대응 진단 규칙 미구현 |
 | 효과 계산, 우선순위 점수·순위 | 군집 가중치 α (군집 미연동, α = 0) |
 | POST generate, GET 목록·summary·priorities·상세·reasons·effect·goal-impact | ACCEPT 시 `improvement_action` 생성 (Improvement 이슈) |
-| — | POST accept·reject·complete·defer, GET history (549) · Simulation 연동 |
+| POST accept·reject·complete·defer, GET history | Simulation 연동 |
 
 ## 2. 생성기와 효과 계산
 
@@ -71,9 +71,22 @@
 | `GET /{id}/effect` | | `available, 8개 효과 필드, measuredAt(=createdAt), assumptions[]` | 모두 null → `available=false` |
 | `GET /{id}/goal-impact` | | `goalId, currentForecastDate, improvedForecastDate, advancedDays, contributionAmount, unavailableReason`(`NO_GOAL` / `NOT_CALCULATED` / null) | |
 
-## 6. 상태 변경·이력
+## 6. 상태 변경·이력 (549)
 
-549에서 구현한다. 전이표·이력 기간 정책은 [recommendation-api-plan.md](recommendation-api-plan.md) §5.
+`POST /recommendations/{id}/{accept|reject|complete|defer}` Body `{ memo?, reason? }`(각 ≤500, 공백만이면 null, 본문 생략 가능) → 200 상세.
+
+| 현재 \ 요청 | accept | reject | complete | defer |
+| --- | --- | --- | --- | --- |
+| PENDING | ACCEPTED | REJECTED | ✗ | DEFERRED |
+| DEFERRED | ACCEPTED | REJECTED | ✗ | ✗ |
+| ACCEPTED | ✗ | REJECTED | COMPLETED | DEFERRED |
+| REJECTED | ✗ | ✗ | ✗ | ✗ |
+| COMPLETED | ✗ | ✗ | ✗ | ✗ |
+
+✗ 및 같은 상태 재요청은 409 `RECOMMENDATION_STATUS_TRANSITION_NOT_ALLOWED`(이력 중복 방지). 한 트랜잭션: 사용자 행 잠금 → 소유 조회 → 전이 검사 → `Recommendation.changeStatus`(`updated_at`) → `recommendation_history` INSERT. 효과·근거·priority는 불변.
+
+`GET /recommendations/history?startDate&endDate&page&size` → `PageResponse<{historyId, recommendationId, title, domain, status, reason, memo, changedAt}>`.
+기간은 `QueryPeriodPolicy`(endDate 기본 오늘, 기본 3개월, 최대 12개월, `startDate ≤ endDate`, 위반 시 400), `[start 00:00, end + 1일 00:00)`. 정렬 `changedAt DESC, id DESC`. 생성 시 PENDING 이력도 포함.
 
 ## 7. 오류 코드
 
@@ -81,15 +94,16 @@
 | --- | --- |
 | `DIAGNOSIS_NOT_COMPLETED` | 409 |
 | `RECOMMENDATION_GOAL_MISMATCH` | 400 |
+| `RECOMMENDATION_STATUS_TRANSITION_NOT_ALLOWED` | 409 |
 
 547의 Reader·Store가 쓰던 `INVALID_REQUEST`는 위 두 코드로 바꿨다.
 
 ## 8. 검증
 
-H2 (`.\gradlew.bat test --tests 'com.ssafy.dodam.domain.recommendation.*'`, 2026-09-13 통과, 48건 = 547 38건 + 신규 10건):
+H2 (`.\gradlew.bat test --tests 'com.ssafy.dodam.domain.recommendation.*'`, 2026-09-13 통과, 51건 = 547 38건 + 신규 13건):
 
-- `RecommendationGeneratorTest` 6: 저축 생성기 달성일 계산·속도 0·필드 누락·충분한 속도·데이터 부족, 기준일 fallback, 소비 생성기 초과분·연간 ×12, 현금흐름 생성기 필드·날짜 오류, 우선순위 점수(58/40/16)·동점 tie-break.
-- `RecommendationApiTest` 4: **실제 진단 실행**으로 만든 스냅샷에서 생성 → 효과·근거·goal-impact, 재요청 멱등(201→200, reused), goal 불일치 400·타인 404·검증 400·401·문제 0건, 목록 필터·페이지 경계·소유권, summary, priorities 최신 진단 한정·goalId·완료 진단 없음, 줄이기 목표 진단 형식.
+- `RecommendationGeneratorTest` 7: 저축 생성기 달성일 계산·속도 0·필드 누락·충분한 속도·데이터 부족, 기준일 fallback, 소비 생성기 초과분·연간 ×12, 현금흐름 생성기 필드·날짜 오류, 우선순위 점수(58/40/16)·동점 tie-break, 전이표 25칸.
+- `RecommendationApiTest` 6: **실제 진단 실행**으로 만든 스냅샷에서 생성 → 효과·근거·goal-impact, 재요청 멱등(201→200, reused), goal 불일치 400·타인 404·검증 400·401·문제 0건, 목록 필터·페이지 경계·소유권, summary, priorities 최신 진단 한정·goalId·완료 진단 없음, 전이표·같은 상태 재요청 409·memo 501자 400·이력 4건·효과 불변, 이력 기간 정책·반개구간·정렬·소유권, 줄이기 목표 진단 형식.
 
 MySQL: 스키마 변경 없음. 547 `RecommendationMySqlIntegrationTest` 3건은 `RECOMMENDATION_MYSQL_TEST_URL` 설정 시만 실행된다.
 
@@ -97,8 +111,8 @@ MySQL: 스키마 변경 없음. 547 `RecommendationMySqlIntegrationTest` 3건은
 
 - [ ] 대출·카드·계좌·예적금 추천 없음. 진단 규칙(고금리 대출, 저사용 카드, 휴면 계좌 등)이 먼저다. 생성기를 추가하면 Collector가 자동으로 모은다.
 - [ ] 군집 α = 0. 545 군집 연동 후 `RecommendationPriorityPolicy`에 보조 점수를 더한다.
-- [ ] 549: 상태 변경·이력 API. ACCEPT 시 `improvement_action` 생성은 그 뒤 Improvement 이슈.
-- [ ] `annualCostSaving = monthly × 12`, 우선순위 가중치는 서비스 결정이다. 팀 합의가 다르면 생성기 버전(`548.1`)을 올린다.
+- [ ] ACCEPT 시 `improvement_action` 생성은 Improvement 이슈. 여기서는 훅을 두지 않았다.
+- [ ] `annualCostSaving = monthly × 12`, 우선순위 가중치, 같은 상태 재요청 409는 서비스 결정이다. 팀 합의가 다르면 생성기 버전(`548.1`)을 올린다.
 - [ ] 생성기의 예상 달성일 식은 Goal·Simulation(550)과 각각 복제돼 있다. 세 곳이 같은 식을 쓰는 것은 테스트로 고정했지만 한 곳으로 모으는 정리는 546 병합 후.
 - 진단·목표 삭제 이후 기존 추천의 표시 정책은 정하지 않았다(저장 당시 근거 보존, 조회 가능).
 - 명세 16에 응답 필드가 없으므로 이 문서가 응답 계약이다. 프론트 연동 시 공유 필요.
