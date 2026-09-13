@@ -7,19 +7,26 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.white,
     borderRadius: radius.card,
     paddingHorizontal: spacing[4],
-    paddingVertical: spacing[4],
+    paddingVertical: spacing[3],
   },
   title: {
     color: colors.textPrimary,
     fontFamily: fontFamily.medium,
-    fontSize: 16,
-    lineHeight: 22,
+    fontSize: fontSize.body1,
+    lineHeight: 20,
   },
   row: {
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing[2],
-    marginTop: spacing[3],
+    paddingVertical: spacing[2],
+  },
+  firstRow: {
+    marginTop: spacing[1],
+  },
+  separatedRow: {
+    borderTopColor: colors.divider,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   rankBadge: {
     alignItems: 'center',
@@ -48,14 +55,17 @@ export const styles = StyleSheet.create({
   categoryAmount: {
     color: colors.textPrimary,
     fontFamily: fontFamily.semiBold,
-    fontSize: fontSize.buttonSmall,
+    fontSize: fontSize.body1,
     lineHeight: 20,
+  },
+  amountGroup: {
+    alignItems: 'flex-end',
   },
   changeGroup: {
     alignItems: 'center',
     flexDirection: 'row',
     flexShrink: 0,
-    gap: spacing[1],
+    gap: 2,
   },
   changeLabel: {
     color: colors.textSecondary,

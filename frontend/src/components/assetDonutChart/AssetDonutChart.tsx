@@ -11,12 +11,12 @@ import { styles } from './AssetDonutChart.styles';
 
 type AssetDonutChartProps = {
   composition: readonly AssetComposition[];
+  size?: number;
+  strokeWidth?: number;
 };
 
-const CHART_SIZE = 80;
-const STROKE_WIDTH = 19;
-const RADIUS = (CHART_SIZE - STROKE_WIDTH) / 2;
-const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+const DEFAULT_CHART_SIZE = 80;
+const DEFAULT_STROKE_WIDTH = 19;
 
 const chartColors: Record<AssetCompositionTone, string> = {
   strong: colors.home.assetChart.strong,
@@ -24,7 +24,10 @@ const chartColors: Record<AssetCompositionTone, string> = {
   light: colors.home.assetChart.light,
 };
 
-function createChartSegments(composition: readonly AssetComposition[]) {
+function createChartSegments(
+  composition: readonly AssetComposition[],
+  circumference: number,
+) {
   const total = composition.reduce((sum, item) => sum + Math.max(0, item.amount), 0);
   let offset = 0;
 
@@ -34,10 +37,10 @@ function createChartSegments(composition: readonly AssetComposition[]) {
         return null;
       }
 
-      const segmentLength = (item.amount / total) * CIRCUMFERENCE;
+      const segmentLength = (item.amount / total) * circumference;
       const segment = {
         color: chartColors[item.tone],
-        dashArray: `${segmentLength} ${CIRCUMFERENCE - segmentLength}`,
+        dashArray: `${segmentLength} ${circumference - segmentLength}`,
         dashOffset: -offset,
         key: `${item.label}-${item.tone}`,
       };
@@ -52,8 +55,17 @@ function createChartSegments(composition: readonly AssetComposition[]) {
   };
 }
 
-export function AssetDonutChart({ composition }: AssetDonutChartProps) {
-  const chart = useMemo(() => createChartSegments(composition), [composition]);
+export function AssetDonutChart({
+  composition,
+  size = DEFAULT_CHART_SIZE,
+  strokeWidth = DEFAULT_STROKE_WIDTH,
+}: AssetDonutChartProps) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const chart = useMemo(
+    () => createChartSegments(composition, circumference),
+    [composition, circumference],
+  );
   const accessibilityLabel = composition
     .map((item) => {
       const percentage =
@@ -68,32 +80,32 @@ export function AssetDonutChart({ composition }: AssetDonutChartProps) {
     <Svg
       accessibilityLabel={accessibilityLabel}
       accessible
-      height={CHART_SIZE}
-      style={styles.chart}
-      viewBox={`0 0 ${CHART_SIZE} ${CHART_SIZE}`}
-      width={CHART_SIZE}
+      height={size}
+      style={[styles.chart, { height: size, width: size }]}
+      viewBox={`0 0 ${size} ${size}`}
+      width={size}
     >
       <Circle
-        cx={CHART_SIZE / 2}
-        cy={CHART_SIZE / 2}
+        cx={size / 2}
+        cy={size / 2}
         fill="none"
-        r={RADIUS}
+        r={radius}
         stroke={colors.divider}
-        strokeWidth={STROKE_WIDTH}
+        strokeWidth={strokeWidth}
       />
       {chart.segments.map((segment) => (
         <Circle
-          cx={CHART_SIZE / 2}
-          cy={CHART_SIZE / 2}
+          cx={size / 2}
+          cy={size / 2}
           fill="none"
           key={segment.key}
-          origin={`${CHART_SIZE / 2}, ${CHART_SIZE / 2}`}
-          r={RADIUS}
+          origin={`${size / 2}, ${size / 2}`}
+          r={radius}
           rotation={-90}
           stroke={segment.color}
           strokeDasharray={segment.dashArray}
           strokeDashoffset={segment.dashOffset}
-          strokeWidth={STROKE_WIDTH}
+          strokeWidth={strokeWidth}
         />
       ))}
     </Svg>

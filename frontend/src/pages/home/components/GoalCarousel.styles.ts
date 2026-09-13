@@ -31,7 +31,7 @@ export const styles = StyleSheet.create({
     width: 6,
   },
   dotActive: {
-    backgroundColor: colors.primary.orange,
+    backgroundColor: colors.primary.green,
     width: 16,
   },
 });

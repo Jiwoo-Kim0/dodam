@@ -43,7 +43,7 @@ export function AssetOverviewCard() {
       <View style={styles.divider} />
 
       <View style={styles.composition}>
-        <AssetDonutChart composition={composition} />
+        <AssetDonutChart composition={composition} size={68} strokeWidth={16} />
 
         <View style={styles.legend}>
           {composition.map((item) => (

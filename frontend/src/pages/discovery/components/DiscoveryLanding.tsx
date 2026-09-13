@@ -10,7 +10,8 @@ import {
   View,
 } from 'react-native';
 
-import { BouncyScrollView, type BouncyScrollViewHandle } from '@/components/bouncyScrollView/BouncyScrollView';
+import type { BouncyScrollViewHandle } from '@/components/bouncyScrollView/BouncyScrollView';
+import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import { colors } from '@/styles';
 
@@ -51,7 +52,7 @@ export function DiscoveryLanding({ onBack, onComplete }: DiscoveryLandingProps) 
   return (
     <SafeAreaLayout style={styles.safeArea}>
       <View onLayout={handleLayout} style={styles.scrollArea}>
-        <BouncyScrollView
+        <RefreshableBouncyScrollView
           contentContainerStyle={styles.scrollContent}
           pageSize={viewportHeight}
           pagingEnabled
@@ -64,6 +65,9 @@ export function DiscoveryLanding({ onBack, onComplete }: DiscoveryLandingProps) 
               <Pressable accessibilityLabel="뒤로 가기" hitSlop={12} onPress={onBack}>
                 <Text style={styles.backIcon}>‹</Text>
               </Pressable>
+              <Text pointerEvents="none" style={styles.topBarTitle}>
+                발견
+              </Text>
               <StageSkip onPress={onComplete} />
             </View>
 
@@ -222,7 +226,7 @@ export function DiscoveryLanding({ onBack, onComplete }: DiscoveryLandingProps) 
               <Text style={styles.startButtonText}>발견 시작하기</Text>
             </Pressable>
           </View>
-        </BouncyScrollView>
+        </RefreshableBouncyScrollView>
       </View>
     </SafeAreaLayout>
   );

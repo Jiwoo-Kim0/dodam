@@ -4,12 +4,12 @@ import { colors, fontFamily, radius, spacing, typography } from '@/styles';
 
 export const styles = StyleSheet.create({
   section: {
-    marginTop: spacing[6],
+    marginTop: spacing[4],
   },
   title: {
     ...typography.body1,
     fontFamily: fontFamily.semiBold,
-    marginBottom: spacing[3],
+    marginBottom: spacing[2],
     color: colors.textPrimary,
   },
   card: {

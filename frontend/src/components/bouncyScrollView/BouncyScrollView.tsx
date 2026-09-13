@@ -1,15 +1,24 @@
 import type { PropsWithChildren } from 'react';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { NativeScrollEvent, NativeSyntheticEvent, StyleProp, ViewStyle } from 'react-native';
-import { AccessibilityInfo, ScrollView, StyleSheet } from 'react-native';
+import {
+  AccessibilityInfo,
+  ActivityIndicator,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+} from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  Extrapolation,
+  interpolate,
   runOnJS,
   useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
   withDecay,
   withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 
 import {
@@ -21,6 +30,8 @@ import {
 
 const END_REACHED_RESET_MARGIN = 40;
 const SCROLL_OFFSET_REPORT_DELTA = 4;
+const DEFAULT_REFRESH_THRESHOLD = 44;
+const REFRESH_HOLD_OFFSET = 48;
 
 type BouncyScrollViewProps = PropsWithChildren<{
   style?: StyleProp<ViewStyle>;
@@ -31,6 +42,11 @@ type BouncyScrollViewProps = PropsWithChildren<{
   /** true면 드래그가 끝날 때 가장 가까운 pageSize 배수 오프셋으로 스냅한다. */
   pagingEnabled?: boolean;
   pageSize?: number;
+  onRefresh?: () => void;
+  refreshing?: boolean;
+  refreshIndicatorColor?: string;
+  refreshBackgroundColor?: string;
+  refreshThreshold?: number;
 }>;
 
 export interface BouncyScrollViewHandle {
@@ -55,6 +71,11 @@ export const BouncyScrollView = forwardRef<
     onScrollOffsetChange,
     pagingEnabled = false,
     pageSize = 0,
+    onRefresh,
+    refreshing = false,
+    refreshIndicatorColor,
+    refreshBackgroundColor,
+    refreshThreshold = DEFAULT_REFRESH_THRESHOLD,
   },
   ref,
 ) {
@@ -98,7 +119,7 @@ export const BouncyScrollView = forwardRef<
   useImperativeHandle(ref, () => ({
     scrollToTop: () => {
       nativeScrollRef.current?.scrollTo({ animated: true, y: 0 });
-      translateY.value = withSpring(0, SPRING_BACK_CONFIG);
+      translateY.value = withTiming(0, { duration: 250 });
     },
     scrollToOffset: (offset: number) => {
       nativeScrollRef.current?.scrollTo({ animated: true, y: offset });
@@ -126,7 +147,19 @@ export const BouncyScrollView = forwardRef<
     };
   }, []);
 
+  useEffect(() => {
+    if (refreshing) {
+      translateY.value = withSpring(REFRESH_HOLD_OFFSET, SPRING_BACK_CONFIG);
+      return;
+    }
+
+    if (translateY.value > 0) {
+      translateY.value = withSpring(0, SPRING_BACK_CONFIG);
+    }
+  }, [refreshing, translateY]);
+
   const panGesture = Gesture.Pan()
+    .enabled(!refreshing)
     .activeOffsetY([-10, 10])
     .failOffsetX([-15, 15])
     .onStart(() => {
@@ -137,6 +170,12 @@ export const BouncyScrollView = forwardRef<
       translateY.value = withRubberBand(next, -maxScroll, 0, RUBBER_BAND_RESISTANCE);
     })
     .onEnd((event) => {
+      if (onRefresh && translateY.value >= refreshThreshold) {
+        translateY.value = withSpring(REFRESH_HOLD_OFFSET, SPRING_BACK_CONFIG);
+        runOnJS(onRefresh)();
+        return;
+      }
+
       if (translateY.value > 0) {
         translateY.value = withSpring(0, SPRING_BACK_CONFIG);
         return;
@@ -174,6 +213,25 @@ export const BouncyScrollView = forwardRef<
 
   const animatedContentStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
+  }));
+
+  const refreshIndicatorStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      translateY.value,
+      [0, REFRESH_HOLD_OFFSET],
+      [0, 1],
+      Extrapolation.CLAMP,
+    ),
+    transform: [
+      {
+        translateY: interpolate(
+          translateY.value,
+          [0, REFRESH_HOLD_OFFSET],
+          [-REFRESH_HOLD_OFFSET, 0],
+          Extrapolation.CLAMP,
+        ),
+      },
+    ],
   }));
 
   useAnimatedReaction(
@@ -243,6 +301,16 @@ export const BouncyScrollView = forwardRef<
         }}
         onScroll={handleNativeScroll}
         ref={nativeScrollRef}
+        refreshControl={
+          onRefresh ? (
+            <RefreshControl
+              colors={refreshIndicatorColor ? [refreshIndicatorColor] : undefined}
+              onRefresh={onRefresh}
+              refreshing={refreshing}
+              tintColor={refreshIndicatorColor}
+            />
+          ) : undefined
+        }
         scrollEventThrottle={16}
         style={[styles.container, style]}>
         {children}
@@ -255,6 +323,22 @@ export const BouncyScrollView = forwardRef<
       <Animated.View
         onLayout={(event) => setContainerHeight(event.nativeEvent.layout.height)}
         style={[styles.container, style]}>
+        {refreshBackgroundColor ? (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.refreshBackground,
+              { backgroundColor: refreshBackgroundColor },
+            ]}
+          />
+        ) : null}
+        {onRefresh ? (
+          <Animated.View
+            pointerEvents="none"
+            style={[styles.refreshIndicator, refreshIndicatorStyle]}>
+            <ActivityIndicator color={refreshIndicatorColor} size="small" />
+          </Animated.View>
+        ) : null}
         <Animated.View
           onLayout={(event) => setContentHeight(event.nativeEvent.layout.height)}
           style={[contentContainerStyle, animatedContentStyle]}>
@@ -269,5 +353,21 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     overflow: 'hidden',
+  },
+  refreshIndicator: {
+    alignItems: 'center',
+    height: REFRESH_HOLD_OFFSET,
+    justifyContent: 'center',
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  refreshBackground: {
+    height: REFRESH_HOLD_OFFSET * 4,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
   },
 });

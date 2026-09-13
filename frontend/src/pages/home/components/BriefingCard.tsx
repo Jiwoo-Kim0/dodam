@@ -24,6 +24,7 @@ export function BriefingCard({ onDetailPress }: BriefingCardProps) {
       <Text style={styles.title}>오늘의 도담 브리핑</Text>
       <CardDetailButton
         accessibilityLabel="도담 브리핑 자세히 보기"
+        centerVertically
         onPress={onDetailPress}
         tintColor={colors.white}
       />

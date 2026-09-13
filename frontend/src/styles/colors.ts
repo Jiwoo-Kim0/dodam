@@ -23,6 +23,7 @@ export const colors = {
   home: {
     goalGradientEnd: '#F3F6E3',
     goalCardShadow: '#28310F',
+    goalProgressTrack: '#F1F1F1',
     secondaryRank: '#BEDB80',
     assetChart: {
       strong: '#5E7F18',

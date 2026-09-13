@@ -4,13 +4,13 @@ import { colors, fontFamily, radius, spacing, typography } from '@/styles';
 
 export const styles = StyleSheet.create({
   section: {
-    marginTop: spacing[6],
+    marginTop: spacing[4],
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing[3],
+    marginBottom: spacing[2],
   },
   title: {
     ...typography.body1,
@@ -21,7 +21,7 @@ export const styles = StyleSheet.create({
     paddingHorizontal: spacing[2],
     paddingVertical: spacing[1],
     borderRadius: radius.round,
-        backgroundColor: colors.divider,
+    backgroundColor: colors.divider,
   },
   manageButtonPressed: {
     opacity: 0.7,
@@ -36,7 +36,7 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.white,
   },
   accountRow: {
-    minHeight: spacing[20],
+    minHeight: 64,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing[4],

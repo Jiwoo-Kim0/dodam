@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pressable, Switch, Text, TextInput, View } from 'react-native';
 
-import { BouncyScrollView } from '@/components/bouncyScrollView/BouncyScrollView';
+import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import { colors } from '@/styles';
 import type { LedgerCategory, LedgerTransaction } from '@/types/ledger.types';
 import { formatCurrency } from '@/utils/currency';
@@ -70,7 +70,7 @@ export function TransactionDetail({
         title="상세 내역"
       />
 
-      <BouncyScrollView contentContainerStyle={styles.detailContent}>
+      <RefreshableBouncyScrollView contentContainerStyle={styles.detailContent}>
         <View style={[styles.card, styles.detailCard]}>
           <View style={styles.detailHero}>
             <MerchantLogoPlaceholder />
@@ -179,7 +179,7 @@ export function TransactionDetail({
             </View>
           ))}
         </View>
-      </BouncyScrollView>
+      </RefreshableBouncyScrollView>
     </View>
   );
 }

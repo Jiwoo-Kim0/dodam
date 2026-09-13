@@ -4,7 +4,7 @@ import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
 import { type LayoutChangeEvent, Pressable, Text, View } from 'react-native';
 
-import { BouncyScrollView } from '@/components/bouncyScrollView/BouncyScrollView';
+import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import { DISCOVERY_INSIGHTS, DISCOVERY_SUMMARY } from '@/mocks/discovery';
 import { colors } from '@/styles';
@@ -44,7 +44,7 @@ export function DiscoveryHome({ onBack, onViewAll }: DiscoveryHomeProps) {
         </Pressable>
       </View>
 
-      <BouncyScrollView contentContainerStyle={styles.scrollContent}>
+      <RefreshableBouncyScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.titleGroup}>
           <Text style={styles.title}>발견</Text>
           <Text style={styles.subtitle}>
@@ -142,7 +142,7 @@ export function DiscoveryHome({ onBack, onViewAll }: DiscoveryHomeProps) {
             <Text style={styles.viewAllButtonLabel}>전체 보기</Text>
           </Pressable>
         </View>
-      </BouncyScrollView>
+      </RefreshableBouncyScrollView>
     </SafeAreaLayout>
   );
 }

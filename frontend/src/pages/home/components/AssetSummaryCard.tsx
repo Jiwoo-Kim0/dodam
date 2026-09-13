@@ -23,9 +23,9 @@ export function AssetSummaryCard({ onDetailPress }: AssetSummaryCardProps) {
 
   return (
     <View style={styles.card}>
-      <Text style={styles.title}>내 자산</Text>
       <View style={styles.content}>
         <View style={styles.copy}>
+          <Text style={styles.title}>내 자산</Text>
           <Text
             adjustsFontSizeToFit
             minimumFontScale={0.75}
@@ -36,14 +36,18 @@ export function AssetSummaryCard({ onDetailPress }: AssetSummaryCardProps) {
             <Text style={styles.currencyUnit}> 원</Text>
           </Text>
           <View style={styles.changeRow}>
+            <Text style={styles.changePrefix}>지난 달 대비</Text>
             <Text style={styles.changeArrow}>{assetChange >= 0 ? '↑' : '↓'}</Text>
             <Text style={styles.changeAmount}>{formatCurrency(Math.abs(assetChange))}</Text>
           </View>
-          <Text style={styles.changePrefix}>지난 달 대비</Text>
         </View>
 
         <View style={styles.chartGroup}>
-          <AssetDonutChart composition={HOME_SUMMARY.assetComposition} />
+          <AssetDonutChart
+            composition={HOME_SUMMARY.assetComposition}
+            size={60}
+            strokeWidth={14}
+          />
 
           <View style={styles.legend}>
             {HOME_SUMMARY.assetComposition.map((item) => (
@@ -60,7 +64,11 @@ export function AssetSummaryCard({ onDetailPress }: AssetSummaryCardProps) {
           </View>
         </View>
       </View>
-      <CardDetailButton accessibilityLabel="내 자산 자세히 보기" onPress={onDetailPress} />
+      <CardDetailButton
+        accessibilityLabel="내 자산 자세히 보기"
+        centerVertically
+        onPress={onDetailPress}
+      />
     </View>
   );
 }
