@@ -98,7 +98,7 @@ class RecommendationStoreTest {
 
         assertThatThrownBy(() -> reader.read(owner, pending.getDiagnosisId(), null))
                 .isInstanceOf(BusinessException.class)
-                .extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+                .extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(ErrorCode.DIAGNOSIS_NOT_COMPLETED);
     }
 
     /** 타인 진단과 없는 진단은 같은 예외다. 존재 여부를 흘리지 않는다. */
@@ -127,7 +127,7 @@ class RecommendationStoreTest {
 
         assertThatThrownBy(() -> reader.read(owner, diagnosisId, another))
                 .isInstanceOf(BusinessException.class)
-                .extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+                .extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(ErrorCode.RECOMMENDATION_GOAL_MISMATCH);
         // 진단에 목표가 없는데 요청에만 있어도 불일치다.
         Long noGoal = completedDiagnosis(owner, null, 1);
         assertThatThrownBy(() -> reader.read(owner, noGoal, diagnosed)).isInstanceOf(BusinessException.class);
