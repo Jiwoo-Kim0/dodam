@@ -6,17 +6,17 @@ export const styles = StyleSheet.create({
   summaryCard: {
     alignItems: 'center',
     flexDirection: 'row',
-    minHeight: 144,
+    minHeight: 124,
     overflow: 'hidden',
     paddingHorizontal: spacing[4],
-    paddingVertical: spacing[5],
+    paddingVertical: spacing[4],
   },
   summaryCharacterFrame: {
-    height: 104,
-    marginLeft: -14,
+    height: 84,
+    marginLeft: -spacing[3],
     marginRight: spacing[2],
     position: 'relative',
-    width: 104,
+    width: 84,
   },
   summaryCharacter: {
     height: '100%',
@@ -50,8 +50,8 @@ export const styles = StyleSheet.create({
     borderColor: colors.primary.green,
     borderRadius: radius.round,
     borderWidth: 1,
-    paddingHorizontal: spacing[3],
-    paddingVertical: 5,
+    paddingHorizontal: spacing[2],
+    paddingVertical: spacing[1],
   },
   statusBadgeText: {
     color: colors.briefing.statusText,
@@ -62,9 +62,9 @@ export const styles = StyleSheet.create({
   summaryAmount: {
     color: colors.primary.brown,
     fontFamily: fontFamily.bold,
-    fontSize: 30,
+    fontSize: 26,
     letterSpacing: -0.6,
-    lineHeight: 38,
+    lineHeight: 34,
     marginTop: spacing[2],
   },
   summaryAmountUnit: {
@@ -76,17 +76,5 @@ export const styles = StyleSheet.create({
     fontFamily: fontFamily.regular,
     fontSize: 11,
     lineHeight: 16,
-  },
-  progressTrack: {
-    backgroundColor: colors.briefing.progressTrack,
-    borderRadius: radius.round,
-    height: 7,
-    marginTop: spacing[2],
-    overflow: 'hidden',
-  },
-  progressValue: {
-    backgroundColor: colors.primary.brown,
-    borderRadius: radius.round,
-    height: '100%',
   },
 });

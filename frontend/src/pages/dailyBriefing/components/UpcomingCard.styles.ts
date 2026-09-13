@@ -6,13 +6,13 @@ export const styles = StyleSheet.create({
   upcomingCard: {
     alignItems: 'center',
     flexDirection: 'row',
-    paddingHorizontal: spacing[5],
-    paddingVertical: spacing[4],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
   },
   upcomingIcon: {
-    height: 36,
-    marginRight: spacing[4],
-    width: 36,
+    height: 28,
+    marginRight: spacing[3],
+    width: 28,
   },
   upcomingContent: {
     flex: 1,

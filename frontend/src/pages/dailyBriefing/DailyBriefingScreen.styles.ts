@@ -15,7 +15,7 @@ export const styles = StyleSheet.create({
     paddingTop: spacing[2],
   },
   sections: {
-    gap: spacing[4],
+    gap: spacing[3],
   },
   card: {
     backgroundColor: colors.briefing.card,
@@ -24,7 +24,7 @@ export const styles = StyleSheet.create({
   sectionTitle: {
     color: colors.textPrimary,
     fontFamily: fontFamily.medium,
-    fontSize: 16,
-    lineHeight: 22,
+    fontSize: 15,
+    lineHeight: 20,
   },
 });
