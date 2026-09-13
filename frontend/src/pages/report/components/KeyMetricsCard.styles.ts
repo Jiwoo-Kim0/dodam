@@ -10,16 +10,16 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing[2],
-    marginTop: spacing[3],
+    marginTop: spacing[2],
   },
   metricTile: {
     backgroundColor: colors.background,
     borderRadius: radius.card,
     flexBasis: '48%',
     flexGrow: 1,
-    minHeight: 72,
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[3],
+    minHeight: 64,
+    paddingHorizontal: spacing[2],
+    paddingVertical: spacing[2],
   },
   metricTileAccent: {
     backgroundColor: colors.report.patternSurface,
@@ -35,10 +35,16 @@ export const styles = StyleSheet.create({
     flexShrink: 1,
     lineHeight: 17,
   },
-  metricIcon: {
-    height: 26,
+  metricIconFrame: {
+    alignItems: 'center',
+    height: 22,
+    justifyContent: 'center',
     marginTop: -2,
-    width: 26,
+    width: 22,
+  },
+  metricIcon: {
+    height: 22,
+    width: 22,
   },
   metricValueRow: {
     alignItems: 'baseline',

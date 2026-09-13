@@ -3,13 +3,13 @@ import { StyleSheet } from 'react-native';
 import { colors, fontFamily, radius, spacing } from '@/styles';
 
 /** 막대가 그려지는 세로 영역이다. */
-export const BAR_AREA_HEIGHT = 88;
+export const BAR_AREA_HEIGHT = 76;
 /** 월 라벨이 차지하는 높이(위 여백 + 줄 높이)로, 평균선 위치 계산에 쓴다. */
-export const MONTH_LABEL_BLOCK_HEIGHT = 24;
+export const MONTH_LABEL_BLOCK_HEIGHT = 20;
 
 export const styles = StyleSheet.create({
   spendingCard: {
-    padding: spacing[5],
+    padding: spacing[4],
   },
   header: {
     alignItems: 'center',
@@ -25,7 +25,7 @@ export const styles = StyleSheet.create({
   chart: {
     flexDirection: 'row',
     gap: spacing[2],
-    marginTop: spacing[4],
+    marginTop: spacing[3],
     position: 'relative',
   },
   column: {
@@ -37,7 +37,7 @@ export const styles = StyleSheet.create({
     fontFamily: fontFamily.regular,
     fontSize: 11,
     lineHeight: 16,
-    marginBottom: spacing[2],
+    marginBottom: spacing[1],
   },
   amountLabelCurrent: {
     color: colors.primary.green,
@@ -61,7 +61,7 @@ export const styles = StyleSheet.create({
     fontFamily: fontFamily.regular,
     fontSize: 11,
     lineHeight: 16,
-    marginTop: spacing[2],
+    marginTop: spacing[1],
   },
   monthLabelCurrent: {
     color: colors.textPrimary,
@@ -78,6 +78,6 @@ export const styles = StyleSheet.create({
     fontFamily: fontFamily.regular,
     fontSize: 11,
     lineHeight: 16,
-    marginTop: spacing[4],
+    marginTop: spacing[2],
   },
 });
