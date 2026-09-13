@@ -18,8 +18,8 @@ HTTP API는 없다. 생성·조회 API(548)와 상태 변경·이력 API(549)가
 | 후보 생성기 인터페이스·수집기 | `improvement_action` 생성, Simulation, 군집 학습 |
 | 추천+근거+초기 이력 원자 저장, 중복 방지 | 전용 `ErrorCode` (548의 HTTP 계약에서 추가) |
 
-**운영 생성기는 없다.** `RecommendationCandidateGenerator` 빈이 하나도 없으므로 현재 배포에서 후보 수집은
-모든 문제를 `NO_GENERATOR`로 건너뛴다. 확장점이 있는 것과 실제 추천을 만들 수 있는 것은 다르다.
+~~**운영 생성기는 없다.**~~ 2026-09-13 548에서 운영 생성기 3종(`service/generator/`)과 생성·조회 API를 추가했다.
+계약은 [recommendation-api.md](recommendation-api.md)에 있다. 아래 §1~§8은 547의 저장 기반 설명이며 그대로 유효하다.
 
 ## 2. 스키마
 
@@ -157,9 +157,9 @@ V11이 먼저 적용된 뒤 V6이 out-of-order로 들어가 영향이 없지만,
 ## 9. 현재 제한사항과 인계
 
 - [ ] **develop 기존 문제 보고**: 빈 DB에서 V6이 V11보다 먼저 실행돼 Flyway가 실패한다(§8). BE-A(V6 소관)와 확인해 V6의 `card` FK를 분리하거나 번호를 조정해야 한다.
-- [ ] 548: 전용 `ErrorCode`(미완료 진단, goalId 불일치, 중복 생성 요청). 현재는 `INVALID_REQUEST`로 통일.
-- [ ] 548: goalId를 진단과 다르게 허용할지. 현재 Reader·Store 모두 불일치 거부.
-- [ ] 548: 우선순위 점수·정렬, 효과 계산, priorities API의 정렬 계약, 운영 생성기 등록.
+- [x] 548: 전용 `ErrorCode` — `DIAGNOSIS_NOT_COMPLETED`(409)·`RECOMMENDATION_GOAL_MISMATCH`(400). Reader·Store가 `INVALID_REQUEST` 대신 사용.
+- [x] 548: goalId 불일치는 계속 거부한다(recommendation-api.md §4).
+- [x] 548: 우선순위·효과·priorities 정렬·운영 생성기 3종 (recommendation-api.md §2~§5).
 - [ ] 549: 상태 전이 허용표·멱등 정책, `RecommendationHistory.of(...)`로 이력 추가.
-- [ ] 546이 진단 `input_snapshot`에 추가하는 `forecast` 키는 병합 전까지 존재하지 않는다. 생성기는 이 키를 선택적으로만 읽어야 한다.
+- [x] 546의 `forecast` 키는 읽지 않기로 했다. 생성기가 스냅샷의 금액 필드로 현재·개선 달성일을 같은 식으로 계산한다.
 - 진단 삭제·목표 삭제 이후 기존 추천의 표시 정책은 정하지 않았다(저장 당시 근거는 보존).

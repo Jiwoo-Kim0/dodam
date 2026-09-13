@@ -162,7 +162,7 @@ public class RecommendationStore {
         Diagnosis diagnosis = diagnoses.findByDiagnosisIdAndUserId(diagnosisId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("진단을 찾을 수 없습니다."));
         if (!diagnosis.isCompleted()) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            throw new BusinessException(ErrorCode.DIAGNOSIS_NOT_COMPLETED);
         }
         return diagnosis;
     }
@@ -176,7 +176,7 @@ public class RecommendationStore {
                     .orElseThrow(() -> new ResourceNotFoundException("목표를 찾을 수 없습니다."));
         }
         if (!Objects.equals(goalId, diagnosis.getGoalId())) {
-            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+            throw new BusinessException(ErrorCode.RECOMMENDATION_GOAL_MISMATCH);
         }
     }
 

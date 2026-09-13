@@ -46,4 +46,7 @@ public interface RecommendationRepository extends JpaRepository<Recommendation, 
     /** 한 진단에서 만들어진 추천 전체. 재생성 응답과 목표기여 집계처럼 페이지를 나누지 않는 경로용. */
     List<Recommendation> findAllByUserIdAndDiagnosisIdOrderByCreatedAtDescRecommendationIdDesc(
             Long userId, Long diagnosisId);
+
+    /** 요약(548)용. 사용자의 추천 전체를 메모리에서 집계한다 — 사용자당 추천 수는 진단당 문제 수 수준이라 작다. */
+    List<Recommendation> findAllByUserId(Long userId);
 }
