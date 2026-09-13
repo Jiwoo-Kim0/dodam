@@ -2,6 +2,7 @@ package com.ssafy.dodam.domain.recommendation.repository;
 
 import com.ssafy.dodam.domain.recommendation.entity.Recommendation;
 import com.ssafy.dodam.domain.recommendation.entity.RecommendationStatus;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
@@ -49,4 +50,7 @@ public interface RecommendationRepository extends JpaRepository<Recommendation, 
 
     /** 요약(548)용. 사용자의 추천 전체를 메모리에서 집계한다 — 사용자당 추천 수는 진단당 문제 수 수준이라 작다. */
     List<Recommendation> findAllByUserId(Long userId);
+
+    /** 이력 페이지(549)에 제목·도메인을 붙일 때. userId 조건으로 타인 추천이 섞이지 않게 한다. */
+    List<Recommendation> findAllByUserIdAndRecommendationIdIn(Long userId, Collection<Long> recommendationIds);
 }

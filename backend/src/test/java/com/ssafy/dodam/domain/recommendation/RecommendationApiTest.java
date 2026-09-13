@@ -36,7 +36,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * 생성·조회 API(548). 진단은 실제 실행(POST /diagnoses)으로 만들어 생성기가 읽는 스냅샷·문제 JSON 형식이
+ * 생성·조회(548)와 상태 변경·이력(549) API. 진단은 실제 실행(POST /diagnoses)으로 만들어 생성기가 읽는 스냅샷·문제 JSON 형식이
  * DiagnosisEvaluator와 어긋나면 여기서 드러난다.
  */
 @ActiveProfiles("test")
@@ -203,6 +203,65 @@ class RecommendationApiTest {
             mvc.perform(get("/api/v1/recommendations/" + first + suffix)).andExpect(status().isUnauthorized());
         }
         mvc.perform(get("/api/v1/recommendations/abc").with(user(owner.toString()))).andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void statusTransitionsFollowTableAndRecordHistory() throws Exception {
+        long id = generate(diagnose(owner, goalId));
+        String base = "/api/v1/recommendations/" + id;
+        mvc.perform(post(base + "/complete").with(user(owner.toString()))).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("RECOMMENDATION_STATUS_TRANSITION_NOT_ALLOWED"));
+        mvc.perform(post(base + "/defer").with(user(owner.toString())).contentType(JSON).content("{\"memo\":\"다음 달에\",\"reason\":\"  \"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("DEFERRED"))
+                .andExpect(jsonPath("$.data.updatedAt").isNotEmpty());
+        mvc.perform(post(base + "/defer").with(user(owner.toString()))).andExpect(status().isConflict());
+        mvc.perform(post(base + "/accept").with(user(other.toString()))).andExpect(status().isNotFound());
+        mvc.perform(post(base + "/accept")).andExpect(status().isUnauthorized());
+        mvc.perform(post(base + "/accept").with(user(owner.toString())).contentType(JSON).content("{\"memo\":\"" + "가".repeat(501) + "\"}"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(post(base + "/accept").with(user(owner.toString()))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("ACCEPTED"));
+        mvc.perform(post(base + "/complete").with(user(owner.toString())).contentType(JSON).content("{\"reason\":\"적금 가입\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("COMPLETED"));
+        for (String action : List.of("accept", "reject", "complete", "defer")) {
+            mvc.perform(post(base + "/" + action).with(user(owner.toString()))).andExpect(status().isConflict());
+        }
+        // 이력: PENDING(생성) → DEFERRED → ACCEPTED → COMPLETED, 공백 reason은 null
+        var history = histories.findOwned(owner, id);
+        assertThat(history).hasSize(4);
+        assertThat(history.get(0).getStatus().name()).isEqualTo("COMPLETED");
+        assertThat(history.get(0).getReason()).isEqualTo("적금 가입");
+        assertThat(history.get(2).getMemo()).isEqualTo("다음 달에");
+        assertThat(history.get(2).getReason()).isNull();
+        // 효과·priority는 상태와 무관하게 불변
+        mvc.perform(get(base + "/effect").with(user(owner.toString()))).andExpect(jsonPath("$.data.contributionAmount").value(1_000_000));
+    }
+
+    @Test
+    void historyIsPeriodBoundedOwnedAndOrdered() throws Exception {
+        long id = generate(diagnose(owner, goalId));
+        given(clock.now()).willReturn(NOW.plusDays(2));
+        mvc.perform(post("/api/v1/recommendations/{id}/reject", id).with(user(owner.toString())).contentType(JSON)
+                .content("{\"reason\":\"불필요\"}")).andExpect(status().isOk());
+
+        mvc.perform(get("/api/v1/recommendations/history").with(user(owner.toString())))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(2))
+                .andExpect(jsonPath("$.data.content[0].status").value("REJECTED"))
+                .andExpect(jsonPath("$.data.content[0].reason").value("불필요"))
+                .andExpect(jsonPath("$.data.content[0].title").isNotEmpty())
+                .andExpect(jsonPath("$.data.content[1].status").value("PENDING"));
+        mvc.perform(get("/api/v1/recommendations/history?startDate=2026-09-14&endDate=2026-09-15").with(user(owner.toString())))
+                .andExpect(jsonPath("$.data.totalElements").value(1)).andExpect(jsonPath("$.data.content[0].status").value("REJECTED"));
+        mvc.perform(get("/api/v1/recommendations/history?startDate=2026-09-13&endDate=2026-09-13").with(user(owner.toString())))
+                .andExpect(jsonPath("$.data.totalElements").value(1)).andExpect(jsonPath("$.data.content[0].status").value("PENDING"));
+        mvc.perform(get("/api/v1/recommendations/history?startDate=2026-09-15&endDate=2026-09-14").with(user(owner.toString())))
+                .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/v1/recommendations/history?startDate=2025-01-01&endDate=2026-09-15").with(user(owner.toString())))
+                .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/v1/recommendations/history?size=101").with(user(owner.toString()))).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/v1/recommendations/history").with(user(other.toString())))
+                .andExpect(jsonPath("$.data.totalElements").value(0));
+        mvc.perform(get("/api/v1/recommendations/history")).andExpect(status().isUnauthorized());
     }
 
     @Test

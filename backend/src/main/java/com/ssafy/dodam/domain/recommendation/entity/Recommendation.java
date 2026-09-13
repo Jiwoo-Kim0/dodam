@@ -216,6 +216,18 @@ public class Recommendation {
                 priority, effect == null ? Effect.NONE : effect, generationKey, now);
     }
 
+    /**
+     * 상태를 바꾼다. 허용 전이 검사는 {@code RecommendationTransitionPolicy}가 먼저 끝낸 상태여야 하며, 이력 행 추가는
+     * 호출자가 같은 트랜잭션에서 한다(549). 효과·근거·priority는 상태와 무관하게 불변이다.
+     */
+    public void changeStatus(RecommendationStatus next, LocalDateTime now) {
+        if (next == null || now == null) {
+            throw new IllegalArgumentException("상태와 변경 시각이 필요합니다.");
+        }
+        this.status = next;
+        this.updatedAt = now;
+    }
+
     private static void requireText(String name, String value, int maxLength) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(name + "은(는) 비어 있을 수 없습니다.");

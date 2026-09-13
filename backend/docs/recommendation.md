@@ -18,7 +18,7 @@ HTTP API는 없다. 생성·조회 API(548)와 상태 변경·이력 API(549)가
 | 후보 생성기 인터페이스·수집기 | `improvement_action` 생성, Simulation, 군집 학습 |
 | 추천+근거+초기 이력 원자 저장, 중복 방지 | 전용 `ErrorCode` (548의 HTTP 계약에서 추가) |
 
-~~**운영 생성기는 없다.**~~ 2026-09-13 548에서 운영 생성기 3종(`service/generator/`)과 생성·조회 API를 추가했다.
+~~**운영 생성기는 없다.**~~ 2026-09-13 548에서 운영 생성기 3종(`service/generator/`)과 HTTP API를 추가했다.
 계약은 [recommendation-api.md](recommendation-api.md)에 있다. 아래 §1~§8은 547의 저장 기반 설명이며 그대로 유효하다.
 
 ## 2. 스키마
@@ -160,6 +160,6 @@ V11이 먼저 적용된 뒤 V6이 out-of-order로 들어가 영향이 없지만,
 - [x] 548: 전용 `ErrorCode` — `DIAGNOSIS_NOT_COMPLETED`(409)·`RECOMMENDATION_GOAL_MISMATCH`(400). Reader·Store가 `INVALID_REQUEST` 대신 사용.
 - [x] 548: goalId 불일치는 계속 거부한다(recommendation-api.md §4).
 - [x] 548: 우선순위·효과·priorities 정렬·운영 생성기 3종 (recommendation-api.md §2~§5).
-- [ ] 549: 상태 전이 허용표·멱등 정책, `RecommendationHistory.of(...)`로 이력 추가.
+- [x] 549: 전이표·같은 상태 재요청 409·`Recommendation.changeStatus` + `RecommendationHistory.of` (recommendation-api.md §6).
 - [x] 546의 `forecast` 키는 읽지 않기로 했다. 생성기가 스냅샷의 금액 필드로 현재·개선 달성일을 같은 식으로 계산한다.
 - 진단 삭제·목표 삭제 이후 기존 추천의 표시 정책은 정하지 않았다(저장 당시 근거는 보존).
