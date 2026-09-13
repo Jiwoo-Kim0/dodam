@@ -263,8 +263,8 @@ export const styles = StyleSheet.create({
     borderBottomColor: colors.divider,
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
-    minHeight: spacing[20],
-    paddingHorizontal: spacing[5],
+    minHeight: 64,
+    paddingHorizontal: spacing[1],
   },
   transactionRowCompact: {
     borderBottomWidth: 0,
@@ -296,15 +296,15 @@ export const styles = StyleSheet.create({
     marginTop: 2,
   },
   calendarContent: {
-    gap: spacing[4],
+    gap: spacing[3],
     paddingBottom: 112,
     paddingHorizontal: semanticSpacing.screenMargin,
   },
   totalsCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing[6],
-    paddingVertical: spacing[4],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
   },
   totalItem: {
     gap: spacing[1],
@@ -324,29 +324,29 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.ledger.softSurface,
     borderRadius: 14,
     flexDirection: 'row',
-    minHeight: 52,
-    paddingHorizontal: spacing[4],
+    minHeight: 44,
+    paddingHorizontal: spacing[3],
   },
   searchIcon: {
     color: colors.textTertiary,
     fontFamily: fontFamily.regular,
-    fontSize: 23,
+    fontSize: fontSize.button,
     marginRight: spacing[2],
   },
   searchInput: {
     color: colors.textPrimary,
     flex: 1,
     fontFamily: fontFamily.regular,
-    fontSize: 16,
-    paddingVertical: spacing[3],
+    fontSize: fontSize.buttonSmall,
+    paddingVertical: spacing[2],
   },
   calendarCard: {
     paddingHorizontal: spacing[2],
-    paddingVertical: spacing[4],
+    paddingVertical: spacing[3],
   },
   weekdayRow: {
     flexDirection: 'row',
-    marginBottom: spacing[2],
+    marginBottom: spacing[1],
   },
   weekdayLabel: {
     color: colors.textTertiary,
@@ -361,16 +361,16 @@ export const styles = StyleSheet.create({
   },
   calendarCell: {
     alignItems: 'center',
-    height: 67,
+    height: 58,
     paddingTop: spacing[1],
     width: '14.2857%',
   },
   calendarDayButton: {
     alignItems: 'center',
     borderRadius: radius.round,
-    height: 28,
+    height: 26,
     justifyContent: 'center',
-    width: 28,
+    width: 26,
   },
   calendarDaySelected: {
     backgroundColor: colors.ledger.selectedDay,
@@ -378,7 +378,7 @@ export const styles = StyleSheet.create({
   calendarDay: {
     color: colors.textPrimary,
     fontFamily: fontFamily.medium,
-    fontSize: 16,
+    fontSize: fontSize.body1,
   },
   calendarDayOutside: {
     color: colors.ledger.calendarMuted,
@@ -398,6 +398,9 @@ export const styles = StyleSheet.create({
   },
   calendarNeutral: {
     color: colors.textTertiary,
+  },
+  calendarFeedGroup: {
+    paddingHorizontal: spacing[2],
   },
   selectedDateTitle: {
     color: colors.textPrimary,
