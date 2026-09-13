@@ -1,7 +1,7 @@
 import { View } from 'react-native';
 
 import { AppHeader } from '@/components/appHeader/AppHeader';
-import { BouncyScrollView } from '@/components/bouncyScrollView/BouncyScrollView';
+import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import { MOCK_ASSET_SECTIONS } from '@/mocks/assets';
 
@@ -17,7 +17,7 @@ export function AssetsScreen() {
     >
       <AppHeader showBackButton title="내 자산" />
 
-      <BouncyScrollView contentContainerStyle={styles.scrollContent}>
+      <RefreshableBouncyScrollView contentContainerStyle={styles.scrollContent}>
         <AssetOverviewCard />
 
         <View style={styles.sections}>
@@ -25,7 +25,7 @@ export function AssetsScreen() {
             <AssetSection key={section.id} section={section} />
           ))}
         </View>
-      </BouncyScrollView>
+      </RefreshableBouncyScrollView>
     </SafeAreaLayout>
   );
 }

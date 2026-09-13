@@ -1,7 +1,7 @@
 import { Pressable, Text, View } from 'react-native';
 
 import { AppHeader } from '@/components/appHeader/AppHeader';
-import { BouncyScrollView } from '@/components/bouncyScrollView/BouncyScrollView';
+import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import type {
   LedgerCategory,
   LedgerCategorySummary,
@@ -61,7 +61,7 @@ export function LedgerOverview({
         title="가계부"
       />
 
-      <BouncyScrollView contentContainerStyle={styles.scrollContent}>
+      <RefreshableBouncyScrollView contentContainerStyle={styles.scrollContent}>
         <MonthSelector
           month={month}
           onNext={onNextMonth}
@@ -184,7 +184,7 @@ export function LedgerOverview({
             </View>
           </View>
         </View>
-      </BouncyScrollView>
+      </RefreshableBouncyScrollView>
     </View>
   );
 }

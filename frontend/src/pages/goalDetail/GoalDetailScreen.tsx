@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { AppHeader } from '@/components/appHeader/AppHeader';
-import { BouncyScrollView } from '@/components/bouncyScrollView/BouncyScrollView';
+import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import { routes } from '@/constants/routes';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import { findGoalDetail } from '@/mocks/goalDetail';
@@ -71,7 +71,7 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
         }
       />
 
-      <BouncyScrollView contentContainerStyle={styles.scrollContent}>
+      <RefreshableBouncyScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.statusRow}>
           <View style={styles.statusText}>
             <Text style={styles.dueDate}>{goal.dueDateLabel}</Text>
@@ -121,7 +121,7 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
         ) : (
           <GoalSpendingCategories categories={goal.categories} />
         )}
-      </BouncyScrollView>
+      </RefreshableBouncyScrollView>
 
       <View style={styles.actions}>
         <Pressable

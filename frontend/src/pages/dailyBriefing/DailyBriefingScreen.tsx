@@ -2,7 +2,7 @@ import { useRouter } from 'expo-router';
 import { View } from 'react-native';
 
 import { AppHeader } from '@/components/appHeader/AppHeader';
-import { BouncyScrollView } from '@/components/bouncyScrollView/BouncyScrollView';
+import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import { routes } from '@/constants/routes';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import {
@@ -40,7 +40,7 @@ export function DailyBriefingScreen() {
         title="오늘의 도담 브리핑"
       />
 
-      <BouncyScrollView contentContainerStyle={styles.scrollContent}>
+      <RefreshableBouncyScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.sections}>
           <SummaryCard
             previousMonthDailyAverage={DAILY_BRIEFING.previousMonthDailyAverage}
@@ -55,7 +55,7 @@ export function DailyBriefingScreen() {
           />
           <StreakSection streaks={DAILY_BRIEFING.streaks} />
         </View>
-      </BouncyScrollView>
+      </RefreshableBouncyScrollView>
     </SafeAreaLayout>
   );
 }
