@@ -83,7 +83,13 @@ public enum ErrorCode {
     /**
      * 허용되지 않은 상태 전이(예: ACTIVE → EXPIRED 직접 지정). 전이 규칙은 SubscriptionStatus에 있다.
      */
-    SUBSCRIPTION_STATUS_TRANSITION_NOT_ALLOWED(HttpStatus.CONFLICT, "허용되지 않은 정기결제 상태 변경입니다.");
+    SUBSCRIPTION_STATUS_TRANSITION_NOT_ALLOWED(HttpStatus.CONFLICT, "허용되지 않은 정기결제 상태 변경입니다."),
+
+    // ---------- Simulation (S15P21D105-550) ----------
+    /**
+     * 계산기가 등록되지 않은 시뮬레이션 유형. 공개 경로는 유형별로 열려 있어 정상 흐름에서는 발생하지 않는다.
+     */
+    SIMULATION_TYPE_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "지원하지 않는 시뮬레이션 유형입니다.");
 
     private final HttpStatus status;
     private final String message;
