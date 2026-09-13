@@ -53,23 +53,23 @@ export const styles = StyleSheet.create({
   },
   iconFrame: {
     alignItems: 'center',
-    height: 36,
+    height: 30,
     justifyContent: 'center',
-    width: 36,
+    width: 30,
   },
   icon: {
-    height: 36,
-    width: 36,
+    height: 30,
+    width: 30,
   },
   content: {
     flex: 1,
     minWidth: 0,
   },
   category: {
-    color: colors.textTertiary,
-    fontFamily: fontFamily.regular,
-    fontSize: 10,
-    lineHeight: 14,
+    color: colors.textSecondary,
+    fontFamily: fontFamily.medium,
+    fontSize: 11,
+    lineHeight: 15,
   },
   title: {
     color: colors.textPrimary,
@@ -108,8 +108,8 @@ export const styles = StyleSheet.create({
   amountLabel: {
     color: colors.textTertiary,
     fontFamily: fontFamily.regular,
-    fontSize: 6,
-    lineHeight: 9,
+    fontSize: 9,
+    lineHeight: 12,
     marginTop: 2,
   },
 });

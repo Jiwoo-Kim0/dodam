@@ -32,7 +32,9 @@ export function DiscoveryHome({ onBack, onInsightPress, onViewAll }: DiscoveryHo
     <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
       <AppHeader onBackPress={onBack} showBackButton title="발견" />
 
-      <RefreshableBouncyScrollView contentContainerStyle={styles.scrollContent}>
+      <RefreshableBouncyScrollView
+        contentContainerStyle={styles.scrollContent}
+        style={styles.scroll}>
         <View style={styles.titleGroup}>
           <Text style={styles.subtitle}>
             {DISCOVERY_SUMMARY.userName}님의 절약 잠재력{' '}
@@ -118,7 +120,7 @@ export function DiscoveryHome({ onBack, onInsightPress, onViewAll }: DiscoveryHo
             </View>
 
             <Text style={styles.footnote}>
-              위 분석은 {DISCOVERY_SUMMARY.analysisPeriodLabel} 데이터를 기준으로 했어요
+              분석 기준: {DISCOVERY_SUMMARY.analysisPeriodLabel}
             </Text>
           </View>
 

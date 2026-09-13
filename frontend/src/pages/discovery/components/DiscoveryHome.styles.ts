@@ -14,6 +14,9 @@ export const styles = StyleSheet.create({
   screen: {
     backgroundColor: colors.background,
   },
+  scroll: {
+    backgroundColor: colors.home.goalGradientEnd,
+  },
   gradientContainer: {
     marginTop: spacing[8],
     paddingBottom: spacing[8],
@@ -26,6 +29,7 @@ export const styles = StyleSheet.create({
     top: 190,
   },
   scrollContent: {
+    backgroundColor: colors.background,
     paddingHorizontal: semanticSpacing.screenMargin,
   },
   titleGroup: {
@@ -146,8 +150,10 @@ export const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   footnote: {
-    ...typography.caption,
     color: colors.textTertiary,
+    fontFamily: fontFamily.regular,
+    fontSize: 10,
+    lineHeight: 14,
   },
   viewAllButton: {
     alignItems: 'center',
