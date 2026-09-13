@@ -85,6 +85,20 @@ public enum ErrorCode {
      */
     SUBSCRIPTION_STATUS_TRANSITION_NOT_ALLOWED(HttpStatus.CONFLICT, "허용되지 않은 정기결제 상태 변경입니다."),
 
+    // ---------- Recommendation (S15P21D105-548, 549) ----------
+    /**
+     * 아직 완료되지 않은 진단으로 개선안을 만들려는 경우. 진단은 존재하므로 404가 아니라 409다.
+     */
+    DIAGNOSIS_NOT_COMPLETED(HttpStatus.CONFLICT, "완료된 진단이 아닙니다."),
+    /**
+     * 요청 goalId가 진단의 goalId와 다른 경우. 다른 목표로 진단한 근거를 이 목표의 개선안에 쓰면 목표기여 계산이 틀어진다.
+     */
+    RECOMMENDATION_GOAL_MISMATCH(HttpStatus.BAD_REQUEST, "진단의 목표와 다른 목표를 지정할 수 없습니다."),
+    /**
+     * 허용되지 않은 개선안 상태 전이(같은 상태 재요청 포함). 전이 규칙은 RecommendationTransitionPolicy에 있다.
+     */
+    RECOMMENDATION_STATUS_TRANSITION_NOT_ALLOWED(HttpStatus.CONFLICT, "허용되지 않은 개선안 상태 변경입니다."),
+
     // ---------- Simulation (S15P21D105-550, 551) ----------
     /**
      * 월 감소액이 기준 구간(직전 3개월)의 월평균 지출을 넘는 경우. 줄일 수 없는 금액을 줄인 결과를 만들지 않는다.

@@ -19,6 +19,7 @@
 | V15 | `deposit_saving`, `savings_payment` 생성 | S15P21D105-535 |
 | V16 | `cashflow_forecast`, `cashflow_daily_balance`, `cashflow_event`, `cashflow_risk` 생성 | S15P21D105-538 |
 | V17 | `diagnosis`, `diagnosis_issue` 생성 | S15P21D105-543 |
+| V18 | `recommendation`, `recommendation_reason`, `recommendation_history` 생성 (API 16 저장 기반) | S15P21D105-547 |
 | V19 | `simulation`, `simulation_scenario`, `simulation_goal_impact` 생성 (API 17 공통 모델) | S15P21D105-550 |
 | V30 | `subscription`, `subscription_payment_history` 생성 (API 7 정기결제) | S15P21D105-512, S15P21D105-513, S15P21D105-514 |
 
