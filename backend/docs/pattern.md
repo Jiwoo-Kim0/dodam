@@ -96,14 +96,26 @@ seed 사용자(`seed.kmeans.u0001` ~ `u4000`)는 `finance_connection` 행이 없
 4. `complete`(다시 잠금): RUNNING이고 임대 안이고 이후 접수가 없을 때만 COMPLETED로 바꾼다. 아니면 `PATTERN_ANALYSIS_EXPIRED`.
 5. `BusinessException`이면 접수 행 삭제, 그 외 런타임 오류면 FAILED로 남긴다. 군집 모델 오류는 여기까지 오지 않는다(RULE_ONLY 전환).
 
-`forceRefresh=true`는 결과를 다시 계산하고 군집 모델도 다시 학습한다.
+`forceRefresh=true`는 결과를 다시 계산한다. 인프로세스 학습 모델을 쓰는 경우에는 모델도 다시 학습한다(아티팩트는 배포 단위로 고정이라 바뀌지 않는다).
 
 ## 군집 메타데이터·Fallback (518)
 
 ### 모델
 
-`spending-kmeans-v1`. 외부 라이브러리 없는 표준화 K-Means(`KMeansClusterer`, k-means++ 초기화, seed 고정 → 결정적). 입력은 전체 사용자(삭제 제외)의 월별 집계에서
-만든 **비율 특징 5종**이고, 거래 원문·식별정보·소득 절대값·연령·성별은 쓰지 않는다(기획안 14-6). 사용자 ID는 표본 수 계산에만 쓴다.
+`spending-kmeans-v1`. **학습은 Python(scikit-learn), 배정·근거 생성은 Spring**이다. 입력은 전체 사용자(삭제 제외)의 월별 집계에서 만든 **비율 특징 5종**이고,
+거래 원문·식별정보·소득 절대값·연령·성별은 쓰지 않는다(기획안 14-6). 사용자 ID는 표본 수 계산에만 쓴다.
+
+```
+MySQL 집계 ─▶ backend/ml/pattern/train_cluster_model.py (표준화 → 실루엣으로 k 선택 → KMeans k-means++)
+          ─▶ 모델 아티팩트 JSON (버전·학습 시각·기간·표본 수·표준화 파라미터·중심·군집별 p5~p95·라벨·실루엣)
+          ─▶ Spring ClusterModelArtifactLoader (app.pattern.model-location, 기본 classpath:ml/spending-kmeans-v1.json)
+          ─▶ ClusterModelProvider → ClusterAssigner 배정 → clusterProfile
+```
+
+모델 선택 순서(`ClusterModelProvider`): (1) 아티팩트가 있으면 그 모델(`modelSource = ARTIFACT`) → (2) 없고 `train-in-process=true`면 Java 안에서 같은 정의로 학습
+(`KMeansClusterer`, k-means++, seed 고정 → 결정적, `modelSource = IN_PROCESS`) → (3) 둘 다 아니면 모델 없음(`MODEL_NOT_AVAILABLE`). 인프로세스 학습은 개발·시연
+안전장치이며 운영에서는 `train-in-process: false`를 권장한다. 특징 정의·라벨 정책은 `backend/ml/pattern/pattern_features.py`와 Java가 같아야 하고,
+`test_pattern_features.py`가 Java 단위 테스트와 같은 기대값으로 이를 확인한다. 실행 방법은 [`backend/ml/pattern/README.md`](../ml/pattern/README.md).
 
 | 키 | 정의 | 상한(클리핑) |
 | --- | --- | --- |
@@ -115,8 +127,10 @@ seed 사용자(`seed.kmeans.u0001` ~ `u4000`)는 `finance_connection` 행이 없
 
 모집단 특징은 INCOME 거래 월평균만 소득으로 쓴다(금융 기본정보는 읽지 않음). 거래 있는 달이 `min-user-months`(3) 미만, 소득 0, 소비 0인 사용자는 학습에서 빠진다.
 
-`ClusterModelProvider`가 같은 기간의 모델을 `model-ttl`(1시간) 동안 메모리에 재사용한다. 학습 가능 사용자 수가 `min-population`(30) 또는 군집 수(4) 미만이면 모델 없이
-표본 수만 돌려준다(이 결과도 TTL 동안 캐시). 시연 seed 4,000명이면 1회 학습에 24,000행 집계 + K-Means 수십 회 반복이다.
+Python 스크립트의 `--reference-date`·`--lookback-months`·`--min-user-months`는 Spring `app.pattern.*`와 같은 값을 써야 한다.
+
+인프로세스 학습은 같은 기간의 모델을 `model-ttl`(1시간) 동안 메모리에 재사용한다. 학습 가능 사용자 수가 `min-population`(30) 또는 군집 수(4) 미만이면 모델 없이
+표본 수만 돌려준다(이 결과도 TTL 동안 캐시). 아티팩트가 있으면 이 경로는 쓰이지 않는다.
 
 ### 라벨
 
@@ -141,7 +155,7 @@ seed 성향 4종(BALANCED·SPENDING_FOCUSED·SAVING_FOCUSED·VOLATILE)에 맞춘
   "clusterId": 1, "clusterLabel": "저축 중심형", "modelVersion": "spending-kmeans-v1",
   "sampleSize": 13, "populationSize": 49, "confidence": 0.7421,
   "featureWindowMonths": 6, "windowStart": "2026-03", "windowEnd": "2026-08",
-  "deviationScore": 0.0,
+  "deviationScore": 0.0, "modelSource": "ARTIFACT", "trainedBy": "python-sklearn-1.9.0",
   "features": [
     {"feature": "savingRate", "displayName": "저축률", "userValue": 0.3333, "centroid": 0.3333,
      "min": 0.3333, "max": 0.3333, "p5": 0.3333, "p95": 0.3333, "mean": 0.3333, "std": 0.0,
@@ -154,7 +168,8 @@ seed 성향 4종(BALANCED·SPENDING_FOCUSED·SAVING_FOCUSED·VOLATILE)에 맞춘
 - 기준 범위는 이상치 보정용 **p5~p95**(기획안 "5~95 분위수"), `min`·`max`는 참고용 실제 범위다.
 - `deviation`(기획안 범위 이탈): 범위 안 0, 밖이면 (경계 − 값) / scale, scale = max(p95 − p5, 표준편차). scale 0이면 0.
 - `deviationScore`(기획안 군집 이탈 점수) = 특징별 deviation 평균(가중치 균등). 기획안의 특징별 가중치는 문서에 값이 없어 균등으로 둔다.
-- 이 JSON이 `cluster_stats_json`에 그대로 저장된다.
+- `modelSource`·`trainedBy`는 어느 경로의 모델이 배정했는지 남긴다(2026-09-14 이전 저장분은 null).
+- 이 JSON이 `cluster_stats_json`에 그대로 저장된다. 아티팩트의 `window`가 모델 기준 기간이므로 사용자 분석 기간과 다를 수 있다(비율 특징이라 비교는 유효).
 
 ### Fallback (HYBRID → RULE_ONLY 자동 전환)
 
@@ -165,8 +180,9 @@ seed 성향 4종(BALANCED·SPENDING_FOCUSED·SAVING_FOCUSED·VOLATILE)에 맞춘
 | 0 | `RULE_ONLY_REQUESTED` | 요청이 RULE_ONLY(전환은 아니지만 형식을 맞춤) |
 | 1 | `USER_DATA_TOO_SHORT` | 거래 있는 달 < `min-user-months`(3) — 기획안 "사용자 데이터 3개월 이상" |
 | 2 | `FEATURES_UNAVAILABLE` | 소득 NONE 또는 소비 0이라 비율 특징을 만들 수 없음 |
-| 3 | `MODEL_FAILURE` | 모델 학습·배정 중 예외(서버 로그에만 상세) |
-| 4 | `INSUFFICIENT_POPULATION` | 학습 가능 사용자 수 < `min-population`(30) |
+| 3 | `MODEL_FAILURE` | 모델 로딩·학습·배정 중 예외(서버 로그에만 상세) |
+| 4 | `MODEL_NOT_AVAILABLE` | 아티팩트가 없고 `train-in-process=false` |
+| 4 | `INSUFFICIENT_POPULATION` | (인프로세스 학습) 학습 가능 사용자 수 < `min-population`(30) |
 | 5 | `SMALL_CLUSTER_SAMPLE` | 배정 군집 표본 수 < `min-cluster-sample-size`(10) — 기획안 "표본 수가 작은 군집의 범위는 노출하지 않는다" |
 | 6 | `LOW_CONFIDENCE` | `confidence` < `min-confidence`(0.2) |
 
@@ -226,13 +242,16 @@ clusterDeviationAlpha = 군집 결과가 있으면 0.2 × confidence, 없으면 
 | `min-cluster-sample-size` | 10 | 배정 군집 최소 표본 |
 | `min-confidence` | 0.2 | 신뢰도 하한 |
 | `cluster-count` | 4 | K-Means k |
-| `model-ttl` | PT1H | 모델 메모리 재사용 |
+| `model-ttl` | PT1H | 인프로세스 학습 모델 메모리 재사용 |
 | `lease-duration` | PT5M | 진행 중 접수 유효 시간 |
+| `model-location` | `classpath:ml/spending-kmeans-v1.json` | Python 학습 아티팩트 위치(Spring Resource). 비우면 사용 안 함 |
+| `train-in-process` | true | 아티팩트가 없을 때 Java 학습 허용. 운영 권장값 false |
 
 ## 테스트
 
 - 단위: `KMeansClustererTest`(분리된 집단·결정성·표준편차 0), `ClusterLabelPolicyTest`, `PatternFeatureCalculatorTest`(기간·지표 정의·소득 출처·모집단 특징 조건),
-  `PriorityProfileCalculatorTest`.
+  `PriorityProfileCalculatorTest`, `ClusterModelArtifactLoaderTest`(아티팩트 파싱·배정·출처·MODEL_NOT_AVAILABLE·형식 오류).
+- Python: `backend/ml/pattern/test_pattern_features.py` — Java 단위 테스트와 같은 입력·기대값(기간, 특징 벡터 0.6/0.25/0.5556/0.2222/0, 라벨 순서).
 - 통합(H2, `PatternApiTest`): 성향 4종 × 12명 모집단 + 본인(저축형 + 대출상환 + 입출금 계좌). HYBRID 배정("저축 중심형")·같은 날 재사용·forceRefresh, RULE_ONLY 요청·모드 불일치
   비재사용·잘못된 모드 400, 모집단 부족 fallback, 데이터 2개월 사용자 fallback, 데이터 없음(연결 상태별 409)·조회 404/409·기본 프로필, 소비/자금운용/우선순위 조회와
   최근 분석의 clusterProfile 반영, 인증·소유권, 접수 중복·폐기·임대 만료.
