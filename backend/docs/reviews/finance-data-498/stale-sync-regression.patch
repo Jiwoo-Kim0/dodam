@@ -1,0 +1,80 @@
+diff --git a/backend/src/test/java/com/ssafy/dodam/domain/finance/FinanceDataApiIntegrationTest.java b/backend/src/test/java/com/ssafy/dodam/domain/finance/FinanceDataApiIntegrationTest.java
+index b2027f4..628166c 100644
+--- a/backend/src/test/java/com/ssafy/dodam/domain/finance/FinanceDataApiIntegrationTest.java
++++ b/backend/src/test/java/com/ssafy/dodam/domain/finance/FinanceDataApiIntegrationTest.java
+@@ -107,6 +107,75 @@ class FinanceDataApiIntegrationTest {
+     private Long userId;
+     private String bearer;
+ 
++    @Autowired
++    private com.ssafy.dodam.domain.finance.service.FinanceConnectionService reviewConnectionService;
++
++    @Autowired
++    private org.springframework.transaction.support.TransactionTemplate reviewTransactionTemplate;
++
++    @Test
++    void expiredExecutionMustNotPublishLateSuccessWhileReplacementIsRunning() throws Exception {
++        var enteredA = new java.util.concurrent.CountDownLatch(1);
++        var enteredB = new java.util.concurrent.CountDownLatch(1);
++        var releaseA = new java.util.concurrent.CountDownLatch(1);
++        var releaseB = new java.util.concurrent.CountDownLatch(1);
++        var calls = new java.util.concurrent.atomic.AtomicInteger();
++        FinanceSyncScopeHandler handler = new FinanceSyncScopeHandler() {
++            public FinanceSyncScope scope() { return FinanceSyncScope.ACCOUNT; }
++            public FinanceSyncScopeResult sync(Long id, String key) {
++                boolean first = calls.incrementAndGet() == 1;
++                (first ? enteredA : enteredB).countDown();
++                try {
++                    if (!(first ? releaseA : releaseB).await(30, java.util.concurrent.TimeUnit.SECONDS)) {
++                        throw new IllegalStateException("Test handler timeout");
++                    }
++                } catch (InterruptedException exception) {
++                    Thread.currentThread().interrupt();
++                    throw new IllegalStateException(exception);
++                }
++                return FinanceSyncScopeResult.completed(FinanceSyncScope.ACCOUNT, 1);
++            }
++        };
++        var service = new FinanceSyncService(userRepository, financeConnectionRepository,
++                financeSyncRepository, reviewConnectionService, List.of(handler), reviewTransactionTemplate);
++        var executor = java.util.concurrent.Executors.newFixedThreadPool(2);
++        try {
++            var executionA = executor.submit(() -> service.sync(userId,
++                    new com.ssafy.dodam.domain.finance.dto.FinanceSyncRequest("ACCOUNT")));
++            org.junit.jupiter.api.Assertions.assertTrue(enteredA.await(10, java.util.concurrent.TimeUnit.SECONDS));
++            Long idA = financeSyncRepository.findTopByUserIdOrderByStartedAtDescIdDesc(userId).orElseThrow().getId();
++            // 실제 10분 대기 대신 저장된 시작 시각만 이동하여 동일한 만료 경로를 실행한다.
++            jdbcTemplate.update("UPDATE finance_sync SET started_at = ? WHERE sync_id = ?",
++                    java.sql.Timestamp.valueOf(LocalDateTime.now().minusMinutes(11)), idA);
++            var executionB = executor.submit(() -> service.sync(userId,
++                    new com.ssafy.dodam.domain.finance.dto.FinanceSyncRequest("ACCOUNT")));
++            org.junit.jupiter.api.Assertions.assertTrue(enteredB.await(10, java.util.concurrent.TimeUnit.SECONDS));
++            Long idB = financeSyncRepository.findTopByUserIdOrderByStartedAtDescIdDesc(userId).orElseThrow().getId();
++            org.junit.jupiter.api.Assertions.assertEquals(FinanceSyncStatus.FAILED,
++                    financeSyncRepository.findById(idA).orElseThrow().getStatus());
++            LocalDateTime previousSyncTime = financeConnectionRepository.findByUserId(userId).orElseThrow().getLastSyncedAt();
++            releaseA.countDown();
++            var lateResponse = executionA.get(10, java.util.concurrent.TimeUnit.SECONDS);
++            var storedA = financeSyncRepository.findById(idA).orElseThrow();
++            var storedB = financeSyncRepository.findById(idB).orElseThrow();
++            var syncTimeAfterA = financeConnectionRepository.findByUserId(userId).orElseThrow().getLastSyncedAt();
++            System.out.printf("REVIEW late A: status=%s; B=%s; lastSyncedChanged=%s%n",
++                    storedA.getStatus(), storedB.getStatus(), !java.util.Objects.equals(previousSyncTime, syncTimeAfterA));
++            releaseB.countDown();
++            executionB.get(10, java.util.concurrent.TimeUnit.SECONDS);
++            org.junit.jupiter.api.Assertions.assertAll(
++                    () -> org.junit.jupiter.api.Assertions.assertEquals(FinanceSyncStatus.FAILED, storedA.getStatus(), "Expired A must remain FAILED"),
++                    () -> org.junit.jupiter.api.Assertions.assertEquals(FinanceSyncStatus.RUNNING, storedB.getStatus(), "B must remain RUNNING until released"),
++                    () -> org.junit.jupiter.api.Assertions.assertEquals(previousSyncTime, syncTimeAfterA, "Expired A must not change last_synced_at")
++            );
++        } finally {
++            releaseA.countDown();
++            releaseB.countDown();
++            executor.shutdown();
++            executor.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS);
++        }
++    }
++
+     @BeforeEach
+     void setUp() throws Exception {
+         authSessionRepository.deleteAll();
