@@ -918,7 +918,9 @@
 ### 모델 학습·배포 (Python 아티팩트)
 
 - [x] 2026-09-14 로컬 Docker MySQL 8.0에 seed 491·522·492를 적재(암호 fixture는 SHA-256 더미, 4,000명·거래 348,192건)하고 `train_cluster_model.py --k 4`로 `src/main/resources/ml/spending-kmeans-v1.json`을 만들어 커밋했다. `application-prod.yml`에 `train-in-process: false`를 넣었다. 평가 결과는 pattern.md "모델 평가"와 `docs/pattern-evaluation/`.
-- [ ] **시연 서버(j15D105.p.ssafy.io) DB는 2026-09-14 기준 비어 있다**(사용자 0, 거래 0, Flyway V30까지). seed 적재는 팀 결정 후 인프라와 함께 진행한다. 적재 시 암호 fixture는 애플리케이션 코덱으로 만들어야 한다(seeds README 2~3번). 적재 후 같은 아티팩트로 seed 사용자 4,000명이 설계 성향대로 배정되는지 `evaluate_cluster_model.py --artifact`로 확인한다.
+- [x] 2026-09-14 시연 서버(j15D105.p.ssafy.io) DB에 seed 8종을 README 순서로 적재했다(사용자 4,000·계좌 9,001·카드 6,000·할부 3,000·대출 3,000·예적금 4,000·거래 348,192·목표 6,000·구독 6,000·상품 198). 491·522·523·524 fixture는 서버 `.env` 키로 애플리케이션 코덱과 같은 형식(AES-256-GCM IV12+태그, HMAC-SHA-256 NUMBER_HASH_KEY, AccountNumberMasker 규칙)으로 만들었다. 같은 날 develop(`716e566`) 배포로 Flyway V18·V19·V31이 적용됐고, 서버 DB로 `evaluate_cluster_model.py --artifact`를 돌려 4,000명 전원 설계 성향 일치(ARI·purity 1.0), 노출 98.8%를 확인했다.
+- [ ] seed 사용자는 `password_hash`가 NULL이라 로그인할 수 없다(491 seed 계약). 시연 계정(U0001~U0004)으로 API를 시연하려면 비밀번호를 넣는 절차(또는 소셜 로그인 연결)를 팀에서 정한다. 그래서 서버에서 `POST /patterns/analyze`의 실제 호출·아티팩트 로딩 로그는 아직 확인하지 못했다(로더는 첫 분석 요청 때 읽는다).
+- [ ] 서버 DB에 523·524 fixture 테이블 6개(`tmp_dodam_523_*`, `tmp_dodam_524_*`)가 남아 있다. 두 seed는 `DROP TEMPORARY TABLE`로 정리해 일반 테이블 fixture를 지우지 못한다. `DROP TABLE`로 정리하고 seeds README에 기록한다.
 - [ ] k 선택은 실루엣만으로 자동화하지 않는다(seed에서 실루엣은 k=6, ARI는 k=4). 실사용자 데이터가 쌓이면 정답 라벨이 없으므로 실루엣·안정성·도메인 해석으로 k를 다시 정한다.
 - [ ] 재학습 주기(월 1회, 데이터 창이 바뀔 때)와 실행 위치(개발 PC vs Jenkins 단계 + 커밋)를 정한다. 스크립트는 DB 읽기 권한만 필요하다.
 - [ ] 두 구현의 특징 정의 일치는 Java·Python 단위 테스트가 같은 기대값을 공유하는 방식으로만 확인한다. 실 DB에서 `--export-features`로 뽑은 벡터와 Java `featureSummary.clusterFeatures`를 표본 몇 명에 대해 대조하는 절차를 seed 적재 시 함께 한다.
