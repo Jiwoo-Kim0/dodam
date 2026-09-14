@@ -4,7 +4,8 @@ import { colors, fontFamily, fontSize, radius, spacing } from '@/styles';
 
 export const styles = StyleSheet.create({
   insightSection: {
-    padding: spacing[4],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
   },
   insightRow: {
     flexDirection: 'row',
@@ -17,9 +18,9 @@ export const styles = StyleSheet.create({
     borderRadius: radius.card,
     borderWidth: 1,
     flex: 1,
-    minHeight: 104,
+    minHeight: 88,
     paddingHorizontal: spacing[2],
-    paddingVertical: 10,
+    paddingVertical: spacing[2],
   },
   insightTag: {
     alignSelf: 'center',
@@ -31,7 +32,7 @@ export const styles = StyleSheet.create({
   insightTagText: {
     color: colors.primary.brown,
     fontFamily: fontFamily.medium,
-    fontSize: 11,
+    fontSize: fontSize.detail,
     lineHeight: 15,
   },
   insightIncreaseText: {
@@ -41,17 +42,17 @@ export const styles = StyleSheet.create({
     alignItems: 'flex-start',
     flexDirection: 'row',
     gap: spacing[1],
-    marginTop: 10,
+    marginTop: spacing[2],
   },
   insightIconFrame: {
     alignItems: 'center',
-    height: 40,
+    height: 32,
     justifyContent: 'center',
-    width: 40,
+    width: 32,
   },
   insightIcon: {
-    height: 38,
-    width: 38,
+    height: 30,
+    width: 30,
   },
   insightTextContent: {
     flex: 1,
@@ -67,7 +68,7 @@ export const styles = StyleSheet.create({
   insightDescription: {
     color: colors.textTertiary,
     fontFamily: fontFamily.regular,
-    fontSize: 11,
+    fontSize: fontSize.detail,
     lineHeight: 15,
     marginTop: 2,
   },

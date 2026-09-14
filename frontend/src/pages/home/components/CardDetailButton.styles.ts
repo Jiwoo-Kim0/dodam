@@ -13,6 +13,10 @@ export const styles = StyleSheet.create({
     width: componentSize.touchTarget,
     zIndex: 5,
   },
+  centered: {
+    top: '50%',
+    transform: [{ translateY: -(componentSize.touchTarget / 2) }],
+  },
   pressed: {
     opacity: 0.55,
   },

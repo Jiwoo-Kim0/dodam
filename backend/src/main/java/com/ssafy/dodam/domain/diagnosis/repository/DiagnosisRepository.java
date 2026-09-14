@@ -2,10 +2,13 @@ package com.ssafy.dodam.domain.diagnosis.repository;
 
 import com.ssafy.dodam.domain.diagnosis.entity.Diagnosis;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 /**
  * 진단 헤더 조회.
@@ -17,6 +20,12 @@ import org.springframework.data.jpa.repository.JpaRepository;
  * <p>완료 여부는 `completedAt`의 NULL 여부로 판별한다. ERD에 진단 실행 상태 컬럼이 없다.
  */
 public interface DiagnosisRepository extends JpaRepository<Diagnosis, Long> {
+    Page<Diagnosis> findByUserIdAndCompletedAtIsNotNullOrderByCreatedAtDescDiagnosisIdDesc(Long userId, Pageable pageable);
+
+    Optional<Diagnosis> findFirstByUserIdAndGoalIdAndRuleVersionAndCompletedAtIsNotNullOrderByCompletedAtDescDiagnosisIdDesc(
+            Long userId, Long goalId, String ruleVersion);
+
+    boolean existsByUserIdAndDiagnosisIdGreaterThan(Long userId, Long diagnosisId);
 
     Optional<Diagnosis> findByDiagnosisIdAndUserId(Long diagnosisId, Long userId);
 
@@ -47,5 +56,29 @@ public interface DiagnosisRepository extends JpaRepository<Diagnosis, Long> {
      */
     Optional<Diagnosis> findFirstByUserIdAndCompletedAtIsNullAndCreatedAtAfterOrderByCreatedAtDesc(
             Long userId, LocalDateTime oldestAlive
+    );
+
+    /**
+     * 546 changes의 비교 대상. 같은 사용자·같은 goalId(NULL은 NULL끼리)의 완료본 중 기준 진단보다 먼저 완료된 최신 1건.
+     *
+     * <p>goalId가 다르면 평가한 목표 집합이 달라 문제 수 증감을 비교할 수 없으므로 제외한다. 완료 시각이 같으면
+     * diagnosisId가 작은 쪽이 이전이다(latest 정렬과 같은 기준). 호출자는 size 1 페이지로 읽는다.
+     */
+    @Query("""
+            select d
+              from Diagnosis d
+             where d.userId = :userId
+               and ((:goalId is null and d.goalId is null) or d.goalId = :goalId)
+               and d.completedAt is not null
+               and (d.completedAt < :completedAt
+                    or (d.completedAt = :completedAt and d.diagnosisId < :diagnosisId))
+             order by d.completedAt desc, d.diagnosisId desc
+            """)
+    List<Diagnosis> findPreviousCompleted(
+            @Param("userId") Long userId,
+            @Param("goalId") Long goalId,
+            @Param("completedAt") LocalDateTime completedAt,
+            @Param("diagnosisId") Long diagnosisId,
+            Pageable pageable
     );
 }

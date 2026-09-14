@@ -1,20 +1,25 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 
-import { BouncyScrollView } from '@/components/bouncyScrollView/BouncyScrollView';
+import {
+  BouncyScrollView,
+  type BouncyScrollViewHandle,
+} from '@/components/bouncyScrollView/BouncyScrollView';
+import { subscribeHomeTabReselect } from '@/components/bottomNavigation/homeTabReselectEvents';
 import { routes } from '@/constants/routes';
+import { useRefreshFeedback } from '@/hooks/useRefreshFeedback';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import { colors } from '@/styles';
 
+import { AssetSummaryCard } from './components/AssetSummaryCard';
 import { BriefingCard } from './components/BriefingCard';
+import { ExpenseSummaryCard } from './components/ExpenseSummaryCard';
 import { GoalCarousel } from './components/GoalCarousel';
 import { HomeHeader } from './components/HomeHeader';
 import { SpendingTopList } from './components/SpendingTopList';
-import { AssetSummaryCard } from './components/AssetSummaryCard';
-import { ExpenseSummaryCard } from './components/ExpenseSummaryCard';
 import { styles } from './HomeScreen.styles';
 
 /** 로그인 연동 전까지 사용하는 임시 사용자명이다. */
@@ -22,13 +27,29 @@ const MOCK_USER_NAME = '싸피';
 
 export function HomeScreen() {
   const router = useRouter();
+  const scrollRef = useRef<BouncyScrollViewHandle>(null);
   const [sectionSize, setSectionSize] = useState({ width: 0, height: 0 });
+  const { isRefreshing, triggerRefresh } = useRefreshFeedback();
+
+  const handleHomeRefresh = useCallback(() => {
+    scrollRef.current?.scrollToTop();
+    triggerRefresh();
+  }, [triggerRefresh]);
+
+  useEffect(() => subscribeHomeTabReselect(handleHomeRefresh), [handleHomeRefresh]);
 
   return (
     <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
-      <HomeHeader />
+      <HomeHeader onLogoPress={handleHomeRefresh} />
 
-      <BouncyScrollView contentContainerStyle={styles.scrollContent}>
+      <BouncyScrollView
+        contentContainerStyle={styles.scrollContent}
+        onRefresh={handleHomeRefresh}
+        ref={scrollRef}
+        refreshBackgroundColor={colors.white}
+        refreshIndicatorColor={colors.primary.green}
+        refreshing={isRefreshing}
+        style={styles.scroll}>
         <View
           onLayout={(event) =>
             setSectionSize({
@@ -38,21 +59,29 @@ export function HomeScreen() {
           }
           style={styles.goalSection}>
           <LinearGradient
-            // 디자인 PDF/Figma에 지정된 그라데이션 값 (#FBFBFB → #F3F6E3), 이 배경에서만 사용한다.
-            colors={[colors.background, colors.home.goalGradientEnd]}
+            // 상단의 흰 배경을 유지한 뒤 목표 영역에서 연두색으로 자연스럽게 전환한다.
+            colors={[
+              colors.white,
+              colors.white,
+              colors.home.goalGradientEnd,
+            ]}
+            locations={[0, 0.32, 1]}
             style={styles.goalSectionBackground}
           />
           {sectionSize.height > 0 ? (
             <Image
               contentFit="contain"
-              contentPosition={{ bottom: 22, right: 0 }}
+              contentPosition={{ bottom: 0, right: 0 }}
               source={require('@/assets/images/home/goal_section_background.png')}
               style={[styles.treeIllustration, sectionSize]}
             />
           ) : null}
 
           <View style={styles.greeting}>
-            <Text style={styles.greetingText}>{`${MOCK_USER_NAME}님, 좋은 아침이에요`}</Text>
+            <Text style={styles.greetingText}>
+              <Text style={styles.greetingName}>{`${MOCK_USER_NAME}님`}</Text>
+              {', 좋은 아침이에요'}
+            </Text>
             <Text style={styles.greetingHeadline}>오늘도 목표를{'\n'}향해 한 걸음 더</Text>
           </View>
 

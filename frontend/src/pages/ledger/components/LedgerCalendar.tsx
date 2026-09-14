@@ -7,9 +7,9 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import {
-  BouncyScrollView,
   type BouncyScrollViewHandle,
 } from '@/components/bouncyScrollView/BouncyScrollView';
+import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import type {
   LedgerCategory,
   LedgerDailyTotal,
@@ -198,7 +198,7 @@ export function LedgerCalendar({
         rightLabel="추가"
         title="전체 내역"
       />
-      <BouncyScrollView
+      <RefreshableBouncyScrollView
         contentContainerStyle={styles.calendarContent}
         onEndReached={handleLoadMoreFeed}
         onScrollOffsetChange={setScrollOffset}
@@ -312,7 +312,7 @@ export function LedgerCalendar({
 
           {feedGroups.length > 0 ? (
             feedGroups.map((group) => (
-              <View key={group.date}>
+              <View key={group.date} style={styles.calendarFeedGroup}>
                 <View style={styles.sectionTitleRow}>
                   <Text style={styles.selectedDateTitle}>{getSelectedDateLabel(group.date)}</Text>
                 </View>
@@ -333,7 +333,7 @@ export function LedgerCalendar({
             </View>
           )}
         </View>
-      </BouncyScrollView>
+      </RefreshableBouncyScrollView>
 
       <Animated.View
         pointerEvents={showToTopButton ? 'auto' : 'none'}

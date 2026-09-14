@@ -19,7 +19,7 @@ import org.springframework.data.repository.query.Param;
  *
  * <p>`domain`·`type`·`severity`는 명세 14의 선택 필터이며 NULL이면 조건에서 빠진다. 정렬은 심각도
  * 우선이 자연스럽지만 `severity`가 문자열 컬럼이라 사전순이 심각도순과 다르다. 정렬 규칙은 응답을
- * 만드는 S15P21D105-545에서 정하고 여기서는 `issueId` 기준으로만 정렬한다.
+ * 만드는 S15P21D105-545에서 CASE 정렬을 적용하고 동일 심각도는 issueId로 정렬한다.
  */
 public interface DiagnosisIssueRepository extends JpaRepository<DiagnosisIssue, Long> {
 
@@ -32,7 +32,11 @@ public interface DiagnosisIssueRepository extends JpaRepository<DiagnosisIssue, 
                and (:domain is null or i.domain = :domain)
                and (:type is null or i.type = :type)
                and (:severity is null or i.severity = :severity)
-             order by i.issueId asc
+             order by case i.severity
+                 when com.ssafy.dodam.domain.diagnosis.entity.IssueSeverity.CRITICAL then 0
+                 when com.ssafy.dodam.domain.diagnosis.entity.IssueSeverity.HIGH then 1
+                 when com.ssafy.dodam.domain.diagnosis.entity.IssueSeverity.MEDIUM then 2
+                 else 3 end, i.issueId asc
             """)
     Page<DiagnosisIssue> findOwned(
             @Param("userId") Long userId,

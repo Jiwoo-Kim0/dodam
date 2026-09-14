@@ -9,10 +9,10 @@ import {
 
 export const styles = StyleSheet.create({
   container: {
-    minHeight: spacing[20],
+    minHeight: 64,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing[5],
+    paddingHorizontal: spacing[4],
     backgroundColor: colors.white,
   },
   divider: {
@@ -22,7 +22,7 @@ export const styles = StyleSheet.create({
   logo: {
     width: spacing[8],
     height: spacing[8],
-    marginRight: spacing[4],
+    marginRight: spacing[3],
     resizeMode: 'contain',
   },
   information: {
@@ -40,7 +40,7 @@ export const styles = StyleSheet.create({
     color: colors.textTertiary,
   },
   amount: {
-    ...typography.subtitle,
+    ...typography.buttonSmall,
     marginLeft: spacing[3],
     color: colors.textPrimary,
   },

@@ -5,7 +5,7 @@ import { colors, fontFamily, fontSize, spacing } from '@/styles';
 export const styles = StyleSheet.create({
   transactionsCard: {
     paddingHorizontal: spacing[4],
-    paddingTop: spacing[4],
+    paddingTop: spacing[3],
   },
   sectionHeadingRow: {
     alignItems: 'center',
@@ -23,25 +23,25 @@ export const styles = StyleSheet.create({
   transactionRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    minHeight: 54,
+    minHeight: 48,
   },
   transactionTime: {
     color: colors.textPrimary,
     fontFamily: fontFamily.regular,
     fontSize: fontSize.body2,
     letterSpacing: -0.2,
-    width: 64,
+    width: 58,
   },
   paymentIconFrame: {
     alignItems: 'center',
-    height: 38,
+    height: 30,
     justifyContent: 'center',
-    marginRight: spacing[3],
-    width: 38,
+    marginRight: spacing[2],
+    width: 30,
   },
   paymentIcon: {
-    height: 38,
-    width: 38,
+    height: 30,
+    width: 30,
   },
   transactionInfo: {
     flex: 1,
@@ -56,13 +56,13 @@ export const styles = StyleSheet.create({
   transactionCategory: {
     color: colors.textTertiary,
     fontFamily: fontFamily.regular,
-    fontSize: 11,
+    fontSize: fontSize.detail,
     lineHeight: 15,
   },
   transactionAmount: {
     color: colors.textPrimary,
     fontFamily: fontFamily.medium,
-    fontSize: 16,
+    fontSize: fontSize.buttonSmall,
     letterSpacing: -0.3,
     marginLeft: spacing[2],
   },
@@ -70,7 +70,7 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     borderTopColor: colors.divider,
     borderTopWidth: StyleSheet.hairlineWidth,
-    height: 48,
+    height: 42,
     justifyContent: 'center',
     marginTop: spacing[1],
   },

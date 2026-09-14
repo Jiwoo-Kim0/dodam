@@ -6,20 +6,21 @@ export const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.white,
     borderRadius: radius.card,
-    minHeight: 120,
-    padding: spacing[4],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
     position: 'relative',
     width: '100%',
   },
   title: {
     color: colors.textPrimary,
     fontFamily: fontFamily.medium,
-    fontSize: 16,
-    lineHeight: 22,
+    fontSize: fontSize.body1,
+    lineHeight: 20,
   },
   content: {
     alignItems: 'center',
     flexDirection: 'row',
+    paddingRight: spacing[8],
   },
   copy: {
     flex: 1,
@@ -28,9 +29,10 @@ export const styles = StyleSheet.create({
   amount: {
     color: colors.textPrimary,
     fontFamily: fontFamily.semiBold,
-    fontSize: 24,
+    fontSize: fontSize.title,
     letterSpacing: -0.6,
-    lineHeight: 30,
+    lineHeight: 28,
+    marginTop: spacing[1],
   },
   currencyUnit: {
     fontFamily: fontFamily.regular,
@@ -41,31 +43,31 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: 2,
-    marginTop: 1,
+    marginTop: spacing[1],
   },
   changeArrow: {
     color: colors.primary.green,
     fontFamily: fontFamily.regular,
-    fontSize: 10,
+    fontSize: fontSize.micro,
     lineHeight: 14,
   },
   changeAmount: {
     color: colors.primary.green,
     fontFamily: fontFamily.regular,
-    fontSize: 10,
+    fontSize: fontSize.micro,
     lineHeight: 14,
   },
   changePrefix: {
     color: colors.textSecondary,
     fontFamily: fontFamily.regular,
-    fontSize: 10,
+    fontSize: fontSize.micro,
     lineHeight: 14,
   },
   chartGroup: {
     alignItems: 'center',
     flexDirection: 'row',
     flexShrink: 0,
-    gap: spacing[3],
+    gap: spacing[2],
   },
   legend: {
     gap: spacing[1],
@@ -84,7 +86,7 @@ export const styles = StyleSheet.create({
   legendLabel: {
     color: colors.textSecondary,
     fontFamily: fontFamily.regular,
-    fontSize: 8,
+    fontSize: fontSize.tiny,
     lineHeight: 11,
   },
 });

@@ -1,6 +1,6 @@
 import { Image, Pressable, Text, View } from 'react-native';
 
-import { BouncyScrollView } from '@/components/bouncyScrollView/BouncyScrollView';
+import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import type { LedgerCategory } from '@/types/ledger.types';
 import { formatCurrency } from '@/utils/currency';
 
@@ -30,7 +30,7 @@ export function CategorySelection({
     <View style={styles.fill}>
       <LedgerHeader onBackPress={onBackPress} title="카테고리" />
 
-      <BouncyScrollView contentContainerStyle={styles.categoryScreenContent}>
+      <RefreshableBouncyScrollView contentContainerStyle={styles.categoryScreenContent}>
         <View style={styles.categoryTransactionPreview}>
           <MerchantLogoPlaceholder />
           <View style={styles.categoryPreviewCopy}>
@@ -67,7 +67,7 @@ export function CategorySelection({
             );
           })}
         </View>
-      </BouncyScrollView>
+      </RefreshableBouncyScrollView>
     </View>
   );
 }

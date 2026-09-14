@@ -6,6 +6,9 @@ export const styles = StyleSheet.create({
   safeArea: {
     backgroundColor: colors.white,
   },
+  scrollArea: {
+    flex: 1,
+  },
   scrollContent: {
     backgroundColor: colors.white,
   },
@@ -31,11 +34,12 @@ export const styles = StyleSheet.create({
     alignSelf: 'stretch',
     flexDirection: 'row',
     justifyContent: 'space-between',
+    position: 'relative',
   },
   backIcon: {
     color: colors.textPrimary,
     fontFamily: fontFamily.regular,
-    fontSize: 34,
+    fontSize: fontSize.display,
     lineHeight: 36,
   },
   heroCopy: {

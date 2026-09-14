@@ -5,12 +5,13 @@ import {
   Animated,
   type LayoutChangeEvent,
   Pressable,
-  ScrollView,
   Text,
   useWindowDimensions,
   View,
 } from 'react-native';
 
+import type { BouncyScrollViewHandle } from '@/components/bouncyScrollView/BouncyScrollView';
+import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import { colors } from '@/styles';
 
@@ -42,7 +43,7 @@ const comparisonItems = [
 export function DiscoveryLanding({ onBack, onComplete }: DiscoveryLandingProps) {
   const { height } = useWindowDimensions();
   const [viewportHeight, setViewportHeight] = useState(height - 64);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<BouncyScrollViewHandle>(null);
 
   const handleLayout = (event: LayoutChangeEvent) => {
     setViewportHeight(event.nativeEvent.layout.height);
@@ -50,181 +51,180 @@ export function DiscoveryLanding({ onBack, onComplete }: DiscoveryLandingProps) 
 
   return (
     <SafeAreaLayout style={styles.safeArea}>
-      <ScrollView
-        bounces
-        contentContainerStyle={styles.scrollContent}
-        decelerationRate="fast"
-        onLayout={handleLayout}
-        pagingEnabled
-        ref={scrollRef}
-        showsVerticalScrollIndicator={false}>
-        <LinearGradient
-          colors={[colors.white, colors.primary.lightGreen]}
-          locations={[0, 1]}
-          style={[styles.section, styles.heroSection, { height: viewportHeight }]}>
-          <View style={styles.topBar}>
-            <Pressable accessibilityLabel="뒤로 가기" hitSlop={12} onPress={onBack}>
-              <Text style={styles.backIcon}>‹</Text>
-            </Pressable>
+      <View onLayout={handleLayout} style={styles.scrollArea}>
+        <RefreshableBouncyScrollView
+          contentContainerStyle={styles.scrollContent}
+          pageSize={viewportHeight}
+          pagingEnabled
+          ref={scrollRef}>
+          <LinearGradient
+            colors={[colors.white, colors.primary.lightGreen]}
+            locations={[0, 1]}
+            style={[styles.section, styles.heroSection, { height: viewportHeight }]}>
+            <View style={styles.topBar}>
+              <Pressable accessibilityLabel="뒤로 가기" hitSlop={12} onPress={onBack}>
+                <Text style={styles.backIcon}>‹</Text>
+              </Pressable>
+              <StageSkip onPress={onComplete} />
+            </View>
+
+            <View style={styles.heroCopy}>
+              <Text style={styles.heroTitle}>
+                내 돈, <Text style={styles.greenText}>어디서</Text>{'\n'}새고 있을까?
+              </Text>
+              <Text style={styles.description}>도담이 내 금융생활을 살펴보고{`\n`}지금 바꾸면 좋은 부분을 찾아드려요.</Text>
+            </View>
+
+            <View style={styles.bubbleGroup}>
+              <View style={[styles.speechBubble, styles.bubbleLeft]}>
+                <Text style={styles.bubbleText}>이 대출, 이자를 줄일 수 있어요</Text>
+              </View>
+              <View style={[styles.speechBubble, styles.bubbleRight]}>
+                <Text style={styles.bubbleText}>구독료가 계속 나가고 있어요</Text>
+              </View>
+              <View style={[styles.speechBubble, styles.bubbleLeft]}>
+                <Text style={styles.bubbleText}>첫 신용대출 금리가 높아요</Text>
+              </View>
+            </View>
+
+            <Image
+              accessibilityLabel="돋보기로 금융 정보를 살펴보는 도리와 토리"
+              contentFit="contain"
+              source={require('@/assets/images/discovery/discovery_hero.png')}
+              style={styles.heroImage}
+            />
+            <FloatingScrollHint
+              onPress={() => scrollRef.current?.scrollToOffset(viewportHeight)}
+            />
+          </LinearGradient>
+
+          <View style={[styles.section, { height: viewportHeight }]}>
             <StageSkip onPress={onComplete} />
-          </View>
-
-          <View style={styles.heroCopy}>
-            <Text style={styles.heroTitle}>
-              내 돈, <Text style={styles.greenText}>어디서</Text>{'\n'}새고 있을까?
-            </Text>
-            <Text style={styles.description}>도담이 내 금융생활을 살펴보고{`\n`}지금 바꾸면 좋은 부분을 찾아드려요.</Text>
-          </View>
-
-          <View style={styles.bubbleGroup}>
-            <View style={[styles.speechBubble, styles.bubbleLeft]}>
-              <Text style={styles.bubbleText}>이 대출, 이자를 줄일 수 있어요</Text>
-            </View>
-            <View style={[styles.speechBubble, styles.bubbleRight]}>
-              <Text style={styles.bubbleText}>구독료가 계속 나가고 있어요</Text>
-            </View>
-            <View style={[styles.speechBubble, styles.bubbleLeft]}>
-              <Text style={styles.bubbleText}>첫 신용대출 금리가 높아요</Text>
-            </View>
-          </View>
-
-          <Image
-            accessibilityLabel="돋보기로 금융 정보를 살펴보는 도리와 토리"
-            contentFit="contain"
-            source={require('@/assets/images/discovery/discovery_hero.png')}
-            style={styles.heroImage}
-          />
-          <FloatingScrollHint
-            onPress={() => scrollRef.current?.scrollTo({ animated: true, y: viewportHeight })}
-          />
-        </LinearGradient>
-
-        <View style={[styles.section, { height: viewportHeight }]}>
-          <StageSkip onPress={onComplete} />
-          <StageHeader
-            description={'계좌, 소비, 카드, 대출, 내 자산까지\n내 금융생활을 한눈에 살펴봐요.'}
-            stage="1단계"
-            title={<>흩어진 금융 정보를{`\n`}한곳에 모아요</>}
-          />
-          <Image
-            accessibilityLabel="한 휴대폰에 모인 금융 정보"
-            contentFit="contain"
-            source={require('@/assets/images/discovery/discovery_finance_hub.png')}
-            style={styles.financeImage}
-          />
-          <View style={styles.noticeBanner}>
-            <View style={styles.checkCircle}><Text style={styles.checkMark}>✓</Text></View>
-            <Text style={styles.noticeText}>개인정보는 안전하게 수집하고 관리해요</Text>
-          </View>
-        </View>
-
-        <View style={[styles.section, styles.compactSection, { height: viewportHeight }]}>
-          <StageSkip onPress={onComplete} />
-          <StageHeader
-            description={'불필요한 지출부터 아쉬운 금리까지,\n도담이 내 금융생활을 꼼꼼하게 살펴봐요.'}
-            stage="2단계"
-            title={<>지금 바꾸면{`\n`}좋은 부분을 <Text style={styles.brownText}>찾아요</Text></>}
-          />
-          <View style={styles.stageVisualGroup}>
-            <Image
-              accessibilityLabel="노트북으로 금융 정보를 분석하는 토리"
-              contentFit="contain"
-              source={require('@/assets/images/discovery/discovery_diagnosis.png')}
-              style={styles.diagnosisImage}
+            <StageHeader
+              description={'계좌, 소비, 카드, 대출, 내 자산까지\n내 금융생활을 한눈에 살펴봐요.'}
+              stage="1단계"
+              title={<>흩어진 금융 정보를{`\n`}한곳에 모아요</>}
             />
-            <View style={styles.cardList}>
-              {diagnosisItems.map(([title, description]) => (
-                <View key={title} style={styles.insightCard}>
-                  <View style={styles.insightCopy}>
-                    <Text style={styles.insightTitle}>{title}</Text>
-                    <Text style={styles.insightDescription}>{description}</Text>
-                  </View>
-                  <Text style={styles.chevron}>›</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        </View>
-
-        <View style={[styles.section, styles.compactSection, { height: viewportHeight }]}>
-          <StageSkip onPress={onComplete} />
-          <StageHeader
-            description={'발견한 내용을 비교해\n효과가 큰 것부터 한눈에 보여드려요.'}
-            stage="3단계"
-            title={<>중요한 순서대로{`\n`}정리해요</>}
-          />
-          <View style={styles.stageVisualGroup}>
-            <View style={styles.rankingList}>
-              {priorityItems.map(([title, description, amount], index) => (
-                <View key={title} style={styles.rankingRow}>
-                  <View style={[
-                    styles.rankCircle,
-                    index === 0 && styles.rankFirst,
-                    index === 1 && styles.rankSecond,
-                  ]}>
-                    <Text style={styles.rankText}>{index + 1}</Text>
-                  </View>
-                  <View style={styles.rankingCopy}>
-                    <Text style={styles.rankingTitle}>{title}</Text>
-                    <Text style={styles.rankingDescription}>{description}</Text>
-                  </View>
-                  <View style={styles.amountWrap}>
-                    <Text style={styles.amountLabel}>예상 절약액</Text>
-                    <Text style={styles.amountText}>{amount}</Text>
-                  </View>
-                  <Text style={styles.chevron}>›</Text>
-                </View>
-              ))}
-            </View>
             <Image
-              accessibilityLabel="금융 정보를 함께 확인하는 도리와 토리"
+              accessibilityLabel="한 휴대폰에 모인 금융 정보"
               contentFit="contain"
-              source={require('@/assets/images/discovery/discovery_priority.png')}
-              style={styles.priorityImage}
+              source={require('@/assets/images/discovery/discovery_finance_hub.png')}
+              style={styles.financeImage}
             />
+            <View style={styles.noticeBanner}>
+              <View style={styles.checkCircle}><Text style={styles.checkMark}>✓</Text></View>
+              <Text style={styles.noticeText}>개인정보는 안전하게 수집하고 관리해요</Text>
+            </View>
           </View>
-        </View>
 
-        <View style={[styles.section, styles.compactSection, styles.lastSection, { height: viewportHeight }]}>
-          <StageSkip onPress={onComplete} />
-          <StageHeader
-            description={'대안을 비교하고,\n나에게 맞는 대안과 변화까지 보여드려요.'}
-            stage="4단계"
-            title={<>더 나은 선택을{`\n`}비교해드려요</>}
-          />
-          <View style={styles.comparisonShowcase}>
-            <View style={styles.comparisonIntro}>
+          <View style={[styles.section, styles.compactSection, { height: viewportHeight }]}>
+            <StageSkip onPress={onComplete} />
+            <StageHeader
+              description={'불필요한 지출부터 아쉬운 금리까지,\n도담이 내 금융생활을 꼼꼼하게 살펴봐요.'}
+              stage="2단계"
+              title={<>지금 바꾸면{`\n`}좋은 부분을 <Text style={styles.brownText}>찾아요</Text></>}
+            />
+            <View style={styles.stageVisualGroup}>
               <Image
-                accessibilityLabel="돋보기로 금융 상품을 비교하는 토리"
+                accessibilityLabel="노트북으로 금융 정보를 분석하는 토리"
                 contentFit="contain"
-                source={require('@/assets/images/discovery/discovery_comparison.png')}
-                style={styles.comparisonImage}
+                source={require('@/assets/images/discovery/discovery_diagnosis.png')}
+                style={styles.diagnosisImage}
               />
-              <View style={styles.changeBubble}>
-                <Text style={styles.changeBubbleText}>작은 변화가{`\n`}큰 차이를 만들어요!</Text>
+              <View style={styles.cardList}>
+                {diagnosisItems.map(([title, description]) => (
+                  <View key={title} style={styles.insightCard}>
+                    <View style={styles.insightCopy}>
+                      <Text style={styles.insightTitle}>{title}</Text>
+                      <Text style={styles.insightDescription}>{description}</Text>
+                    </View>
+                    <Text style={styles.chevron}>›</Text>
+                  </View>
+                ))}
               </View>
             </View>
-            <View style={styles.comparisonCards}>
-              <ComparisonCard amount="320,000원" label="지금 그대로라면" />
-              <ComparisonCard amount="258,000원" highlighted label="이렇게 바꾸면" />
+          </View>
+
+          <View style={[styles.section, styles.compactSection, { height: viewportHeight }]}>
+            <StageSkip onPress={onComplete} />
+            <StageHeader
+              description={'발견한 내용을 비교해\n효과가 큰 것부터 한눈에 보여드려요.'}
+              stage="3단계"
+              title={<>중요한 순서대로{`\n`}정리해요</>}
+            />
+            <View style={styles.stageVisualGroup}>
+              <View style={styles.rankingList}>
+                {priorityItems.map(([title, description, amount], index) => (
+                  <View key={title} style={styles.rankingRow}>
+                    <View style={[
+                      styles.rankCircle,
+                      index === 0 && styles.rankFirst,
+                      index === 1 && styles.rankSecond,
+                    ]}>
+                      <Text style={styles.rankText}>{index + 1}</Text>
+                    </View>
+                    <View style={styles.rankingCopy}>
+                      <Text style={styles.rankingTitle}>{title}</Text>
+                      <Text style={styles.rankingDescription}>{description}</Text>
+                    </View>
+                    <View style={styles.amountWrap}>
+                      <Text style={styles.amountLabel}>예상 절약액</Text>
+                      <Text style={styles.amountText}>{amount}</Text>
+                    </View>
+                    <Text style={styles.chevron}>›</Text>
+                  </View>
+                ))}
+              </View>
+              <Image
+                accessibilityLabel="금융 정보를 함께 확인하는 도리와 토리"
+                contentFit="contain"
+                source={require('@/assets/images/discovery/discovery_priority.png')}
+                style={styles.priorityImage}
+              />
             </View>
           </View>
-          <View style={styles.resultList}>
-            {comparisonItems.map(([label, value]) => (
-              <View key={label} style={styles.resultRow}>
-                <View style={styles.resultCopy}>
-                  <Text style={styles.resultLabel}>{label}</Text>
-                  <Text style={styles.resultValue}>{value}</Text>
+
+          <View style={[styles.section, styles.compactSection, styles.lastSection, { height: viewportHeight }]}>
+            <StageSkip onPress={onComplete} />
+            <StageHeader
+              description={'대안을 비교하고,\n나에게 맞는 대안과 변화까지 보여드려요.'}
+              stage="4단계"
+              title={<>더 나은 선택을{`\n`}비교해드려요</>}
+            />
+            <View style={styles.comparisonShowcase}>
+              <View style={styles.comparisonIntro}>
+                <Image
+                  accessibilityLabel="돋보기로 금융 상품을 비교하는 토리"
+                  contentFit="contain"
+                  source={require('@/assets/images/discovery/discovery_comparison.png')}
+                  style={styles.comparisonImage}
+                />
+                <View style={styles.changeBubble}>
+                  <Text style={styles.changeBubbleText}>작은 변화가{`\n`}큰 차이를 만들어요!</Text>
                 </View>
-                <Text style={styles.chevron}>›</Text>
               </View>
-            ))}
+              <View style={styles.comparisonCards}>
+                <ComparisonCard amount="320,000원" label="지금 그대로라면" />
+                <ComparisonCard amount="258,000원" highlighted label="이렇게 바꾸면" />
+              </View>
+            </View>
+            <View style={styles.resultList}>
+              {comparisonItems.map(([label, value]) => (
+                <View key={label} style={styles.resultRow}>
+                  <View style={styles.resultCopy}>
+                    <Text style={styles.resultLabel}>{label}</Text>
+                    <Text style={styles.resultValue}>{value}</Text>
+                  </View>
+                  <Text style={styles.chevron}>›</Text>
+                </View>
+              ))}
+            </View>
+            <Pressable accessibilityRole="button" onPress={onComplete} style={styles.startButton}>
+              <Text style={styles.startButtonText}>발견 시작하기</Text>
+            </Pressable>
           </View>
-          <Pressable accessibilityRole="button" onPress={onComplete} style={styles.startButton}>
-            <Text style={styles.startButtonText}>발견 시작하기</Text>
-          </Pressable>
-        </View>
-      </ScrollView>
+        </RefreshableBouncyScrollView>
+      </View>
     </SafeAreaLayout>
   );
 }

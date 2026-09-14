@@ -58,6 +58,13 @@ public class GoalCalculationService {
     static final double BEHIND_SCHEDULE_POINT = 10.0;
     static final double GOAL_WARNING_RATE_PERCENT = 80.0;
 
+    /** 진단 결과와 함께 보존할 실제 위험 판정 상수. 계산 상수를 복제하지 않는다. */
+    public RiskPolicy riskPolicySnapshot() {
+        return new RiskPolicy(HIGH_SHORTFALL_RATE, BEHIND_SCHEDULE_POINT, 1);
+    }
+
+    public record RiskPolicy(double highShortfallRate, double behindSchedulePoint, int spendingBudgetMultiplier) { }
+
     private final GoalRepository goalRepository;
     private final SavingGoalRepository savingGoalRepository;
     private final SpendingGoalRepository spendingGoalRepository;
@@ -154,9 +161,19 @@ public class GoalCalculationService {
     public GoalForecastResponse getForecast(Long userId, Long goalId, LocalDate baseDate, Integer months) {
         LocalDate today = goalClock.today();
         SavingContext context = savingContext(userId, goalId, today);
-        LocalDate base = baseDate == null ? today : baseDate;
-        int horizon = months == null ? 12 : months;
+        return forecast(context, baseDate == null ? today : baseDate, months == null ? 12 : months);
+    }
 
+    /**
+     * 진단(546 goal-impact)용 예상 달성일. 접수 기준일을 오늘로 삼아 평가하며 목표 잔액·변화 이력을 수정하지 않는다.
+     * 월별 projection은 진단 스냅샷에 보존할 대상이 아니라 비운다.
+     */
+    @Transactional(readOnly = true)
+    public GoalForecastResponse getForecast(Long userId, Long goalId, LocalDate today) {
+        return forecast(savingContext(userId, goalId, today, false), today, 0);
+    }
+
+    private GoalForecastResponse forecast(SavingContext context, LocalDate base, int horizon) {
         long pace = context.averageMonthlySaving();
         long remaining = context.remaining();
         Integer monthsToAchieve;
@@ -229,10 +246,19 @@ public class GoalCalculationService {
     // ---------- 위험상태 ----------
 
     public GoalRiskResponse getRisk(Long userId, Long goalId) {
+        return evaluateRisk(userId, goalId, goalClock.today(), true);
+    }
+
+    /** 진단은 접수 기준일로 평가하며 목표 잔액·변화 이력을 수정하지 않는다. */
+    @Transactional(readOnly = true)
+    public GoalRiskResponse getRisk(Long userId, Long goalId, LocalDate today) {
+        return evaluateRisk(userId, goalId, today, false);
+    }
+
+    private GoalRiskResponse evaluateRisk(Long userId, Long goalId, LocalDate today, boolean updateAmount) {
         Goal goal = findOwned(userId, goalId);
-        LocalDate today = goalClock.today();
         if (goal.getType() == GoalType.SAVING) {
-            SavingContext context = savingContext(userId, goal.getId(), today);
+            SavingContext context = savingContext(userId, goal.getId(), today, updateAmount);
             return savingRisk(context);
         }
         SpendingGoal spendingGoal = spendingGoalRepository.findById(goal.getId())
@@ -292,6 +318,10 @@ public class GoalCalculationService {
     // ---------- 컨텍스트 ----------
 
     private SavingContext savingContext(Long userId, Long goalId, LocalDate today) {
+        return savingContext(userId, goalId, today, true);
+    }
+
+    private SavingContext savingContext(Long userId, Long goalId, LocalDate today, boolean updateAmount) {
         Goal goal = findOwned(userId, goalId);
         if (goal.getType() != GoalType.SAVING) {
             throw new InvalidRequestException(SAVING_ONLY_MESSAGE);
@@ -307,7 +337,7 @@ public class GoalCalculationService {
                         .sum();
         // 동기화로 계좌 잔액이 바뀐 뒤에도 저장된 모인 금액이 실제와 맞게 유지되도록 조회 시점에 갱신하고, 바뀌었으면 이력을 남긴다
         LocalDateTime now = goalClock.now();
-        if (goal.updateCurrentAmount(Math.max(0L, current), now)) {
+        if (updateAmount && goal.updateCurrentAmount(Math.max(0L, current), now)) {
             goalHistoryRecorder.record(goal, savingGoal, GoalHistoryEvent.AMOUNT_UPDATED, now);
         }
 

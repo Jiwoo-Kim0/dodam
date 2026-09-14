@@ -107,7 +107,7 @@
 ### MySQL 검증
 
 - [x] V13까지 적용된 MySQL에 V4를 추가하면 `FlywayValidateException`이 나는 문제(MR 리뷰, 2026-09-09)를 `spring.flyway.out-of-order: true`(local/prod)로 해결했다. 번호 구간 분할 자체가 이 옵션을 전제로 한다. `FlywayOutOfOrderTest`로 재현·검증.
-- [ ] `V4__create_finance_sync.sql`을 MySQL 8.0에 적용해 `ddl-auto: validate` 통과와 `FinanceSync` 엔티티 매핑(VARCHAR(30) enum, DATETIME)을 확인한다. H2 통합 테스트만 수행했다. out-of-order 적용은 리뷰어가 기존 DB에서 재확인 예정.
+- [x] `V4__create_finance_sync.sql`을 MySQL 8.0에 적용해 `ddl-auto: validate` 통과와 `FinanceSync` 엔티티 매핑(VARCHAR(30) enum, DATETIME)을 확인한다. 2026-09-11 확인: Docker `mysql:8.0`(8.0.46)에 V1~V17을 적용한 뒤 백엔드를 `local` 프로필(`ddl-auto: validate`, Flyway off)로 기동해 엔티티 32개 전부 통과, `Started DodamApplication`(6.2초). 오류·경고 없음. out-of-order 적용은 리뷰어가 기존 DB에서 재확인 예정.
 - [ ] `SELECT ... FOR UPDATE`(`findByUserIdForUpdate`) 기반 동시 실행 방지가 MySQL InnoDB에서 의도대로 직렬화되는지 동시 요청으로 확인한다.
 
 ## S15P21D105-500 — Finance Data 통합 요약·신용등급
@@ -433,7 +433,7 @@
 
 ### MySQL 검증
 
-- [ ] `Account` 엔티티가 V3 DDL과 `ddl-auto: validate`를 통과하는지 MySQL 8.0에서 확인한다. H2 통합 테스트만 수행했다.
+- [x] `Account` 엔티티가 V3 DDL과 `ddl-auto: validate`를 통과하는지 MySQL 8.0에서 확인한다. 2026-09-11 확인: Docker `mysql:8.0`(8.0.46)에 V1~V17을 적용한 뒤 백엔드를 `local` 프로필(`ddl-auto: validate`, Flyway off)로 기동해 엔티티 32개 전부 통과, `Started DodamApplication`(6.2초). 오류·경고 없음.
 - 근거: `account_no_encrypted`는 `VARBINARY(512)`↔`byte[]`, `account_no_hash`·`currency`는 CHAR 고정 길이 매핑이다. 카드·대출과 같은 `columnDefinition` 처리를 했지만 실검증은 남았다.
 - 완료 조건: 빈 스키마에 V1~V16 적용 후 기동, 목록·상세·잔액 SQL을 MySQL에서 실행.
 
@@ -456,6 +456,12 @@
 
 - [ ] `V6__create_transaction_category_and_transaction.sql`은 504 브랜치(`S15P21D105-504-api-6-transaction-query`)의 V5 커밋을 cherry-pick한 뒤 **V6으로 번호를 옮긴 것**이다. develop 병합 시 543이 `V5__create_goal.sql`로 V5를 먼저 써서 충돌했다(2026-09-11).
 - 완료 조건: 504 브랜치를 이어갈 때 develop을 병합하고 그쪽의 V5 마이그레이션 커밋을 걷어낸다(테이블은 이미 V6으로 develop에 있다). `Transaction` 엔티티·fixture의 "V5" 표기도 V6으로 고친다.
+
+### 빈 DB에서 Flyway가 V6에서 멈춤 (새 환경 기동 불가)
+
+- [ ] **빈 스키마에 Flyway를 돌리면 V6에서 실패한다.** V6의 `fk_transaction_card`가 V11이 만드는 `card`를 참조하는데, 빈 DB에서는 Flyway가 버전 순서로 V1→V6을 먼저 적용하므로 `Failed to open the referenced table 'card'`로 기동이 막힌다. 2026-09-11 Docker `mysql:8.0` 빈 스키마 + `local` 프로필로 재현했다(`Script V6__create_transaction_category_and_transaction.sql failed`). 운영 DB는 V11~V17이 먼저 적용된 뒤 V6이 out-of-order로 들어가 영향이 없었고, 534·538 절의 빈 스키마 검증(09-09·09-10)은 V6이 develop에 들어오기 전이라 통과했다.
+- 영향: 새 개발 PC, 재생성한 CI/테스트 DB, 볼륨을 지운 운영 DB에서 백엔드가 기동하지 않는다. 손으로 적용할 때는 V1~V5 → V10~V11 → V6~V9 → V12~V17 순서로 우회할 수 있다(`seeds/README.md` 검증 상태).
+- 수정 후보: (a) 새 마이그레이션(BE-B와 번호 협의)에서 `information_schema`로 존재 여부를 확인해 `fk_transaction_card`를 조건부로 추가하고, V6에서는 카드 외래키를 빼되 이미 적용된 운영 DB의 체크섬 불일치는 `flyway repair`로 맞춘다. (b) V6 파일은 그대로 두고 `card`만 만드는 최소 마이그레이션을 V6 앞 번호로 넣는 방법은 V1~V5 번호가 모두 찼으므로 불가. 팀에서 결정한다.
 
 ### 카드·마이너스통장 거래내역과의 통합
 
@@ -556,7 +562,7 @@
 
 ### MySQL 검증
 
-- [ ] V6를 MySQL 8.0에서 적용해 `ddl-auto: validate` 통과와 복합 외래키(`account`, `card`) 생성을 확인한다. H2 통합 테스트만 수행했다.
+- [x] V6를 MySQL 8.0에서 적용해 `ddl-auto: validate` 통과와 복합 외래키(`account`, `card`) 생성을 확인한다. 2026-09-11 확인: Docker `mysql:8.0`(8.0.46)에 V1~V17을 적용한 뒤 백엔드를 `local` 프로필(`ddl-auto: validate`, Flyway off)로 기동해 엔티티 32개 전부 통과, `Started DodamApplication`(6.2초). 오류·경고 없음. 복합 외래키 `fk_transaction_account`·`fk_transaction_card`는 V11 뒤에 V6을 적용하는 순서에서 생성됐다.
 - 근거: `hidden`·`active`는 TINYINT(1)↔boolean, `transaction_time`은 TIME↔LocalTime 매핑이며 H2와 MySQL의 타입 검증 결과가 다를 수 있다. 기존 DB에는 V17 뒤에 V6이 들어가므로 out-of-order 적용도 함께 본다.
 - 완료 조건: 빈 스키마에 V1~V16 적용 후 기동, 목록·상세·PATCH 3종 SQL을 MySQL에서 실행.
 
@@ -657,7 +663,7 @@
 
 ### MySQL 검증
 
-- [ ] `Goal`·`SavingGoal`·`SpendingGoal` 엔티티가 V5·V7 DDL과 `ddl-auto: validate`를 통과하는지 MySQL 8.0에서 확인한다. H2만 확인했다.
+- [x] `Goal`·`SavingGoal`·`SpendingGoal` 엔티티가 V5·V7 DDL과 `ddl-auto: validate`를 통과하는지 MySQL 8.0에서 확인한다. 2026-09-11 확인: Docker `mysql:8.0`(8.0.46)에 V1~V17을 적용한 뒤 백엔드를 `local` 프로필(`ddl-auto: validate`, Flyway off)로 기동해 엔티티 32개 전부 통과, `Started DodamApplication`(6.2초). 오류·경고 없음.
 
 ## S15P21D105-509 — 목표 연결계좌
 
@@ -674,7 +680,7 @@
 
 ### MySQL 검증
 
-- [ ] V8 적용(복합 외래키 3개: goal, saving_goal, account)과 `GoalAccount` 엔티티(`@IdClass`)의 `ddl-auto: validate` 통과를 MySQL 8.0에서 확인한다. H2 fixture는 외래키 없이 만들었다.
+- [x] V8 적용(복합 외래키 3개: goal, saving_goal, account)과 `GoalAccount` 엔티티(`@IdClass`)의 `ddl-auto: validate` 통과를 MySQL 8.0에서 확인한다. 2026-09-11 확인: Docker `mysql:8.0`(8.0.46)에 V1~V17을 적용한 뒤 백엔드를 `local` 프로필(`ddl-auto: validate`, Flyway off)로 기동해 엔티티 32개 전부 통과, `Started DodamApplication`(6.2초). 오류·경고 없음. 493 seed가 `goal_account` 4,750건을 외래키가 살아 있는 상태로 적재했다.
 
 ## S15P21D105-510 — 목표 진행률·필요 저축액
 
@@ -716,7 +722,7 @@
 
 ### MySQL 검증
 
-- [ ] V9 적용과 `GoalHistory` 엔티티(`DECIMAL(10,4)`↔`BigDecimal`)의 `ddl-auto: validate` 통과를 MySQL 8.0에서 확인한다.
+- [x] V9 적용과 `GoalHistory` 엔티티(`DECIMAL(10,4)`↔`BigDecimal`)의 `ddl-auto: validate` 통과를 MySQL 8.0에서 확인한다. 2026-09-11 확인: Docker `mysql:8.0`(8.0.46)에 V1~V17을 적용한 뒤 백엔드를 `local` 프로필(`ddl-auto: validate`, Flyway off)로 기동해 엔티티 32개 전부 통과, `Started DodamApplication`(6.2초). 오류·경고 없음.
 
 ## S15P21D105-492 — Transaction·Spending·Subscription Fixture
 
@@ -742,7 +748,7 @@
 
 ### 구독 seed의 선행 마이그레이션
 
-- [ ] `DODAM_SUBSCRIPTION_SEED.sql`은 `subscription`·`subscription_payment_history` 테이블이 없어 지금은 실행할 수 없다(2026-09-11 확인: 임시 테이블 문제를 우회하면 첫 DELETE에서 `Table 'subscription_payment_history' doesn't exist`로 멈추고 아무것도 쓰지 않는다). API 7 Subscription 작업에서 마이그레이션(V18 이후, BE-B와 번호 확인)을 만든 뒤 적재한다. 거래 seed의 SUB 행(12일·25일, 9,900/12,400/14,900/4,900원)과 금액·날짜를 맞춰 두었다.
+- [x] `DODAM_SUBSCRIPTION_SEED.sql`은 V30(`subscription`·`subscription_payment_history`, 2026-09-11 S15P21D105-512)이 생긴 뒤 적재할 수 있다. 같은 날 Docker `mysql:8.0`에 V1~V17+V30 적용 → seed 1~7 → 8번 순으로 실행해 구독 6,000건(ACTIVE 5,840 / PAUSED 160), 결제 이력 36,000건, 카드 불일치 0, 거래 SUB 행과 불일치 0을 확인했다(약 1초). 거래 seed의 SUB 행(12일·25일, 9,900/12,400/14,900/4,900원)과 금액·날짜가 맞는다.
 
 ### 시연 사용자 데이터 결
 
@@ -767,3 +773,101 @@
 ### 줄이기 목표 예산 수준
 
 - [ ] SPENDING_FOCUSED·VOLATILE 사용자의 월 예산을 소득의 45%로 두어 대부분 WARNING/EXCEEDED가 나오게 했다(시연용). 진단(14)의 "줄이기 목표 초과 위험" 표본이 과다하면 비율을 조정한다.
+
+## S15P21D105-512 — Subscription 목록·상세·요약
+
+구현 계약: [subscription.md](subscription.md)
+
+### 금융망 동기화 부재
+
+- [ ] 정기결제 데이터는 시연 seed(`DODAM_SUBSCRIPTION_SEED.sql`)만 적재한다. 명세의 "SSAFY 연동"에 해당하는 동기화 핸들러(Finance Data `FinanceSyncScopeHandler`, 499 절)가 없어 실제 회원가입 계정에는 정기결제가 하나도 없다. 금융망에 정기결제 조회 API가 있는지 확인한 뒤 CARD 거래에서 파생하는 방식(513 후보 탐지 결과를 등록)으로 갈지 정한다.
+- 근거: SSAFY 금융망 문서에는 정기결제 도메인이 없다(카드 거래내역만 있음). 그래서 후보 탐지(513)를 "자체 탐지"로 뒀다.
+
+### EXPIRED 자동 전이
+
+- [ ] `end_date`가 지나도 상태는 ACTIVE로 남는다. EXPIRED는 seed·동기화가 넣는 값으로만 존재한다. 일 1회 배치(현금흐름 이벤트 수집과 함께)나 조회 시점 계산 중 하나를 정한다. 조회 시점 계산을 택하면 요약 금액에서 종료일 지난 건을 빼야 한다.
+
+### 목록 처리 방식
+
+- [ ] 목록 필터·정렬·페이지를 메모리에서 한다(사용자당 수십 건 전제, Goal과 같음). 동기화로 건수가 수백 건이 되면 `Specification` 조회로 바꾼다.
+- [ ] `category` 필터는 저장 문자열과 대문자 비교다. 금융망이 우리 enum 밖의 카테고리를 넣으면 카테고리 목록(513)에는 `ETC`로 세지만 필터로는 원래 코드로만 잡힌다. 적재 시 정규화 규칙을 정한다.
+
+### MySQL 검증
+
+- [x] 2026-09-11 Docker `mysql:8.0`(8.0.46)에 V1~V17 + V30을 적용(빈 DB라 V6 문제 때문에 out-of-order 순서로 손 적용, 502 절)하고 `local` 프로필(`ddl-auto: validate`, Flyway off)로 기동해 엔티티 34개 통과. 시연 seed 8번 적재: 구독 6,000·이력 36,000·불일치 0. seed 사용자 `seed.kmeans.u0001`로 로그인해 목록(1건, 카드 `My WE:SH 카드` 조인)·요약·상세(이력 6건 집계)·이력(2026-03~08, 6건)이 기대값과 같았다.
+
+## S15P21D105-513 — Subscription 반복결제 후보·서비스
+
+구현 계약: [subscription.md](subscription.md) "513"
+
+### 후보를 정기결제로 등록하는 경로
+
+- [ ] 명세 7에는 등록(POST) API가 없어 후보 탐지 결과를 정기결제로 만들 방법이 없다. 후보 응답에 `merchantName`·`amount`·`estimatedBillingCycle`·`suggestedPaymentDay`·`cardId`·`suggestedCategory`를 넣어 등록 Body를 바로 만들 수 있게 해 두었다. `POST /api/v1/subscriptions`를 명세에 추가할지 팀에서 정한다.
+
+### 탐지 임계값
+
+- [ ] 기본 3회·6개월, 주기 판정 범위(주 5~9일, 월 25~36일, 연 350~380일)는 seed 거래(매월 12일·25일 결제)가 잡히도록 잡은 값이다. 기획안 "정기결제 점검" 화면의 요구(예: 2회면 경고)에 맞춰 조정한다.
+- [ ] 가맹점명 정규화가 공백·대소문자 제거뿐이다. "넷플릭스"와 "NETFLIX.COM", "쿠팡와우"와 "쿠팡(와우멤버십)"은 다른 묶음이 된다. 카탈로그 키워드 매칭(`matchedServiceCode`)을 묶음 기준에도 쓸지 정한다.
+- [ ] 금액이 바뀐 요금제(예: 9,900 → 13,500)는 두 묶음으로 갈라져 각각 횟수가 줄어든다. 가맹점 단위로 묶고 금액 변동을 허용(±20%)하는 방식을 검토한다.
+
+### 서비스 카탈로그
+
+- [ ] `SubscriptionServiceCatalog`는 코드에 고정한 30개 정적 목록이다(2026-09-11 요금 기준). 서비스·요금이 바뀌면 코드 수정이 필요하다. 테이블(`subscription_service`)과 관리자 API로 옮길지, FE가 자체 목록을 갖는지 정한다. `iconKey`는 FE `assets/icons/payments`의 파일명과 맞춘 것이며 FE가 아이콘을 추가하면 같이 갱신한다.
+
+## S15P21D105-514 — Subscription 변경·정지·취소 + Goal 회귀
+
+구현 계약: [subscription.md](subscription.md) "514"
+
+### 금융망 반영 없음
+
+- [ ] 수정·정지/재개·취소는 우리 DB만 바꾼다. 금융망에 정기결제 변경 API가 없어 전달 경로가 없다. 실제 해지는 각 서비스에서 해야 하므로 FE 문구("도담 목록에서만 정리됩니다")를 맞춘다.
+
+### 다음 결제일 재계산
+
+- [ ] WEEKLY·YEARLY는 기존 다음 결제일(없으면 생성일)을 기준점으로 쓴다. seed는 MONTHLY만 만들어 WEEKLY·YEARLY 경로는 단위 규칙 수준으로만 검증했다(통합 테스트는 YEARLY 목록·요약만). 실데이터가 들어오면 기준점 규칙을 재확인한다.
+- [ ] 결제일이 바뀐 ACTIVE 정기결제만 다음 결제일을 다시 잡는다. PAUSED 상태에서 결제일을 바꾸면 재개 시점에 새 결제일로 계산된다(의도한 동작이지만 문서화만 했다).
+
+### 취소의 의미
+
+- [ ] DELETE는 soft(상태 CANCELED, `canceled_at`)라 목록·요약 건수에 계속 들어간다(금액 합계에는 빠짐). 사용자가 "목록에서 지우기"를 원하면 숨김 필드나 물리 삭제가 필요하다.
+
+### Goal 회귀 테스트
+
+- Goal 회귀는 별도 티켓 515 절에 기록한다(H2 전체 테스트 + MySQL seed 데이터 API 회귀).
+
+### MySQL 검증
+
+- [x] 2026-09-11 MySQL 8.0 seed 데이터(`SUB-U0001-01`, 다음 결제일 2026-09-12)로 확인: 정지(200, 다음 결제일 null) → 재개(200, 2026-09-12 재계산) → 종료일 2026-09-11 지정 400 `INVALID_REQUEST`(다음 결제일보다 앞, DB CHECK에 닿기 전에 막힘) → 종료일 2026-12-31·금액 13,900 수정 200 → 같은 금액 재요청 200(`updated_at` 유지) → 취소 200 → 재취소 409 `SUBSCRIPTION_NOT_EDITABLE` → 타인 건 404. 직접 UPDATE로 `chk_subscription_dates` 위반 시 MySQL이 3819로 막는 것도 확인했다. 후보 탐지는 seed 고정 지출 `도담 보험`(6회, 20일)·`도담 주거 관리사무소`(5회, 1일)를 MONTHLY로 잡고, 등록된 `도담 비디오`와 NON_SPENDING 저축 이체는 뺐다.
+
+## S15P21D105-515 — Goal 회귀 테스트 (D7 "12 Goal 완료")
+
+구현 계약: [goal.md](goal.md)
+
+### H2 전체 테스트
+
+- [x] 2026-09-11 Subscription(512~514) 추가 뒤 `./gradlew test` 전체 833개 통과(실패·오류 0). Goal 통합 테스트 4종(`GoalApiIntegrationTest`, `GoalAccountApiIntegrationTest`, `GoalCalculationApiIntegrationTest`, `GoalHistoryApiIntegrationTest`) 포함. Subscription fixture가 `card`·`transaction`을 DROP CASCADE로 다시 만들지만 Goal fixture(`goal-test-data.sql`)와 충돌하지 않았다.
+
+### MySQL seed 데이터 API 회귀
+
+- [x] 2026-09-11 Docker `mysql:8.0`(8.0.46)에 V1~V17+V30 적용, seed 1~8 적재(목표 6,000·연결 4,750·이력 30,000·거래 348,192) 후 `local` 프로필로 기동해 seed 사용자 u0001(BALANCED, 모으기 1개·연결 2건)·u0002(SPENDING_FOCUSED, 모으기+줄이기)로 Goal API 14개 중 13개를 호출했다. 앱 오류 로그 0건.
+- 조회 결과가 seed 기대값과 모두 일치했다.
+  - u0001 목표 1: `currentAmount` 29,160,000 = 연결 계좌(주거래 19,160,000 + KB 정기예금 10,000,000) 잔액 합, 목표 16,100,000 → 진행률 100%, `paceStatus = ACHIEVED`, 필요 월 저축액 0, 예상 달성일 = 기준일, 위험 NONE. 이력 7건(GOAL_CREATED + 월말 AMOUNT_UPDATED 6, 2026-03~08 선형 증가). 줄이기 전용 API 호출 시 400, 타인 목표 404.
+  - u0002 목표 2: 1,800,000 / 32,000,000 → 5.6%, 기대 진행률 45.5%, `BEHIND`, 위험 HIGH(`PACE_INSUFFICIENT`, `BEHIND_SCHEDULE`), 필요 월 저축액 3,775,000. 목표 3(줄이기 1,800,000): 9월 소비 0(거래 seed가 8월까지라 정상), `previousMonthSpending` 4,247,800 = 8월 EXPENSE·비 NON_SPENDING 합과 일치, 위험 LOW. 요약: 모으기 목표 합 32,000,000 / 1,800,000, 월 예산 합 1,800,000.
+- 쓰기 경로(MySQL CHECK·복합 외래키 살아 있는 상태): 모으기 생성 201 → 이름·목표 금액 수정 200 → PAUSED 200 → PAUSED→ACHIEVED 409 `GOAL_STATUS_TRANSITION_NOT_ALLOWED` → 모으기에 월 예산 400 → 이력에 GOAL_CREATED·GOAL_UPDATED·STATUS_CHANGED 기록 → 연결 계좌 0건·진행률·위험(`NO_LINKED_ACCOUNTS`) 200 → 삭제 200(soft, GOAL_DELETED 이력) → 조회 404. 줄이기 생성(예산 0은 400 `VALIDATION_ERROR`) → 소비 진행률 200 → 삭제 200. seed 목표 6,000건은 그대로다.
+- [ ] `PUT /goals/{goalId}/accounts`는 호출하지 못했다. Body가 계좌번호 원문(`accountNos`)을 받아 서버가 해시로 찾는데, seed 계좌의 해시는 검증용 더미라 원문이 없다. 애플리케이션 코덱으로 만든 fixture(491 계약)로 seed를 적재한 환경에서 다시 확인한다. H2 통합 테스트(`GoalAccountApiIntegrationTest`)로는 통과했다.
+- 참고: 계산 API(progress·required-saving·forecast·risk)는 금액이 바뀌지 않으면 `AMOUNT_UPDATED` 이력을 남기지 않아 seed 목표의 이력은 7건 그대로였다. 목표 1은 모인 금액이 목표를 넘었는데 상태는 ACTIVE로 남는다(508 절 "모인 금액 도달 시 상태" 미결 항목과 같음).
+- 검증 중 확인한 도구 문제: Windows Git Bash의 `curl -d '한글'`은 본문을 UTF-8이 아닌 코드페이지로 보내 서버가 400 `INVALID_REQUEST`(본문 해석 실패)를 돌려준다. 앱 문제가 아니며 `--data-binary @utf8파일`로 보내면 정상이다. 시연·수동 테스트 시 주의.
+## 544·545 진행 현황 (2026-09-13)
+
+- 진단 실행·이력·latest·상세·summary·문제 목록/상세 API 추가. 현재 계약: [diagnosis-api.md](diagnosis-api.md).
+- 목표/당일 저장 현금흐름 위험은 연결했으나 기획안 전체 규칙은 미완료. 미정 임계값·규칙은 coverage로 공개한다.
+- 군집 공급자·적격 조건 검사·동일 카테고리 근거 병합은 후속 구현이며 저장 군집 근거 조회만 지원한다.
+- MySQL에서 사용자 잠금·만료 경쟁 테스트 필요. 실행 실패는 미완료 접수만 삭제하며 실패 이력을 보존하지 않는다.
+- 과거 543 항목의 input_snapshot·종합 상태·goalId 검증은 현재 API 문서의 부분 구현 범위와 함께 해석한다.
+
+## 546 진행 현황 (2026-09-13)
+
+- goal-impact·changes 추가. 계약: [diagnosis-api.md](diagnosis-api.md), 계획: [diagnosis-goal-impact-plan.md](diagnosis-goal-impact-plan.md).
+- [ ] "금융비용으로 인한 목표 달성 지연"은 대출 이자·상환 규칙(`LOAN_INTEREST_BURDEN` 등) 정책 확정 후 계산한다. 현재 `unavailable`로 표시.
+- [ ] 이전 진단은 같은 goalId 완전 일치 기준이다. 전체 진단과 목표 지정 진단 사이 비교가 필요하면 FE 요구를 확인한 뒤 확장한다.
+- [ ] `DiagnosisRepository.findPreviousCompleted`(NULL goalId 비교 JPQL)는 H2만 확인했다. MySQL에서 실행 계획·결과를 확인한다.

@@ -4,10 +4,10 @@ import { colors, radius, spacing, typography } from '@/styles';
 
 export const styles = StyleSheet.create({
   card: {
-    marginTop: spacing[5],
+    marginTop: spacing[3],
     paddingHorizontal: spacing[4],
-    paddingTop: spacing[5],
-    paddingBottom: spacing[4],
+    paddingTop: spacing[4],
+    paddingBottom: spacing[3],
     borderRadius: radius.card,
     backgroundColor: colors.white,
   },
@@ -26,12 +26,12 @@ export const styles = StyleSheet.create({
     color: colors.textTertiary,
   },
   chart: {
-    marginTop: spacing[3],
+    marginTop: spacing[2],
   },
   legend: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    gap: spacing[4],
+    gap: spacing[3],
     paddingRight: spacing[2],
   },
   legendItem: {

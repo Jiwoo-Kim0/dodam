@@ -11,6 +11,11 @@ export const routes = {
   ledger: '/ledger',
   assets: '/assets',
   discovery: '/discovery',
+  discoveryInsights: '/discovery/insights',
+  discoveryInsightDetail: (insightId: string) => ({
+    pathname: '/discovery/insights/[id]' as const,
+    params: { id: insightId },
+  }),
   report: '/report',
   goalSetup: '/goal-setup',
   goalSetupEdit: (goalId: string) => ({

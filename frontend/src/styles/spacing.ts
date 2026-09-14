@@ -13,6 +13,7 @@ export const spacing = {
 
 export const semanticSpacing = {
   innerGap: spacing[2],
+  cardTitleContentGap: spacing[3],
   componentGap: spacing[4],
   sectionGap: spacing[6],
   screenMargin: spacing[5],

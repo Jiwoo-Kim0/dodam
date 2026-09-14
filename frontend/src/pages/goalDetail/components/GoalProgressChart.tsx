@@ -19,11 +19,11 @@ interface GoalProgressChartProps {
 }
 
 const CHART_WIDTH = 320;
-const CHART_HEIGHT = 204;
+const CHART_HEIGHT = 180;
 const PLOT_LEFT = 48;
 const PLOT_RIGHT = 270;
-const PLOT_TOP = 76;
-const PLOT_BOTTOM = 164;
+const PLOT_TOP = 64;
+const PLOT_BOTTOM = 144;
 const GRID_LINE_COUNT = 5;
 const BAR_WIDTH = 14;
 
@@ -77,14 +77,14 @@ export function GoalProgressChart({ goal }: GoalProgressChartProps) {
     .join(' ');
   const lastPoint = points.at(-1);
   const tooltipWidth = 88;
-  const tooltipHeight = 40;
+  const tooltipHeight = 36;
   const tooltipX = lastPoint
     ? Math.min(
         CHART_WIDTH - tooltipWidth - 4,
         Math.max(4, lastPoint.x - tooltipWidth / 2),
       )
     : 0;
-  const tooltipY = 12;
+  const tooltipY = 8;
   const accessibilityLabel = `${title}. ${goal.history
     .map(
       (point) =>
@@ -211,7 +211,7 @@ export function GoalProgressChart({ goal }: GoalProgressChartProps) {
               fontSize={8}
               textAnchor="middle"
               x={tooltipX + tooltipWidth / 2}
-              y={tooltipY + 14}
+              y={tooltipY + 13}
             >
               현재까지
             </SvgText>
@@ -221,7 +221,7 @@ export function GoalProgressChart({ goal }: GoalProgressChartProps) {
               fontSize={11}
               textAnchor="middle"
               x={tooltipX + tooltipWidth / 2}
-              y={tooltipY + 29}
+              y={tooltipY + 27}
             >
               {`${formatNumber(lastPoint.actualAmount)}원`}
             </SvgText>

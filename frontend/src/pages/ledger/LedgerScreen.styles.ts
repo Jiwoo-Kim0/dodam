@@ -2,24 +2,13 @@ import { StyleSheet } from 'react-native';
 
 import {
   colors,
-  componentSize,
   fontFamily,
+  fontSize,
   radius,
   semanticSpacing,
   spacing,
   typography,
 } from '@/styles';
-
-const ledgerColors = {
-  card: '#FFFFFF',
-  softSurface: '#F8F8F8',
-  calendarMuted: '#C9C9C9',
-  expense: '#C84B16',
-  income: '#4E79FF',
-  selectedDay: '#E4E4E4',
-  selectedTab: '#F4F7E5',
-  logoPlaceholder: '#F1F1F1',
-} as const;
 
 export const styles = StyleSheet.create({
   screen: {
@@ -33,31 +22,13 @@ export const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    gap: spacing[5],
+    gap: spacing[3],
     paddingBottom: spacing[8],
     paddingHorizontal: semanticSpacing.screenMargin,
-  },
-  overviewTopRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    minHeight: componentSize.touchTarget,
-    paddingHorizontal: semanticSpacing.screenMargin,
-  },
-  overviewBackButton: {
-    alignItems: 'flex-start',
-    height: componentSize.touchTarget,
-    justifyContent: 'center',
-    width: componentSize.touchTarget,
+    paddingTop: spacing[2],
   },
   headerAddButtonPressed: {
     opacity: 0.82,
-  },
-  overviewTitle: {
-    ...typography.headline,
-    color: colors.textPrimary,
-    marginTop: spacing[2],
-    marginBottom: spacing[1],
   },
   centeredHeader: {
     alignItems: 'center',
@@ -88,7 +59,7 @@ export const styles = StyleSheet.create({
     color: colors.textPrimary,
     flex: 1,
     fontFamily: fontFamily.semiBold,
-    fontSize: 22,
+    fontSize: fontSize.title,
     letterSpacing: -0.45,
     textAlign: 'center',
   },
@@ -133,12 +104,12 @@ export const styles = StyleSheet.create({
     textAlign: 'center',
   },
   card: {
-    backgroundColor: ledgerColors.card,
+    backgroundColor: colors.white,
     borderRadius: radius.card,
   },
   expenseSummaryCard: {
     paddingHorizontal: spacing[5],
-    paddingVertical: spacing[5],
+    paddingVertical: spacing[4],
   },
   cardEyebrow: {
     color: colors.textPrimary,
@@ -149,7 +120,7 @@ export const styles = StyleSheet.create({
   expenseAmount: {
     ...typography.display,
     color: colors.textPrimary,
-    marginTop: spacing[2],
+    marginTop: spacing[1],
   },
   expenseAmountUnit: {
     ...typography.body1,
@@ -161,7 +132,8 @@ export const styles = StyleSheet.create({
     marginTop: spacing[1],
   },
   sectionCard: {
-    padding: spacing[5],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[5],
   },
   sectionTitle: {
     color: colors.textPrimary,
@@ -169,10 +141,16 @@ export const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 22,
   },
+  categorySectionTitle: {
+    color: colors.textPrimary,
+    fontFamily: fontFamily.medium,
+    fontSize: fontSize.buttonSmall,
+    lineHeight: 20,
+  },
   categoryBar: {
     borderRadius: radius.round,
     flexDirection: 'row',
-    height: 16,
+    height: 10,
     marginTop: spacing[3],
     overflow: 'hidden',
     width: '100%',
@@ -181,37 +159,39 @@ export const styles = StyleSheet.create({
     height: '100%',
   },
   categoryLegend: {
-    gap: spacing[3],
+    gap: spacing[1],
     marginTop: spacing[4],
   },
   categoryLegendRow: {
     alignItems: 'center',
     flexDirection: 'row',
+    minHeight: 28,
   },
   categoryLegendDot: {
     borderRadius: radius.round,
-    height: 8,
+    height: 7,
     marginRight: spacing[2],
-    width: 8,
+    width: 7,
   },
   categoryLegendLabel: {
-    ...typography.body1,
-    color: colors.textPrimary,
+    ...typography.body2,
+    color: colors.textSecondary,
     flex: 1,
   },
   categoryLegendAmount: {
-    ...typography.body1,
+    ...typography.body2,
     color: colors.textPrimary,
+    fontFamily: fontFamily.medium,
   },
   glanceSection: {
     gap: spacing[2],
   },
   activityCard: {
-    gap: spacing[8],
-    padding: spacing[5],
+    gap: spacing[5],
+    padding: spacing[4],
   },
   glanceOuterCard: {
-    backgroundColor: ledgerColors.softSurface,
+    backgroundColor: colors.ledger.softSurface,
     borderRadius: radius.card,
     padding: spacing[1],
   },
@@ -224,9 +204,9 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.white,
     borderRadius: radius.default,
     flex: 1,
-    gap: spacing[2],
+    gap: spacing[1],
     paddingHorizontal: spacing[1],
-    paddingVertical: spacing[4],
+    paddingVertical: spacing[3],
   },
   glanceLabel: {
     ...typography.body2,
@@ -243,10 +223,10 @@ export const styles = StyleSheet.create({
     fontFamily: fontFamily.bold,
   },
   expenseText: {
-    color: ledgerColors.expense,
+    color: colors.ledger.expense,
   },
   incomeText: {
-    color: ledgerColors.income,
+    color: colors.ledger.income,
   },
   sectionTitleRow: {
     alignItems: 'center',
@@ -258,18 +238,24 @@ export const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   recentSection: {
-    gap: spacing[3],
+    borderTopColor: colors.divider,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: spacing[2],
+    paddingTop: spacing[4],
   },
   transactionList: {
     backgroundColor: 'transparent',
   },
   recentGroup: {
-    paddingTop: spacing[3],
+    paddingTop: spacing[2],
+  },
+  recentGroupSeparated: {
+    marginTop: spacing[3],
   },
   groupLabel: {
     ...typography.caption,
     color: colors.textTertiary,
-    marginBottom: spacing[2],
+    marginBottom: spacing[1],
     paddingHorizontal: spacing[1],
   },
   transactionRow: {
@@ -277,18 +263,19 @@ export const styles = StyleSheet.create({
     borderBottomColor: colors.divider,
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
-    minHeight: spacing[20],
-    paddingHorizontal: spacing[5],
+    minHeight: 64,
+    paddingHorizontal: spacing[1],
   },
   transactionRowCompact: {
     borderBottomWidth: 0,
+    minHeight: 56,
     paddingHorizontal: spacing[1],
   },
   rowPressed: {
-    backgroundColor: ledgerColors.softSurface,
+    backgroundColor: colors.ledger.softSurface,
   },
   merchantLogoPlaceholder: {
-    backgroundColor: ledgerColors.logoPlaceholder,
+    backgroundColor: colors.ledger.logoPlaceholder,
     borderRadius: radius.round,
     height: 44,
     width: 44,
@@ -305,19 +292,19 @@ export const styles = StyleSheet.create({
   transactionMerchant: {
     color: colors.textSecondary,
     fontFamily: fontFamily.regular,
-    fontSize: 14,
+    fontSize: fontSize.body1,
     marginTop: 2,
   },
   calendarContent: {
-    gap: spacing[4],
+    gap: spacing[3],
     paddingBottom: 112,
     paddingHorizontal: semanticSpacing.screenMargin,
   },
   totalsCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing[6],
-    paddingVertical: spacing[4],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
   },
   totalItem: {
     gap: spacing[1],
@@ -325,46 +312,46 @@ export const styles = StyleSheet.create({
   totalLabel: {
     color: colors.textPrimary,
     fontFamily: fontFamily.regular,
-    fontSize: 14,
+    fontSize: fontSize.body1,
   },
   totalValue: {
     color: colors.textPrimary,
     fontFamily: fontFamily.medium,
-    fontSize: 13,
+    fontSize: fontSize.body2,
   },
   searchBox: {
     alignItems: 'center',
-    backgroundColor: ledgerColors.softSurface,
+    backgroundColor: colors.ledger.softSurface,
     borderRadius: 14,
     flexDirection: 'row',
-    minHeight: 52,
-    paddingHorizontal: spacing[4],
+    minHeight: 44,
+    paddingHorizontal: spacing[3],
   },
   searchIcon: {
     color: colors.textTertiary,
     fontFamily: fontFamily.regular,
-    fontSize: 23,
+    fontSize: fontSize.button,
     marginRight: spacing[2],
   },
   searchInput: {
     color: colors.textPrimary,
     flex: 1,
     fontFamily: fontFamily.regular,
-    fontSize: 16,
-    paddingVertical: spacing[3],
+    fontSize: fontSize.buttonSmall,
+    paddingVertical: spacing[2],
   },
   calendarCard: {
     paddingHorizontal: spacing[2],
-    paddingVertical: spacing[4],
+    paddingVertical: spacing[3],
   },
   weekdayRow: {
     flexDirection: 'row',
-    marginBottom: spacing[2],
+    marginBottom: spacing[1],
   },
   weekdayLabel: {
     color: colors.textTertiary,
     fontFamily: fontFamily.medium,
-    fontSize: 14,
+    fontSize: fontSize.body1,
     textAlign: 'center',
     width: '14.2857%',
   },
@@ -374,43 +361,46 @@ export const styles = StyleSheet.create({
   },
   calendarCell: {
     alignItems: 'center',
-    height: 67,
+    height: 58,
     paddingTop: spacing[1],
     width: '14.2857%',
   },
   calendarDayButton: {
     alignItems: 'center',
     borderRadius: radius.round,
-    height: 28,
+    height: 26,
     justifyContent: 'center',
-    width: 28,
+    width: 26,
   },
   calendarDaySelected: {
-    backgroundColor: ledgerColors.selectedDay,
+    backgroundColor: colors.ledger.selectedDay,
   },
   calendarDay: {
     color: colors.textPrimary,
     fontFamily: fontFamily.medium,
-    fontSize: 16,
+    fontSize: fontSize.body1,
   },
   calendarDayOutside: {
-    color: ledgerColors.calendarMuted,
+    color: colors.ledger.calendarMuted,
   },
   calendarTotal: {
     fontFamily: fontFamily.regular,
-    fontSize: 8,
+    fontSize: fontSize.tiny,
     lineHeight: 11,
     marginTop: 1,
     maxWidth: '100%',
   },
   calendarExpense: {
-    color: ledgerColors.expense,
+    color: colors.ledger.expense,
   },
   calendarIncome: {
-    color: ledgerColors.income,
+    color: colors.ledger.income,
   },
   calendarNeutral: {
     color: colors.textTertiary,
+  },
+  calendarFeedGroup: {
+    paddingHorizontal: spacing[2],
   },
   selectedDateTitle: {
     color: colors.textPrimary,
@@ -426,7 +416,7 @@ export const styles = StyleSheet.create({
   emptyStateText: {
     color: colors.textTertiary,
     fontFamily: fontFamily.regular,
-    fontSize: 14,
+    fontSize: fontSize.body1,
   },
   toTopButton: {
     alignItems: 'center',
@@ -466,7 +456,7 @@ export const styles = StyleSheet.create({
     color: colors.textPrimary,
     flex: 1,
     fontFamily: fontFamily.semiBold,
-    fontSize: 20,
+    fontSize: fontSize.button,
     marginLeft: spacing[3],
   },
   detailAmount: {
@@ -532,7 +522,7 @@ export const styles = StyleSheet.create({
     color: colors.textSecondary,
     flex: 1.5,
     fontFamily: fontFamily.regular,
-    fontSize: 15,
+    fontSize: fontSize.buttonSmall,
     textAlign: 'right',
   },
   historyTitle: {
@@ -557,17 +547,17 @@ export const styles = StyleSheet.create({
   historySummaryLabel: {
     color: colors.textSecondary,
     fontFamily: fontFamily.regular,
-    fontSize: 14,
+    fontSize: fontSize.body1,
   },
   historySummaryValue: {
     color: colors.textPrimary,
     fontFamily: fontFamily.semiBold,
-    fontSize: 18,
+    fontSize: fontSize.subtitle,
   },
   historyDate: {
     color: colors.textPrimary,
     fontFamily: fontFamily.medium,
-    fontSize: 14,
+    fontSize: fontSize.body1,
     marginBottom: spacing[1],
     marginTop: spacing[3],
   },
@@ -588,12 +578,12 @@ export const styles = StyleSheet.create({
   categoryPreviewAmount: {
     color: colors.textPrimary,
     fontFamily: fontFamily.semiBold,
-    fontSize: 18,
+    fontSize: fontSize.subtitle,
   },
   categoryPreviewMerchant: {
     color: colors.textSecondary,
     fontFamily: fontFamily.regular,
-    fontSize: 14,
+    fontSize: fontSize.body1,
     marginTop: 2,
   },
   categoryList: {
@@ -610,7 +600,7 @@ export const styles = StyleSheet.create({
     paddingHorizontal: spacing[2],
   },
   categoryRowSelected: {
-    backgroundColor: ledgerColors.selectedTab,
+    backgroundColor: colors.primary.lightGreen,
   },
   categoryIcon: {
     height: 48,
@@ -626,7 +616,7 @@ export const styles = StyleSheet.create({
   categoryCheck: {
     color: colors.primary.green,
     fontFamily: fontFamily.semiBold,
-    fontSize: 20,
+    fontSize: fontSize.button,
   },
   formKeyboardArea: {
     flex: 1,
@@ -650,7 +640,7 @@ export const styles = StyleSheet.create({
     minHeight: 52,
   },
   typeSelectorPill: {
-    backgroundColor: ledgerColors.selectedTab,
+    backgroundColor: colors.primary.lightGreen,
     borderRadius: radius.round,
     bottom: spacing[1],
     left: spacing[1],
@@ -660,7 +650,7 @@ export const styles = StyleSheet.create({
   typeOptionText: {
     color: colors.textPrimary,
     fontFamily: fontFamily.medium,
-    fontSize: 20,
+    fontSize: fontSize.button,
   },
   formCard: {
     backgroundColor: colors.white,
@@ -719,7 +709,7 @@ export const styles = StyleSheet.create({
   saveButtonLabel: {
     color: colors.white,
     fontFamily: fontFamily.semiBold,
-    fontSize: 20,
+    fontSize: fontSize.button,
   },
   formFooter: {
     backgroundColor: colors.background,

@@ -11,21 +11,21 @@ import {
 export const styles = StyleSheet.create({
   card: {
     marginTop: spacing[5],
-    paddingHorizontal: spacing[5],
-    paddingVertical: spacing[5],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[4],
     borderRadius: radius.card,
     backgroundColor: colors.white,
   },
   summary: {
-    minHeight: spacing[24],
+    minHeight: spacing[20],
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing[5],
+    gap: spacing[3],
   },
   illustration: {
-    width: spacing[20],
-    height: spacing[20],
+    width: 64,
+    height: 64,
   },
   message: {
     flex: 1,
@@ -35,23 +35,24 @@ export const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   highlight: {
-    ...typography.title,
+    ...typography.subtitle,
+    fontFamily: fontFamily.semiBold,
     marginTop: spacing[1],
     color: colors.textPrimary,
   },
   description: {
     ...typography.caption,
-    marginTop: spacing[2],
+    marginTop: spacing[1],
     color: colors.textSecondary,
     lineHeight: 18,
   },
   divider: {
     height: StyleSheet.hairlineWidth,
-    marginVertical: spacing[4],
+    marginVertical: spacing[3],
     backgroundColor: colors.divider,
   },
   metrics: {
-    minHeight: spacing[12],
+    minHeight: 40,
     flexDirection: 'row',
     alignItems: 'stretch',
   },
@@ -59,7 +60,7 @@ export const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing[2],
+    gap: spacing[1],
   },
   metricDivider: {
     width: StyleSheet.hairlineWidth,

@@ -3,6 +3,8 @@ package com.ssafy.dodam.global.exception;
 import org.springframework.http.HttpStatus;
 
 public enum ErrorCode {
+    DIAGNOSIS_IN_PROGRESS(HttpStatus.CONFLICT, "진단이 이미 진행 중입니다."),
+    DIAGNOSIS_EXPIRED(HttpStatus.CONFLICT, "진단 실행이 만료되었습니다. 다시 요청해 주세요."),
     VALIDATION_ERROR(HttpStatus.BAD_REQUEST, "요청 값이 올바르지 않습니다."),
     INVALID_REQUEST(HttpStatus.BAD_REQUEST, "요청 값이 올바르지 않습니다."),
     RESOURCE_NOT_FOUND(HttpStatus.NOT_FOUND, "요청한 리소스를 찾을 수 없습니다."),
@@ -71,7 +73,31 @@ public enum ErrorCode {
     /**
      * 계좌는 한 목표에만 연결할 수 있다(`uk_goal_account_account`). 다른 목표에 이미 연결된 계좌를 지정한 경우(S15P21D105-509).
      */
-    ACCOUNT_ALREADY_LINKED_TO_GOAL(HttpStatus.CONFLICT, "이미 다른 목표에 연결된 계좌입니다.");
+    ACCOUNT_ALREADY_LINKED_TO_GOAL(HttpStatus.CONFLICT, "이미 다른 목표에 연결된 계좌입니다."),
+
+    // ---------- Subscription (S15P21D105-514) ----------
+    /**
+     * 종료 상태(CANCELED·EXPIRED) 정기결제를 수정·정지·재개·취소하려는 경우.
+     */
+    SUBSCRIPTION_NOT_EDITABLE(HttpStatus.CONFLICT, "종료된 정기결제는 변경할 수 없습니다."),
+    /**
+     * 허용되지 않은 상태 전이(예: ACTIVE → EXPIRED 직접 지정). 전이 규칙은 SubscriptionStatus에 있다.
+     */
+    SUBSCRIPTION_STATUS_TRANSITION_NOT_ALLOWED(HttpStatus.CONFLICT, "허용되지 않은 정기결제 상태 변경입니다."),
+
+    // ---------- Simulation (S15P21D105-550, 551) ----------
+    /**
+     * 월 감소액이 기준 구간(직전 3개월)의 월평균 지출을 넘는 경우. 줄일 수 없는 금액을 줄인 결과를 만들지 않는다.
+     */
+    SIMULATION_REDUCTION_EXCEEDS_SPENDING(HttpStatus.BAD_REQUEST, "월 감소액이 최근 월평균 지출을 초과합니다."),
+    /**
+     * 새 월 저축액이 등록된 월 소득을 넘는 경우. 소득이 등록되지 않았으면 검사하지 않는다.
+     */
+    SIMULATION_SAVING_EXCEEDS_INCOME(HttpStatus.BAD_REQUEST, "월 저축액이 월 소득을 초과합니다."),
+    /**
+     * 계산기가 등록되지 않은 시뮬레이션 유형. 공개 경로는 유형별로 열려 있어 정상 흐름에서는 발생하지 않는다.
+     */
+    SIMULATION_TYPE_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "지원하지 않는 시뮬레이션 유형입니다.");
 
     private final HttpStatus status;
     private final String message;
