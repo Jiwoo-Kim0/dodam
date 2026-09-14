@@ -198,6 +198,8 @@ MySQL을 정지시킨 상태에서 실측한 결과:
 | --- | --- | --- |
 | Grafana | 1분 평가 | 수집 대상 다운(3분 유예), 디스크 15% 미만, 메모리 10% 미만 |
 | cron `container-watch.sh` | 5분 | 컨테이너 정지 / unhealthy / **크래시 루프** |
+| cron `backup.sh` | 매일 04:00 | MySQL 덤프 + 보관기간 정리 (디스크 임계 시 로그 경고) |
+| cron `docker-gc.sh` | 주 1회 (**등록 예정**) | 배포마다 쌓이는 이미지·빌드 캐시 정리 |
 
 `container-watch.sh`가 별도로 필요한 이유: Prometheus의 `up` 알림은 **스크레이프 대상만** 본다.
 `mysql`, `redis`, `backend`는 수집 대상이 아니므로 그쪽 이상은 잡지 못한다.
@@ -227,6 +229,27 @@ cd ~/app/infra && docker compose up -d --build --no-deps jenkins
 > 설정을 고쳐 머지해도 반영되지 않고, 수동으로 올린 변경은 다음 배포의 `git reset --hard`에
 > 밀려 조용히 원복된다.
 > 그래서 배포할 때마다 compose 전체 서비스와 대조해 누락을 WARN으로 남긴다.
+
+---
+
+## 디스크 정리 — `docker-gc.sh`
+
+배포 한 번마다 backend 이미지(약 744MB)와 gradle 빌드 캐시가 쌓이는데, 파이프라인 안에는
+정리하는 단계가 없다. 배포 경로에 `prune`을 넣으면 **배포 시간이 들쭉날쭉해지고 실패 지점이 늘어나므로**
+파이프라인 밖 cron으로 분리했다.
+
+| 대상 | 처리 | 남기는 것 |
+| --- | --- | --- |
+| 이미지 | `docker image prune -f` (**`-a` 금지**) | `infra-backend:latest` / `:rollback` / `:deployed` — 태그가 있어 대상이 아니다 |
+| 빌드 캐시 | `builder prune -f --max-used-space 10GB` | 상한선까지만. 전부 지우면 다음 배포의 gradle 빌드가 처음부터 돈다 |
+| 중지된 컨테이너 | `container prune -f` | — |
+| **볼륨·네트워크** | **건드리지 않는다** | `mysql_data`·`jenkins_home`. `system prune --volumes`를 넣지 말 것 |
+
+> **`:deployed` 태그가 이 정리의 안전 장치다.** 태그가 없으면 "방금 서비스에 올린 이미지"가
+> dangling으로 분류되어 정리 대상이 된다. 위 ③ Deploy의 롤백 지점 보존과 짝을 이룬다.
+
+배포와 겹치지 않도록 `deploy.sh` 프로세스가 떠 있으면 정리를 건너뛴다.
+(`--keep-storage`는 Docker 29에서 빠졌다 — `--max-used-space`를 쓴다)
 
 ---
 
