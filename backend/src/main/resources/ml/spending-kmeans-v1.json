@@ -1,0 +1,285 @@
+{
+  "modelVersion": "spending-kmeans-v1",
+  "algorithm": "kmeans",
+  "trainedAt": "2026-09-14T10:15:24",
+  "trainedBy": "python-sklearn-1.9.0",
+  "window": {
+    "start": "2026-03",
+    "end": "2026-08",
+    "months": 6
+  },
+  "referenceDate": "2026-09-14",
+  "minUserMonths": 3,
+  "features": [
+    "spendingToIncomeRatio",
+    "savingRate",
+    "fixedExpenseShare",
+    "discretionaryShare",
+    "spendingVolatility"
+  ],
+  "populationSize": 4000,
+  "clusterCount": 4,
+  "evaluation": {
+    "random_state": 20260914,
+    "n_init": 10,
+    "kSelection": "fixed",
+    "inertia": 4639.153,
+    "silhouette": 0.51
+  },
+  "standardization": {
+    "means": [
+      0.8289239948407228,
+      0.13999999999999435,
+      0.5534395867089955,
+      0.3069150859053702,
+      0.08201626979153753
+    ],
+    "stds": [
+      0.18059307415143777,
+      0.10173494974687938,
+      0.11292772718256577,
+      0.07823527457017077,
+      0.11716838453908064
+    ]
+  },
+  "centroids": [
+    [
+      -0.4201417835834845,
+      0.09829463743665333,
+      0.3375113478764803,
+      -0.33487957695984116,
+      -0.5736478357124456
+    ],
+    [
+      0.4176879378613746,
+      -0.5897678246195304,
+      -0.5279352775946307,
+      0.5230206051881379,
+      1.7063399714846543
+    ],
+    [
+      0.9734913292084084,
+      -1.0812410118025195,
+      -0.9602542019008722,
+      0.9532586119639017,
+      -0.5425346855617901
+    ],
+    [
+      -0.9710374834862905,
+      1.5727141989856208,
+      1.1506781316190362,
+      -1.141399640192178,
+      -0.5901574502104241
+    ]
+  ],
+  "clusters": [
+    {
+      "clusterId": 0,
+      "label": "균형형",
+      "sampleSize": 1000,
+      "stats": {
+        "spendingToIncomeRatio": {
+          "centroid": 0.753,
+          "min": 0.5261,
+          "max": 0.9801,
+          "p5": 0.5649,
+          "p95": 0.9391,
+          "mean": 0.753,
+          "std": 0.1192
+        },
+        "savingRate": {
+          "centroid": 0.15,
+          "min": 0.15,
+          "max": 0.15,
+          "p5": 0.15,
+          "p95": 0.15,
+          "mean": 0.15,
+          "std": 0.0
+        },
+        "fixedExpenseShare": {
+          "centroid": 0.5916,
+          "min": 0.4421,
+          "max": 0.6996,
+          "p5": 0.4743,
+          "p95": 0.681,
+          "mean": 0.5916,
+          "std": 0.0669
+        },
+        "discretionaryShare": {
+          "centroid": 0.2807,
+          "min": 0.2,
+          "max": 0.4022,
+          "p5": 0.2169,
+          "p95": 0.3626,
+          "mean": 0.2807,
+          "std": 0.0466
+        },
+        "spendingVolatility": {
+          "centroid": 0.0148,
+          "min": 0.0075,
+          "max": 0.046,
+          "p5": 0.0081,
+          "p95": 0.0296,
+          "mean": 0.0148,
+          "std": 0.0062
+        }
+      }
+    },
+    {
+      "clusterId": 1,
+      "label": "소비 변동형",
+      "sampleSize": 1000,
+      "stats": {
+        "spendingToIncomeRatio": {
+          "centroid": 0.9044,
+          "min": 0.6831,
+          "max": 1.1408,
+          "p5": 0.7168,
+          "p95": 1.0879,
+          "mean": 0.9044,
+          "std": 0.1198
+        },
+        "savingRate": {
+          "centroid": 0.08,
+          "min": 0.08,
+          "max": 0.08,
+          "p5": 0.08,
+          "p95": 0.08,
+          "mean": 0.08,
+          "std": 0.0
+        },
+        "fixedExpenseShare": {
+          "centroid": 0.4938,
+          "min": 0.345,
+          "max": 0.6164,
+          "p5": 0.376,
+          "p95": 0.5891,
+          "mean": 0.4938,
+          "std": 0.0686
+        },
+        "discretionaryShare": {
+          "centroid": 0.3478,
+          "min": 0.2517,
+          "max": 0.4761,
+          "p5": 0.2793,
+          "p95": 0.4311,
+          "mean": 0.3478,
+          "std": 0.0491
+        },
+        "spendingVolatility": {
+          "centroid": 0.2819,
+          "min": 0.2069,
+          "max": 0.3646,
+          "p5": 0.2286,
+          "p95": 0.3491,
+          "mean": 0.2819,
+          "std": 0.0383
+        }
+      }
+    },
+    {
+      "clusterId": 2,
+      "label": "소비 집중형",
+      "sampleSize": 1000,
+      "stats": {
+        "spendingToIncomeRatio": {
+          "centroid": 1.0047,
+          "min": 0.758,
+          "max": 1.2511,
+          "p5": 0.8173,
+          "p95": 1.1947,
+          "mean": 1.0047,
+          "std": 0.1212
+        },
+        "savingRate": {
+          "centroid": 0.03,
+          "min": 0.03,
+          "max": 0.03,
+          "p5": 0.03,
+          "p95": 0.03,
+          "mean": 0.03,
+          "std": 0.0
+        },
+        "fixedExpenseShare": {
+          "centroid": 0.445,
+          "min": 0.3008,
+          "max": 0.5611,
+          "p5": 0.3295,
+          "p95": 0.5391,
+          "mean": 0.445,
+          "std": 0.0672
+        },
+        "discretionaryShare": {
+          "centroid": 0.3815,
+          "min": 0.2924,
+          "max": 0.5028,
+          "p5": 0.3147,
+          "p95": 0.4635,
+          "mean": 0.3815,
+          "std": 0.0474
+        },
+        "spendingVolatility": {
+          "centroid": 0.0184,
+          "min": 0.0089,
+          "max": 0.0536,
+          "p5": 0.0104,
+          "p95": 0.0393,
+          "mean": 0.0184,
+          "std": 0.0085
+        }
+      }
+    },
+    {
+      "clusterId": 3,
+      "label": "저축 중심형",
+      "sampleSize": 1000,
+      "stats": {
+        "spendingToIncomeRatio": {
+          "centroid": 0.6536,
+          "min": 0.4395,
+          "max": 0.8633,
+          "p5": 0.4703,
+          "p95": 0.8355,
+          "mean": 0.6536,
+          "std": 0.1187
+        },
+        "savingRate": {
+          "centroid": 0.3,
+          "min": 0.3,
+          "max": 0.3,
+          "p5": 0.3,
+          "p95": 0.3,
+          "mean": 0.3,
+          "std": 0.0
+        },
+        "fixedExpenseShare": {
+          "centroid": 0.6834,
+          "min": 0.5403,
+          "max": 0.7839,
+          "p5": 0.5731,
+          "p95": 0.7635,
+          "mean": 0.6834,
+          "std": 0.0606
+        },
+        "discretionaryShare": {
+          "centroid": 0.2176,
+          "min": 0.1467,
+          "max": 0.3195,
+          "p5": 0.1619,
+          "p95": 0.2943,
+          "mean": 0.2176,
+          "std": 0.042
+        },
+        "spendingVolatility": {
+          "centroid": 0.0129,
+          "min": 0.0074,
+          "max": 0.037,
+          "p5": 0.0076,
+          "p95": 0.0239,
+          "mean": 0.0129,
+          "std": 0.0048
+        }
+      }
+    }
+  ]
+}

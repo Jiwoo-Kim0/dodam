@@ -85,6 +85,20 @@ public enum ErrorCode {
      */
     SUBSCRIPTION_STATUS_TRANSITION_NOT_ALLOWED(HttpStatus.CONFLICT, "허용되지 않은 정기결제 상태 변경입니다."),
 
+    // ---------- Recommendation (S15P21D105-548, 549) ----------
+    /**
+     * 아직 완료되지 않은 진단으로 개선안을 만들려는 경우. 진단은 존재하므로 404가 아니라 409다.
+     */
+    DIAGNOSIS_NOT_COMPLETED(HttpStatus.CONFLICT, "완료된 진단이 아닙니다."),
+    /**
+     * 요청 goalId가 진단의 goalId와 다른 경우. 다른 목표로 진단한 근거를 이 목표의 개선안에 쓰면 목표기여 계산이 틀어진다.
+     */
+    RECOMMENDATION_GOAL_MISMATCH(HttpStatus.BAD_REQUEST, "진단의 목표와 다른 목표를 지정할 수 없습니다."),
+    /**
+     * 허용되지 않은 개선안 상태 전이(같은 상태 재요청 포함). 전이 규칙은 RecommendationTransitionPolicy에 있다.
+     */
+    RECOMMENDATION_STATUS_TRANSITION_NOT_ALLOWED(HttpStatus.CONFLICT, "허용되지 않은 개선안 상태 변경입니다."),
+
     // ---------- Simulation (S15P21D105-550, 551) ----------
     /**
      * 월 감소액이 기준 구간(직전 3개월)의 월평균 지출을 넘는 경우. 줄일 수 없는 금액을 줄인 결과를 만들지 않는다.
@@ -97,7 +111,25 @@ public enum ErrorCode {
     /**
      * 계산기가 등록되지 않은 시뮬레이션 유형. 공개 경로는 유형별로 열려 있어 정상 흐름에서는 발생하지 않는다.
      */
-    SIMULATION_TYPE_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "지원하지 않는 시뮬레이션 유형입니다.");
+    SIMULATION_TYPE_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "지원하지 않는 시뮬레이션 유형입니다."),
+
+    // ---------- Pattern (S15P21D105-516 ~ 518) ----------
+    /**
+     * 임대 기간 안의 진행 중 분석이 있는 경우(명세 "중복 분석 요청 방지").
+     */
+    PATTERN_ANALYSIS_IN_PROGRESS(HttpStatus.CONFLICT, "패턴 분석이 이미 진행 중입니다."),
+    /**
+     * 접수가 만료(임대 초과·이후 접수 존재·이미 완료)된 뒤 완료를 시도한 경우. 정상 흐름에서는 발생하지 않는다.
+     */
+    PATTERN_ANALYSIS_EXPIRED(HttpStatus.CONFLICT, "분석 접수가 만료되어 결과를 저장할 수 없습니다."),
+    /**
+     * 완료된 분석 결과가 없는 경우(명세 "분석 결과가 존재해야 함").
+     */
+    PATTERN_ANALYSIS_NOT_FOUND(HttpStatus.NOT_FOUND, "패턴 분석 결과가 없습니다. 먼저 분석을 실행해 주세요."),
+    /**
+     * 분석 기간에 거래가 없는 경우(명세 "분석 가능 거래 데이터가 존재해야 함"). 금융망 미연결이면 FINANCE_NOT_CONNECTED를 쓴다.
+     */
+    PATTERN_INSUFFICIENT_DATA(HttpStatus.CONFLICT, "분석할 금융 데이터가 없습니다. 금융 데이터 연동 후 다시 시도해 주세요.");
 
     private final HttpStatus status;
     private final String message;
