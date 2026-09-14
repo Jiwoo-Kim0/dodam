@@ -31,4 +31,7 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 36,
   },
+  actionButtonPressed: {
+    opacity: 0.5,
+  },
 });
