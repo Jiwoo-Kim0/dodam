@@ -70,11 +70,33 @@ git -C "$APP_DIR" checkout "$DEPLOY_BRANCH"
 
 # 롤백 지점: 동기화 "전" 커밋. 배포가 실패하면 여기로 되돌린다.
 PREV_COMMIT="$(git -C "$APP_DIR" rev-parse HEAD)"
-# 현재 떠 있는 backend 이미지도 함께 보존한다.
+# 현재 "서비스 중인" backend 이미지를 함께 보존한다.
 # (코드를 되돌려도 이미지를 다시 빌드하면 시간이 걸리고, 빌드 자체가 깨져 있을 수도 있다)
+#
+# ★ infra-backend:latest 를 기준으로 삼으면 안 된다 (2026-09-14 수정).
+#   Jenkins의 Build & Test 단계가 이 스크립트보다 **먼저**
+#     docker compose -f $WORKSPACE/infra/docker-compose.yml build backend
+#   를 돌리는데, 워크스페이스와 $APP_DIR 양쪽 모두 compose 프로젝트명이 'infra'
+#   (= compose 파일이 있는 디렉터리명)라 동일한 infra-backend:latest 태그를 공유한다.
+#   따라서 이 줄에 도달한 시점의 latest는 이미 "방금 빌드한, 아직 검증되지 않은 이미지"다.
+#   그 상태로 rollback 태그를 잡으면, 롤백해도 같은 깨진 이미지가 다시 뜬다.
+#   실측(2026-09-14): latest와 rollback이 동일 ID였고, 실제 실행 중 컨테이너는 별개 이미지였다.
+#
+#   → 태그가 아니라 "지금 실제로 떠 있는 것"을 기준으로 잡는다.
+DEPLOYED_TAG="infra-backend:deployed"   # 헬스체크를 통과한 마지막 이미지 (배포 성공 시 갱신)
 PREV_IMAGE=""
-if docker image inspect infra-backend:latest >/dev/null 2>&1; then
-    docker tag infra-backend:latest infra-backend:rollback && PREV_IMAGE="infra-backend:rollback"
+RUNNING_IMAGE="$(docker inspect -f '{{.Image}}' backend 2>/dev/null || true)"
+if [ -n "$RUNNING_IMAGE" ] && docker image inspect "$RUNNING_IMAGE" >/dev/null 2>&1; then
+    docker tag "$RUNNING_IMAGE" infra-backend:rollback && PREV_IMAGE="infra-backend:rollback"
+elif docker image inspect "$DEPLOYED_TAG" >/dev/null 2>&1; then
+    # 최초 배포라 컨테이너가 없거나, 실행 중 이미지가 스토어에서 사라진 경우.
+    # 태그가 붙지 않은 이미지는 GC 대상이 되어 실제로 사라진 적이 있다
+    # (2026-09-14 실측: 실행 중 backend의 이미지가 docker image inspect로 조회되지 않았다).
+    # 그래서 배포 성공 시마다 $DEPLOYED_TAG 를 붙여 최소 한 세대는 남도록 해둔다.
+    docker tag "$DEPLOYED_TAG" infra-backend:rollback && PREV_IMAGE="infra-backend:rollback"
+    log "실행 중 이미지를 찾지 못해 마지막 검증 이미지($DEPLOYED_TAG)를 롤백 지점으로 사용한다"
+else
+    log "WARN: 보존할 backend 이미지가 없다 — 실패해도 코드만 롤백된다(이미지 롤백 불가)"
 fi
 
 git -C "$APP_DIR" reset --hard "origin/$DEPLOY_BRANCH"
@@ -158,6 +180,15 @@ if [ "$READY" = "1" ]; then
         code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$HEALTH_URL" || true)"
         if [ "$code" = "200" ]; then
             log "  end-to-end 통과 (${i}회차)"
+            # 이 이미지는 두 단계 헬스체크를 모두 통과했다. 고정 태그를 붙여 둔다.
+            # 이유 두 가지:
+            #   1) 다음 배포의 롤백 지점 후보가 된다 (위 캡처 블록의 fallback)
+            #   2) latest는 다음 빌드에서 옮겨가므로, 태그가 없으면 이 이미지는
+            #      아무도 참조하지 않는 상태가 되어 GC로 사라질 수 있다
+            NEW_IMAGE="$(docker inspect -f '{{.Image}}' backend 2>/dev/null || true)"
+            docker image inspect "$NEW_IMAGE" >/dev/null 2>&1 || NEW_IMAGE="infra-backend:latest"
+            docker tag "$NEW_IMAGE" "$DEPLOYED_TAG" 2>/dev/null \
+                || log "WARN: $DEPLOYED_TAG 태그 실패 — 다음 배포의 롤백 fallback이 없다"
             log "배포 성공"
             docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" ps
             exit 0

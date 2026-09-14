@@ -1,6 +1,6 @@
 # CI/CD 파이프라인
 
-도담 백엔드의 배포 자동화 구조. 최종 갱신 2026-09-09.
+도담 백엔드의 배포 자동화 구조. 최종 갱신 2026-09-14.
 
 관련 문서: [운영 안내](../README.md) · [보안 방침](../todo/security.md) · [일자별 작업 로그](../todo/jiw/)
 
@@ -19,7 +19,7 @@ flowchart TD
     F -->|테스트 실패| X1[빌드 실패<br/>배포 진행 안 함]
     F -->|통과| G[③ Deploy]
 
-    G --> G1[롤백 지점 확보<br/>커밋 + 이미지 보존]
+    G --> G1[롤백 지점 확보<br/>커밋 + 실행 중 이미지 보존]
     G1 --> G2[소스 동기화<br/>git reset --hard]
     G2 --> G3[환경변수 사전 검사]
     G3 -->|이상| X2[배포 중단<br/>컨테이너 안 건드림]
@@ -80,7 +80,7 @@ docker compose -f "$WORKSPACE/infra/docker-compose.yml" build backend
 
 | 순서 | 동작 | 목적 |
 | --- | --- | --- |
-| 1 | 롤백 지점 확보 | 동기화 **전** 커밋 + 현재 backend 이미지를 `infra-backend:rollback`으로 태그 |
+| 1 | 롤백 지점 확보 | 동기화 **전** 커밋 + **실행 중인** backend 컨테이너의 이미지를 `infra-backend:rollback`으로 태그 |
 | 2 | 소스 동기화 | `git reset --hard origin/develop` |
 | 3 | 환경변수 사전 검사 | `check-env.sh` (아래 참고) |
 | 4 | 배포 목록 대조 | compose에 있는데 배포 대상이 아닌 서비스를 WARN |
@@ -91,6 +91,23 @@ docker compose -f "$WORKSPACE/infra/docker-compose.yml" build backend
 
 **이미지까지 보존하는 이유**: 코드만 되돌리고 다시 빌드하면 시간이 걸리고,
 **빌드 자체가 깨져 있으면 롤백조차 못 한다.**
+
+> ⚠️ **`infra-backend:latest`를 롤백 지점으로 잡으면 안 된다** (2026-09-14 수정 전까지 그랬다).
+> Build & Test 단계가 `deploy.sh`보다 먼저 `compose build backend`를 돌리는데,
+> 워크스페이스와 `$APP_DIR`의 compose 프로젝트명이 **둘 다 `infra`**(compose 파일이 있는 디렉터리명)라
+> 같은 `infra-backend:latest` 태그를 공유한다. 그래서 `deploy.sh`가 보는 `latest`는 이미
+> **방금 빌드한, 아직 검증되지 않은 이미지**였다.
+>
+> 실측(2026-09-14): `latest`와 `rollback`이 동일 ID(`93a784911df3`)였고,
+> 실제 서비스 중인 컨테이너는 별개 이미지(`9ad0e1d19698`)였다.
+> → 코드는 롤백돼도 **이미지는 그대로**여서, 앱 자체가 기동을 깨뜨리는 경우 롤백이 무력했다.
+>
+> 지금은 `docker inspect -f '{{.Image}}' backend`로 **실제 서비스 중인 이미지**를 기준으로 잡는다.
+> 더불어 배포가 두 단계 헬스체크를 통과하면 그 이미지에 **`infra-backend:deployed` 고정 태그**를 붙인다.
+> 태그가 없는 이미지는 GC 대상이 되어 실제로 사라진 적이 있기 때문이다
+> (위 `9ad0e1d19698`이 `docker image inspect`로 조회되지 않았다).
+> 실행 중 이미지를 찾지 못하면 이 `deployed` 태그를 fallback으로 쓰고,
+> 둘 다 없으면 **WARN을 남기고 코드만 롤백**한다 — 없는 안전망을 있는 척하지 않는다.
 
 ---
 
