@@ -1,6 +1,6 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, fontFamily, radius, spacing } from '@/styles';
+import { colors, fontFamily, radius, semanticSpacing, spacing } from '@/styles';
 
 /** 막대가 그려지는 세로 영역이다. */
 export const BAR_AREA_HEIGHT = 76;
@@ -25,7 +25,7 @@ export const styles = StyleSheet.create({
   chart: {
     flexDirection: 'row',
     gap: spacing[2],
-    marginTop: spacing[3],
+    marginTop: semanticSpacing.cardTitleContentGap,
     position: 'relative',
   },
   column: {

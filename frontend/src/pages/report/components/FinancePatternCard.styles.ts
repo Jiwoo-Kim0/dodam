@@ -1,6 +1,6 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, fontFamily, radius, spacing } from '@/styles';
+import { colors, fontFamily, radius, semanticSpacing, spacing } from '@/styles';
 
 export const styles = StyleSheet.create({
   patternCard: {
@@ -12,7 +12,7 @@ export const styles = StyleSheet.create({
   patternList: {
     backgroundColor: colors.white,
     borderRadius: radius.card,
-    marginTop: spacing[2],
+    marginTop: semanticSpacing.cardTitleContentGap,
     paddingHorizontal: spacing[3],
     paddingVertical: spacing[2],
   },

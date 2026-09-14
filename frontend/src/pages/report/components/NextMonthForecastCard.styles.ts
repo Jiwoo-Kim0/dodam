@@ -1,6 +1,6 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, fontFamily, fontSize, radius, spacing, typography } from '@/styles';
+import { colors, fontFamily, fontSize, radius, semanticSpacing, spacing, typography } from '@/styles';
 
 export const styles = StyleSheet.create({
   forecastCard: {
@@ -11,7 +11,7 @@ export const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontFamily: fontFamily.medium,
     lineHeight: 18,
-    marginTop: spacing[3],
+    marginTop: semanticSpacing.cardTitleContentGap,
   },
   expenseAmount: {
     ...typography.headline,
@@ -33,12 +33,12 @@ export const styles = StyleSheet.create({
     fontFamily: fontFamily.semiBold,
   },
   breakdownBar: {
+    alignSelf: 'stretch',
     borderRadius: radius.round,
     flexDirection: 'row',
     height: 10,
     marginTop: spacing[3],
     overflow: 'hidden',
-    width: '100%',
   },
   breakdownBarSegment: {
     height: '100%',

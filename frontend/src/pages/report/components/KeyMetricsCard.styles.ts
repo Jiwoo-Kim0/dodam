@@ -1,6 +1,6 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, fontFamily, fontSize, radius, spacing, typography } from '@/styles';
+import { colors, fontFamily, fontSize, radius, semanticSpacing, spacing, typography } from '@/styles';
 
 export const styles = StyleSheet.create({
   metricsCard: {
@@ -10,7 +10,7 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing[2],
-    marginTop: spacing[2],
+    marginTop: semanticSpacing.cardTitleContentGap,
   },
   metricTile: {
     backgroundColor: colors.background,

@@ -1,6 +1,6 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, fontFamily, fontSize, radius, spacing, typography } from '@/styles';
+import { colors, fontFamily, fontSize, radius, semanticSpacing, spacing, typography } from '@/styles';
 
 export const styles = StyleSheet.create({
   scoreCard: {
@@ -16,7 +16,7 @@ export const styles = StyleSheet.create({
   scoreRow: {
     alignItems: 'baseline',
     flexDirection: 'row',
-    marginTop: spacing[1],
+    marginTop: semanticSpacing.cardTitleContentGap,
   },
   /** 가계부의 대표 금액과 같은 display(34) 규칙을 쓴다. */
   score: {
