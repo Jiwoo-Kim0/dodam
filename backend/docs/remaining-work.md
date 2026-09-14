@@ -893,7 +893,8 @@
 
 ### MySQL 검증
 
-- [ ] V31 `validate` 통과, `DECIMAL(10,4)`·`JSON` 컬럼 매핑, seed 사용자 분석 실행(모집단 4,000명 학습 시간 포함)을 MySQL 8.0에서 확인한다. H2 통합 테스트만 수행했다. 2026-09-14 작업 PC에 Docker 데몬이 꺼져 있고 로컬 MySQL80 서비스는 자격증명이 없어 미실행.
+- [x] 2026-09-14 Docker `mysql:8.0`에 V1~V19·V30·V31을 README 순서로 손 적용(40개 테이블)하고 `PatternMySqlIntegrationTest`(Flyway off, `ddl-auto: validate`)로 전체 엔티티 validate 통과, 월별 집계 SQL(YEAR/MONTH·CASE·IN)·41명 모집단 K-Means 학습·"저축 중심형" 배정, `JSON_EXTRACT`로 `cluster_stats_json.clusterLabel`·`feature_summary_json.windowStart` 읽기, `debt_burden = 0.1000` 저장을 확인했다.
+- [ ] seed 4,000명 모집단 학습 시간과 seed 사용자(`seed.kmeans.u0001`) 분석 결과는 미측정이다. seed 적재에 암호 fixture 테이블이 필요해(seeds README 2~3번) 이번에는 생략했다. 시연 전 한 번 실측해 `model-ttl`·동기 실행 정책을 확인한다.
 
 ## S15P21D105-517 — Pattern 결과·프로필 조회
 

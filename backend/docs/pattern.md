@@ -236,4 +236,5 @@ clusterDeviationAlpha = 군집 결과가 있으면 0.2 × confidence, 없으면 
 - 통합(H2, `PatternApiTest`): 성향 4종 × 12명 모집단 + 본인(저축형 + 대출상환 + 입출금 계좌). HYBRID 배정("저축 중심형")·같은 날 재사용·forceRefresh, RULE_ONLY 요청·모드 불일치
   비재사용·잘못된 모드 400, 모집단 부족 fallback, 데이터 2개월 사용자 fallback, 데이터 없음(연결 상태별 409)·조회 404/409·기본 프로필, 소비/자금운용/우선순위 조회와
   최근 분석의 clusterProfile 반영, 인증·소유권, 접수 중복·폐기·임대 만료.
-- MySQL 검증은 remaining-work 516 절 참고.
+- MySQL(`PatternMySqlIntegrationTest`, `PATTERN_MYSQL_TEST_URL`로 활성화): V31 스키마 `validate`, 실제 MySQL 집계 SQL, JSON 객체 저장(`JSON_EXTRACT`), 41명 모집단 HYBRID 배정.
+  2026-09-14 Docker mysql:8.0에서 통과. seed 4,000명 실측은 remaining-work 516 절 참고.
