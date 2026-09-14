@@ -58,6 +58,8 @@ export interface ReportKeyMetric {
   changeLabel: string;
   tone: ReportMetricTone;
   icon: ImageSourcePropType;
+  /** 원본 이미지의 투명 여백을 보정하는 시각 배율 */
+  iconScale: number;
 }
 
 export interface ReportMonthlySpending {

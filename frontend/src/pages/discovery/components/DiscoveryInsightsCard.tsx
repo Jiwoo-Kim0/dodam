@@ -1,5 +1,5 @@
 import { SymbolView } from 'expo-symbols';
-import { Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import type { DiscoveryInsight } from '@/mocks/discovery';
 import { colors } from '@/styles';
@@ -9,11 +9,16 @@ import { styles } from './DiscoveryInsightsCard.styles';
 
 type DiscoveryInsightsCardProps = {
   insight: DiscoveryInsight;
+  onPress: () => void;
 };
 
-export function DiscoveryInsightsCard({ insight }: DiscoveryInsightsCardProps) {
+export function DiscoveryInsightsCard({ insight, onPress }: DiscoveryInsightsCardProps) {
   return (
-    <View style={styles.card}>
+    <Pressable
+      accessibilityLabel={`${insight.detailedTitle} 상세 보기`}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}>
       <View style={styles.badgeRow}>
         <View
           style={[
@@ -39,16 +44,14 @@ export function DiscoveryInsightsCard({ insight }: DiscoveryInsightsCardProps) {
         <View style={styles.amountValueRow}>
           <Text style={styles.amountValue}>{formatNumber(insight.annualSavingAmount)}</Text>
           <Text style={styles.amountUnit}> 원/연</Text>
-          {insight.rank !== 1 ? (
-            <SymbolView
-              name={{ android: 'chevron_right', ios: 'chevron.right', web: 'chevron_right' }}
-              size={16}
-              style={styles.chevron}
-              tintColor={colors.textSecondary}
-            />
-          ) : null}
+          <SymbolView
+            name={{ android: 'chevron_right', ios: 'chevron.right', web: 'chevron_right' }}
+            size={16}
+            style={styles.chevron}
+            tintColor={colors.textSecondary}
+          />
         </View>
       </View>
-    </View>
+    </Pressable>
   );
 }

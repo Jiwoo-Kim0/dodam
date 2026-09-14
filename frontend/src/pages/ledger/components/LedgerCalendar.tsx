@@ -312,7 +312,7 @@ export function LedgerCalendar({
 
           {feedGroups.length > 0 ? (
             feedGroups.map((group) => (
-              <View key={group.date}>
+              <View key={group.date} style={styles.calendarFeedGroup}>
                 <View style={styles.sectionTitleRow}>
                   <Text style={styles.selectedDateTitle}>{getSelectedDateLabel(group.date)}</Text>
                 </View>

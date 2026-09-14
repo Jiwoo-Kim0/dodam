@@ -57,14 +57,16 @@ export function NextMonthForecastCard({ forecast }: NextMonthForecastCardProps) 
           <View key={item.id} style={styles.breakdownItem}>
             <View style={styles.breakdownLabelRow}>
               <View style={[styles.breakdownDot, { backgroundColor: toneColors[item.tone] }]} />
-              <Text style={styles.breakdownLabel}>{item.label}</Text>
+              <Text numberOfLines={1} style={styles.breakdownLabel}>{item.label}</Text>
             </View>
-            <Text numberOfLines={1} style={styles.breakdownAmount}>
-              {formatCurrency(item.amount)}
-            </Text>
-            <Text style={styles.breakdownRatio}>
-              {breakdownTotal === 0 ? '0%' : `${Math.round((item.amount / breakdownTotal) * 100)}%`}
-            </Text>
+            <View style={styles.breakdownValueRow}>
+              <Text numberOfLines={1} style={styles.breakdownAmount}>
+                {formatCurrency(item.amount)}
+              </Text>
+              <Text style={styles.breakdownRatio}>
+                {breakdownTotal === 0 ? '0%' : `${Math.round((item.amount / breakdownTotal) * 100)}%`}
+              </Text>
+            </View>
           </View>
         ))}
       </View>

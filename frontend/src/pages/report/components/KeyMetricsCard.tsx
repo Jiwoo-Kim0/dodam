@@ -23,7 +23,13 @@ export function KeyMetricsCard({ metrics }: KeyMetricsCardProps) {
             style={[styles.metricTile, metric.tone === 'accent' && styles.metricTileAccent]}>
             <View style={styles.metricHeader}>
               <Text style={styles.metricLabel}>{metric.label}</Text>
-              <Image contentFit="contain" source={metric.icon} style={styles.metricIcon} />
+              <View style={styles.metricIconFrame}>
+                <Image
+                  contentFit="contain"
+                  source={metric.icon}
+                  style={[styles.metricIcon, { transform: [{ scale: metric.iconScale }] }]}
+                />
+              </View>
             </View>
 
             <View style={styles.metricValueRow}>

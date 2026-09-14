@@ -44,7 +44,7 @@ export const styles = StyleSheet.create({
   dueDate: {
     color: colors.textSecondary,
     fontFamily: fontFamily.regular,
-    fontSize: 10,
+    fontSize: fontSize.micro,
     lineHeight: 14,
   },
   statusRow: {
@@ -114,7 +114,7 @@ export const styles = StyleSheet.create({
   progressPercent: {
     color: colors.textSecondary,
     fontFamily: fontFamily.regular,
-    fontSize: 10,
+    fontSize: fontSize.micro,
     lineHeight: 14,
     width: 26,
   },
@@ -136,7 +136,7 @@ export const styles = StyleSheet.create({
     color: colors.textPrimary,
     flex: 1,
     fontFamily: fontFamily.regular,
-    fontSize: 10,
+    fontSize: fontSize.micro,
     lineHeight: 14,
   },
   chevron: {

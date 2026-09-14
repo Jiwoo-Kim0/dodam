@@ -2,9 +2,10 @@ import { StyleSheet } from 'react-native';
 
 import { colors, fontFamily, fontSize, radius, spacing } from '@/styles';
 
-const CHART_SIZE = 80;
-/** 링 굵기(19)를 뺀 안쪽 지름과 맞춘다. */
-const CENTER_SIZE = 42;
+export const CHART_SIZE = 72;
+export const STROKE_WIDTH = 16;
+/** 링 안쪽 지름과 맞춘다. */
+const CENTER_SIZE = 40;
 
 export const styles = StyleSheet.create({
   chartFrame: {

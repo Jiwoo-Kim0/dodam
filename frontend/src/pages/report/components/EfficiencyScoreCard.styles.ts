@@ -1,12 +1,13 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, fontFamily, fontSize, radius, spacing, typography } from '@/styles';
+import { colors, fontFamily, fontSize, radius, semanticSpacing, spacing, typography } from '@/styles';
 
 export const styles = StyleSheet.create({
   scoreCard: {
     alignItems: 'center',
     flexDirection: 'row',
-    padding: spacing[5],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
   },
   scoreContent: {
     flex: 1,
@@ -15,7 +16,7 @@ export const styles = StyleSheet.create({
   scoreRow: {
     alignItems: 'baseline',
     flexDirection: 'row',
-    marginTop: spacing[1],
+    marginTop: semanticSpacing.cardTitleContentGap,
   },
   /** 가계부의 대표 금액과 같은 display(34) 규칙을 쓴다. */
   score: {
@@ -44,9 +45,9 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.background,
     borderRadius: radius.round,
     flexDirection: 'row',
-    gap: spacing[2],
-    marginTop: spacing[3],
-    paddingHorizontal: spacing[3],
+    gap: spacing[1],
+    marginTop: spacing[2],
+    paddingHorizontal: spacing[2],
     paddingVertical: spacing[1],
   },
   differenceLabel: {
@@ -64,6 +65,6 @@ export const styles = StyleSheet.create({
     ...typography.body2,
     color: colors.textPrimary,
     lineHeight: 18,
-    marginTop: spacing[2],
+    marginTop: spacing[1],
   },
 });

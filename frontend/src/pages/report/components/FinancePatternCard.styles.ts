@@ -1,18 +1,18 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, fontFamily, radius, spacing } from '@/styles';
+import { colors, fontFamily, radius, semanticSpacing, spacing } from '@/styles';
 
 export const styles = StyleSheet.create({
   patternCard: {
     backgroundColor: colors.report.patternSurface,
-    paddingBottom: spacing[1],
+    paddingBottom: spacing[2],
     paddingHorizontal: spacing[4],
-    paddingTop: spacing[5],
+    paddingTop: spacing[4],
   },
   patternList: {
     backgroundColor: colors.white,
     borderRadius: radius.card,
-    marginTop: spacing[2],
+    marginTop: semanticSpacing.cardTitleContentGap,
     paddingHorizontal: spacing[3],
     paddingVertical: spacing[2],
   },
@@ -26,16 +26,16 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing[2],
   },
-  /** 텍스트 두 줄(15+1+12)과 같은 높이라 행이 더 커지지 않는다. */
+  /** 아이콘을 텍스트 두 줄보다 작게 유지해 행 높이가 커지지 않게 한다. */
   patternIconFrame: {
     alignItems: 'center',
-    height: 28,
+    height: 24,
     justifyContent: 'center',
-    width: 28,
+    width: 24,
   },
   patternIcon: {
-    height: 28,
-    width: 28,
+    height: 24,
+    width: 24,
   },
   patternTextContent: {
     flex: 1,
@@ -84,8 +84,8 @@ export const styles = StyleSheet.create({
     marginTop: spacing[1],
   },
   coachingCharacter: {
-    height: 48,
-    width: 48,
+    height: 40,
+    width: 40,
   },
   coachingMessage: {
     color: colors.primary.green,

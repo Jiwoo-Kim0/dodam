@@ -1,17 +1,16 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, fontFamily, fontSize, radius, spacing } from '@/styles';
+import { colors, fontFamily, fontSize, radius, shadows, spacing } from '@/styles';
 
 export const styles = StyleSheet.create({
   card: {
+    ...shadows.softCard,
     backgroundColor: colors.white,
     borderRadius: radius.card,
-    elevation: 1,
-    padding: spacing[4],
-    shadowColor: colors.textPrimary,
-    shadowOffset: { height: 2, width: 0 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
+    padding: spacing[3],
+  },
+  cardPressed: {
+    opacity: 0.65,
   },
   badgeRow: {
     flexDirection: 'row',
@@ -20,8 +19,8 @@ export const styles = StyleSheet.create({
   rankBadge: {
     backgroundColor: colors.primary.green,
     borderRadius: radius.round,
-    paddingHorizontal: spacing[3],
-    paddingVertical: 3,
+    paddingHorizontal: spacing[2],
+    paddingVertical: 2,
   },
   rankFirst: {
     backgroundColor: colors.primary.brown,
@@ -38,18 +37,18 @@ export const styles = StyleSheet.create({
   rankBadgeText: {
     color: colors.white,
     fontFamily: fontFamily.semiBold,
-    fontSize: 11,
+    fontSize: fontSize.micro,
   },
   categoryBadge: {
     backgroundColor: colors.background,
     borderRadius: radius.round,
-    paddingHorizontal: spacing[3],
-    paddingVertical: 3,
+    paddingHorizontal: spacing[2],
+    paddingVertical: 2,
   },
   categoryBadgeText: {
     color: colors.textSecondary,
     fontFamily: fontFamily.medium,
-    fontSize: 11,
+    fontSize: fontSize.micro,
   },
   title: {
     color: colors.textPrimary,
@@ -61,7 +60,7 @@ export const styles = StyleSheet.create({
   divider: {
     backgroundColor: colors.divider,
     height: StyleSheet.hairlineWidth,
-    marginVertical: spacing[3],
+    marginVertical: spacing[2],
   },
   amountRow: {
     alignItems: 'center',
@@ -71,7 +70,7 @@ export const styles = StyleSheet.create({
   amountLabel: {
     color: colors.textTertiary,
     fontFamily: fontFamily.regular,
-    fontSize: 12,
+    fontSize: fontSize.detail,
   },
   amountValueRow: {
     alignItems: 'center',
@@ -79,13 +78,13 @@ export const styles = StyleSheet.create({
   },
   amountValue: {
     color: colors.textPrimary,
-    fontFamily: fontFamily.bold,
-    fontSize: fontSize.subtitle,
+    fontFamily: fontFamily.semiBold,
+    fontSize: fontSize.buttonSmall,
   },
   amountUnit: {
     color: colors.textPrimary,
     fontFamily: fontFamily.regular,
-    fontSize: 12,
+    fontSize: fontSize.detail,
   },
   chevron: {
     marginLeft: spacing[1],

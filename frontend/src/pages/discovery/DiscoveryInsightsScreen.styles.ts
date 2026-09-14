@@ -1,11 +1,12 @@
 import { StyleSheet } from 'react-native';
 
 import {
+  fontSize,
   colors,
-  componentSize,
   fontFamily,
   radius,
   semanticSpacing,
+  shadows,
   spacing,
   typography,
 } from '@/styles';
@@ -14,31 +15,16 @@ export const styles = StyleSheet.create({
   screen: {
     backgroundColor: colors.background,
   },
-  header: {
-    justifyContent: 'center',
-    minHeight: componentSize.touchTarget,
-    paddingHorizontal: semanticSpacing.screenMargin,
-  },
-  backButton: {
-    alignItems: 'flex-start',
-    height: componentSize.touchTarget,
-    justifyContent: 'center',
-    width: componentSize.touchTarget,
-  },
-  backButtonPressed: {
-    opacity: 0.5,
+  scroll: {
+    backgroundColor: colors.home.goalGradientEnd,
   },
   scrollContent: {
+    backgroundColor: colors.background,
     paddingHorizontal: semanticSpacing.screenMargin,
   },
-  title: {
-    ...typography.headline,
-    color: colors.textPrimary,
-    marginTop: spacing[2],
-  },
   gradientContainer: {
-    marginTop: spacing[8],
-    paddingBottom: spacing[5],
+    marginTop: spacing[6],
+    paddingBottom: spacing[4],
     position: 'relative',
   },
   gradientOverlay: {
@@ -47,15 +33,11 @@ export const styles = StyleSheet.create({
     right: -semanticSpacing.screenMargin,
   },
   summaryCard: {
+    ...shadows.softCard,
     backgroundColor: colors.white,
     borderRadius: radius.card,
-    elevation: 3,
-    gap: spacing[3],
-    padding: spacing[5],
-    shadowColor: colors.textPrimary,
-    shadowOffset: { height: 3, width: 0 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
+    gap: spacing[2],
+    padding: spacing[4],
     zIndex: 2,
   },
   summaryHeaderRow: {
@@ -66,12 +48,12 @@ export const styles = StyleSheet.create({
   summaryLabel: {
     color: colors.textSecondary,
     fontFamily: fontFamily.regular,
-    fontSize: 12,
+    fontSize: fontSize.caption,
   },
   summaryCount: {
     color: colors.primary.green,
     fontFamily: fontFamily.semiBold,
-    fontSize: 13,
+    fontSize: fontSize.body2,
   },
   summaryHeadline: {
     ...typography.title,
@@ -87,27 +69,27 @@ export const styles = StyleSheet.create({
     borderRadius: radius.round,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing[4],
-    paddingVertical: spacing[3],
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
   },
   summaryPillLabel: {
     color: colors.textSecondary,
     fontFamily: fontFamily.regular,
-    fontSize: 12,
+    fontSize: fontSize.caption,
   },
   summaryPillValue: {
     color: colors.textPrimary,
     fontFamily: fontFamily.semiBold,
-    fontSize: 13,
+    fontSize: fontSize.body2,
   },
   listSection: {
     gap: spacing[2],
-    marginTop: spacing[8],
+    marginTop: spacing[6],
   },
   sectionTitle: {
     color: colors.textPrimary,
     fontFamily: fontFamily.medium,
-    fontSize: 14,
+    fontSize: fontSize.body1,
     lineHeight: 19,
   },
 });

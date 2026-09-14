@@ -40,6 +40,17 @@ export const colors = {
     forecastCard: '#FDDA6B',
     chartBar: '#EAEAEA',
   },
+  ledger: {
+    softSurface: '#F8F8F8',
+    calendarMuted: '#C9C9C9',
+    expense: '#C84B16',
+    income: '#4E79FF',
+    selectedDay: '#E4E4E4',
+    logoPlaceholder: '#F1F1F1',
+  },
+  discovery: {
+    insightIncreaseTag: '#FFF0CB',
+  },
   briefing: {
     card: '#FFFFFF',
     softCard: '#FEFBF2',
@@ -48,8 +59,6 @@ export const colors = {
     statusBackground: '#F7FAE9',
     statusText: '#6F9329',
     decreaseTag: '#FFF0C9',
-    increaseTag: '#FFF0CB',
     increaseText: '#FA9500',
-    progressTrack: '#F4F4F1',
   },
 } as const;

@@ -1,17 +1,17 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, fontFamily, radius, spacing, typography } from '@/styles';
+import { colors, fontFamily, fontSize, radius, semanticSpacing, spacing, typography } from '@/styles';
 
 export const styles = StyleSheet.create({
   forecastCard: {
-    padding: spacing[5],
+    padding: spacing[4],
   },
   expenseLabel: {
     ...typography.body2,
     color: colors.textPrimary,
     fontFamily: fontFamily.medium,
     lineHeight: 18,
-    marginTop: spacing[5],
+    marginTop: semanticSpacing.cardTitleContentGap,
   },
   expenseAmount: {
     ...typography.headline,
@@ -33,12 +33,12 @@ export const styles = StyleSheet.create({
     fontFamily: fontFamily.semiBold,
   },
   breakdownBar: {
+    alignSelf: 'stretch',
     borderRadius: radius.round,
     flexDirection: 'row',
     height: 10,
     marginTop: spacing[3],
     overflow: 'hidden',
-    width: '100%',
   },
   breakdownBarSegment: {
     height: '100%',
@@ -46,7 +46,7 @@ export const styles = StyleSheet.create({
   breakdownLegend: {
     flexDirection: 'row',
     gap: spacing[2],
-    marginTop: spacing[6],
+    marginTop: spacing[3],
   },
   breakdownItem: {
     flex: 1,
@@ -55,29 +55,38 @@ export const styles = StyleSheet.create({
   breakdownLabelRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: spacing[2],
+    gap: spacing[1],
   },
   breakdownDot: {
     borderRadius: radius.round,
-    height: 7,
-    width: 7,
+    height: 5,
+    width: 5,
   },
   breakdownLabel: {
-    ...typography.body2,
     color: colors.textSecondary,
+    flex: 1,
     flexShrink: 1,
-    lineHeight: 18,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.detail,
+    lineHeight: 15,
+  },
+  breakdownValueRow: {
+    alignItems: 'baseline',
+    flexDirection: 'row',
+    gap: spacing[1],
+    marginTop: 2,
   },
   breakdownAmount: {
-    ...typography.body2,
     color: colors.textPrimary,
+    flexShrink: 1,
     fontFamily: fontFamily.medium,
-    lineHeight: 18,
-    marginTop: spacing[1],
+    fontSize: fontSize.body2,
+    lineHeight: 17,
   },
   breakdownRatio: {
-    ...typography.caption,
     color: colors.textSecondary,
-    lineHeight: 17,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.micro,
+    lineHeight: 14,
   },
 });

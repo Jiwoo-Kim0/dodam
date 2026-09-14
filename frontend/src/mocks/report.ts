@@ -66,6 +66,7 @@ export const MONTHLY_REPORT: MonthlyReport = {
       changeLabel: '지난달 대비 +4%p',
       tone: 'accent',
       icon: require('@/assets/icons/common/report_pig.png'),
+      iconScale: 1.05,
     },
     {
       id: 'fixed-expense-ratio',
@@ -75,6 +76,7 @@ export const MONTHLY_REPORT: MonthlyReport = {
       changeLabel: '지난달 대비 +2%p',
       tone: 'plain',
       icon: require('@/assets/icons/common/report_home.png'),
+      iconScale: 0.95,
     },
     {
       id: 'card-usage',
@@ -84,6 +86,7 @@ export const MONTHLY_REPORT: MonthlyReport = {
       changeLabel: '지난달 대비 -12%',
       tone: 'accent',
       icon: require('@/assets/icons/common/report_card.png'),
+      iconScale: 1.4,
     },
     {
       id: 'loan-balance',
@@ -93,6 +96,7 @@ export const MONTHLY_REPORT: MonthlyReport = {
       changeLabel: '변동 없음',
       tone: 'plain',
       icon: require('@/assets/icons/common/report_money.png'),
+      iconScale: 0.85,
     },
   ],
   // 8월 지출은 홈·가계부 Mock의 이번 달 지출(2,265,000원)과 같은 값을 쓴다.

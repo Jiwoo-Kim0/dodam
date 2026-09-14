@@ -5,15 +5,13 @@ import Svg, { Circle } from 'react-native-svg';
 import { colors } from '@/styles';
 import type { ReportScoreSegment, ReportScoreTone } from '@/types/report.types';
 
-import { styles } from './EfficiencyScoreDonut.styles';
+import { CHART_SIZE, STROKE_WIDTH, styles } from './EfficiencyScoreDonut.styles';
 
 type EfficiencyScoreDonutProps = {
   composition: readonly ReportScoreSegment[];
   percentile: number;
 };
 
-const CHART_SIZE = 80;
-const STROKE_WIDTH = 19;
 const RADIUS = (CHART_SIZE - STROKE_WIDTH) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 

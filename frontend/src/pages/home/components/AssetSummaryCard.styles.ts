@@ -48,19 +48,19 @@ export const styles = StyleSheet.create({
   changeArrow: {
     color: colors.primary.green,
     fontFamily: fontFamily.regular,
-    fontSize: 10,
+    fontSize: fontSize.micro,
     lineHeight: 14,
   },
   changeAmount: {
     color: colors.primary.green,
     fontFamily: fontFamily.regular,
-    fontSize: 10,
+    fontSize: fontSize.micro,
     lineHeight: 14,
   },
   changePrefix: {
     color: colors.textSecondary,
     fontFamily: fontFamily.regular,
-    fontSize: 10,
+    fontSize: fontSize.micro,
     lineHeight: 14,
   },
   chartGroup: {
@@ -86,7 +86,7 @@ export const styles = StyleSheet.create({
   legendLabel: {
     color: colors.textSecondary,
     fontFamily: fontFamily.regular,
-    fontSize: 8,
+    fontSize: fontSize.tiny,
     lineHeight: 11,
   },
 });

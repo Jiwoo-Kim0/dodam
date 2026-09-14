@@ -14,8 +14,6 @@ type SummaryCardProps = {
 export function SummaryCard({ previousMonthDailyAverage, yesterdaySpentAmount }: SummaryCardProps) {
   const averageDifference = previousMonthDailyAverage - yesterdaySpentAmount;
   const spentLessThanAverage = averageDifference >= 0;
-  const progressRatio = Math.min(yesterdaySpentAmount / previousMonthDailyAverage, 1);
-  const progressWidth = `${progressRatio * 100}%` as `${number}%`;
 
   return (
     <View style={[screenStyles.card, styles.summaryCard]}>
@@ -45,9 +43,6 @@ export function SummaryCard({ previousMonthDailyAverage, yesterdaySpentAmount }:
         <Text style={styles.averageText}>
           저번달 기준 하루 평균 {formatCurrency(previousMonthDailyAverage)}
         </Text>
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressValue, { width: progressWidth }]} />
-        </View>
       </View>
     </View>
   );

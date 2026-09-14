@@ -1,6 +1,7 @@
 import { StyleSheet } from 'react-native';
 
 import {
+  fontSize,
   colors,
   componentSize,
   fontFamily,
@@ -125,7 +126,7 @@ export const styles = StyleSheet.create({
   },
   goalType: {
     ...typography.caption,
-    fontSize: 10,
+    fontSize: fontSize.micro,
     lineHeight: 14,
     paddingHorizontal: spacing[1],
     borderWidth: 1,
