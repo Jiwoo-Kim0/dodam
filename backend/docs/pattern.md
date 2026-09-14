@@ -258,7 +258,26 @@ clusterDeviationAlpha = 군집 결과가 있으면 0.2 × confidence, 없으면 
 
 `backend/ml/pattern/evaluate_cluster_model.py`가 seed 사용자 순번으로 설계 성향(BALANCED·SPENDING_FOCUSED·SAVING_FOCUSED·VOLATILE)을 복원해 **비지도 학습이 설계 성향을
 얼마나 되찾았는지**(ARI·NMI·purity·혼동행렬)와 k 탐색·특징/전처리 ablation·재학습 안정성·배포 아티팩트의 신뢰도 분포와 fallback 비율을 `report.md`·CSV·PNG로 만든다.
-실행 방법과 해석 주의(합성 데이터 기준)는 [`backend/ml/pattern/README.md`](../ml/pattern/README.md) "평가". 실 seed 4,000명 결과는 시연 DB에서 돌린 뒤 이 절에 요약을 남긴다.
+실행 방법과 해석 주의(합성 데이터 기준)는 [`backend/ml/pattern/README.md`](../ml/pattern/README.md) "평가".
+
+### 2026-09-14 seed 4,000명 결과 (로컬 MySQL 8.0, 거래 348,192건, 기간 2026-03~08)
+
+전체 표·그림: [pattern-evaluation/2026-09-14-seed4000-k4.md](pattern-evaluation/2026-09-14-seed4000-k4.md)(최종 k=4),
+[2026-09-14-seed4000-k6-silhouette.md](pattern-evaluation/2026-09-14-seed4000-k6-silhouette.md)(실루엣 최대 k=6 비교용).
+
+| 항목 | 결과 |
+| --- | --- |
+| k 탐색 | 실루엣은 k=6(0.514) ≥ k=3(0.514) ≥ k=4(0.510)로 차이가 0.005 안. 설계 성향 대비 ARI는 k=4에서 1.0, k=5 0.91, k=6 0.74 |
+| **최종 k=4 선택 근거** | 실루엣 차이는 노이즈 수준이고 외부 지표(ARI·purity 1.0)와 도메인 지식(seed 성향 4종)이 k=4를 가리킴. 학습 스크립트는 `--k 4`로 고정해 아티팩트를 만들었다 |
+| 특징 ablation(k=4) | `savingRate` 제외 시 ARI 0.68, `spendingVolatility` 제외 시 0.63으로 가장 크게 하락 → 저축률·변동성이 핵심 특징. `fixedExpenseShare`·`discretionaryShare` 제외는 ARI 1.0 유지(seed에서는 중복 정보) |
+| 전처리 | 표준화 없이 학습하면 ARI 0.46(비율 척도 차이로 소비/소득이 지배). 클리핑은 seed에 극단값이 없어 영향 없음 |
+| 재학습 안정성 | random_state 5회, 실행 간 ARI 평균·최소 1.0(k=6에서는 0.88·0.70으로 불안정) |
+| 배포 아티팩트 배정 | 4,000명 전원 설계 성향과 일치(혼동행렬 대각 1,000×4). 신뢰도 평균 0.61, p10 0.37, 신뢰도 < 0.2 비율 1.2% → 군집 노출 98.8% |
+| 학습·평가 시간 | 4,000명 집계 + 학습 약 7초, 평가(k 탐색·ablation·안정성 포함) 약 12초 |
+
+이 아티팩트가 `src/main/resources/ml/spending-kmeans-v1.json`으로 커밋되어 있고 prod 프로필은 `train-in-process: false`다.
+seed 사용자의 `finance_connection`이 없어도 분석은 되며(데이터 존재 우선), 시연 서버 DB에 같은 seed를 적재하면 같은 배정이 나온다.
+**주의**: seed는 성향별 소비 비율을 규칙으로 만든 합성 데이터라 ARI 1.0은 "설계를 되찾았다"는 뜻이지 실사용자 성능이 아니다.
 - 통합(H2, `PatternApiTest`): 성향 4종 × 12명 모집단 + 본인(저축형 + 대출상환 + 입출금 계좌). HYBRID 배정("저축 중심형")·같은 날 재사용·forceRefresh, RULE_ONLY 요청·모드 불일치
   비재사용·잘못된 모드 400, 모집단 부족 fallback, 데이터 2개월 사용자 fallback, 데이터 없음(연결 상태별 409)·조회 404/409·기본 프로필, 소비/자금운용/우선순위 조회와
   최근 분석의 clusterProfile 반영, 인증·소유권, 접수 중복·폐기·임대 만료.

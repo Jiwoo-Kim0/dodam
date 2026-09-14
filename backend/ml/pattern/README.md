@@ -34,7 +34,9 @@ python backend/ml/pattern/train_cluster_model.py \
 
 - `--db-url`·`--db-user`·`--db-password`는 백엔드와 같은 환경변수 `DB_URL`·`DB_USERNAME`·`DB_PASSWORD`를 기본값으로 읽는다. 읽기 권한만 필요하다.
 - `--reference-date`·`--lookback-months`·`--min-user-months`는 Spring `app.pattern.*`와 같은 값을 써야 사용자 특징과 군집 기준 범위가 같은 기간·조건으로 계산된다.
-- `--k`(고정) 또는 `--k-range MIN MAX`(실루엣 최대, 동점이면 작은 k). 기본 2~6. seed 성향 4종이면 k=4가 나오는지 확인한다.
+- `--k`(고정) 또는 `--k-range MIN MAX`(실루엣 최대, 동점이면 작은 k). 기본 2~6.
+  **2026-09-14 seed 4,000명에서는 실루엣이 k=3·4·6 사이 0.005 차이로 k=6을 골랐지만 설계 성향 대비 ARI는 k=4만 1.0**이라 배포 아티팩트는
+  `--k 4`로 고정했다(`backend/docs/pattern.md` "모델 평가"). 실루엣은 진단용으로 보고, k는 평가 스크립트의 외부 지표와 함께 정한다.
 - `--export-features features.csv`는 사용자 식별 없이 특징 벡터만 남긴다(분포 확인·k 탐색용). 레포에 커밋하지 않는다.
 - `--dry-run`은 요약만 출력한다.
 

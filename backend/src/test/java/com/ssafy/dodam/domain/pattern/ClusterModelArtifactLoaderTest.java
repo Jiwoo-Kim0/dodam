@@ -60,6 +60,26 @@ class ClusterModelArtifactLoaderTest {
         assertThat(loader.load()).containsSame(model);
     }
 
+    /** 배포용 아티팩트(main resources)가 형식을 지키고 seed 성향 4종 라벨을 갖는지. 스크립트로 다시 만들 때 깨지면 여기서 잡힌다. */
+    @Test
+    void 배포_아티팩트는_형식이_맞고_군집_4종_라벨을_가진다() {
+        PatternProperties properties = properties(PatternProperties.DEFAULT_MODEL_LOCATION, false);
+        ClusterModel model = new ClusterModelArtifactLoader(new DefaultResourceLoader(), json, properties).load().orElseThrow();
+
+        assertThat(model.modelVersion()).isEqualTo(ClusterModelProvider.MODEL_VERSION);
+        assertThat(model.source()).isEqualTo(ClusterModelArtifact.SOURCE);
+        assertThat(model.trainedBy()).startsWith("python-sklearn");
+        assertThat(model.clusterCount()).isEqualTo(4);
+        assertThat(model.populationSize()).isGreaterThanOrEqualTo(1000);
+        assertThat(model.clusters()).extracting(ClusterModel.ClusterSummary::label)
+                .containsExactlyInAnyOrder("저축 중심형", "소비 변동형", "소비 집중형", "균형형");
+        assertThat(model.clusters()).allSatisfy(cluster -> assertThat(cluster.sampleSize()).isGreaterThanOrEqualTo(10));
+        // 저축형 사용자는 저축 중심형에 배정된다.
+        ClusterModel.Assignment saver = model.assign(new double[] {0.65, 0.30, 0.68, 0.22, 0.01});
+        assertThat(model.cluster(saver.clusterId()).label()).isEqualTo("저축 중심형");
+        assertThat(saver.confidence()).isGreaterThanOrEqualTo(0.2);
+    }
+
     @Test
     void 아티팩트가_있으면_인프로세스_학습_없이_그_모델로_배정하고_프로필에_출처가_남는다() {
         PatternProperties properties = properties(TEST_ARTIFACT, false);

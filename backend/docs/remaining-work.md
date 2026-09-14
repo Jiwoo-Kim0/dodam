@@ -917,10 +917,10 @@
 
 ### 모델 학습·배포 (Python 아티팩트)
 
-- [ ] **시연 DB에 seed(4,000명)를 적재한 뒤 `backend/ml/pattern/train_cluster_model.py`를 돌려 `backend/src/main/resources/ml/spending-kmeans-v1.json`을 만들고 커밋한다.** 2026-09-14 현재 레포에 아티팩트가 없어 런타임은 인프로세스 학습(`train-in-process: true`)으로 동작한다. 작업 PC에서는 seed 적재에 암호 fixture 테이블이 필요해 121명 합성 fixture로만 스크립트를 검증했다(k=4 실루엣 0.90, 라벨 4종 정상).
-- [ ] 아티팩트를 커밋한 뒤 `application-prod.yml`에 `app.pattern.train-in-process: false`를 넣어 운영에서 Java가 임의 학습하지 않게 한다. 이 값은 아직 넣지 않았다(아티팩트 없이 false면 HYBRID가 전부 `MODEL_NOT_AVAILABLE`로 떨어짐).
+- [x] 2026-09-14 로컬 Docker MySQL 8.0에 seed 491·522·492를 적재(암호 fixture는 SHA-256 더미, 4,000명·거래 348,192건)하고 `train_cluster_model.py --k 4`로 `src/main/resources/ml/spending-kmeans-v1.json`을 만들어 커밋했다. `application-prod.yml`에 `train-in-process: false`를 넣었다. 평가 결과는 pattern.md "모델 평가"와 `docs/pattern-evaluation/`.
+- [ ] **시연 서버(j15D105.p.ssafy.io) DB는 2026-09-14 기준 비어 있다**(사용자 0, 거래 0, Flyway V30까지). seed 적재는 팀 결정 후 인프라와 함께 진행한다. 적재 시 암호 fixture는 애플리케이션 코덱으로 만들어야 한다(seeds README 2~3번). 적재 후 같은 아티팩트로 seed 사용자 4,000명이 설계 성향대로 배정되는지 `evaluate_cluster_model.py --artifact`로 확인한다.
+- [ ] k 선택은 실루엣만으로 자동화하지 않는다(seed에서 실루엣은 k=6, ARI는 k=4). 실사용자 데이터가 쌓이면 정답 라벨이 없으므로 실루엣·안정성·도메인 해석으로 k를 다시 정한다.
 - [ ] 재학습 주기(월 1회, 데이터 창이 바뀔 때)와 실행 위치(개발 PC vs Jenkins 단계 + 커밋)를 정한다. 스크립트는 DB 읽기 권한만 필요하다.
-- [ ] 발표용 평가(`evaluate_cluster_model.py`)는 seed 4,000명이 있는 시연 DB에서 돌려야 실제 숫자가 나온다. 작업 PC에서는 seed 규약 이메일을 붙인 합성 fixture 121명으로 스크립트 동작만 확인했다. 결과 `report.md`를 pattern.md "모델 평가" 절에 요약하고 발표 자료에는 "합성 데이터 기준"을 명시한다.
 - [ ] 두 구현의 특징 정의 일치는 Java·Python 단위 테스트가 같은 기대값을 공유하는 방식으로만 확인한다. 실 DB에서 `--export-features`로 뽑은 벡터와 Java `featureSummary.clusterFeatures`를 표본 몇 명에 대해 대조하는 절차를 seed 적재 시 함께 한다.
 - [ ] 임계값(군집 표본 10, 신뢰도 0.2)과 k 범위(2~6, 실루엣 최대)는 seed 성향 4종을 전제로 한 기본안이다. 실사용자 분포에서 재검토한다. 기획안 "군집 이탈 점수 ≥ 임계값"은 진단(API 14)이 적용할 조건으로 보고 여기서는 점수(`deviationScore`)만 제공한다.
 - [ ] 라벨은 중심값 순위로 정한다. 두 군집의 저축률 중심이 거의 같으면 학습마다 라벨이 뒤바뀔 수 있다. 아티팩트를 커밋해 배포 단위로 고정하는 것이 1차 대응이고, 필요하면 운영자 고정 라벨을 아티팩트에 직접 적는다.
