@@ -36,3 +36,12 @@ app:
     # Python 학습 스크립트(backend/ml/pattern/train_cluster_model.py)가 만든 모델 아티팩트. 없으면 train-in-process에 따라 Java 학습 또는 RULE_ONLY.
     model-location: classpath:ml/spending-kmeans-v1.json
     train-in-process: true
+  notification:
+    push:
+      enabled: false            # FCM 발송. prod에서만 true (FCM_SERVICE_ACCOUNT_PATH 마운트 필요)
+      service-account-path: ${FCM_SERVICE_ACCOUNT_PATH:}
+    events:
+      enabled: true             # 이벤트 스케줄(결제·상환 예정, 현금흐름 위험, 목표, 추천, 리포트, 브리핑)
+      due-days-ahead: 3
+      risk-days-ahead: 7
+      recommendation-days-back: 7

@@ -27,6 +27,8 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
     implementation 'org.flywaydb:flyway-core'
     implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
+    // FCM 푸시(S15P21D105-580). 서비스 계정 키는 FCM_SERVICE_ACCOUNT_PATH로 주입한다.
+    implementation 'com.google.firebase:firebase-admin:9.4.3'
 
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
@@ -45,4 +47,6 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+    // 통합 테스트 클래스마다 Spring 컨텍스트가 캐시되어(50개 이상) 기본 힙(512MB)에서는 OutOfMemoryError로 컨텍스트 로딩이 실패한다.
+    maxHeapSize = '2g'
 }

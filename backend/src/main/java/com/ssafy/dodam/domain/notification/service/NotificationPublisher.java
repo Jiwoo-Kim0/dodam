@@ -3,16 +3,22 @@ package com.ssafy.dodam.domain.notification.service;
 import com.ssafy.dodam.domain.notification.entity.Notification;
 import com.ssafy.dodam.domain.notification.entity.NotificationSourceType;
 import com.ssafy.dodam.domain.notification.entity.NotificationType;
+import com.ssafy.dodam.domain.notification.push.NotificationPushDispatcher;
 import com.ssafy.dodam.domain.notification.repository.NotificationRepository;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * 다른 도메인이 알림을 만들 때 쓰는 진입점(D10 이벤트 연동의 계약). 명세 22에는 생성 API가 없다.
@@ -26,12 +32,17 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class NotificationPublisher {
 
+    private static final Logger log = LoggerFactory.getLogger(NotificationPublisher.class);
+
     private final NotificationRepository notifications;
     private final NotificationClock clock;
+    private final ObjectProvider<NotificationPushDispatcher> pushDispatcher;
 
-    public NotificationPublisher(NotificationRepository notifications, NotificationClock clock) {
+    public NotificationPublisher(NotificationRepository notifications, NotificationClock clock,
+            ObjectProvider<NotificationPushDispatcher> pushDispatcher) {
         this.notifications = notifications;
         this.clock = clock;
+        this.pushDispatcher = pushDispatcher;
     }
 
     /**
@@ -39,22 +50,56 @@ public class NotificationPublisher {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Notification publish(NotificationCommand command) {
+        // 같은 빈 안의 호출은 프록시를 거치지 않으므로 여기서도 트랜잭션을 연다(커밋 후 푸시 동기화가 등록되게).
+        return publishDetailed(command).notification();
+    }
+
+    /**
+     * 알림을 저장하고, 새로 만들어졌으면 트랜잭션 커밋 뒤 푸시 발송을 시도한다(S15P21D105-580). 푸시 실패는 로그만 남기고 알림 저장에 영향을 주지 않는다.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public PublishOutcome publishDetailed(NotificationCommand command) {
         if (command.dedupeKey() != null) {
             Optional<Notification> existing = notifications.findByUserIdAndDedupeKey(command.userId(), command.dedupeKey());
             if (existing.isPresent()) {
-                return existing.get();
+                return new PublishOutcome(existing.get(), false);
             }
         }
         Notification notification = Notification.create(command.userId(), command.type(), command.title(), command.message(),
                 command.sourceType(), command.sourceId(), command.dedupeKey(), clock.now());
+        Notification saved;
         try {
-            return notifications.saveAndFlush(notification);
+            saved = notifications.saveAndFlush(notification);
         } catch (DataIntegrityViolationException raced) {
             if (command.dedupeKey() == null) {
                 throw raced;
             }
-            return notifications.findByUserIdAndDedupeKey(command.userId(), command.dedupeKey()).orElseThrow(() -> raced);
+            return new PublishOutcome(
+                    notifications.findByUserIdAndDedupeKey(command.userId(), command.dedupeKey()).orElseThrow(() -> raced), false);
         }
+        schedulePush(saved.getId());
+        return new PublishOutcome(saved, true);
+    }
+
+    private void schedulePush(Long notificationId) {
+        NotificationPushDispatcher dispatcher = pushDispatcher.getIfAvailable();
+        if (dispatcher == null || !TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                try {
+                    dispatcher.dispatch(notificationId);
+                } catch (RuntimeException exception) {
+                    log.warn("Push dispatch failed for notificationId={}", notificationId, exception);
+                }
+            }
+        });
+    }
+
+    /** @param created true면 이번 호출로 새로 만들어졌다. false면 dedupeKey가 같은 기존 알림이다 */
+    public record PublishOutcome(Notification notification, boolean created) {
     }
 
     /**
