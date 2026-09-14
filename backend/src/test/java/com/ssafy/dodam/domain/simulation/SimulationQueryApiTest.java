@@ -141,7 +141,7 @@ class SimulationQueryApiTest {
 
     @Test
     void runnerRejectsTypesWithoutCalculator() {
-        assertThatThrownBy(() -> runner.run(owner, new StubInput(SimulationType.LOAN_NEW, "x")))
+        assertThatThrownBy(() -> runner.run(owner, new StubInput(SimulationType.INSTALLMENT, "x")))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(ErrorCode.SIMULATION_TYPE_NOT_SUPPORTED);
         assertThat(simulations.count()).isZero();

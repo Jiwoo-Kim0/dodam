@@ -61,9 +61,9 @@ public class SimulationQueryService {
     }
 
     public List<SimulationGoalImpactResponse> goalImpact(Long userId, Long simulationId) {
-        owned(userId, simulationId);
-        return goalImpacts.findAllByUserIdAndSimulationIdOrderByGoalIdAsc(userId, simulationId).stream()
-                .map(SimulationGoalImpactResponse::from).toList();
+        Simulation simulation = owned(userId, simulationId);
+        return SimulationGoalImpactResponseAssembler.assemble(simulation,
+                goalImpacts.findAllByUserIdAndSimulationIdOrderByGoalIdAsc(userId, simulationId));
     }
 
     /**

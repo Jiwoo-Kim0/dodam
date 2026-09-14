@@ -2,6 +2,10 @@ package com.ssafy.dodam.domain.simulation.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.ssafy.dodam.domain.simulation.dto.SimulationInput;
+import com.ssafy.dodam.domain.simulation.dto.request.LoanNewSimulationRequest;
+import com.ssafy.dodam.domain.simulation.dto.request.LoanPrepaymentSimulationRequest;
+import com.ssafy.dodam.domain.simulation.dto.request.LoanRefinanceSimulationRequest;
+import com.ssafy.dodam.domain.simulation.dto.request.SavingProductSimulationRequest;
 import com.ssafy.dodam.domain.simulation.dto.request.SavingSimulationRequest;
 import com.ssafy.dodam.domain.simulation.dto.request.SpendingSimulationRequest;
 import com.ssafy.dodam.domain.simulation.dto.response.SimulationGoalImpactResponse;
@@ -33,8 +37,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * API 17 Simulation. 유형별 실행 경로는 계산기가 있는 유형만 연다(현재 spending·saving).
- * 명세의 나머지 8개 실행 경로는 구현 전이라 존재하지 않는다 — 404가 "미구현"을 뜻한다.
+ * API 17 Simulation. 유형별 실행 경로는 계산기가 있는 유형만 연다(spending·saving·saving-product·loan/new·loan/prepayment·loan/refinance).
+ * 명세의 나머지 4개 실행 경로(installment, revolving, cash-advance, combined)는 구현 전이라 존재하지 않는다 — 404가 "미구현"을 뜻한다.
  */
 @Validated
 @RestController
@@ -62,6 +66,32 @@ public class SimulationController {
     @PostMapping("/saving")
     public ResponseEntity<ApiResponse<SimulationRunResponse>> saving(@Valid @RequestBody SavingSimulationRequest request,
             Authentication authentication) {
+        Long userId = users.resolve(authentication);
+        return run(userId, resolver.resolve(userId, request));
+    }
+
+    @PostMapping("/saving-product")
+    public ResponseEntity<ApiResponse<SimulationRunResponse>> savingProduct(
+            @Valid @RequestBody SavingProductSimulationRequest request, Authentication authentication) {
+        return run(users.resolve(authentication), resolver.resolve(request));
+    }
+
+    @PostMapping("/loan/new")
+    public ResponseEntity<ApiResponse<SimulationRunResponse>> loanNew(@Valid @RequestBody LoanNewSimulationRequest request,
+            Authentication authentication) {
+        return run(users.resolve(authentication), resolver.resolve(request));
+    }
+
+    @PostMapping("/loan/prepayment")
+    public ResponseEntity<ApiResponse<SimulationRunResponse>> loanPrepayment(
+            @Valid @RequestBody LoanPrepaymentSimulationRequest request, Authentication authentication) {
+        Long userId = users.resolve(authentication);
+        return run(userId, resolver.resolve(userId, request));
+    }
+
+    @PostMapping("/loan/refinance")
+    public ResponseEntity<ApiResponse<SimulationRunResponse>> loanRefinance(
+            @Valid @RequestBody LoanRefinanceSimulationRequest request, Authentication authentication) {
         Long userId = users.resolve(authentication);
         return run(userId, resolver.resolve(userId, request));
     }

@@ -3,6 +3,7 @@ package com.ssafy.dodam.domain.simulation.dto;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.ssafy.dodam.domain.simulation.entity.SimulationType;
+import java.time.LocalDate;
 
 /**
  * 계산기에 넘기는 확정된 입력. HTTP 요청과 분리한 이유는 두 가지다.
@@ -20,6 +21,14 @@ public interface SimulationInput {
 
     /** `simulation_scenario.parameters`·`request_snapshot`에 저장할 파라미터. 민감번호 제외 */
     ObjectNode parameters(ObjectMapper json);
+
+    /**
+     * 기준일이 있어야 정해지는 생략값(추가상환일 등)을 채운 입력. Runner가 지문을 만들기 전에 부른다 —
+     * 생략과 "오늘"을 명시한 요청이 같은 지문을 갖게 하기 위해서다. 생략값이 없는 유형은 자신을 돌려준다.
+     */
+    default SimulationInput withBaseDate(LocalDate baseDate) {
+        return this;
+    }
 
     int DEFAULT_DURATION_MONTHS = 12;
     int MAX_DURATION_MONTHS = 120;

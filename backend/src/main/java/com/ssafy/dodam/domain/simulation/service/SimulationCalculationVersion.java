@@ -5,7 +5,8 @@ package com.ssafy.dodam.domain.simulation.service;
  * 저장된 행의 버전은 `request_snapshot.calculationVersion`에 남는다.
  */
 public final class SimulationCalculationVersion {
-    public static final String CURRENT = "v1-spending-saving";
+    /** v2: 585에서 결과 JSON에 details·goalImpactDetails·cashflow 확장 필드가 추가됐다. v1 결과는 재사용 대상이 아니다. */
+    public static final String CURRENT = "v2-saving-loan-product";
 
     private SimulationCalculationVersion() {
     }

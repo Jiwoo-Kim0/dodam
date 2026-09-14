@@ -30,6 +30,9 @@ public class SimulationStore {
     static final String CALCULATION_VERSION_FIELD = "calculationVersion";
     static final String COVERAGE_FIELD = "coverage";
     static final String ASSUMPTIONS_FIELD = "assumptions";
+    /** 585 유형의 확장 필드. null이면 쓰지 않아 기존 spending/saving 저장 모양이 바뀌지 않는다. */
+    public static final String DETAILS_FIELD = "details";
+    public static final String GOAL_IMPACT_DETAILS_FIELD = "goalImpactDetails";
     private final SimulationRepository simulations;
     private final SimulationScenarioRepository scenarios;
     private final SimulationGoalImpactRepository goalImpacts;
@@ -53,6 +56,12 @@ public class SimulationStore {
         before.set(COVERAGE_FIELD, json.valueToTree(baseline.coverage()));
         ObjectNode after = json.valueToTree(result.after());
         after.set(ASSUMPTIONS_FIELD, json.valueToTree(result.assumptions()));
+        if (result.details() != null) {
+            after.set(DETAILS_FIELD, json.valueToTree(result.details()));
+        }
+        if (result.goalImpactDetails() != null) {
+            after.set(GOAL_IMPACT_DETAILS_FIELD, json.valueToTree(result.goalImpactDetails()));
+        }
         JsonNode comparison = json.valueToTree(result.comparison());
         JsonNode cashflow = json.valueToTree(result.cashflow());
 
