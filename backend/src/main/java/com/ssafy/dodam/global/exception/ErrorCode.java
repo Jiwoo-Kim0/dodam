@@ -113,6 +113,37 @@ public enum ErrorCode {
      */
     SIMULATION_TYPE_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "지원하지 않는 시뮬레이션 유형입니다."),
 
+    // ---------- Simulation 예적금·대출 (S15P21D105-585) ----------
+    /**
+     * 상품은 존재하지만 시뮬레이션 대상 유형이 아닌 경우(예금은 FIXED_DEPOSIT만, 대출은 분할상환 비교군만) 또는
+     * 대환 대상 상품이 기존 대출의 비교군과 다른 경우. 상품 존재 여부는 이미 확인된 뒤라 404가 아니라 400이다.
+     */
+    SIMULATION_PRODUCT_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "시뮬레이션을 지원하지 않는 상품입니다."),
+    /**
+     * 요청 기간·상환방식을 만족하고 금리 자료가 유효한 상품 옵션이 없는 경우. 인접 기간이나 상품 최상위 금리로 대체하지 않는다.
+     */
+    SIMULATION_PRODUCT_OPTION_UNAVAILABLE(HttpStatus.BAD_REQUEST, "요청 조건에 맞는 상품 옵션이 없습니다."),
+    /**
+     * 신규 대출의 상환방식을 생략했지만 상품 옵션만으로 하나로 확정할 수 없는 경우(AMORTIZING 등).
+     */
+    SIMULATION_REPAYMENT_TYPE_REQUIRED(HttpStatus.BAD_REQUEST, "상환방식을 지정해 주세요. 상품 조건만으로 확정할 수 없습니다."),
+    /**
+     * 유효한 옵션이 모두 공시 한도 때문에 탈락한 경우. 한도를 모르는 옵션은 탈락시키지 않는다.
+     */
+    SIMULATION_PRODUCT_LIMIT_EXCEEDED(HttpStatus.BAD_REQUEST, "대출 금액이 상품의 공시 한도를 초과합니다."),
+    /**
+     * 보유 대출의 상태·잔액·금리·만기·다음 상환일 자료가 계산에 부족한 경우(OVERDUE, 잔액 0, 당일 대환 등). 0원으로 대체하지 않는다.
+     */
+    SIMULATION_LOAN_DATA_UNAVAILABLE(HttpStatus.BAD_REQUEST, "대출 자료가 계산에 충분하지 않습니다."),
+    /** 추가상환일이 기준일 이전이거나 만기 이후인 경우. */
+    SIMULATION_INVALID_PAYMENT_DATE(HttpStatus.BAD_REQUEST, "추가상환일은 기준일부터 만기일 사이여야 합니다."),
+    /** 실행 시점 예상 잔액보다 큰 추가상환·대환 금액. */
+    SIMULATION_AMOUNT_EXCEEDS_BALANCE(HttpStatus.BAD_REQUEST, "실행 시점의 대출 잔액을 초과하는 금액입니다."),
+    /** 보유 대출의 잔여 회차가 계산 상한(360회)을 넘는 경우. 잘린 이자를 총액으로 저장하지 않는다. */
+    SIMULATION_PERIOD_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "잔여 상환 회차가 계산 상한을 초과합니다."),
+    /** 계산 결과·차이가 원 단위 정수 범위를 넘는 경우. */
+    SIMULATION_AMOUNT_OUT_OF_RANGE(HttpStatus.BAD_REQUEST, "계산 결과가 허용 범위를 초과합니다."),
+
     // ---------- Pattern (S15P21D105-516 ~ 518) ----------
     /**
      * 임대 기간 안의 진행 중 분석이 있는 경우(명세 "중복 분석 요청 방지").
