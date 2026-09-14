@@ -1,8 +1,9 @@
-# Notification API — 알림 목록·상세·미확인 수·읽음·전체 읽음·삭제
+# Notification API — 알림 목록·상세·미확인 수·읽음·전체 읽음·삭제 · 푸시 기기 · 이벤트 연동
 
 D9 "22 Notification 기본 API 및 BE-A 통합"(`S15P21D105-458`)의 하위 티켓 `S15P21D105-519`(API 22 알림 목록·상세·미확인 수),
 `S15P21D105-520`(API 22 알림 읽음·전체읽음·삭제) 구현 기준이다. API 명세 22 Notification 6개를 모두 다룬다.
 `S15P21D105-521`(BE-A 담당 도메인 통합 테스트) 결과는 아래 "BE-A 통합 테스트"에 있다.
+D10 `S15P21D105-580`(Notification 기본 API: 푸시 기기 토큰·FCM 발송)과 `S15P21D105-581`(Notification 이벤트 연동)은 "푸시(580)"·"이벤트 연동(581)" 절에 있다.
 
 ## 모델
 
@@ -14,9 +15,12 @@ D9 "22 Notification 기본 API 및 BE-A 통합"(`S15P21D105-458`)의 하위 티�
 - **생성 API는 없다.** 명세 22는 조회·읽음·삭제만 정한다. 알림은 각 도메인이 {@code NotificationPublisher}로 만든다(D10 이벤트 연동). 시연 데이터는
   `database/seeds/DODAM_NOTIFICATION_SEED.sql`(시연 사용자 U0001~U0004)이 적재한다.
 - `type`은 VARCHAR(50) 문자열로 저장한다. `NotificationType` enum은 생성 입력과 목록 필터 검증에 쓰고, 다른 도메인이 SQL로 넣은 미지 값도 읽을 수 있다.
-- `user_device`(FCM 토큰)와 푸시 발송은 D10에서 별도 마이그레이션으로 다룬다. `user_setting.notification_enabled`는 푸시 발송에서 확인하며
-  앱 안의 알림함에는 항상 남긴다.
-- 마이그레이션 번호는 **V32**(BE-A 2차 구간 V30~V49, `db/migration/README.md`).
+- `user_device`(FCM 토큰, V33)와 푸시 발송은 "푸시(580)" 절. `user_setting.notification_enabled`는 푸시 발송에서 확인하며 앱 안의 알림함에는 항상 남긴다.
+- 마이그레이션 번호는 **V32**(notification)·**V33**(user_device)(BE-A 2차 구간 V30~V49, `db/migration/README.md`).
+
+| 테이블 | 엔티티 | 내용 |
+| --- | --- | --- |
+| `user_device` (V33) | `UserDevice` | 푸시 기기. FCM 토큰 암호문(`FieldCryptor` AES-256-GCM)·해시(HMAC-SHA-256, 전체 UNIQUE), 플랫폼(ANDROID/IOS/WEB), `enabled`, 마지막 사용 시각 |
 
 ### 알림 유형 (`NotificationType`)
 
@@ -82,6 +86,73 @@ FE는 (sourceType, sourceId)로 상세 화면에 이동한다.
 
 새 ErrorCode는 추가하지 않았다.
 
+## 푸시 (580)
+
+명세 22에는 없지만 FCM 발송에 필요해 추가한 API와 발송 경로다.
+
+| 기능 | Method | Endpoint | 상태 코드 |
+| --- | --- | --- | --- |
+| 기기 등록(갱신) | POST | `/api/v1/notifications/devices` Body `{fcmToken, platform}` | 201 |
+| 내 기기 목록 | GET | `/api/v1/notifications/devices` | 200 |
+| 기기 해제 | DELETE | `/api/v1/notifications/devices/{deviceId}` | 200 (`data: null`), 남의 것·없는 것 404 |
+
+- 앱은 로그인·토큰 갱신 시 등록하고 로그아웃 시 해제한다. 응답에 토큰 원문은 없다(`deviceId, platform, enabled, lastUsedAt, createdAt`).
+- 같은 토큰 재등록은 같은 기기(사용 시각 갱신, 해제됐던 기기면 다시 켜짐, 플랫폼 변경 반영). **다른 사용자가 같은 토큰을 등록하면 기기 소유자가 바뀐다**
+  (한 기기는 마지막에 로그인한 사용자의 푸시만 받는다).
+- `platform`은 ANDROID·IOS·WEB(대소문자 무관), 그 외 400 `INVALID_REQUEST`. 토큰 공백·4096자 초과는 400 `VALIDATION_ERROR`.
+
+### 발송 경로
+
+`NotificationPublisher`가 **새** 알림을 만들면(dedupe로 기존 행을 돌려준 경우 제외) 트랜잭션 커밋 뒤 `NotificationPushDispatcher.dispatch`를 부른다.
+디스패처는 사용자 설정을 확인하고(`notification_enabled=false`면 중단, `DAILY_BRIEFING`은 `daily_briefing_enabled`, `MONTHLY_REPORT`는 `monthly_report_enabled`도 필요)
+활성 기기마다 토큰을 복호화해 `NotificationPushSender.send`를 부른다. 발송 실패는 알림 저장을 되돌리지 않는다(별도 트랜잭션, 로그만).
+
+| 구현 | 조건 | 동작 |
+| --- | --- | --- |
+| `FcmNotificationPushSender` | `app.notification.push.enabled=true` + `service-account-path` 읽기 가능 (prod: `FCM_SERVICE_ACCOUNT_PATH=/run/secrets/fcm-service-account.json`) | Firebase Admin SDK. `notification`(제목·내용) + `data`(notificationId, type, sourceType, sourceId). UNREGISTERED·INVALID_ARGUMENT면 기기 `enabled=0` |
+| `LoggingNotificationPushSender` | 그 외(로컬·테스트, 키 없음, 초기화 실패) | 보낼 내용을 로그로만 남긴다(토큰 원문 제외) |
+
+FCM 초기화 실패는 서버 기동을 막지 않고 로깅 구현으로 넘어간다(`NotificationPushConfig`). 의존성 `com.google.firebase:firebase-admin:9.4.3`.
+
+## 이벤트 연동 (581)
+
+`NotificationEventService`가 다른 도메인의 **저장된 상태**를 읽어 알림을 만든다(엔티티·서비스 결합 없이 `JdbcNotificationEventReader`가 스키마를 직접 읽는다).
+모든 생성은 퍼블리셔를 거치고 dedupe 키로 멱등이라 하루에 몇 번 돌아도 늘지 않는다.
+
+| 규칙 | 유형 | 대상 (기본값) | 원천 | dedupe |
+| --- | --- | --- | --- | --- |
+| 결제 예정 | `PAYMENT_DUE` | ACTIVE 정기결제 `next_payment_date`, SCHEDULED 카드 청구 `payment_date`가 오늘~D+3(`due-days-ahead`) | SUBSCRIPTION / CARD | 원천 ID + 날짜 |
+| 상환 예정 | `REPAYMENT_DUE` | ACTIVE 대출 `next_repayment_date`, 마이너스통장 `next_interest_date`(계좌 ACTIVE)가 오늘~D+3 | LOAN / MINUS_ACCOUNT | 원천 ID + 날짜 |
+| 연체 위험 | `OVERDUE_RISK` | 상태 OVERDUE인 대출의 상환일이 오늘~D+3 | LOAN | 대출 ID + 날짜 |
+| 잔액 부족 위험 | `CASHFLOW_RISK` | 사용자별 최신 COMPLETED 현금흐름 예측의 HIGH·CRITICAL 위험, 위험일 오늘~D+7(`risk-days-ahead`) 또는 미정 | CASHFLOW_FORECAST | 예측 ID + 위험 ID |
+| 목표 진행 | `GOAL_PROGRESS` | 모으기 목표(ACTIVE) 진행률 25·50·75% 도달(각 1회) | GOAL | 목표 ID + 구간 |
+| 목표 달성 | `GOAL_ACHIEVED` | 진행률 100% 또는 상태 ACHIEVED(구간 알림은 더 만들지 않음) | GOAL | 목표 ID |
+| 추천 | `RECOMMENDATION` | 최근 7일(`recommendation-days-back`) 안 생성된 PENDING 개선안 | RECOMMENDATION | 개선안 ID |
+| 월간 리포트 | `MONTHLY_REPORT` | 월간 리포트 설정 사용자, 스케줄은 매월 1~3일(직접 실행은 항상), 지난달 | REPORT / yyyy-MM | 사용자 + 월 |
+| 데일리 브리핑 | `DAILY_BRIEFING` | 브리핑 설정 사용자, 설정 시각(`daily_briefing_time`, 기본 08:00, 사용자 `timezone`)의 정시. 내용: 오늘 사용 가능 금액((월 예산 − 이달 소비) / 남은 일수, 줄이기 목표가 있을 때) + 오늘 예정 고정 지출 | 없음 | 사용자 + 날짜 |
+
+- 문구는 "N일 후(9월 16일) 17,000원이 결제될 예정입니다"처럼 상대일·날짜·금액을 함께 쓴다. 위험 알림은 `cashflow_risk.message`가 있으면 그대로 쓴다.
+- 리포트·브리핑 대상 조회는 `notification_enabled=1`인 사용자만이다(설정이 꺼진 사용자는 만들지도 않는다). 다른 규칙은 알림함에 남기고 푸시만 설정으로 막는다.
+- 리포트 본문(API 20)은 아직 없다. 알림은 `REPORT/yyyy-MM`을 가리키고 FE가 리포트 화면으로 라우팅한다.
+
+### 스케줄과 직접 실행
+
+- `NotificationEventScheduler`(`app.notification.events.enabled=true`, 테스트는 false): 매일 08:00(Asia/Seoul) `runAll`, 매 정시 브리핑. cron은
+  `app.notification.events.daily-cron`·`briefing-cron`으로 바꿀 수 있다. 서버가 여러 대여도 dedupe로 중복 생성은 없다.
+- `POST /api/v1/notifications/events/run`(명세 외): **본인** 대상으로 모든 규칙을 지금 실행하고 규칙별 생성 건수를 돌려준다(`{date, created:{paymentDue,...}, total}`).
+  직접 실행은 리포트·브리핑의 날짜·시각 조건을 무시한다(시연·확인용). 멱등이라 여러 번 눌러도 늘지 않는다.
+
+### 설정 (`app.notification`)
+
+| 키 | 기본 | 의미 |
+| --- | --- | --- |
+| `push.enabled` | false (prod true) | FCM 발송 |
+| `push.service-account-path` | `${FCM_SERVICE_ACCOUNT_PATH:}` | 서비스 계정 키 경로 |
+| `events.enabled` | true (test false) | 스케줄 등록 |
+| `events.due-days-ahead` | 3 | 결제·상환 예정 창 |
+| `events.risk-days-ahead` | 7 | 현금흐름 위험 창 |
+| `events.recommendation-days-back` | 7 | 추천 알림 대상 기간 |
+
 ## 다른 도메인에서 알림 만들기 (D10 계약)
 
 ```java
@@ -100,7 +171,11 @@ publisher.publish(new NotificationCommand(
 
 - H2 통합(`NotificationApiTest` 7종): 목록 정렬·필터(유형·읽음·날짜 양끝 포함)·페이지, 파라미터 검증, 상세·미확인 수, 읽음 멱등·전체 읽음 건수·타인 무영향,
   소프트 삭제 후 조회 제외·404, 인증·소유권, 퍼블리셔 dedupe(같은 키 재사용·다른 사용자 별개·삭제분 미복구·키 없음·입력 검증).
-- MySQL은 remaining-work 519 절 참고.
+- H2 통합(`NotificationDeviceApiTest` 3종): 기기 등록·재등록·소유자 이전·해제·검증, 새 알림 푸시(기록용 발송기)·dedupe 시 미발송·토큰 무효 시 기기 해제·재등록 복구,
+  사용자 설정(브리핑·전체 off)에 따른 푸시 억제와 알림함 유지.
+- H2 통합(`NotificationEventServiceTest` 4종, 리더 mock): 결제·상환·연체·위험·추천 알림 문구·원천·dedupe, 목표 구간·달성, 월간 리포트(월초/직접)·브리핑(설정 시각·내용), 실행 API.
+- MySQL(`NotificationMySqlIntegrationTest`, `NotificationEventReaderMySqlTest`): V32·V33 validate, 유일 제약, 벌크 읽음, seed(4,000명)에서 리더 SQL 8종 실행과 U0002 규칙 실행·멱등.
+  결과는 remaining-work 519·581 절.
 
 ## BE-A 통합 테스트 (521)
 
