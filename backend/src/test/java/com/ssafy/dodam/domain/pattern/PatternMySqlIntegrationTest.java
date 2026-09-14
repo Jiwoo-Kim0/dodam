@@ -71,6 +71,13 @@ class PatternMySqlIntegrationTest {
         registry.add("spring.datasource.password", () -> System.getenv().getOrDefault("PATTERN_MYSQL_TEST_PASSWORD", ""));
         registry.add("spring.flyway.enabled", () -> "false");
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
+        // PATTERN_MYSQL_TEST_ARTIFACT=file:/path/spending-kmeans-v1.json 이면 Python 학습 아티팩트 경로를 함께 검증한다.
+        registry.add("app.pattern.model-location", () -> System.getenv().getOrDefault("PATTERN_MYSQL_TEST_ARTIFACT", ""));
+    }
+
+    private static boolean artifactEnabled() {
+        String location = System.getenv("PATTERN_MYSQL_TEST_ARTIFACT");
+        return location != null && !location.isBlank();
     }
 
     @BeforeEach
@@ -118,7 +125,14 @@ class PatternMySqlIntegrationTest {
         assertThat(result.analysis().liquidityLevel()).isEqualTo("HIGH");
         assertThat(result.analysis().clusterProfile()).isNotNull();
         assertThat(result.analysis().clusterProfile().clusterLabel()).isEqualTo("저축 중심형");
-        assertThat(result.analysis().featureSummary().populationSize()).isEqualTo(41);
+        if (artifactEnabled()) {
+            assertThat(result.analysis().clusterProfile().modelSource()).isEqualTo("ARTIFACT");
+            assertThat(result.analysis().clusterProfile().trainedBy()).startsWith("python-sklearn");
+            assertThat(result.analysis().featureSummary().populationSize()).isGreaterThanOrEqualTo(41);
+        } else {
+            assertThat(result.analysis().clusterProfile().modelSource()).isEqualTo("IN_PROCESS");
+            assertThat(result.analysis().featureSummary().populationSize()).isEqualTo(41);
+        }
 
         Long id = result.analysis().analysisId();
         assertThat(jdbc.queryForObject(
