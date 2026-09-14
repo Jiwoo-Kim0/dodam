@@ -9,6 +9,8 @@ public enum FallbackReason {
     RULE_ONLY_REQUESTED,
     /** 학습 가능한 사용자 수가 `app.pattern.min-population`보다 적다 */
     INSUFFICIENT_POPULATION,
+    /** 모델 아티팩트가 없고(`app.pattern.model-location`) 인프로세스 학습도 꺼져 있다(`train-in-process=false`) */
+    MODEL_NOT_AVAILABLE,
     /** 사용자 데이터가 `app.pattern.min-user-months`(기획안: 3개월)보다 짧다 */
     USER_DATA_TOO_SHORT,
     /** 소득을 알 수 없거나 소비가 없어 비율 특징을 만들 수 없다 */

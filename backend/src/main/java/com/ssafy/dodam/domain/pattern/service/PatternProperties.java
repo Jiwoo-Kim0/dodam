@@ -12,8 +12,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param minClusterSampleSize  배정된 군집의 최소 표본 수. 기획안 "표본 수가 작은 군집의 범위는 노출하지 않는다"
  * @param minConfidence         분류 신뢰도 하한(0~1)
  * @param clusterCount          K-Means 군집 수. seed 성향 4종(균형·소비집중·저축집중·변동)에 맞춘 4
- * @param modelTtl              학습한 모델을 메모리에 재사용하는 시간. 지나면 다음 분석에서 다시 학습한다
+ * @param modelTtl              인프로세스 학습 모델을 메모리에 재사용하는 시간. 지나면 다음 분석에서 다시 학습한다
  * @param leaseDuration         진행 중 접수가 유효한 시간. 지나면 죽은 접수로 보고 새 요청을 받는다
+ * @param modelLocation         Python 학습 스크립트가 만든 모델 아티팩트 위치(Spring Resource 표기). 비우면 아티팩트를 쓰지 않는다
+ * @param trainInProcess        아티팩트가 없을 때 Java 안에서 K-Means를 학습할지. 운영에서는 false로 두고 아티팩트만 쓰는 것을 권장
  */
 @ConfigurationProperties(prefix = "app.pattern")
 public record PatternProperties(
@@ -24,13 +26,18 @@ public record PatternProperties(
         Double minConfidence,
         Integer clusterCount,
         Duration modelTtl,
-        Duration leaseDuration
+        Duration leaseDuration,
+        String modelLocation,
+        Boolean trainInProcess
 ) {
 
     public static final int DEFAULT_LOOKBACK_MONTHS = 6;
     public static final int MAX_LOOKBACK_MONTHS = 12;
+    public static final String DEFAULT_MODEL_LOCATION = "classpath:ml/spending-kmeans-v1.json";
 
     public PatternProperties {
+        modelLocation = modelLocation == null ? DEFAULT_MODEL_LOCATION : modelLocation.strip();
+        trainInProcess = trainInProcess == null || trainInProcess;
         lookbackMonths = lookbackMonths == null ? DEFAULT_LOOKBACK_MONTHS : lookbackMonths;
         minUserMonths = minUserMonths == null ? 3 : minUserMonths;
         minPopulation = minPopulation == null ? 30 : minPopulation;

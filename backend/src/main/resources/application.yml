@@ -31,5 +31,8 @@ app:
     min-cluster-sample-size: 10 # 배정 군집 최소 표본 수
     min-confidence: 0.2         # 분류 신뢰도 하한
     cluster-count: 4            # K-Means 군집 수
-    model-ttl: PT1H             # 학습 모델 메모리 재사용 시간
+    model-ttl: PT1H             # 인프로세스 학습 모델 메모리 재사용 시간
     lease-duration: PT5M        # 진행 중 접수 유효 시간
+    # Python 학습 스크립트(backend/ml/pattern/train_cluster_model.py)가 만든 모델 아티팩트. 없으면 train-in-process에 따라 Java 학습 또는 RULE_ONLY.
+    model-location: classpath:ml/spending-kmeans-v1.json
+    train-in-process: true

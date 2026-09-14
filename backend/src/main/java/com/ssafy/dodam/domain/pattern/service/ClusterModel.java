@@ -18,6 +18,8 @@ import java.util.Map;
  * @param centroids      표준화 공간의 중심 [k][d]
  * @param clusters       군집 번호 순 요약
  * @param trainedAt      학습 시각
+ * @param source         ARTIFACT(Python 학습 아티팩트) | IN_PROCESS(Java 인프로세스 학습)
+ * @param trainedBy      학습 도구(예: python-sklearn-1.9.0, java-kmeans)
  */
 public record ClusterModel(
         String modelVersion,
@@ -27,8 +29,12 @@ public record ClusterModel(
         double[] stds,
         double[][] centroids,
         List<ClusterSummary> clusters,
-        LocalDateTime trainedAt
+        LocalDateTime trainedAt,
+        String source,
+        String trainedBy
 ) {
+
+    public static final String SOURCE_IN_PROCESS = "IN_PROCESS";
 
     public ClusterModel {
         clusters = List.copyOf(clusters);

@@ -73,7 +73,7 @@ public class PatternResponseAssembler {
                 cluster.summary().clusterId(), cluster.summary().label(), model.modelVersion(),
                 cluster.summary().sampleSize(), model.populationSize(), cluster.assignment().confidence(),
                 model.window().months(), model.window().start().toString(), model.window().end().toString(),
-                Stats.round4(deviationSum / ClusterFeature.dimension()), ranges);
+                Stats.round4(deviationSum / ClusterFeature.dimension()), ranges, model.source(), model.trainedBy());
     }
 
     public JsonNode toJson(Object value) {

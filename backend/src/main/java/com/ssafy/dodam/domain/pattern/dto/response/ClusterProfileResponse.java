@@ -19,6 +19,8 @@ import java.util.List;
  * @param windowEnd           특징 산출 기간 마지막 달
  * @param deviationScore      특징별 범위 이탈의 평균(기획안 "군집 이탈 점수", 가중치 균등). 0이면 모든 특징이 기준 범위 안
  * @param features            특징별 사용자 값과 군집 기준 범위
+ * @param modelSource         ARTIFACT(Python 학습 아티팩트) | IN_PROCESS(Java 인프로세스 학습). 2026-09-14 이전 저장분은 null
+ * @param trainedBy           학습 도구(예: python-sklearn-1.9.0)
  */
 public record ClusterProfileResponse(
         int clusterId,
@@ -31,7 +33,9 @@ public record ClusterProfileResponse(
         String windowStart,
         String windowEnd,
         double deviationScore,
-        List<FeatureRange> features
+        List<FeatureRange> features,
+        String modelSource,
+        String trainedBy
 ) {
 
     public ClusterProfileResponse {

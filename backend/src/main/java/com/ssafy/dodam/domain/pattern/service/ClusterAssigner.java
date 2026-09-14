@@ -46,7 +46,8 @@ public class ClusterAssigner {
             return Outcome.fallback(FallbackReason.MODEL_FAILURE, null);
         }
         if (!lookup.hasModel()) {
-            return Outcome.fallback(FallbackReason.INSUFFICIENT_POPULATION, lookup.populationSize());
+            FallbackReason reason = lookup.unavailableReason() == null ? FallbackReason.INSUFFICIENT_POPULATION : lookup.unavailableReason();
+            return Outcome.fallback(reason, lookup.populationSize());
         }
         ClusterModel model = lookup.model();
         Assignment assignment;
