@@ -1,10 +1,10 @@
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
-import { BouncyScrollView } from '@/components/bouncyScrollView/BouncyScrollView';
+import { AppHeader } from '@/components/appHeader/AppHeader';
+import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import { routes } from '@/constants/routes';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import { findGoalDetail } from '@/mocks/goalDetail';
@@ -59,42 +59,22 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
 
   return (
     <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
-      <View style={styles.header}>
-        <Pressable
-          accessibilityLabel="이전 화면으로 이동"
-          accessibilityRole="button"
-          hitSlop={8}
-          onPress={() => router.back()}
-          style={({ pressed }) => [
-            styles.backButton,
-            pressed && styles.backButtonPressed,
-          ]}
-        >
-          <SymbolView
-            name={{
-              android: 'arrow_back',
-              ios: 'chevron.left',
-              web: 'arrow_back',
-            }}
-            size={24}
-            tintColor={colors.textPrimary}
-          />
-        </Pressable>
-      </View>
-
-      <BouncyScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.titleRow}>
-          <Text style={styles.title}>{goal.title}</Text>
+      <AppHeader
+        showBackButton
+        title={goal.title}
+        titleAccessory={
           <Image
             contentFit="contain"
             source={require('@/assets/icons/goal/acorn_icon.png')}
             style={styles.acornIcon}
           />
-        </View>
-        <Text style={styles.dueDate}>{goal.dueDateLabel}</Text>
+        }
+      />
 
+      <RefreshableBouncyScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.statusRow}>
           <View style={styles.statusText}>
+            <Text style={styles.dueDate}>{goal.dueDateLabel}</Text>
             <Text style={styles.dDay}>{`D-${goal.dDay}`}</Text>
             {goal.type === 'reducing' ? (
               <Text style={styles.amountLabel}>이번 달 소비 현황</Text>
@@ -141,7 +121,7 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
         ) : (
           <GoalSpendingCategories categories={goal.categories} />
         )}
-      </BouncyScrollView>
+      </RefreshableBouncyScrollView>
 
       <View style={styles.actions}>
         <Pressable

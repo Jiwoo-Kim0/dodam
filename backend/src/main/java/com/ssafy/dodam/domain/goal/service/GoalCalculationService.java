@@ -161,9 +161,19 @@ public class GoalCalculationService {
     public GoalForecastResponse getForecast(Long userId, Long goalId, LocalDate baseDate, Integer months) {
         LocalDate today = goalClock.today();
         SavingContext context = savingContext(userId, goalId, today);
-        LocalDate base = baseDate == null ? today : baseDate;
-        int horizon = months == null ? 12 : months;
+        return forecast(context, baseDate == null ? today : baseDate, months == null ? 12 : months);
+    }
 
+    /**
+     * 진단(546 goal-impact)용 예상 달성일. 접수 기준일을 오늘로 삼아 평가하며 목표 잔액·변화 이력을 수정하지 않는다.
+     * 월별 projection은 진단 스냅샷에 보존할 대상이 아니라 비운다.
+     */
+    @Transactional(readOnly = true)
+    public GoalForecastResponse getForecast(Long userId, Long goalId, LocalDate today) {
+        return forecast(savingContext(userId, goalId, today, false), today, 0);
+    }
+
+    private GoalForecastResponse forecast(SavingContext context, LocalDate base, int horizon) {
         long pace = context.averageMonthlySaving();
         long remaining = context.remaining();
         Integer monthsToAchieve;

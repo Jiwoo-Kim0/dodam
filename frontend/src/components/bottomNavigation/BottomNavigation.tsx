@@ -8,12 +8,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { routes } from '@/constants/routes';
 
+import { emitHomeTabReselect } from './homeTabReselectEvents';
 import { styles } from './BottomNavigation.styles';
 
 type BottomNavigationItemProps = TabTriggerSlotProps & {
   activeIcon: ImageSourcePropType;
   inactiveIcon: ImageSourcePropType;
   label: string;
+  onFocusedPress?: () => void;
 };
 
 const BottomNavigationItem = forwardRef<View, BottomNavigationItemProps>(
@@ -24,6 +26,7 @@ const BottomNavigationItem = forwardRef<View, BottomNavigationItemProps>(
       inactiveIcon,
       isFocused = false,
       label,
+      onFocusedPress,
       onPress,
       ...pressableProps
     },
@@ -97,6 +100,11 @@ const BottomNavigationItem = forwardRef<View, BottomNavigationItemProps>(
 
     const handlePress = (event: GestureResponderEvent) => {
       playIconAnimation();
+
+      if (isFocused) {
+        onFocusedPress?.();
+      }
+
       onPress?.(event);
     };
 
@@ -139,6 +147,7 @@ export function BottomNavigation() {
               activeIcon={require('@/assets/icons/navigation/home_active_tab.png')}
               inactiveIcon={require('@/assets/icons/navigation/home_inactive_tab.png')}
               label="홈"
+              onFocusedPress={emitHomeTabReselect}
             />
           </TabTrigger>
 

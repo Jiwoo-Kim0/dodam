@@ -1,10 +1,10 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
 import { type LayoutChangeEvent, Pressable, Text, View } from 'react-native';
 
-import { BouncyScrollView } from '@/components/bouncyScrollView/BouncyScrollView';
+import { AppHeader } from '@/components/appHeader/AppHeader';
+import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import { DISCOVERY_INSIGHTS, DISCOVERY_SUMMARY } from '@/mocks/discovery';
 import { colors } from '@/styles';
@@ -15,12 +15,13 @@ import { styles } from './DiscoveryHome.styles';
 
 type DiscoveryHomeProps = {
   onBack: () => void;
+  onInsightPress: (insightId: string) => void;
   onViewAll: () => void;
 };
 
 const GRADIENT_TOP_OFFSET = 190;
 
-export function DiscoveryHome({ onBack, onViewAll }: DiscoveryHomeProps) {
+export function DiscoveryHome({ onBack, onInsightPress, onViewAll }: DiscoveryHomeProps) {
   const [gradientContainerHeight, setGradientContainerHeight] = useState(0);
 
   const handleGradientContainerLayout = (event: LayoutChangeEvent) => {
@@ -29,24 +30,12 @@ export function DiscoveryHome({ onBack, onViewAll }: DiscoveryHomeProps) {
 
   return (
     <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
-      <View style={styles.header}>
-        <Pressable
-          accessibilityLabel="이전 화면으로 이동"
-          accessibilityRole="button"
-          hitSlop={8}
-          onPress={onBack}
-          style={({ pressed }) => [styles.backButton, pressed && styles.backButtonPressed]}>
-          <SymbolView
-            name={{ android: 'arrow_back', ios: 'chevron.left', web: 'arrow_back' }}
-            size={24}
-            tintColor={colors.textPrimary}
-          />
-        </Pressable>
-      </View>
+      <AppHeader onBackPress={onBack} showBackButton title="발견" />
 
-      <BouncyScrollView contentContainerStyle={styles.scrollContent}>
+      <RefreshableBouncyScrollView
+        contentContainerStyle={styles.scrollContent}
+        style={styles.scroll}>
         <View style={styles.titleGroup}>
-          <Text style={styles.title}>발견</Text>
           <Text style={styles.subtitle}>
             {DISCOVERY_SUMMARY.userName}님의 절약 잠재력{' '}
             <Text style={styles.subtitleHighlight}>{DISCOVERY_INSIGHTS.length}건</Text>
@@ -125,12 +114,13 @@ export function DiscoveryHome({ onBack, onViewAll }: DiscoveryHomeProps) {
                   insight={insight}
                   isLast={index === DISCOVERY_INSIGHTS.length - 1}
                   key={insight.id}
+                  onPress={() => onInsightPress(insight.id)}
                 />
               ))}
             </View>
 
             <Text style={styles.footnote}>
-              위 분석은 {DISCOVERY_SUMMARY.analysisPeriodLabel} 데이터를 기준으로 했어요
+              분석 기준: {DISCOVERY_SUMMARY.analysisPeriodLabel}
             </Text>
           </View>
 
@@ -142,7 +132,7 @@ export function DiscoveryHome({ onBack, onViewAll }: DiscoveryHomeProps) {
             <Text style={styles.viewAllButtonLabel}>전체 보기</Text>
           </Pressable>
         </View>
-      </BouncyScrollView>
+      </RefreshableBouncyScrollView>
     </SafeAreaLayout>
   );
 }

@@ -234,4 +234,3 @@ git merge-tree $(git merge-base origin/develop HEAD) HEAD origin/S15P21D105-546-
 ```
 
 0이 아니면 8.1의 금지 목록에 어긋난 변경이 있는 것이다.
-

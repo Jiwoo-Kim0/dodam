@@ -1,8 +1,7 @@
-import { SymbolView } from 'expo-symbols';
 import { Pressable, Text, View } from 'react-native';
 
-import { BouncyScrollView } from '@/components/bouncyScrollView/BouncyScrollView';
-import { colors } from '@/styles';
+import { AppHeader } from '@/components/appHeader/AppHeader';
+import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import type {
   LedgerCategory,
   LedgerCategorySummary,
@@ -56,27 +55,13 @@ export function LedgerOverview({
 
   return (
     <View style={styles.fill}>
-      <View style={styles.overviewTopRow}>
-        <Pressable
-          accessibilityLabel="홈으로 이동"
-          accessibilityRole="button"
-          hitSlop={8}
-          onPress={onBackPress}
-          style={({ pressed }) => [
-            styles.overviewBackButton,
-            pressed && styles.headerAddButtonPressed,
-          ]}>
-          <SymbolView
-            name={{ android: 'arrow_back', ios: 'chevron.left', web: 'arrow_back' }}
-            size={24}
-            tintColor={colors.textPrimary}
-          />
-        </Pressable>
-      </View>
+      <AppHeader
+        onBackPress={onBackPress}
+        showBackButton
+        title="가계부"
+      />
 
-      <BouncyScrollView contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.overviewTitle}>가계부</Text>
-
+      <RefreshableBouncyScrollView contentContainerStyle={styles.scrollContent}>
         <MonthSelector
           month={month}
           onNext={onNextMonth}
@@ -96,7 +81,7 @@ export function LedgerOverview({
         </View>
 
         <View style={[styles.card, styles.sectionCard]}>
-          <Text style={styles.sectionTitle}>카테고리별 소비</Text>
+          <Text style={styles.categorySectionTitle}>카테고리별 소비</Text>
           <View style={styles.categoryBar}>
             {categorySummaries.map((item) => (
               <View
@@ -183,7 +168,7 @@ export function LedgerOverview({
                 ))}
               </View>
 
-              <View style={styles.recentGroup}>
+              <View style={[styles.recentGroup, styles.recentGroupSeparated]}>
                 <Text style={styles.groupLabel}>어제</Text>
                 {yesterdayTransactions.map((transaction) => (
                   <TransactionRow
@@ -199,7 +184,7 @@ export function LedgerOverview({
             </View>
           </View>
         </View>
-      </BouncyScrollView>
+      </RefreshableBouncyScrollView>
     </View>
   );
 }

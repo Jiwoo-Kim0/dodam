@@ -1,6 +1,7 @@
 import { StyleSheet } from 'react-native';
 
 import {
+  fontSize,
   colors,
   componentSize,
   fontFamily,
@@ -14,6 +15,9 @@ export const styles = StyleSheet.create({
   screen: {
     backgroundColor: colors.background,
   },
+  scroll: {
+    backgroundColor: colors.home.goalGradientEnd,
+  },
   gradientContainer: {
     marginTop: spacing[8],
     paddingBottom: spacing[8],
@@ -25,30 +29,13 @@ export const styles = StyleSheet.create({
     right: -semanticSpacing.screenMargin,
     top: 190,
   },
-  header: {
-    justifyContent: 'center',
-    minHeight: componentSize.touchTarget,
-    paddingHorizontal: semanticSpacing.screenMargin,
-  },
-  backButton: {
-    alignItems: 'flex-start',
-    height: componentSize.touchTarget,
-    justifyContent: 'center',
-    width: componentSize.touchTarget,
-  },
-  backButtonPressed: {
-    opacity: 0.5,
-  },
   scrollContent: {
+    backgroundColor: colors.background,
     paddingHorizontal: semanticSpacing.screenMargin,
   },
   titleGroup: {
     gap: spacing[2],
     marginTop: spacing[2],
-  },
-  title: {
-    ...typography.headline,
-    color: colors.textPrimary,
   },
   subtitle: {
     ...typography.title,
@@ -93,7 +80,7 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.primary.lightGreen,
     color: colors.primary.green,
     fontFamily: fontFamily.semiBold,
-    fontSize: 20,
+    fontSize: fontSize.button,
   },
   summarySubtext: {
     ...typography.body2,
@@ -164,8 +151,10 @@ export const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   footnote: {
-    ...typography.caption,
     color: colors.textTertiary,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.micro,
+    lineHeight: 14,
   },
   viewAllButton: {
     alignItems: 'center',

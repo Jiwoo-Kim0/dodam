@@ -20,7 +20,6 @@ export const styles = StyleSheet.create({
   tab: {
     alignItems: 'center',
     flex: 1,
-    gap: spacing[1],
     height: '100%',
     justifyContent: 'center',
   },
@@ -31,8 +30,8 @@ export const styles = StyleSheet.create({
     width: 64,
   },
   icon: {
-    height: 28,
-    width: 28,
+    height: 24,
+    width: 24,
   },
   label: {
     color: colors.textSecondary,

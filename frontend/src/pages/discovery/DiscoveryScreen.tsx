@@ -14,6 +14,7 @@ export function DiscoveryScreen() {
     return (
       <DiscoveryHome
         onBack={() => setHasEnteredDiscovery(false)}
+        onInsightPress={(insightId) => router.push(routes.discoveryInsightDetail(insightId))}
         onViewAll={() => router.push(routes.discoveryInsights)}
       />
     );

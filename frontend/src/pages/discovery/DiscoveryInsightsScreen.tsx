@@ -1,10 +1,11 @@
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
-import { type LayoutChangeEvent, Pressable, Text, View } from 'react-native';
+import { type LayoutChangeEvent, Text, View } from 'react-native';
 
-import { BouncyScrollView } from '@/components/bouncyScrollView/BouncyScrollView';
+import { AppHeader } from '@/components/appHeader/AppHeader';
+import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
+import { routes } from '@/constants/routes';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import { DISCOVERY_INSIGHTS, DISCOVERY_SUMMARY } from '@/mocks/discovery';
 import { colors } from '@/styles';
@@ -28,24 +29,11 @@ export function DiscoveryInsightsScreen() {
 
   return (
     <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
-      <View style={styles.header}>
-        <Pressable
-          accessibilityLabel="이전 화면으로 이동"
-          accessibilityRole="button"
-          hitSlop={8}
-          onPress={() => router.back()}
-          style={({ pressed }) => [styles.backButton, pressed && styles.backButtonPressed]}>
-          <SymbolView
-            name={{ android: 'arrow_back', ios: 'chevron.left', web: 'arrow_back' }}
-            size={24}
-            tintColor={colors.textPrimary}
-          />
-        </Pressable>
-      </View>
+      <AppHeader showBackButton title="발견" />
 
-      <BouncyScrollView contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.title}>발견</Text>
-
+      <RefreshableBouncyScrollView
+        contentContainerStyle={styles.scrollContent}
+        style={styles.scroll}>
         <View onLayout={handleGradientContainerLayout} style={styles.gradientContainer}>
           {summaryCardHeight > 0 && gradientContainerHeight > summaryCardHeight ? (
             <LinearGradient
@@ -84,11 +72,15 @@ export function DiscoveryInsightsScreen() {
             <Text style={styles.sectionTitle}>발견한 내용 {DISCOVERY_INSIGHTS.length}개</Text>
 
             {DISCOVERY_INSIGHTS.map((insight) => (
-              <DiscoveryInsightsCard insight={insight} key={insight.id} />
+              <DiscoveryInsightsCard
+                insight={insight}
+                key={insight.id}
+                onPress={() => router.push(routes.discoveryInsightDetail(insight.id))}
+              />
             ))}
           </View>
         </View>
-      </BouncyScrollView>
+      </RefreshableBouncyScrollView>
     </SafeAreaLayout>
   );
 }

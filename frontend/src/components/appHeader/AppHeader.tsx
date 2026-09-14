@@ -12,7 +12,9 @@ type AppHeaderProps = {
   title: string;
   left?: ReactNode;
   right?: ReactNode;
+  subtitle?: string;
   showBackButton?: boolean;
+  titleAccessory?: ReactNode;
   onBackPress?: () => void;
 };
 
@@ -20,7 +22,9 @@ export function AppHeader({
   title,
   left,
   right,
+  subtitle,
   showBackButton = false,
+  titleAccessory,
   onBackPress,
 }: AppHeaderProps) {
   const router = useRouter();
@@ -54,9 +58,15 @@ export function AppHeader({
   return (
     <View style={styles.container}>
       <View style={styles.side}>{leftContent}</View>
-      <Text numberOfLines={1} style={styles.title}>
-        {title}
-      </Text>
+      <View style={styles.titleGroup}>
+        <View style={styles.titleLine}>
+          <Text numberOfLines={1} style={styles.title}>
+            {title}
+          </Text>
+          {titleAccessory}
+        </View>
+        {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+      </View>
       <View style={[styles.side, styles.right]}>{right}</View>
     </View>
   );

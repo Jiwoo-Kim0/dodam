@@ -1,8 +1,8 @@
 import { useRouter } from 'expo-router';
-import { SymbolView } from 'expo-symbols';
-import { Pressable, Text, View } from 'react-native';
+import { View } from 'react-native';
 
-import { BouncyScrollView } from '@/components/bouncyScrollView/BouncyScrollView';
+import { AppHeader } from '@/components/appHeader/AppHeader';
+import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import { routes } from '@/constants/routes';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import {
@@ -11,7 +11,6 @@ import {
   DAILY_BRIEFING_INSIGHTS,
   DAILY_BRIEFING_TRANSACTIONS,
 } from '@/mocks/dailyBriefing';
-import { colors } from '@/styles';
 
 import { GoalImpactCard } from './components/GoalImpactCard';
 import { InsightSection } from './components/InsightSection';
@@ -35,24 +34,13 @@ export function DailyBriefingScreen() {
 
   return (
     <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
-      <View style={styles.header}>
-        <Pressable
-          accessibilityLabel="홈으로 돌아가기"
-          accessibilityRole="button"
-          hitSlop={8}
-          onPress={handleBackPress}
-          style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}>
-          <SymbolView
-            name={{ android: 'arrow_back', ios: 'chevron.left', web: 'arrow_back' }}
-            size={24}
-            tintColor={colors.textPrimary}
-          />
-        </Pressable>
-      </View>
+      <AppHeader
+        onBackPress={handleBackPress}
+        showBackButton
+        title="오늘의 도담 브리핑"
+      />
 
-      <BouncyScrollView contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.screenTitle}>오늘의 도담 브리핑</Text>
-
+      <RefreshableBouncyScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.sections}>
           <SummaryCard
             previousMonthDailyAverage={DAILY_BRIEFING.previousMonthDailyAverage}
@@ -67,7 +55,7 @@ export function DailyBriefingScreen() {
           />
           <StreakSection streaks={DAILY_BRIEFING.streaks} />
         </View>
-      </BouncyScrollView>
+      </RefreshableBouncyScrollView>
     </SafeAreaLayout>
   );
 }

@@ -12,6 +12,9 @@ export const fontFamily = {
 } as const;
 
 export const fontSize = {
+  tiny: 8,
+  micro: 10,
+  detail: 11,
   display: 34,
   headline: 26,
   title: 22,

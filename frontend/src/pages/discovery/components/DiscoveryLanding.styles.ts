@@ -34,11 +34,12 @@ export const styles = StyleSheet.create({
     alignSelf: 'stretch',
     flexDirection: 'row',
     justifyContent: 'space-between',
+    position: 'relative',
   },
   backIcon: {
     color: colors.textPrimary,
     fontFamily: fontFamily.regular,
-    fontSize: 34,
+    fontSize: fontSize.display,
     lineHeight: 36,
   },
   heroCopy: {

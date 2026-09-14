@@ -1,8 +1,8 @@
-export const RUBBER_BAND_RESISTANCE = 0.4;
+export const RUBBER_BAND_RESISTANCE = 0.28;
 
 export const SPRING_BACK_CONFIG = {
-  damping: 22,
-  stiffness: 100,
+  damping: 26,
+  stiffness: 160,
   overshootClamping: true,
 };
 

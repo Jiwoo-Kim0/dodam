@@ -13,42 +13,56 @@ type GoalCardProps = {
 };
 
 export function GoalCard({ goal }: GoalCardProps) {
-  const progressColor = goal.type === 'saving' ? colors.primary.yellow : colors.primary.orange;
-  const progressPercent = calculateProgressPercent(goal.currentAmount, goal.targetAmount);
   const isSavingGoal = goal.type === 'saving';
+  const progressColor = isSavingGoal ? colors.primary.yellow : colors.primary.orange;
+  const goalIconBackgroundColor = isSavingGoal
+    ? colors.goal.savingCharacterBackground
+    : colors.goal.reducingCharacterBackground;
+  const insightBackgroundColor = isSavingGoal
+    ? colors.goal.savingCharacterBackground
+    : colors.goal.reducingCharacterBackground;
+  const progressPercent = calculateProgressPercent(goal.currentAmount, goal.targetAmount);
+  const goalIconSource = isSavingGoal
+    ? require('@/assets/icons/goal/saving_money_bag.png')
+    : require('@/assets/icons/goal/acorn_icon.png');
+  const singleLineMessage = goal.message.replace(/\s*\n\s*/g, ' ');
 
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <Text style={styles.title}>{goal.title}</Text>
-        <Text style={styles.dueDate}>{goal.dueDateLabel}</Text>
-      </View>
-
-      <View style={styles.goalStatus}>
-        <Text style={styles.dDay}>{`D-${goal.dDay}`}</Text>
-
-        <View style={styles.messageBubble}>
+        <View style={[styles.goalIconBackground, { backgroundColor: goalIconBackgroundColor }]}>
           <Image
             contentFit="contain"
-            source={require('@/assets/images/home/goal_card_leaf.png')}
-            style={styles.leafDecoration}
+            source={goalIconSource}
+            style={styles.goalIcon}
           />
-          <Text style={styles.messageText}>{goal.message}</Text>
+        </View>
+        <View style={styles.goalIdentity}>
+          <Text numberOfLines={1} style={styles.title}>{goal.title}</Text>
+          <Text style={styles.dueDate}>{goal.dueDateLabel}</Text>
+        </View>
+      </View>
+
+      <View style={styles.statusRow}>
+        <View style={styles.statusCopy}>
+          <Text style={styles.dDay}>{`D-${goal.dDay}`}</Text>
+          {isSavingGoal ? (
+            <View style={styles.amountRow}>
+              <Text style={[styles.currentAmount, { color: progressColor }]}>
+                {formatCurrency(goal.currentAmount)}
+              </Text>
+              <Text style={styles.targetAmount}>{` / ${formatCurrency(goal.targetAmount)}`}</Text>
+            </View>
+          ) : (
+            <View style={styles.amountRow}>
+              <Text style={styles.reducingLabel}>이번 달 절약 목표 </Text>
+              <Text style={styles.reducingAmount}>{formatCurrency(goal.targetAmount)}</Text>
+            </View>
+          )}
         </View>
 
         <Image contentFit="contain" source={goal.characterImage} style={styles.characterImage} />
       </View>
-
-      {isSavingGoal ? (
-        <View style={styles.amountRow}>
-          <Text style={styles.currentAmount}>{formatCurrency(goal.currentAmount)}</Text>
-          <Text style={styles.targetAmount}>{` / ${formatCurrency(goal.targetAmount)}`}</Text>
-        </View>
-      ) : (
-        <Text style={styles.reducingAmount}>
-          {`이번 달 절약 목표 ${formatCurrency(goal.targetAmount)}`}
-        </Text>
-      )}
 
       <View style={styles.progressRow}>
         <View style={styles.progressTrack}>
@@ -60,6 +74,16 @@ export function GoalCard({ goal }: GoalCardProps) {
           />
         </View>
         <Text style={styles.progressPercent}>{`${progressPercent}%`}</Text>
+      </View>
+
+      <View style={[styles.insightBanner, { backgroundColor: insightBackgroundColor }]}>
+        <Image
+          contentFit="contain"
+          source={require('@/assets/images/home/goal_card_leaf.png')}
+          style={styles.leafIcon}
+        />
+        <Text numberOfLines={1} style={styles.messageText}>{singleLineMessage}</Text>
+        <Text style={styles.chevron}>›</Text>
       </View>
     </View>
   );

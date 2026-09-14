@@ -12,6 +12,9 @@ export const styles = StyleSheet.create({
     paddingHorizontal: spacing[3],
     paddingVertical: spacing[2],
   },
+  rowPressed: {
+    opacity: 0.65,
+  },
   divider: {
     borderBottomColor: colors.divider,
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -34,7 +37,7 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.goal.reducingCharacterBackground,
   },
   rankSecond: {
-    backgroundColor: colors.briefing.increaseTag,
+    backgroundColor: colors.discovery.insightIncreaseTag,
   },
   rankThird: {
     backgroundColor: colors.goal.savingCharacterBackground,
@@ -50,35 +53,35 @@ export const styles = StyleSheet.create({
   },
   iconFrame: {
     alignItems: 'center',
-    height: 36,
+    height: 30,
     justifyContent: 'center',
-    width: 36,
+    width: 30,
   },
   icon: {
-    height: 36,
-    width: 36,
+    height: 30,
+    width: 30,
   },
   content: {
     flex: 1,
     minWidth: 0,
   },
   category: {
-    color: colors.textTertiary,
-    fontFamily: fontFamily.regular,
-    fontSize: 10,
-    lineHeight: 14,
+    color: colors.textSecondary,
+    fontFamily: fontFamily.medium,
+    fontSize: fontSize.detail,
+    lineHeight: 15,
   },
   title: {
     color: colors.textPrimary,
     fontFamily: fontFamily.semiBold,
-    fontSize: 12,
+    fontSize: fontSize.caption,
     lineHeight: 16,
     marginTop: 2,
   },
   description: {
     color: colors.textTertiary,
     fontFamily: fontFamily.regular,
-    fontSize: 10,
+    fontSize: fontSize.micro,
     lineHeight: 14,
     marginTop: 2,
   },
@@ -96,17 +99,17 @@ export const styles = StyleSheet.create({
   amount: {
     color: colors.textPrimary,
     fontFamily: fontFamily.semiBold,
-    fontSize: 10,
+    fontSize: fontSize.micro,
   },
   amountUnit: {
     fontFamily: fontFamily.regular,
-    fontSize: 8,
+    fontSize: fontSize.tiny,
   },
   amountLabel: {
     color: colors.textTertiary,
     fontFamily: fontFamily.regular,
-    fontSize: 6,
-    lineHeight: 9,
+    fontSize: 9,
+    lineHeight: 12,
     marginTop: 2,
   },
 });

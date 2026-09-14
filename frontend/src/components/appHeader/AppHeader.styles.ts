@@ -29,11 +29,27 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     width: componentSize.touchTarget,
   },
+  titleGroup: {
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: spacing[2],
+  },
+  titleLine: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing[2],
+    maxWidth: '100%',
+  },
   title: {
     ...typography.title,
     color: colors.textPrimary,
-    flex: 1,
-    paddingHorizontal: spacing[2],
+    flexShrink: 1,
     textAlign: 'center',
+  },
+  subtitle: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: spacing[1],
   },
 });

@@ -864,3 +864,10 @@
 - 군집 공급자·적격 조건 검사·동일 카테고리 근거 병합은 후속 구현이며 저장 군집 근거 조회만 지원한다.
 - MySQL에서 사용자 잠금·만료 경쟁 테스트 필요. 실행 실패는 미완료 접수만 삭제하며 실패 이력을 보존하지 않는다.
 - 과거 543 항목의 input_snapshot·종합 상태·goalId 검증은 현재 API 문서의 부분 구현 범위와 함께 해석한다.
+
+## 546 진행 현황 (2026-09-13)
+
+- goal-impact·changes 추가. 계약: [diagnosis-api.md](diagnosis-api.md), 계획: [diagnosis-goal-impact-plan.md](diagnosis-goal-impact-plan.md).
+- [ ] "금융비용으로 인한 목표 달성 지연"은 대출 이자·상환 규칙(`LOAN_INTEREST_BURDEN` 등) 정책 확정 후 계산한다. 현재 `unavailable`로 표시.
+- [ ] 이전 진단은 같은 goalId 완전 일치 기준이다. 전체 진단과 목표 지정 진단 사이 비교가 필요하면 FE 요구를 확인한 뒤 확장한다.
+- [ ] `DiagnosisRepository.findPreviousCompleted`(NULL goalId 비교 JPQL)는 H2만 확인했다. MySQL에서 실행 계획·결과를 확인한다.

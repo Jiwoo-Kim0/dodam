@@ -4,8 +4,8 @@ import { colors, fontFamily, fontSize, spacing } from '@/styles';
 
 export const styles = StyleSheet.create({
   goalCard: {
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[4],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
   },
   goalImpactRow: {
     alignItems: 'stretch',
@@ -29,9 +29,9 @@ export const styles = StyleSheet.create({
     width: StyleSheet.hairlineWidth,
   },
   goalIcon: {
-    height: 32,
+    height: 26,
     marginRight: spacing[1],
-    width: 32,
+    width: 26,
   },
   goalTextContent: {
     flex: 1,
@@ -40,7 +40,7 @@ export const styles = StyleSheet.create({
   goalLabel: {
     color: colors.textTertiary,
     fontFamily: fontFamily.regular,
-    fontSize: 11,
+    fontSize: fontSize.detail,
     lineHeight: 15,
   },
   goalValue: {

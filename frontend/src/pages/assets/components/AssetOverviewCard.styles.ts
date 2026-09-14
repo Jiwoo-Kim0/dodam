@@ -10,13 +10,13 @@ import {
 
 export const styles = StyleSheet.create({
   card: {
-    padding: spacing[5],
+    padding: spacing[4],
     borderRadius: radius.card,
     backgroundColor: colors.white,
   },
   label: {
     ...typography.caption,
-    marginBottom: spacing[2],
+    marginBottom: spacing[1],
     color: colors.textSecondary,
   },
   totalAmount: {
@@ -42,17 +42,17 @@ export const styles = StyleSheet.create({
   },
   divider: {
     height: StyleSheet.hairlineWidth,
-    marginVertical: spacing[4],
+    marginVertical: spacing[3],
     backgroundColor: colors.divider,
   },
   composition: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing[6],
+    gap: spacing[4],
   },
   legend: {
     flex: 1,
-    gap: spacing[2],
+    gap: spacing[1],
   },
   legendRow: {
     flexDirection: 'row',
@@ -66,16 +66,16 @@ export const styles = StyleSheet.create({
     gap: spacing[2],
   },
   legendDot: {
-    width: spacing[2],
-    height: spacing[2],
+    width: 7,
+    height: 7,
     borderRadius: radius.round,
   },
   legendLabel: {
-    ...typography.body1,
-    color: colors.textPrimary,
+    ...typography.body2,
+    color: colors.textSecondary,
   },
   legendAmount: {
-    ...typography.body1,
+    ...typography.body2,
     fontFamily: fontFamily.medium,
     color: colors.textPrimary,
     textAlign: 'right',

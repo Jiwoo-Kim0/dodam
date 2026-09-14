@@ -4,7 +4,8 @@ import { colors, fontFamily, fontSize, radius, spacing } from '@/styles';
 
 export const styles = StyleSheet.create({
   streakSection: {
-    padding: spacing[4],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
   },
   streakRow: {
     flexDirection: 'row',
@@ -16,21 +17,21 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.briefing.mutedCard,
     borderRadius: radius.card,
     flex: 1,
-    minHeight: 88,
+    minHeight: 72,
     justifyContent: 'center',
-    padding: spacing[3],
+    padding: spacing[2],
   },
   streakLabel: {
     color: colors.textTertiary,
     fontFamily: fontFamily.regular,
-    fontSize: fontSize.body1,
-    lineHeight: 20,
+    fontSize: fontSize.body2,
+    lineHeight: 18,
   },
   streakValue: {
     color: colors.textPrimary,
     fontFamily: fontFamily.semiBold,
-    fontSize: fontSize.subtitle,
-    lineHeight: 24,
-    marginTop: spacing[2],
+    fontSize: fontSize.buttonSmall,
+    lineHeight: 20,
+    marginTop: spacing[1],
   },
 });
