@@ -108,11 +108,12 @@ def coefficient_of_variation(values: Sequence[float]) -> float | None:
     return math.sqrt(variance) / mean
 
 
-def cluster_vector(rows: Iterable[MonthlyRow], window: Window, min_months: int) -> list[float] | None:
+def cluster_vector(rows: Iterable[MonthlyRow], window: Window, min_months: int, clip_values: bool = True) -> list[float] | None:
     """한 사용자의 군집 특징 벡터 (Java PatternFeatureCalculator.clusterVector).
 
     기간 밖 행은 버리고, 거래가 있는 달이 `min_months` 미만이거나 소득·소비가 0이면 None.
     평균은 거래가 있는 달로 나누고 Java와 같이 반올림(round half up)한다.
+    `clip_values=False`는 평가 스크립트의 클리핑 유무 비교(ablation)용이며 Java와는 다른 값이다.
     """
     in_window = [
         r for r in rows
@@ -136,7 +137,7 @@ def cluster_vector(rows: Iterable[MonthlyRow], window: Window, min_months: int) 
     avg_saving = _round_half_up(saving_sum / n)
     volatility = coefficient_of_variation([float(r.spending) for r in in_window])
 
-    caps = {key: cap for key, _, cap in FEATURES}
+    caps = {key: (cap if clip_values else math.inf) for key, _, cap in FEATURES}
     return [
         clip(avg_spending / avg_income, caps["spendingToIncomeRatio"]),
         clip(avg_saving / avg_income, caps["savingRate"]),

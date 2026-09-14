@@ -14,8 +14,10 @@ MySQL(transaction 집계) ─▶ train_cluster_model.py ─▶ spending-kmeans-v
 | --- | --- |
 | `pattern_features.py` | 특징 정의(기간·비율 특징 5종·클리핑·라벨 정책). Java `PatternFeatureCalculator.clusterVector`·`ClusterLabelPolicy`와 같은 계산 |
 | `train_cluster_model.py` | 집계 조회 → 표준화 → k 선택(실루엣) → KMeans 학습 → 아티팩트 JSON |
+| `evaluate_cluster_model.py` | 발표용 평가·실험: seed 순번으로 성향 라벨 복원 → ARI·NMI·purity·혼동행렬, k 탐색, 특징/전처리 ablation, 재학습 안정성, 배포 아티팩트 배정 지표·신뢰도·fallback 비율. CSV·Markdown·PNG 출력 |
 | `test_pattern_features.py` | Java 단위 테스트와 같은 입력·기대값으로 두 구현의 일치를 확인 |
-| `requirements.txt` | numpy, scikit-learn, PyMySQL |
+| `test_evaluate_cluster_model.py` | 라벨 복원·purity·혼동행렬·아티팩트 배정 계산 검증(DB 불필요) |
+| `requirements.txt` | numpy, scikit-learn, PyMySQL (그림은 matplotlib이 있을 때만) |
 
 ## 실행
 
@@ -35,6 +37,25 @@ python backend/ml/pattern/train_cluster_model.py \
 - `--k`(고정) 또는 `--k-range MIN MAX`(실루엣 최대, 동점이면 작은 k). 기본 2~6. seed 성향 4종이면 k=4가 나오는지 확인한다.
 - `--export-features features.csv`는 사용자 식별 없이 특징 벡터만 남긴다(분포 확인·k 탐색용). 레포에 커밋하지 않는다.
 - `--dry-run`은 요약만 출력한다.
+
+## 평가 (발표 자료용)
+
+```bash
+python backend/ml/pattern/evaluate_cluster_model.py \
+  --db-url jdbc:mysql://127.0.0.1:3306/dodam --db-user dodam --db-password '...' \
+  --reference-date 2026-09-14 --k-range 2 6 --stability-runs 5 \
+  --artifact backend/src/main/resources/ml/spending-kmeans-v1.json \
+  --out-dir backend/ml/pattern/reports/2026-09-14
+```
+
+- **정답 라벨**: seed 사용자(`seed.kmeans.uNNNN@dodam.invalid`)의 설계 성향을 `(NNNN-1) % 4`로 복원한다(0 BALANCED, 1 SPENDING_FOCUSED, 2 SAVING_FOCUSED, 3 VOLATILE).
+  DB에는 저장되지 않은 값이며 평가에만 쓴다. seed가 아닌 사용자는 실루엣 등 내부 지표에만 들어간다.
+- **산출물**(`reports/<날짜>/`, git 제외): `report.md`(발표에 붙일 표), `summary.json`, `k_sweep.csv`, `feature_ablation.csv`, `preprocessing_ablation.csv`,
+  `confusion.csv`, `k_sweep.png`, `confusion.png`.
+- **표 내용**: k별 실루엣·inertia·ARI·purity / 특징 하나씩 제외 시 지표 변화 / 표준화·클리핑 유무 / random_state 5회 재학습 간 ARI / 최종 혼동행렬 /
+  아티팩트 배정의 신뢰도 분포와 노출 조건(신뢰도 하한·군집 표본 하한)별 fallback 비율.
+- **해석 주의**: seed는 성향별 소비 패턴을 뚜렷하게 만든 합성 데이터라 지표가 높게 나온다. 발표에서는 "합성 데이터 기준"임을 밝히고 방법론(익명 집계 특징,
+  자동 fallback, 모델 버전 기록)과 진단·추천 연결을 함께 설명한다.
 
 ## 아티팩트 형식
 

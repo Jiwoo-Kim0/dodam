@@ -48,3 +48,4 @@ CLAUDE.md
 __pycache__/
 .pytest_cache/
 backend/ml/**/*.csv
+backend/ml/**/reports/

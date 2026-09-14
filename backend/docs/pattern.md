@@ -252,6 +252,13 @@ clusterDeviationAlpha = 군집 결과가 있으면 0.2 × confidence, 없으면 
 - 단위: `KMeansClustererTest`(분리된 집단·결정성·표준편차 0), `ClusterLabelPolicyTest`, `PatternFeatureCalculatorTest`(기간·지표 정의·소득 출처·모집단 특징 조건),
   `PriorityProfileCalculatorTest`, `ClusterModelArtifactLoaderTest`(아티팩트 파싱·배정·출처·MODEL_NOT_AVAILABLE·형식 오류).
 - Python: `backend/ml/pattern/test_pattern_features.py` — Java 단위 테스트와 같은 입력·기대값(기간, 특징 벡터 0.6/0.25/0.5556/0.2222/0, 라벨 순서).
+  `test_evaluate_cluster_model.py` — seed 라벨 복원·purity·혼동행렬·아티팩트 배정 계산.
+
+## 모델 평가 (발표 자료)
+
+`backend/ml/pattern/evaluate_cluster_model.py`가 seed 사용자 순번으로 설계 성향(BALANCED·SPENDING_FOCUSED·SAVING_FOCUSED·VOLATILE)을 복원해 **비지도 학습이 설계 성향을
+얼마나 되찾았는지**(ARI·NMI·purity·혼동행렬)와 k 탐색·특징/전처리 ablation·재학습 안정성·배포 아티팩트의 신뢰도 분포와 fallback 비율을 `report.md`·CSV·PNG로 만든다.
+실행 방법과 해석 주의(합성 데이터 기준)는 [`backend/ml/pattern/README.md`](../ml/pattern/README.md) "평가". 실 seed 4,000명 결과는 시연 DB에서 돌린 뒤 이 절에 요약을 남긴다.
 - 통합(H2, `PatternApiTest`): 성향 4종 × 12명 모집단 + 본인(저축형 + 대출상환 + 입출금 계좌). HYBRID 배정("저축 중심형")·같은 날 재사용·forceRefresh, RULE_ONLY 요청·모드 불일치
   비재사용·잘못된 모드 400, 모집단 부족 fallback, 데이터 2개월 사용자 fallback, 데이터 없음(연결 상태별 409)·조회 404/409·기본 프로필, 소비/자금운용/우선순위 조회와
   최근 분석의 clusterProfile 반영, 인증·소유권, 접수 중복·폐기·임대 만료.
