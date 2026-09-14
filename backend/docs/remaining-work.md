@@ -1,8 +1,8 @@
 # 백엔드 남은 작업
 
-마지막 갱신: 2026-09-10
+마지막 갱신: 2026-09-14
 
-백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542이다.
+백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~518, 540~551이다.
 
 ## S15P21D105-535 — 예·적금 ERD 제약 동기화
 
@@ -871,3 +871,62 @@
 - [ ] "금융비용으로 인한 목표 달성 지연"은 대출 이자·상환 규칙(`LOAN_INTEREST_BURDEN` 등) 정책 확정 후 계산한다. 현재 `unavailable`로 표시.
 - [ ] 이전 진단은 같은 goalId 완전 일치 기준이다. 전체 진단과 목표 지정 진단 사이 비교가 필요하면 FE 요구를 확인한 뒤 확장한다.
 - [ ] `DiagnosisRepository.findPreviousCompleted`(NULL goalId 비교 JPQL)는 H2만 확인했다. MySQL에서 실행 계획·결과를 확인한다.
+
+## S15P21D105-516 — Pattern 분석 실행
+
+구현 계약: [pattern.md](pattern.md)
+
+### 금융 데이터 연동 조건
+
+- [ ] 명세 "금융 데이터 연동 완료 필요"를 "분석 기간에 거래가 있음"으로 구현했다. seed 사용자는 `finance_connection` 행이 없어 연결 상태를 강제하면 시연 계정이 전부 막히기 때문이다. 거래가 없을 때만 연결 상태를 봐서 `FINANCE_NOT_CONNECTED`와 `PATTERN_INSUFFICIENT_DATA`를 나눈다. 실계정 흐름(회원가입 → 연결 → 동기화 → 분석)에서 연결 상태를 우선할지 팀에서 정한다.
+
+### 분석 기간과 진행 중인 달
+
+- [ ] 기간은 기준일이 속한 달을 뺀 완료된 달 6개다. 시연일(2026-09)에는 seed 창(2026-03~08)과 정확히 맞지만, 10월 이후 시연하면 9월이 빈 달(0)로 들어와 규칙성·안정성이 떨어진다. 시연 날짜가 정해지면 seed 창을 옮기거나 `lookback-months`를 조정한다.
+- [ ] 저축성 지출은 API 6과 같이 NON_SPENDING EXPENSE 전체(저축·투자 + 이체)다. 일반 이체(TRANSFER 카테고리)가 많은 사용자는 저축률이 과대 계산된다. SAVING 카테고리만으로 좁힐지 API 6과 함께 정한다.
+
+### 실행 정책
+
+- [ ] 동기 실행이다. seed 4,000명 모집단 학습은 첫 요청에서만 일어나고(TTL 1시간) 그 뒤는 사용자 집계 1회라 응답 시간 문제가 없다고 봤지만 MySQL 실측은 아래 항목과 함께 한다.
+- [ ] 결과 재사용 기준은 "오늘 완료·같은 기간·같은 요청 모드"다. 거래가 새로 동기화되면 같은 날이라도 `forceRefresh=true`로 다시 분석해야 한다. Finance Data 동기화(499) 완료 시 자동 무효화(또는 `analyzed_at` < `last_synced_at`이면 재계산)를 붙일지 정한다.
+- [ ] FAILED 행은 조회에 나오지 않고 정리 배치도 없다. 누적되면 사용자별 최근 N건만 남기는 정리를 붙인다.
+
+### MySQL 검증
+
+- [x] 2026-09-14 Docker `mysql:8.0`에 V1~V19·V30·V31을 README 순서로 손 적용(40개 테이블)하고 `PatternMySqlIntegrationTest`(Flyway off, `ddl-auto: validate`)로 전체 엔티티 validate 통과, 월별 집계 SQL(YEAR/MONTH·CASE·IN)·41명 모집단 K-Means 학습·"저축 중심형" 배정, `JSON_EXTRACT`로 `cluster_stats_json.clusterLabel`·`feature_summary_json.windowStart` 읽기, `debt_burden = 0.1000` 저장을 확인했다.
+- [ ] seed 4,000명 모집단 학습 시간과 seed 사용자(`seed.kmeans.u0001`) 분석 결과는 미측정이다. seed 적재에 암호 fixture 테이블이 필요해(seeds README 2~3번) 이번에는 생략했다. 시연 전 한 번 실측해 `model-ttl`·동기 실행 정책을 확인한다.
+
+## S15P21D105-517 — Pattern 결과·프로필 조회
+
+구현 계약: [pattern.md](pattern.md) "조회"
+
+### 우선순위 프로필 계약
+
+- [ ] 가중치·집중 영역 규칙(부채부담 0.30, 재량소비 0.40, 소비/소득 0.80, 저축률 0.20·0.30, 고정지출 0.30~0.70, α = 0.2 × 신뢰도)은 기획안에 수치가 없어 정한 서비스 기본안이다. 추천 엔진(API 16, BE-B)이 `weights`·`clusterDeviationAlpha`·`focusAreas` 중 무엇을 어떻게 쓸지 맞춘 뒤 수치를 조정한다. 현재 Recommendation 우선순위 계산은 이 API를 읽지 않는다.
+- [ ] 성향검사(기획안 "선택")가 들어오면 `source`에 `PREFERENCE_SURVEY`를 추가하고 패턴분석과의 우선 규칙을 정한다.
+
+### 소비·자금운용 패턴
+
+- [ ] 소비 패턴의 `clusterProfile`은 `months`와 무관하게 최근 완료 분석의 것이다. `months=3` 요청에 6개월 기준 군집이 붙는 것이 FE 표시에 맞는지 확인한다.
+- [ ] 카테고리 비중은 소비 정의(NON_SPENDING 제외) 기준이라 API 6 `/spending/categories`와 같은 값이다. FE가 둘을 함께 쓰면 하나로 줄일 수 있다.
+- [ ] `months` 밖 형식(예: `abc`)은 공통 처리로 400 `INVALID_REQUEST`다. 명세에 오류 코드가 없어 다른 조회 API와 같은 방식을 따랐다.
+
+## S15P21D105-518 — Pattern 군집 메타데이터·Fallback
+
+구현 계약: [pattern.md](pattern.md) "군집 메타데이터·Fallback"
+
+### 모델 학습·배포 (Python 아티팩트)
+
+- [x] 2026-09-14 로컬 Docker MySQL 8.0에 seed 491·522·492를 적재(암호 fixture는 SHA-256 더미, 4,000명·거래 348,192건)하고 `train_cluster_model.py --k 4`로 `src/main/resources/ml/spending-kmeans-v1.json`을 만들어 커밋했다. `application-prod.yml`에 `train-in-process: false`를 넣었다. 평가 결과는 pattern.md "모델 평가"와 `docs/pattern-evaluation/`.
+- [ ] **시연 서버(j15D105.p.ssafy.io) DB는 2026-09-14 기준 비어 있다**(사용자 0, 거래 0, Flyway V30까지). seed 적재는 팀 결정 후 인프라와 함께 진행한다. 적재 시 암호 fixture는 애플리케이션 코덱으로 만들어야 한다(seeds README 2~3번). 적재 후 같은 아티팩트로 seed 사용자 4,000명이 설계 성향대로 배정되는지 `evaluate_cluster_model.py --artifact`로 확인한다.
+- [ ] k 선택은 실루엣만으로 자동화하지 않는다(seed에서 실루엣은 k=6, ARI는 k=4). 실사용자 데이터가 쌓이면 정답 라벨이 없으므로 실루엣·안정성·도메인 해석으로 k를 다시 정한다.
+- [ ] 재학습 주기(월 1회, 데이터 창이 바뀔 때)와 실행 위치(개발 PC vs Jenkins 단계 + 커밋)를 정한다. 스크립트는 DB 읽기 권한만 필요하다.
+- [ ] 두 구현의 특징 정의 일치는 Java·Python 단위 테스트가 같은 기대값을 공유하는 방식으로만 확인한다. 실 DB에서 `--export-features`로 뽑은 벡터와 Java `featureSummary.clusterFeatures`를 표본 몇 명에 대해 대조하는 절차를 seed 적재 시 함께 한다.
+- [ ] 임계값(군집 표본 10, 신뢰도 0.2)과 k 범위(2~6, 실루엣 최대)는 seed 성향 4종을 전제로 한 기본안이다. 실사용자 분포에서 재검토한다. 기획안 "군집 이탈 점수 ≥ 임계값"은 진단(API 14)이 적용할 조건으로 보고 여기서는 점수(`deviationScore`)만 제공한다.
+- [ ] 라벨은 중심값 순위로 정한다. 두 군집의 저축률 중심이 거의 같으면 학습마다 라벨이 뒤바뀔 수 있다. 아티팩트를 커밋해 배포 단위로 고정하는 것이 1차 대응이고, 필요하면 운영자 고정 라벨을 아티팩트에 직접 적는다.
+- [ ] 아티팩트를 테이블(예: `cluster_model`)에 두고 재배포 없이 교체하는 방식은 ERD 변경이 필요해 보류했다. 파일 교체는 `app.pattern.model-location: file:/opt/dodam/models/...`로 가능하다.
+
+### 진단·추천 연동
+
+- [ ] Diagnosis(545)의 "군집 범위 이탈" 규칙은 "Preference 공급 경로의 유효한 군집 집계"를 기다리고 있다. `PatternAnalysis.clusterStats`(features[].deviation·p5·p95·sampleSize·modelVersion)가 그 공급 경로다. BE-B와 `DiagnosisIssue.clusterContext` 형식(`feature`, `rangeMin`, `rangeMax`, `userValue`, `sampleSize`)으로의 변환 위치를 정한다.
+- [ ] 모집단 특징은 INCOME 거래만 소득으로 쓴다(금융 기본정보 미조회). 급여 이체가 없는 사용자는 학습에서 빠지고 본인 분석은 PROFILE 소득으로 특징을 만들어 배정된다. 분포 차이가 크면 모집단도 기본정보 소득을 쓰도록 집계 SQL에 조인을 추가한다.
