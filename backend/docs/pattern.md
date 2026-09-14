@@ -276,7 +276,8 @@ clusterDeviationAlpha = 군집 결과가 있으면 0.2 × confidence, 없으면 
 | 학습·평가 시간 | 4,000명 집계 + 학습 약 7초, 평가(k 탐색·ablation·안정성 포함) 약 12초 |
 
 이 아티팩트가 `src/main/resources/ml/spending-kmeans-v1.json`으로 커밋되어 있고 prod 프로필은 `train-in-process: false`다.
-seed 사용자의 `finance_connection`이 없어도 분석은 되며(데이터 존재 우선), 시연 서버 DB에 같은 seed를 적재하면 같은 배정이 나온다.
+seed 사용자의 `finance_connection`이 없어도 분석은 되며(데이터 존재 우선). **2026-09-14 시연 서버 DB에 같은 seed를 적재한 뒤 서버 DB로 평가를 다시 돌려
+같은 결과(4,000명 전원 일치, 노출 98.8%)를 확인했다.**
 **주의**: seed는 성향별 소비 비율을 규칙으로 만든 합성 데이터라 ARI 1.0은 "설계를 되찾았다"는 뜻이지 실사용자 성능이 아니다.
 - 통합(H2, `PatternApiTest`): 성향 4종 × 12명 모집단 + 본인(저축형 + 대출상환 + 입출금 계좌). HYBRID 배정("저축 중심형")·같은 날 재사용·forceRefresh, RULE_ONLY 요청·모드 불일치
   비재사용·잘못된 모드 400, 모집단 부족 fallback, 데이터 2개월 사용자 fallback, 데이터 없음(연결 상태별 409)·조회 404/409·기본 프로필, 소비/자금운용/우선순위 조회와

@@ -56,3 +56,14 @@ seed 목표는 `created_at = '2026-03-01 09:00:00'`으로 식별해 재실행 �
 - 8번은 V30이 생기기 전에는 Subscription 테이블 부재로 첫 DELETE에서 멈추고 아무것도 쓰지 않았다. V30 추가 후 결과는 `remaining-work.md` 514 절.
 - 새 DB에 마이그레이션을 손으로 적용할 때는 V6이 V11의 `card`를 참조하므로 V1~V5 → V10~V11 → V6~V9 → V12~V17 순서가 필요하다(Flyway `out-of-order` 전제).
 - 1번은 마이그레이션에 없는 `product_sync_history` INSERT를 제거했다(ERD에만 있는 테이블).
+
+2026-09-14 **시연 서버(j15D105.p.ssafy.io, MySQL 8.0 컨테이너)에 1~8번을 순서대로 적재했다.** 사용자 4,000·계좌 9,001·카드 6,000·할부 3,000·대출 3,000·
+예적금 4,000·거래 348,192·목표 6,000·구독 6,000·상품 198. 각 파일 끝 검증 SELECT의 위반 항목 전부 0.
+
+- fixture(491·522·523·524)는 서버 `infra/.env`의 `DATA_ENCRYPTION_KEY`·`NUMBER_HASH_KEY`로 애플리케이션 코덱과 같은 형식으로 만들었다
+  (`FieldCryptor`: 12바이트 IV + AES-256-GCM 128비트 태그, `SensitiveNumberHasher`: HMAC-SHA-256 소문자 hex, `AccountNumberMasker` 규칙, 카드는 앞4-****-****-뒤4).
+  계좌번호 원문은 `1100{순번6}{유형3}` 형식의 합성값이며(유형: 주거래 001, 휴면 002, 대출 101/102, 마이너스 201, 예금 301, 적금 401) 파일에는 남기지 않았다.
+  생성 스크립트는 서버 `~/seed-load/make_seed_fixtures.py`(Python 3, `cryptography`)이고 키는 읽기만 하며 출력하지 않는다.
+- 523·524는 fixture를 `DROP TEMPORARY TABLE`로 정리하므로 일반 테이블로 만든 fixture 6개가 남는다. 적재 후 `DROP TABLE tmp_dodam_523_*, tmp_dodam_524_*`로 지운다.
+- 컨테이너 안에서 적재할 때는 `mysql -h127.0.0.1`(TCP)로 붙는다. 초기화 중 임시 서버는 소켓 ping이 먼저 성공해 문장이 그쪽으로 들어갈 수 있다.
+- seed 사용자는 `password_hash`가 NULL이라 API 로그인이 불가하다. 시연 계정으로 로그인하려면 별도 비밀번호 설정 절차가 필요하다.
