@@ -131,7 +131,8 @@ class PatternMySqlIntegrationTest {
             assertThat(result.analysis().featureSummary().populationSize()).isGreaterThanOrEqualTo(41);
         } else {
             assertThat(result.analysis().clusterProfile().modelSource()).isEqualTo("IN_PROCESS");
-            assertThat(result.analysis().featureSummary().populationSize()).isEqualTo(41);
+            // 같은 스키마에 seed 사용자(4,000명)가 적재돼 있을 수 있으므로 하한만 본다.
+            assertThat(result.analysis().featureSummary().populationSize()).isGreaterThanOrEqualTo(41);
         }
 
         Long id = result.analysis().analysisId();

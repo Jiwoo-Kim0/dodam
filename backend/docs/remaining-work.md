@@ -2,7 +2,7 @@
 
 마지막 갱신: 2026-09-14
 
-백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~518, 540~551이다.
+백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551이다.
 
 ## S15P21D105-535 — 예·적금 ERD 제약 동기화
 
@@ -932,3 +932,39 @@
 
 - [ ] Diagnosis(545)의 "군집 범위 이탈" 규칙은 "Preference 공급 경로의 유효한 군집 집계"를 기다리고 있다. `PatternAnalysis.clusterStats`(features[].deviation·p5·p95·sampleSize·modelVersion)가 그 공급 경로다. BE-B와 `DiagnosisIssue.clusterContext` 형식(`feature`, `rangeMin`, `rangeMax`, `userValue`, `sampleSize`)으로의 변환 위치를 정한다.
 - [ ] 모집단 특징은 INCOME 거래만 소득으로 쓴다(금융 기본정보 미조회). 급여 이체가 없는 사용자는 학습에서 빠지고 본인 분석은 PROFILE 소득으로 특징을 만들어 배정된다. 분포 차이가 크면 모집단도 기본정보 소득을 쓰도록 집계 SQL에 조인을 추가한다.
+
+## S15P21D105-519 — Notification 목록·상세·미확인 수
+
+구현 계약: [notification.md](notification.md)
+
+### 알림 생성 경로 부재 (D10 선행)
+
+- [ ] 명세 22에 생성 API가 없고 아직 어떤 도메인도 `NotificationPublisher`를 호출하지 않는다. 실계정의 알림함은 D10 이벤트 연동(결제 예정·상환 예정·현금흐름 위험·목표 진행·추천·리포트) 전까지 비어 있다. 시연은 `DODAM_NOTIFICATION_SEED.sql`(U0001~U0004)로 채운다.
+- [ ] 이벤트별 생성 시점·문구·dedupe 키 규칙(예: 결제일 D-3, 같은 결제일에 1건)을 D10에서 정한다. 퍼블리셔 계약(REQUIRES_NEW, 삭제분 미복구, 제목 255자)은 notification.md에 있다.
+- [ ] 알림 유형 11종은 기획안 14-6·7-4에서 뽑은 서비스 기본안이다. FE 알림함 화면(아이콘·라우팅)이 정해지면 유형과 `source_type` 목록을 함께 확정한다.
+
+### 조회 정책
+
+- [ ] 날짜 필터는 `created_at`의 날짜(서비스 시간대 Asia/Seoul) 기준 양끝 포함이다. FE가 UTC로 보내면 하루가 어긋난다. 요청 시간대 규약을 FE와 맞춘다.
+- [ ] `type`은 VARCHAR로 저장하고 필터만 enum으로 검증한다. 다른 도메인이 SQL로 미지 유형을 넣으면 목록에는 나오지만 그 유형으로 필터할 수 없다. 유형 추가는 `NotificationType`에 한다.
+- [ ] `user_setting.notification_enabled`는 조회에 영향을 주지 않는다(알림함 항상 유지). 설정이 꺼진 사용자의 푸시만 D10에서 막는다. 설정 off일 때 알림함도 비울지는 기획 확인이 필요하다.
+
+### MySQL 검증
+
+- [x] 2026-09-14 로컬 Docker MySQL 8.0(V1~V19·V30~V32)에서 `NotificationMySqlIntegrationTest`로 `validate` 통과(`TEXT`·`CHAR(64)`·`TINYINT(1)` 매핑), `(user_id, dedupe_key)` 유일 제약, 벌크 전체 읽음 건수, 소프트 삭제를 확인했다. seed 8종 적재 후 `DODAM_NOTIFICATION_SEED.sql`을 두 번 실행해 22건(U0001 5·U0002 6·U0003 5·U0004 6, 미확인 10)이 멱등으로 유지됨을 확인했다.
+
+## S15P21D105-520 — Notification 읽음·전체읽음·삭제
+
+구현 계약: [notification.md](notification.md) "520"
+
+- [ ] 삭제는 소프트 삭제이며 물리 삭제·보관 기간 정책이 없다. 알림이 누적되면 `deleted_at`이 오래된 행을 지우는 배치(또는 사용자당 최근 N건 유지)를 정한다.
+- [ ] 전체 읽음은 한 번의 UPDATE로 처리하고 갱신 건수만 돌려준다. FE가 목록을 다시 불러야 개별 `readAt`이 보인다. 응답에 목록을 포함할지 FE와 맞춘다.
+- [ ] 읽음 처리 응답이 200 + 알림 본문이다. 명세는 상태 코드를 정하지 않았고 정기결제 변경 API와 같은 방식을 따랐다. FE가 204를 기대하면 조정한다.
+- [ ] 삭제 API가 `dedupe_key`를 남겨 두므로 같은 이벤트는 다시 만들어지지 않는다(의도). 사용자가 "다시 받기"를 원하는 유형이 있으면 그 유형은 dedupe 키에 발생 시각을 넣도록 D10에서 정한다.
+
+## S15P21D105-521 — BE-A 담당 도메인 통합 테스트
+
+결과 기록: [notification.md](notification.md) "BE-A 통합 테스트"
+
+- [ ] seed 사용자(`seed.kmeans.u0001~u0004`)는 `password_hash`가 NULL이라 실제 로그인 토큰으로 서버 API를 통합 점검할 수 없다. 시연 계정 비밀번호 설정 절차가 정해지면 서버에서 BE-A 8개 API 스모크(로그인 → 계좌·거래·소비·목표·정기결제·패턴·알림)를 한 번 돌려 기록한다.
+- [ ] BE-A 통합 테스트는 H2 전체 회귀 + MySQL 게이트 테스트(Pattern·Notification) 조합이다. Goal·Subscription·Account·Transaction·Finance·Auth·User의 MySQL 게이트 테스트는 없다. 시연 전 서버 DB(seed 적재 완료)에서 API 스모크로 대신한다.

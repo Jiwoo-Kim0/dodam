@@ -16,6 +16,7 @@
 | 6 | `DODAM_TRANSACTION_SEED.sql` | 492 | 491, 522, V6 (카테고리 기준 행 20개) |
 | 7 | `DODAM_GOAL_SEED.sql` | 493 | 491, 524, V5·V7·V8·V9 |
 | 8 | `DODAM_SUBSCRIPTION_SEED.sql` | 492 | 491, 522, 6번, V30 (`subscription`·`subscription_payment_history`, 2026-09-11 추가) |
+| 9 | `DODAM_NOTIFICATION_SEED.sql` | 519, 520 | 491, 523, 493, 8번, V32 (`notification`, 2026-09-14 추가). 시연 사용자 U0001~U0004의 알림함 최대 6건씩(원천 행이 없는 유형은 생략), `dedupe_key LIKE 'SEED-%'`로 재실행 시 지우고 다시 만든다 |
 
 2~5는 계좌·카드번호 원문을 파일에 두지 않기 위해 애플리케이션 코덱으로 만든 fixture 테이블(`tmp_dodam_*_crypto`, `*_account_keys`)이
 같은 스키마에 있어야 한다. 각 파일 머리말에 정확한 계약이 있다. 6~8은 fixture 없이 자연키(사용자 이메일, 계좌 유형·이름)로 참조한다.
