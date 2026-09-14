@@ -111,7 +111,25 @@ public enum ErrorCode {
     /**
      * 계산기가 등록되지 않은 시뮬레이션 유형. 공개 경로는 유형별로 열려 있어 정상 흐름에서는 발생하지 않는다.
      */
-    SIMULATION_TYPE_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "지원하지 않는 시뮬레이션 유형입니다.");
+    SIMULATION_TYPE_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "지원하지 않는 시뮬레이션 유형입니다."),
+
+    // ---------- Pattern (S15P21D105-516 ~ 518) ----------
+    /**
+     * 임대 기간 안의 진행 중 분석이 있는 경우(명세 "중복 분석 요청 방지").
+     */
+    PATTERN_ANALYSIS_IN_PROGRESS(HttpStatus.CONFLICT, "패턴 분석이 이미 진행 중입니다."),
+    /**
+     * 접수가 만료(임대 초과·이후 접수 존재·이미 완료)된 뒤 완료를 시도한 경우. 정상 흐름에서는 발생하지 않는다.
+     */
+    PATTERN_ANALYSIS_EXPIRED(HttpStatus.CONFLICT, "분석 접수가 만료되어 결과를 저장할 수 없습니다."),
+    /**
+     * 완료된 분석 결과가 없는 경우(명세 "분석 결과가 존재해야 함").
+     */
+    PATTERN_ANALYSIS_NOT_FOUND(HttpStatus.NOT_FOUND, "패턴 분석 결과가 없습니다. 먼저 분석을 실행해 주세요."),
+    /**
+     * 분석 기간에 거래가 없는 경우(명세 "분석 가능 거래 데이터가 존재해야 함"). 금융망 미연결이면 FINANCE_NOT_CONNECTED를 쓴다.
+     */
+    PATTERN_INSUFFICIENT_DATA(HttpStatus.CONFLICT, "분석할 금융 데이터가 없습니다. 금융 데이터 연동 후 다시 시도해 주세요.");
 
     private final HttpStatus status;
     private final String message;

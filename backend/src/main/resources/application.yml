@@ -23,3 +23,13 @@ app:
     base-url: https://finopenapi.ssafy.io
     connect-timeout: PT3S
     read-timeout: PT5S
+  pattern:
+    # API 3 패턴 분석 정책값. 명세·기획안에 수치가 없는 항목의 서비스 기본안(backend/docs/pattern.md).
+    lookback-months: 6          # 분석 기간(완료된 달 기준)
+    min-user-months: 3          # 군집 비교에 필요한 사용자 데이터 최소 개월(기획안 노출 조건)
+    min-population: 30          # 군집 모델 학습 최소 사용자 수
+    min-cluster-sample-size: 10 # 배정 군집 최소 표본 수
+    min-confidence: 0.2         # 분류 신뢰도 하한
+    cluster-count: 4            # K-Means 군집 수
+    model-ttl: PT1H             # 학습 모델 메모리 재사용 시간
+    lease-duration: PT5M        # 진행 중 접수 유효 시간
