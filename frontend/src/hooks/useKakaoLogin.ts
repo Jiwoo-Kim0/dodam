@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { Platform } from 'react-native';
 
 import { ApiError, isApiError, socialAuthApi } from '@/api';
+import type { SocialLoginResult } from '@/types/auth.types';
 
 const KAKAO_NATIVE_APP_KEY =
   process.env.EXPO_PUBLIC_KAKAO_NATIVE_APP_KEY?.trim() ?? '';
@@ -27,7 +28,7 @@ function isLoginCancelled(error: KakaoNativeError | null) {
 }
 
 export function useKakaoLogin() {
-  const login = useCallback(async () => {
+  const login = useCallback(async (): Promise<SocialLoginResult | null> => {
     if (!KAKAO_NATIVE_APP_KEY) {
       throw new ApiError({
         status: 0,
@@ -52,9 +53,7 @@ export function useKakaoLogin() {
       );
       const kakaoToken = await loginWithKakaoSdk();
 
-      return await socialAuthApi.exchangeKakaoToken({
-        accessToken: kakaoToken.accessToken,
-      });
+      return await socialAuthApi.loginWithKakao(kakaoToken.accessToken);
     } catch (error) {
       if (isApiError(error)) throw error;
 

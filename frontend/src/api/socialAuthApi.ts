@@ -1,29 +1,38 @@
 import type {
-  KakaoLoginResponse,
-  KakaoTokenExchangeRequest,
+  AuthResponse,
+  SocialLoginRequest,
+  SocialLoginResult,
+  SocialProvider,
 } from '@/types/auth.types';
 
 import { apiClient } from './apiClient';
 import { persistAuthResponse } from './authApi';
 
-const KAKAO_LOGIN_PATH =
-  process.env.EXPO_PUBLIC_KAKAO_LOGIN_PATH?.trim() || '/v1/auth/oauth/kakao';
+const SOCIAL_LOGIN_PATH = '/v1/auth/social';
 
 /**
- * Temporary backend boundary for the native-SDK token verification flow.
- * If the backend chooses an Authorization header or an ID token instead, only
- * this adapter and its request type need to change.
+ * 공급자 SDK로 받은 토큰을 서버가 공급자에 검증하고 도담 세션으로 바꿔준다(backend/docs/auth-social.md).
+ * 서버는 기존 회원이면 200, 신규 회원을 만들었으면 201을 준다.
  */
-export async function exchangeKakaoToken(request: KakaoTokenExchangeRequest) {
-  const response = await apiClient.post<KakaoLoginResponse>(KAKAO_LOGIN_PATH, {
-    auth: false,
-    body: request,
-  });
+export async function loginWithSocialToken(
+  provider: SocialProvider,
+  token: string,
+): Promise<SocialLoginResult> {
+  const body: SocialLoginRequest = { token };
+  const { data, status } = await apiClient.postWithStatus<AuthResponse>(
+    `${SOCIAL_LOGIN_PATH}/${provider}`,
+    { auth: false, body },
+  );
 
-  await persistAuthResponse(response);
-  return response;
+  await persistAuthResponse(data);
+  return { auth: data, isNewUser: status === 201 };
+}
+
+export function loginWithKakao(accessToken: string) {
+  return loginWithSocialToken('kakao', accessToken);
 }
 
 export const socialAuthApi = {
-  exchangeKakaoToken,
+  loginWithSocialToken,
+  loginWithKakao,
 };

@@ -6,6 +6,7 @@ import type {
   ApiQuery,
   ApiRequestOptions,
   ApiResponse,
+  ApiResult,
 } from './api.types';
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -218,11 +219,11 @@ export async function refreshAuthTokens(): Promise<AuthTokens> {
   return refreshRequest;
 }
 
-async function request<T>(
+async function requestWithStatus<T>(
   method: HttpMethod,
   path: string,
   options: ApiRequestOptions = {},
-): Promise<T> {
+): Promise<ApiResult<T>> {
   const requiresAuth = options.auth !== false;
   const tokens = requiresAuth ? await getAuthTokens() : null;
   const firstRequest = await fetchOnce<T>(
@@ -238,7 +239,10 @@ async function request<T>(
     !tokens ||
     options.retryOnUnauthorized === false
   ) {
-    return firstRequest.data();
+    return {
+      data: await firstRequest.data(),
+      status: firstRequest.response.status,
+    };
   }
 
   const latestTokens = await getAuthTokens();
@@ -257,7 +261,19 @@ async function request<T>(
     await clearAuthTokens();
   }
 
-  return retryRequest.data();
+  return {
+    data: await retryRequest.data(),
+    status: retryRequest.response.status,
+  };
+}
+
+async function request<T>(
+  method: HttpMethod,
+  path: string,
+  options: ApiRequestOptions = {},
+): Promise<T> {
+  const { data } = await requestWithStatus<T>(method, path, options);
+  return data;
 }
 
 export const apiClient = {
@@ -265,6 +281,9 @@ export const apiClient = {
     request<T>('GET', path, options),
   post: <T>(path: string, options?: ApiRequestOptions) =>
     request<T>('POST', path, options),
+  /** 200·201처럼 상태 코드로 분기해야 하는 POST에 쓴다. */
+  postWithStatus: <T>(path: string, options?: ApiRequestOptions) =>
+    requestWithStatus<T>('POST', path, options),
   put: <T>(path: string, options?: ApiRequestOptions) =>
     request<T>('PUT', path, options),
   patch: <T>(path: string, options?: ApiRequestOptions) =>

@@ -8,4 +8,5 @@ export type {
   ApiQueryValue,
   ApiRequestOptions,
   ApiResponse,
+  ApiResult,
 } from './api.types';

@@ -11,6 +11,12 @@ export interface ApiResponse<T> {
   errors?: ApiFieldError[] | null;
 }
 
+/** 상태 코드로 분기해야 하는 API(예: 소셜 로그인 200 기존 회원 / 201 신규 회원)를 위한 결과 타입. */
+export interface ApiResult<T> {
+  data: T;
+  status: number;
+}
+
 export type ApiQueryValue = string | number | boolean | null | undefined;
 
 export type ApiQuery = Record<

@@ -23,12 +23,11 @@ export function LoginScreen() {
     setIsSubmitting(true);
 
     try {
-      const response = await loginWithKakao();
-      if (!response) return;
+      const result = await loginWithKakao();
+      if (!result) return;
 
-      router.replace(
-        response.onboardingRequired === false ? routes.home : routes.terms,
-      );
+      // 서버가 새로 만든 회원(201)만 약관·금융 연동 온보딩을 거친다.
+      router.replace(result.isNewUser ? routes.terms : routes.home);
     } catch (error) {
       setErrorMessage(
         isApiError(error)
