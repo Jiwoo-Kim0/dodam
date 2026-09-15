@@ -49,3 +49,5 @@ __pycache__/
 .pytest_cache/
 backend/ml/**/*.csv
 backend/ml/**/reports/
+
+.codex-tmp/
