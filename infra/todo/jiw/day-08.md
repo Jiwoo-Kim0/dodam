@@ -389,6 +389,98 @@ nginx: configuration file /etc/nginx/nginx.conf test is successful
 현재 확인된 것: `/api/health`(200), `/actuator/`(404 차단), `/jenkins/`(403),
 `/jenkins/project/`(웹훅), `/grafana/` — 전부 실제 경로와 일치한다.
 
+### 14. 시연 계정 비밀번호 시드 적용 (11:43) — 운영 DB 쓰기
+
+백엔드 담당자가 만든 `~/seed-load/DODAM_DEMO_PASSWORD_SEED.sql`(Jira 521)을 검토하고 적용했다.
+운영 DB에 대한 **첫 쓰기 작업**이다(그전까지 인프라는 조회만 했다).
+
+**적용 명령**
+
+```
+docker exec -i mysql sh -c 'mysql -h127.0.0.1 -uroot -p"$MYSQL_ROOT_PASSWORD" dodam' \
+    < ~/seed-load/DODAM_DEMO_PASSWORD_SEED.sql
+```
+
+**사전 검토**
+
+| 확인 | 결과 |
+| --- | --- |
+| 파괴적 구문 | 없음 — `UPDATE` 1건뿐 |
+| 영향 범위 | `email IN (4건)` + `deleted_at IS NULL`. `email`은 `UNIQUE KEY` 평문 `VARCHAR(255)`(V1)라 **최대 4행 보장** |
+| 대상 존재 | `user_id` 1~4 실재, 탈퇴 아님, `password_hash` 전부 NULL |
+| 실제 사용자 영향 | **0** — 4,000명 전원이 `@dodam.invalid` 시드 계정 |
+| 멱등성 | 재실행 안전(같은 값 UPDATE) |
+| 해시 형식 | `$2a$10$` + 53자 = 60자, 유효한 BCrypt cost 10 |
+| 되돌리기 | 같은 조건 `password_hash = NULL` |
+| 배포 경합 | `deploy.sh` 미실행 확인 후 적용 |
+
+`email`이 평문인지 먼저 확인한 이유: ERD에 `VARBINARY` 암호화 컬럼이 있어서,
+`email`도 암호화 컬럼이면 `WHERE email IN (...)`이 0행을 잡고 조용히 아무 일도 안 했을 것이다.
+V1 확인 결과 평문이라 문제없었다.
+
+**결과** — 파일 내장 검증과 별도 조회가 일치
+
+```
+demo_users_with_password = 4 / other_users_with_password = 0
+user_total 4000 / with_password 4   (user_id 1~4, $2a$10$...len=60, updated_at 11:43:06)
+```
+
+**전달한 지적 2가지 (인프라가 고칠 것이 아님)**
+
+1. 파일 주석이 "시연 비밀번호는 `backend/database/seeds/README.md` 시연 계정 로그인 절에 있다"고
+   가리키는데 **그 절이 없다.** README 70행에 "별도 비밀번호 설정 절차가 필요하다"만 있다.
+   지금 상태로는 적용은 됐는데 **비밀번호를 아는 경로가 레포에 없다.**
+2. 이 SQL만 `~/seed-load/`에 있고 **레포에 없다.** 다른 시드 9개는 `backend/database/seeds/`에 있다.
+   EC2를 다시 만들면 사라진다.
+
+**보안상 인지해 둘 것**: 공개된 `https://j15D105.p.ssafy.io/api/v1/auth/login`에
+공유 비밀번호를 가진 계정 4개가 생겼다. 데이터가 전부 가짜라 피해 범위는 제한적이지만,
+**13절의 로그인 레이트 리밋 수정이 아직 배포되지 않았다**(현재 초당 20req 버킷).
+머지를 서두르는 편이 좋다.
+
+### 15. 별건 — 일일 백업이 09-15부터 조용히 실패하고 있었다 (미수정)
+
+14절 적용 전 백업 신선도를 확인하다 발견했다.
+
+```
+-rw------- ... Sep 14 04:00 dodam-20260914-040001.sql.gz          8,742 B
+-rw-rw-r-- ... Sep 15 04:00 dodam-20260915-040001.sql.gz.partial  8,138,858 B   ← 최종본 없음
+```
+
+**덤프 자체는 정상이다.** gzip 검증 통과, 헤더 `-- MySQL dump 10.13 Distrib 8.0.46`,
+압축 해제 82,728,391바이트. 데이터는 멀쩡한데 **검증 단계가 스크립트를 죽였다.**
+
+**원인 — `backup.sh:58`의 SIGPIPE 경합**
+
+```bash
+zcat "$TMP" | grep -q "MySQL dump" || fail "덤프 내용이 예상과 다름"
+```
+
+`grep -q`는 첫 매칭에서 즉시 종료한다. "MySQL dump"는 헤더 1행에 있으므로 grep은 바로 빠지는데,
+zcat은 아직 82MB를 더 쓰려던 참이라 **SIGPIPE로 죽는다.** 스크립트 상단의 `set -euo pipefail`이
+파이프라인 종료 코드를 zcat의 141로 잡아 `|| fail`이 발동한다.
+
+실측 재현:
+
+| 대상 | `zcat \| grep -q` 종료 코드 |
+| --- | --- |
+| 09-15 백업(82MB 해제) | **141 (SIGPIPE)** |
+| 09-14 백업(작음) | 0 |
+
+**DB가 작을 때는 zcat이 grep보다 먼저 끝나서 드러나지 않았다.**
+09-14 시드 적재로 덤프가 8.7KB → 8.1MB로 커진 순간부터 매번 실패한다.
+
+**영향**: 유효한 최신 백업이 **2026-09-14 04:00**이고, 이는 **시드 적재 이전**이다.
+지금 DB를 잃으면 09-14 하루치 시드 작업이 전부 날아간다.
+
+**파생 문제**: 보관 정리가 `-name "*.sql.gz"`라 `.partial`은 매칭되지 않아 **영원히 쌓인다.**
+`.partial`은 `chmod 600`이 `mv` 뒤에 있어 권한도 `644`로 남는다
+(`BACKUP_DIR`이 700이라 실제 노출은 없다).
+
+**수정 방향** (사용자 확인 후 적용): `grep -q` 대신 조기 종료가 없는 형태로 바꾼다.
+`zcat "$TMP" | head -c 200 | grep -q "MySQL dump"` 처럼 zcat 출력을 먼저 잘라내거나,
+검증만 `set +o pipefail` 구간으로 감싼다. 수정 후 1회 수동 실행으로 최종본 생성을 확인한다.
+
 ## 남은 것
 - [ ] 이 수정 develop 머지 후 첫 배포에서 `infra-backend:deployed` 태그 생성 확인
 - [ ] 롤백 경로 실제 검증 — 일부러 깨는 커밋으로 "코드+이미지가 함께 되돌아오는지" 확인
@@ -396,6 +488,10 @@ nginx: configuration file /etc/nginx/nginx.conf test is successful
 - [ ] `docker-gc.sh` EC2 1회 수동 실행 + cron 등록 (스크립트 커밋 완료, **운영 미적용** — 위 수정이 배포된 뒤에 실행)
 - [ ] 위 커밋 push 및 develop 머지 (머지 시 nginx reload로 레이트 리밋 수정도 함께 반영)
 - [ ] 배포 후 로그인 레이트 리밋이 실제로 걸리는지 확인 (연속 요청으로 429 유도)
+- [ ] **`backup.sh` SIGPIPE 버그 수정** — 09-15부터 백업 실패 중, 유효 최신본이 시드 적재 이전(09-14 04:00)
+- [ ] 쌓인 `*.sql.gz.partial` 정리 + 보관 정리 대상에 포함시킬지 판단
+- [ ] 시연 비밀번호를 `backend/database/seeds/README.md`에 문서화 (**백엔드 담당자**)
+- [ ] `DODAM_DEMO_PASSWORD_SEED.sql`을 레포에 포함 (**백엔드 담당자**)
 - [ ] FE가 Expo 웹으로 붙을 계획이면 `CORS_ALLOWED_ORIGINS` 추가 (현재 `http://localhost:8081` 하나)
 - [x] ~~develop 빌드 실패(#75·#76)~~ — #77(10:31)·#78(10:39) SUCCESS로 복구됨
 - [x] ~~V18·V19 미적용~~ — #78 배포 기동 시 V18·V19·V31 적용, 현재 v31
