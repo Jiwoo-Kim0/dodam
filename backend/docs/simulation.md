@@ -468,7 +468,7 @@ DDL·새 엔드포인트 없음. 계약은 [recommendation-api.md](recommendatio
 
 기존 검증(§7)과 합쳐 Simulation 72건·Recommendation 58건이 H2에서 통과했고 `gradlew clean build` 전체 1,051건 통과(MySQL 조건부 19건 skip).
 
-### 11.3 MySQL 검증 (`SimulationMySqlIntegrationTest` 4건)
+### 11.3 MySQL 검증 (`SimulationMySqlIntegrationTest` 587 4건 + 617 3건)
 
 MySQL 8.0.46(Docker `mysql:8.0`), 빈 `dodam_587_test` 스키마에 V1~V17을 V6을 V11 뒤로 돌려 수동 적용한 뒤 `SPRING_FLYWAY_BASELINE_ON_MIGRATE=true SPRING_FLYWAY_BASELINE_VERSION=17`로
 Flyway가 V18·V19·V30~V34를 적용하게 했다(recommendation.md §8과 같은 방식). `ddl-auto: validate` 통과. 2026-09-15 4건 통과.
@@ -477,7 +477,13 @@ Flyway가 V18·V19·V30~V34를 적용하게 했다(recommendation.md §8과 같�
 - 실행·저장: `POST /saving` 후 `JSON_EXTRACT(after_snapshot, '$.monthlySaving')`가 숫자로 읽히고 `requestHash` 64자, `accountNo` 키 부재, scenario 1행, goal_impact 1행. 같은 날 재사용 200(DATETIME 범위 비교), 다음 날 신규, 상세 = 실행 응답, 타인 404, 삭제 후 `deleted_at` 기록·404·같은 요청 신규.
 - 복합: scenario 2행(sequence 1·2, `JSON_EXTRACT(parameters, '$.purchaseAmount')`), `details.children` 2개. `chk_simulation_type`·`chk_simulation_status`·`chk_simulation_scenario_sequence_no` 위반과 `uk_simulation_scenario_sequence`·`uk_simulation_goal_impact_simulation_goal` 중복, 타인 user_id의 goal_impact 복합 FK 거부.
 - 동시 실행: 같은 사용자 `POST /cash-advance` 4건 동시 → 201 1건·200 3건, `simulation` 1행. `SimulationUserLock`의 `SELECT … FOR UPDATE`가 InnoDB에서 직렬화됨을 확인했다.
-- 하지 않은 것: 시연 seed(491·492·493·522·523)와 상품 카탈로그를 적재한 스키마에서의 10종 실행·금액 확인. 복합 저장 중간 실패 시 0행 롤백, `idx_simulation_user_type_created` 순서의 목록 정렬, `uk_simulation_user_simulation_id` 본인 조건 조회(계획 §6에 있었으나 미작성, remaining-work.md). FE 앱 통합.
+- 하지 않은 것: ~~시연 seed를 적재한 스키마에서의 10종 실행·금액 확인~~(616, §7 실측). ~~롤백·목록 정렬·본인 조건 조회~~(617, 아래). FE 앱 통합.
+
+617 추가 3건(2026-09-16, 같은 방식의 MySQL 8.0 컨테이너, 7건 통과. `gradlew clean build` 전체 1,054건 통과, MySQL 조건부 22건 skip). 계획·결정은 [simulation-617-plan.md](simulation-617-plan.md).
+
+- **저장 중간 실패 롤백**: 테스트가 만든 `BEFORE INSERT` 트리거(`SIGNAL SQLSTATE '45000'`)로 (a) 복합의 3번째 `simulation_scenario` 행, (b) `simulation_goal_impact` 행 INSERT를 거부했다. 두 경우 모두 5xx 응답이고 `simulation`·`simulation_scenario`·`simulation_goal_impact`에 사용자 행 0. 트리거 제거 후 같은 요청은 201(부분 저장 행이 남았다면 같은 날 재사용 200이 됐을 것)이며 scenario 3행·goal_impact 1행이 저장된다. `SimulationUserLock`의 `FOR UPDATE` 잠금이 롤백으로 풀리는 것도 이 201로 확인된다. 운영 코드·마이그레이션 변경 없음.
+- **목록 정렬**: 같은 유형 3건(clock을 하루씩 이동) + 다른 유형 1건 + 타인 1건에서 `?type=` 유무 모두 `created_at DESC, simulation_id DESC`(동률은 `created_at`을 같게 맞춰 확인), 타인 행 미포함. 유형 없는 목록 조회(JPQL `:type is null or …`의 null 바인딩)는 MySQL에서 이번에 처음 실행했고 정상이다. `idx_simulation_user_type_created` 컬럼 순서 `user_id, type, created_at` 확인. EXPLAIN(손으로 쓴 동형 SQL, `possible_keys`까지만 단언) 실측: `type` 지정 시 `key=idx_simulation_user_type_created, Extra=Using where; Backward index scan`(정렬을 인덱스 역순으로 처리, filesort 없음). `type` 미지정 시 `key=uk_simulation_user_simulation_id, Extra=Using where; Using filesort` — `(? IS NULL OR type = ?)`가 인덱스 두 번째 컬럼을 막아 user_id 접두만 쓰고 정렬은 filesort다. 사용자·하루 단위 양이 작아 587 설계대로 두며, 행이 5개뿐인 테스트 테이블의 선택이라 운영 규모의 계획과 다를 수 있다.
+- **`uk_simulation_user_simulation_id`**: `NON_UNIQUE = 0`, 컬럼 순서 `user_id, simulation_id`, `fk_simulation_goal_impact_simulation`의 `UNIQUE_CONSTRAINT_NAME`이 이 키. 본인 상세·goal-impact 200, 타인은 상세·goal-impact·삭제 모두 404 `RESOURCE_NOT_FOUND`(행 불변), 없는 id 404. goal_impact가 달린 시뮬레이션의 `user_id`를 타인으로 UPDATE → FK 위반으로 거부(ON UPDATE 기본 RESTRICT, 소유자 변경 시 자식 고아 방지). 본인 조건 조회 EXPLAIN은 `possible_keys`에 `PRIMARY`와 이 키가 함께 오르고 실제 선택은 `PRIMARY`다. 본인 삭제 204 후 goal-impact 404.
 
 ### 11.4 FE 인계
 

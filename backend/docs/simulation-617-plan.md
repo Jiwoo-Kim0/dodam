@@ -65,3 +65,9 @@
 - EXPLAIN 실제 선택(`key`)은 단언하지 않는다(§3.2). 팀이 실제 인덱스 사용 보장을 원하면 별도 항목으로 올린다.
 - H2에서는 세 테스트 모두 돌지 않는다. `SIMULATION_MYSQL_TEST_URL` 없이 빌드하면 7건 전부 skip이며, 통과 근거는 이 문서와 §11.3의 실행 기록뿐이다.
 - Jira 617 원문 미확인(§1).
+
+## 6. 실행 결과 (2026-09-16)
+
+- Docker `mysql:8.0`(포트 33617, `dodam_587_test`), V1~V17 수동 적용(V6을 V11 뒤로) 후 baseline 17. 기존 4건 통과 확인 → 3건 추가 → 7건 통과. H2 simulation 72건 통과(MySQL 7건 skip). `gradlew clean build` 전체 1,054건 통과(MySQL 조건부 22건 skip).
+- 설계와 달라진 점 없음. EXPLAIN 실측은 simulation.md §11.3에 기록: `type` 지정 시 인덱스 역순 스캔, 미지정 시 `uk_simulation_user_simulation_id` 접두 + filesort, 본인 조건 조회는 `PRIMARY`.
+- 발견: 유형 없는 목록 조회의 null 바인딩은 MySQL에서 정상. 운영 코드 결함 없음.
