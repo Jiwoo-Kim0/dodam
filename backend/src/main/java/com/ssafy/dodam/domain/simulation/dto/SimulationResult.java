@@ -1,8 +1,12 @@
 package com.ssafy.dodam.domain.simulation.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -17,6 +21,9 @@ import java.util.Objects;
  * @param cashflow     월별 가용자금 변화. {@link Cashflow}
  * @param goalImpacts  목표별 예상 달성일 변화
  * @param assumptions  계산에 적용한 가정 코드. 응답에 그대로 노출한다
+ * @param details      유형별 조건·계산치(상품 스냅샷, 적용 금리, 전후 이자 등). 585 유형만 채우며 `after_snapshot.details`에 저장된다.
+ *                     null이면 저장하지 않는다(기존 spending/saving 계약 유지)
+ * @param goalImpactDetails 목표별 계산 상태·사유. null이면 저장하지 않는다. 엔티티에는 날짜만 저장되므로 사유는 여기서만 읽는다
  */
 public record SimulationResult(
         String title,
@@ -26,7 +33,9 @@ public record SimulationResult(
         Comparison comparison,
         Cashflow cashflow,
         List<GoalImpact> goalImpacts,
-        List<String> assumptions
+        List<String> assumptions,
+        Map<String, Object> details,
+        List<GoalImpactDetail> goalImpactDetails
 ) {
     public SimulationResult {
         Objects.requireNonNull(before, "before");
@@ -35,6 +44,15 @@ public record SimulationResult(
         Objects.requireNonNull(cashflow, "cashflow");
         goalImpacts = List.copyOf(goalImpacts);
         assumptions = List.copyOf(assumptions);
+        // LinkedHashMap 복사: 문서·응답에서 항목 순서가 유지되고 null 값도 그대로 남는다(Map.copyOf는 null을 거부한다)
+        details = details == null ? null : Collections.unmodifiableMap(new LinkedHashMap<>(details));
+        goalImpactDetails = goalImpactDetails == null ? null : List.copyOf(goalImpactDetails);
+    }
+
+    /** 550·551 유형의 생성자. 확장 필드 없음. */
+    public SimulationResult(String title, String summary, Snapshot before, Snapshot after, Comparison comparison,
+            Cashflow cashflow, List<GoalImpact> goalImpacts, List<String> assumptions) {
+        this(title, summary, before, after, comparison, cashflow, goalImpacts, assumptions, null, null);
     }
 
     /**
@@ -94,18 +112,33 @@ public record SimulationResult(
     }
 
     /**
-     * 월별 가용자금 변화.
+     * 월별 변화.
      *
-     * @param basis   변화의 기준. 현재는 {@code MONTHLY_AVAILABLE_FUNDS} 하나
-     * @param before  기준선 월 가용자금. 소득을 모르면 null
-     * @param after   적용 후 월 가용자금. 소득을 모르면 null
-     * @param months  기준일 다음 달부터 {@code durationMonths}개. 예정 이벤트를 다시 더하지 않는다
+     * @param basis   변화의 기준. spending/saving은 {@code MONTHLY_AVAILABLE_FUNDS}(월 가용자금 수준),
+     *                585 유형은 {@code SCENARIO_NET_CASH_CHANGE}(시나리오가 만드는 순현금 변화. 사용자 전체 가용잔액이 아니다)
+     * @param before  기준선 월 가용자금. 소득을 모르거나 SCENARIO 기준이면 null
+     * @param after   적용 후 월 가용자금. 소득을 모르거나 SCENARIO 기준이면 null
+     * @param months  기준일 다음 달부터의 월별 변화. 예정 이벤트를 다시 더하지 않는다
+     * @param currentMonth 기준일부터 당월 말까지의 변화(가입 원금, 당일 추가상환 등). 585 유형만. {@code cumulative}는 여기부터 누적한다
+     * @param truncated    표가 120개월 상한에서 끝나 전체 기간을 담지 못했는지. 585 유형만
+     * @param coveredThrough 표의 마지막 yearMonth. 585 유형만
+     * @param fullTermEndDate 시나리오 전체 기간의 종료일(만기). 585 유형만
      */
-    public record Cashflow(String basis, Long before, Long after, List<Month> months) {
+    public record Cashflow(String basis, Long before, Long after, List<Month> months,
+            @JsonInclude(JsonInclude.Include.NON_NULL) CurrentMonth currentMonth,
+            @JsonInclude(JsonInclude.Include.NON_NULL) Boolean truncated,
+            @JsonInclude(JsonInclude.Include.NON_NULL) String coveredThrough,
+            @JsonInclude(JsonInclude.Include.NON_NULL) LocalDate fullTermEndDate) {
         public static final String MONTHLY_AVAILABLE_FUNDS = "MONTHLY_AVAILABLE_FUNDS";
+        public static final String SCENARIO_NET_CASH_CHANGE = "SCENARIO_NET_CASH_CHANGE";
 
         public Cashflow {
             months = List.copyOf(months);
+        }
+
+        /** 550·551 유형의 생성자. 확장 필드 없음. */
+        public Cashflow(String basis, Long before, Long after, List<Month> months) {
+            this(basis, before, after, months, null, null, null, null);
         }
     }
 
@@ -113,6 +146,22 @@ public record SimulationResult(
     public record Month(String yearMonth, long delta, long cumulative) {
     }
 
+    public record CurrentMonth(String yearMonth, long delta) {
+    }
+
     public record GoalImpact(Long goalId, LocalDate before, LocalDate after) {
+    }
+
+    /**
+     * 목표별 계산 상태. {@code COMPUTED}는 날짜 투영이 이뤄진 것(변화 0 포함), {@code NOT_COMPUTABLE}은 자금 출처·목표 귀속을
+     * 알 수 없거나 속도 0으로 날짜를 낼 수 없는 것이다. 사유 코드는 계산기 상수를 그대로 쓴다.
+     */
+    public record GoalImpactDetail(Long goalId, String status, List<String> reasons) {
+        public static final String COMPUTED = "COMPUTED";
+        public static final String NOT_COMPUTABLE = "NOT_COMPUTABLE";
+
+        public GoalImpactDetail {
+            reasons = List.copyOf(reasons);
+        }
     }
 }

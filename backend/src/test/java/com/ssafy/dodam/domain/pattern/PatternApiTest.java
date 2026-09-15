@@ -1,0 +1,446 @@
+package com.ssafy.dodam.domain.pattern;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.BDDMockito.given;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ssafy.dodam.domain.finance.entity.FinanceConnection;
+import com.ssafy.dodam.domain.finance.repository.FinanceConnectionRepository;
+import com.ssafy.dodam.domain.pattern.entity.AnalysisMode;
+import com.ssafy.dodam.domain.pattern.entity.PatternAnalysis;
+import com.ssafy.dodam.domain.pattern.entity.PatternAnalysisStatus;
+import com.ssafy.dodam.domain.pattern.repository.PatternAnalysisRepository;
+import com.ssafy.dodam.domain.pattern.service.ClusterModelProvider;
+import com.ssafy.dodam.domain.pattern.service.PatternAnalysisExecutionStore;
+import com.ssafy.dodam.domain.pattern.service.PatternClock;
+import com.ssafy.dodam.domain.user.entity.User;
+import com.ssafy.dodam.domain.user.repository.UserRepository;
+import com.ssafy.dodam.global.exception.BusinessException;
+import com.ssafy.dodam.global.exception.ErrorCode;
+import java.sql.Timestamp;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.YearMonth;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
+
+/**
+ * API 3 통합 테스트(H2). 기준일은 2026-09-14로 고정해 분석 기간이 2026-03 ~ 2026-08이 된다.
+ *
+ * <p>모집단 fixture는 성향 4종(저축·소비·변동·균형) × 12명 = 48명이다. 본인은 저축형에 대출상환 30만 원과 입출금 계좌 600만 원을 더한
+ * 사용자라 "저축 중심형" 군집에 배정되고 유동성은 HIGH가 나와야 한다.
+ */
+@ActiveProfiles("test")
+@AutoConfigureMockMvc
+@SpringBootTest(properties = "spring.datasource.url=jdbc:h2:mem:pattern516;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE")
+class PatternApiTest {
+
+    private static final LocalDateTime NOW = LocalDateTime.of(2026, 9, 14, 10, 0);
+    private static final LocalDateTime CREATED_AT = LocalDateTime.of(2026, 9, 1, 9, 0);
+    private static final List<YearMonth> WINDOW = List.of(
+            YearMonth.of(2026, 3), YearMonth.of(2026, 4), YearMonth.of(2026, 5),
+            YearMonth.of(2026, 6), YearMonth.of(2026, 7), YearMonth.of(2026, 8));
+    private static final int PER_ARCHETYPE = 12;
+
+    @Autowired MockMvc mvc;
+    @Autowired ObjectMapper json;
+    @Autowired JdbcTemplate jdbc;
+    @Autowired UserRepository users;
+    @Autowired FinanceConnectionRepository connections;
+    @Autowired PatternAnalysisRepository analyses;
+    @Autowired PatternAnalysisExecutionStore execution;
+    @Autowired ClusterModelProvider modelProvider;
+    @MockitoBean PatternClock clock;
+
+    private final Map<String, Long> categories = new HashMap<>();
+    private Long owner;
+    private int sequence;
+
+    @BeforeEach
+    void setUp() {
+        given(clock.now()).willReturn(NOW);
+        given(clock.today()).willReturn(NOW.toLocalDate());
+        jdbc.update("DELETE FROM pattern_analysis");
+        jdbc.update("DELETE FROM `transaction`");
+        jdbc.update("DELETE FROM account");
+        modelProvider.invalidate();
+        ensureCategories();
+        owner = newUser("본인");
+        seedMonths(owner, Archetype.OWNER, 0);
+        insertAccount(owner, 6_000_000);
+    }
+
+    @Test
+    void 하이브리드_분석은_군집을_배정하고_같은_날_결과를_재사용한다() throws Exception {
+        seedPopulation();
+
+        String body = mvc.perform(post("/api/v1/patterns/analyze").with(user(owner.toString())))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.cached").value(false))
+                .andExpect(jsonPath("$.data.analysis.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.data.analysis.requestedMode").value("HYBRID"))
+                .andExpect(jsonPath("$.data.analysis.analysisMode").value("HYBRID"))
+                .andExpect(jsonPath("$.data.analysis.fallbackReason").isEmpty())
+                .andExpect(jsonPath("$.data.analysis.lookbackMonths").value(6))
+                .andExpect(jsonPath("$.data.analysis.metrics.dataPointCount").value(36))
+                .andExpect(jsonPath("$.data.analysis.metrics.spendingRegularity").value(1.0))
+                .andExpect(jsonPath("$.data.analysis.metrics.savingConsistency").value(1.0))
+                .andExpect(jsonPath("$.data.analysis.metrics.fixedExpenseRatio").value(0.5556))
+                .andExpect(jsonPath("$.data.analysis.metrics.discretionarySpendingRatio").value(0.2222))
+                .andExpect(jsonPath("$.data.analysis.metrics.debtBurden").value(0.1))
+                .andExpect(jsonPath("$.data.analysis.metrics.cashflowStability").value(1.0))
+                .andExpect(jsonPath("$.data.analysis.liquidityLevel").value("HIGH"))
+                .andExpect(jsonPath("$.data.analysis.featureSummary.windowStart").value("2026-03"))
+                .andExpect(jsonPath("$.data.analysis.featureSummary.windowEnd").value("2026-08"))
+                .andExpect(jsonPath("$.data.analysis.featureSummary.incomeBasis").value("TRANSACTIONS"))
+                .andExpect(jsonPath("$.data.analysis.featureSummary.monthlyIncome").value(3_000_000))
+                .andExpect(jsonPath("$.data.analysis.featureSummary.populationSize").value(PER_ARCHETYPE * 4 + 1))
+                .andExpect(jsonPath("$.data.analysis.clusterProfile.clusterLabel").value("저축 중심형"))
+                .andExpect(jsonPath("$.data.analysis.clusterProfile.modelVersion").value(ClusterModelProvider.MODEL_VERSION))
+                .andExpect(jsonPath("$.data.analysis.clusterProfile.featureWindowMonths").value(6))
+                .andExpect(jsonPath("$.data.analysis.clusterProfile.features.length()").value(5))
+                .andReturn().getResponse().getContentAsString();
+        JsonNode analysis = json.readTree(body).at("/data/analysis");
+        long id = analysis.get("analysisId").asLong();
+        assertThat(analysis.at("/clusterProfile/sampleSize").asInt()).isGreaterThanOrEqualTo(PER_ARCHETYPE);
+        assertThat(analysis.at("/clusterProfile/confidence").asDouble()).isGreaterThanOrEqualTo(0.2);
+        assertThat(analysis.at("/clusterProfile/features/1/feature").asText()).isEqualTo("savingRate");
+        assertThat(analysis.at("/clusterProfile/features/1/userValue").asDouble()).isEqualTo(0.3333);
+
+        mvc.perform(post("/api/v1/patterns/analyze").with(user(owner.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.cached").value(true))
+                .andExpect(jsonPath("$.data.analysis.analysisId").value(id));
+        mvc.perform(post("/api/v1/patterns/analyze").with(user(owner.toString()))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"forceRefresh\":true}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.cached").value(false))
+                .andExpect(jsonPath("$.data.analysis.analysisId").value(id + 1));
+        mvc.perform(get("/api/v1/patterns/me").with(user(owner.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.analysisId").value(id + 1))
+                .andExpect(jsonPath("$.data.clusterProfile.clusterLabel").value("저축 중심형"))
+                .andExpect(jsonPath("$.data.featureSummary.months.length()").value(6));
+
+        PatternAnalysis stored = analyses.findById(id).orElseThrow();
+        assertThat(stored.getStatus()).isEqualTo(PatternAnalysisStatus.COMPLETED);
+        assertThat(stored.hasCluster()).isTrue();
+        assertThat(stored.getClusterStats().get("clusterLabel").asText()).isEqualTo("저축 중심형");
+    }
+
+    @Test
+    void 규칙만_요청하면_군집을_붙이지_않고_모드가_다르면_재사용하지_않는다() throws Exception {
+        seedPopulation();
+
+        mvc.perform(post("/api/v1/patterns/analyze").with(user(owner.toString()))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"analysisMode\":\"rule_only\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.analysis.requestedMode").value("RULE_ONLY"))
+                .andExpect(jsonPath("$.data.analysis.analysisMode").value("RULE_ONLY"))
+                .andExpect(jsonPath("$.data.analysis.fallbackReason").value("RULE_ONLY_REQUESTED"))
+                .andExpect(jsonPath("$.data.analysis.clusterProfile").isEmpty())
+                .andExpect(jsonPath("$.data.analysis.metrics.debtBurden").value(0.1));
+        mvc.perform(post("/api/v1/patterns/analyze").with(user(owner.toString()))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"analysisMode\":\"HYBRID\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.cached").value(false))
+                .andExpect(jsonPath("$.data.analysis.clusterProfile.clusterLabel").value("저축 중심형"));
+        mvc.perform(post("/api/v1/patterns/analyze").with(user(owner.toString()))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"analysisMode\":\"FUZZY\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+    }
+
+    @Test
+    void 모집단이_부족하면_규칙_기반으로_자동_전환한다() throws Exception {
+        mvc.perform(post("/api/v1/patterns/analyze").with(user(owner.toString())))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.analysis.requestedMode").value("HYBRID"))
+                .andExpect(jsonPath("$.data.analysis.analysisMode").value("RULE_ONLY"))
+                .andExpect(jsonPath("$.data.analysis.fallbackReason").value("INSUFFICIENT_POPULATION"))
+                .andExpect(jsonPath("$.data.analysis.featureSummary.populationSize").value(1))
+                .andExpect(jsonPath("$.data.analysis.clusterProfile").isEmpty())
+                .andExpect(jsonPath("$.data.analysis.metrics.fixedExpenseRatio").value(0.5556))
+                .andExpect(jsonPath("$.data.analysis.liquidityLevel").value("HIGH"));
+        mvc.perform(get("/api/v1/patterns/me").with(user(owner.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.clusterProfile").isEmpty());
+    }
+
+    @Test
+    void 데이터가_짧은_사용자는_군집_없이_규칙_결과만_받는다() throws Exception {
+        seedPopulation();
+        Long newcomer = newUser("신규");
+        seedMonths(newcomer, Archetype.BALANCED, 0, WINDOW.subList(4, 6));
+
+        mvc.perform(post("/api/v1/patterns/analyze").with(user(newcomer.toString())))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.analysis.analysisMode").value("RULE_ONLY"))
+                .andExpect(jsonPath("$.data.analysis.fallbackReason").value("USER_DATA_TOO_SHORT"))
+                .andExpect(jsonPath("$.data.analysis.featureSummary.monthsWithData").value(2))
+                .andExpect(jsonPath("$.data.analysis.clusterProfile").isEmpty())
+                .andExpect(jsonPath("$.data.analysis.liquidityLevel").isEmpty());
+    }
+
+    @Test
+    void 데이터가_없으면_연결_상태에_따라_409를_돌려주고_조회는_결과_없음이다() throws Exception {
+        Long disconnected = newUser("미연결");
+        mvc.perform(post("/api/v1/patterns/analyze").with(user(disconnected.toString())))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("FINANCE_NOT_CONNECTED"));
+
+        Long connected = newUser("연결됨");
+        connections.save(FinanceConnection.connected(connected, new byte[] {1}, "h".repeat(64), "c***@example.com",
+                new byte[] {2}, "k".repeat(64), NOW));
+        mvc.perform(post("/api/v1/patterns/analyze").with(user(connected.toString())))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PATTERN_INSUFFICIENT_DATA"));
+
+        mvc.perform(get("/api/v1/patterns/me").with(user(connected.toString())))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("PATTERN_ANALYSIS_NOT_FOUND"));
+        mvc.perform(get("/api/v1/patterns/me/spending").with(user(connected.toString())))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PATTERN_INSUFFICIENT_DATA"));
+        mvc.perform(get("/api/v1/patterns/me/cashflow").with(user(connected.toString())))
+                .andExpect(status().isConflict());
+        mvc.perform(get("/api/v1/patterns/me/priority-profile").with(user(connected.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.source").value("DEFAULT"))
+                .andExpect(jsonPath("$.data.profileType").value("BALANCED"))
+                .andExpect(jsonPath("$.data.clusterDeviationAlpha").value(0.0));
+        assertThat(analyses.count()).isZero();
+    }
+
+    @Test
+    void 소비_자금운용_우선순위_조회는_현재_거래로_계산하고_군집은_최근_분석을_따른다() throws Exception {
+        seedPopulation();
+
+        mvc.perform(get("/api/v1/patterns/me/spending?months=6").with(user(owner.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.startMonth").value("2026-03"))
+                .andExpect(jsonPath("$.data.endMonth").value("2026-08"))
+                .andExpect(jsonPath("$.data.monthCount").value(6))
+                .andExpect(jsonPath("$.data.monthsWithData").value(6))
+                .andExpect(jsonPath("$.data.totalSpending").value(1_800_000 * 6))
+                .andExpect(jsonPath("$.data.monthlyAverage").value(1_800_000))
+                .andExpect(jsonPath("$.data.spendingToIncomeRatio").value(0.6))
+                .andExpect(jsonPath("$.data.changeRatePercent").value(0.0))
+                .andExpect(jsonPath("$.data.months.length()").value(6))
+                .andExpect(jsonPath("$.data.categories[0].code").value("HOUSING"))
+                .andExpect(jsonPath("$.data.categories[0].sharePercent").value(38.9))
+                .andExpect(jsonPath("$.data.clusterProfile").isEmpty());
+        mvc.perform(get("/api/v1/patterns/me/spending?months=2").with(user(owner.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.startMonth").value("2026-07"))
+                .andExpect(jsonPath("$.data.monthCount").value(2))
+                .andExpect(jsonPath("$.data.totalSpending").value(1_800_000 * 2));
+        mvc.perform(get("/api/v1/patterns/me/spending?months=13").with(user(owner.toString())))
+                .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/v1/patterns/me/spending?months=abc").with(user(owner.toString())))
+                .andExpect(status().isBadRequest());
+
+        mvc.perform(get("/api/v1/patterns/me/cashflow").with(user(owner.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.incomeBasis").value("TRANSACTIONS"))
+                .andExpect(jsonPath("$.data.monthlyIncome").value(3_000_000))
+                .andExpect(jsonPath("$.data.averages.spending").value(1_800_000))
+                .andExpect(jsonPath("$.data.averages.savingTransfer").value(1_000_000))
+                .andExpect(jsonPath("$.data.averages.loanRepayment").value(300_000))
+                .andExpect(jsonPath("$.data.averages.net").value(1_200_000))
+                .andExpect(jsonPath("$.data.savingRate").value(0.3333))
+                .andExpect(jsonPath("$.data.debtBurden").value(0.1))
+                .andExpect(jsonPath("$.data.cashflowStability").value(1.0))
+                .andExpect(jsonPath("$.data.liquidity.level").value("HIGH"))
+                .andExpect(jsonPath("$.data.liquidity.liquidBalance").value(6_000_000))
+                .andExpect(jsonPath("$.data.months[0].net").value(1_200_000));
+
+        mvc.perform(get("/api/v1/patterns/me/priority-profile").with(user(owner.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.source").value("LIVE_CALCULATION"))
+                .andExpect(jsonPath("$.data.clusterDeviationAlpha").value(0.0))
+                .andExpect(jsonPath("$.data.focusAreas.length()").value(5));
+
+        mvc.perform(post("/api/v1/patterns/analyze").with(user(owner.toString()))).andExpect(status().isCreated());
+
+        mvc.perform(get("/api/v1/patterns/me/spending").with(user(owner.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.clusterProfile.clusterLabel").value("저축 중심형"));
+        String profile = mvc.perform(get("/api/v1/patterns/me/priority-profile").with(user(owner.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.source").value("PATTERN_ANALYSIS"))
+                .andExpect(jsonPath("$.data.analysisId").isNumber())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(json.readTree(profile).at("/data/clusterDeviationAlpha").asDouble()).isGreaterThan(0.0);
+    }
+
+    @Test
+    void 인증과_소유권을_강제한다() throws Exception {
+        seedPopulation();
+        mvc.perform(post("/api/v1/patterns/analyze").with(user(owner.toString()))).andExpect(status().isCreated());
+        Long other = newUser("타인");
+
+        for (String path : List.of("/me", "/me/spending", "/me/cashflow", "/me/priority-profile")) {
+            mvc.perform(get("/api/v1/patterns" + path)).andExpect(status().isUnauthorized());
+        }
+        mvc.perform(post("/api/v1/patterns/analyze")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/patterns/me").with(user(other.toString())))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("PATTERN_ANALYSIS_NOT_FOUND"));
+    }
+
+    @Test
+    void 진행_중_접수는_중복을_막고_폐기하면_바로_다시_받는다() {
+        var admitted = execution.admit(owner, AnalysisMode.HYBRID, false, 6);
+        assertThat(admitted.cached()).isFalse();
+        assertThatThrownBy(() -> execution.admit(owner, AnalysisMode.HYBRID, true, 6))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(ErrorCode.PATTERN_ANALYSIS_IN_PROGRESS);
+
+        execution.abandon(owner, admitted.analysis().getId());
+        assertThat(analyses.findById(admitted.analysis().getId())).isEmpty();
+        var next = execution.admit(owner, AnalysisMode.HYBRID, false, 6);
+        assertThat(next.cached()).isFalse();
+
+        // 임대가 지난 접수는 새 접수를 막지 못하고, 늦게 도착한 완료는 만료로 거부된다.
+        given(clock.now()).willReturn(NOW.plusMinutes(6));
+        var replacement = execution.admit(owner, AnalysisMode.HYBRID, false, 6);
+        assertThat(replacement.analysis().getId()).isGreaterThan(next.analysis().getId());
+        assertThatThrownBy(() -> execution.complete(owner, next.analysis().getId(),
+                new PatternAnalysisExecutionStore.Completion(null, null, null)))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(ErrorCode.PATTERN_ANALYSIS_EXPIRED);
+    }
+
+    // ---------- fixture ----------
+
+    private enum Archetype { OWNER, SAVER, SPENDER, VOLATILE, BALANCED }
+
+    private void seedPopulation() {
+        for (int i = 0; i < PER_ARCHETYPE; i++) {
+            seedMonths(newUser("저축" + i), Archetype.SAVER, i);
+            seedMonths(newUser("소비" + i), Archetype.SPENDER, i);
+            seedMonths(newUser("변동" + i), Archetype.VOLATILE, i);
+            seedMonths(newUser("균형" + i), Archetype.BALANCED, i);
+        }
+    }
+
+    private void seedMonths(Long userId, Archetype type, int variant) {
+        seedMonths(userId, type, variant, WINDOW);
+    }
+
+    private void seedMonths(Long userId, Archetype type, int variant, List<YearMonth> months) {
+        long jitter = variant * 5_000L;
+        for (int index = 0; index < months.size(); index++) {
+            YearMonth ym = months.get(index);
+            income(userId, ym, 3_000_000);
+            switch (type) {
+                case OWNER -> {
+                    fixed(userId, ym, "HOUSING", 700_000);
+                    fixed(userId, ym, "LOAN_REPAYMENT", 300_000);
+                    variable(userId, ym, "FOOD", 400_000);
+                    variable(userId, ym, "GROCERY", 400_000);
+                    saving(userId, ym, 1_000_000);
+                }
+                case SAVER -> {
+                    fixed(userId, ym, "HOUSING", 700_000);
+                    variable(userId, ym, "FOOD", 400_000 + jitter);
+                    variable(userId, ym, "GROCERY", 400_000);
+                    saving(userId, ym, 1_000_000);
+                }
+                case SPENDER -> {
+                    fixed(userId, ym, "HOUSING", 700_000);
+                    variable(userId, ym, "FOOD", 1_000_000 + jitter);
+                    variable(userId, ym, "SHOPPING", 1_000_000);
+                }
+                case VOLATILE -> {
+                    fixed(userId, ym, "HOUSING", 700_000);
+                    variable(userId, ym, "FOOD", (index % 2 == 0 ? 500_000 : 1_900_000) + jitter);
+                    saving(userId, ym, 200_000);
+                }
+                case BALANCED -> {
+                    fixed(userId, ym, "HOUSING", 900_000);
+                    variable(userId, ym, "FOOD", 500_000 + jitter);
+                    variable(userId, ym, "GROCERY", 600_000);
+                    saving(userId, ym, 500_000);
+                }
+            }
+        }
+    }
+
+    private void income(Long userId, YearMonth ym, long amount) {
+        insertTransaction(userId, ym.atDay(25), "INCOME", "INCOME", "NON_SPENDING", amount);
+    }
+
+    private void fixed(Long userId, YearMonth ym, String category, long amount) {
+        insertTransaction(userId, ym.atDay(5), "EXPENSE", category, "FIXED", amount);
+    }
+
+    private void variable(Long userId, YearMonth ym, String category, long amount) {
+        insertTransaction(userId, ym.atDay(12), "EXPENSE", category, "VARIABLE", amount);
+    }
+
+    private void saving(Long userId, YearMonth ym, long amount) {
+        insertTransaction(userId, ym.atDay(26), "EXPENSE", "SAVING", "NON_SPENDING", amount);
+    }
+
+    private void insertTransaction(Long userId, LocalDate date, String type, String category, String spendingType, long amount) {
+        jdbc.update("""
+                INSERT INTO `transaction` (transaction_id, user_id, account_id, card_id, category_id, transaction_date, transaction_time,
+                                           transaction_type, amount, merchant_name, payment_method, spending_type, hidden, source_type, created_at)
+                VALUES (?, ?, 1, NULL, ?, ?, '10:00:00', ?, ?, ?, 'ACCOUNT', ?, FALSE, 'SEED', ?)
+                """, "PT-" + userId + "-" + (++sequence), userId, categories.get(category), date, type, amount, category,
+                spendingType, Timestamp.valueOf(CREATED_AT));
+    }
+
+    private void insertAccount(Long userId, long balance) {
+        jdbc.update("""
+                INSERT INTO account (user_id, bank_code, bank_name, account_no_encrypted, account_no_hash, account_no_masked, account_name,
+                                     account_type, status, balance, currency, source_type, created_at, updated_at)
+                VALUES (?, '004', 'KB국민은행', X'00', ?, '***-**-1234', '주거래', 'DEMAND_DEPOSIT', 'ACTIVE', ?, 'KRW', 'SEED', ?, ?)
+                """, userId, String.format("%064d", userId), balance, Timestamp.valueOf(CREATED_AT), Timestamp.valueOf(CREATED_AT));
+    }
+
+    private void ensureCategories() {
+        Map<String, String[]> definitions = Map.of(
+                "INCOME", new String[] {"수입", "NON_SPENDING"},
+                "SAVING", new String[] {"저축·투자", "NON_SPENDING"},
+                "HOUSING", new String[] {"주거·관리비", "FIXED"},
+                "LOAN_REPAYMENT", new String[] {"대출상환", "FIXED"},
+                "FOOD", new String[] {"식비", "VARIABLE"},
+                "GROCERY", new String[] {"마트·편의점", "VARIABLE"},
+                "SHOPPING", new String[] {"쇼핑", "VARIABLE"});
+        definitions.forEach((code, def) -> {
+            List<Long> existing = jdbc.queryForList("SELECT category_id FROM transaction_category WHERE code = ?", Long.class, code);
+            if (existing.isEmpty()) {
+                jdbc.update("INSERT INTO transaction_category (code, name, default_spending_type, active) VALUES (?, ?, ?, TRUE)",
+                        code, def[0], def[1]);
+                existing = jdbc.queryForList("SELECT category_id FROM transaction_category WHERE code = ?", Long.class, code);
+            }
+            categories.put(code, existing.get(0));
+        });
+    }
+
+    private Long newUser(String name) {
+        return users.save(User.createLocalUser(UUID.randomUUID() + "@example.com", "unused", name)).getId();
+    }
+}

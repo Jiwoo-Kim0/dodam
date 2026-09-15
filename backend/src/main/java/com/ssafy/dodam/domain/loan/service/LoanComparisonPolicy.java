@@ -14,8 +14,11 @@ import java.util.Set;
  *
  * <p>비교군은 보유 대출의 {@code LoanType}이 아니라 <b>연결 상품의 loan_type 문자열</b>로 결정한다. 같은
  * CREDIT 대출이라도 일반 신용과 중금리는 금리 수준이 달라 같은 모집단으로 둘 수 없다.
+ *
+ * <p>public인 이유: 시뮬레이션(S15P21D105-585)의 신규 대출·대환도 같은 비교군과 상환 코드 대응을 써야 한다.
+ * 표를 복제하면 두 도메인이 어긋나므로 이 클래스 하나를 기준으로 둔다.
  */
-final class LoanComparisonPolicy {
+public final class LoanComparisonPolicy {
     /** 상품 조회의 MORTGAGE 분류와 달리 POLICY_HOUSING과 SOHO_MORTGAGE를 넣지 않는다. 자격 요건이 다르다. */
     private static final Map<String, Set<String>> GROUPS = groups();
 
@@ -32,7 +35,7 @@ final class LoanComparisonPolicy {
             RepaymentType.BULLET, Set.of("BULLET")
     );
 
-    static final String AMBIGUOUS_REPAYMENT_TYPE = "AMORTIZING";
+    public static final String AMBIGUOUS_REPAYMENT_TYPE = "AMORTIZING";
 
     private LoanComparisonPolicy() {
     }
@@ -56,7 +59,7 @@ final class LoanComparisonPolicy {
      * LINE_REFINANCE, EMERGENCY_CREDIT)은 어느 군에도 넣지 않는다. 후자는 분할상환 대출의 비교 대상이
      * 아니며 마이너스통장은 534 범위다.
      */
-    static String groupOf(String productLoanType) {
+    public static String groupOf(String productLoanType) {
         if (productLoanType == null) {
             return null;
         }
@@ -71,7 +74,7 @@ final class LoanComparisonPolicy {
         return GROUPS.getOrDefault(group, Set.of());
     }
 
-    static boolean matchesRepaymentType(RepaymentType loanRepaymentType, String optionRepaymentType) {
+    public static boolean matchesRepaymentType(RepaymentType loanRepaymentType, String optionRepaymentType) {
         if (loanRepaymentType == null || optionRepaymentType == null) {
             return false;
         }

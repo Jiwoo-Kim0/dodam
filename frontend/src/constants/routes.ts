@@ -8,6 +8,7 @@ export const routes = {
   notificationPermission: '/notification-permission',
   home: '/home',
   dailyBriefing: '/home/daily-briefing',
+  notifications: '/home/notifications',
   ledger: '/ledger',
   assets: '/assets',
   discovery: '/discovery',

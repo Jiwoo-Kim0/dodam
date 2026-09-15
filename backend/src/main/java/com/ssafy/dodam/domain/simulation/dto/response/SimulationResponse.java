@@ -6,6 +6,7 @@ import com.ssafy.dodam.domain.simulation.entity.SimulationScenario;
 import com.ssafy.dodam.domain.simulation.entity.SimulationGoalImpact;
 import com.ssafy.dodam.domain.simulation.entity.SimulationStatus;
 import com.ssafy.dodam.domain.simulation.entity.SimulationType;
+import com.ssafy.dodam.domain.simulation.service.SimulationGoalImpactResponseAssembler;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -14,7 +15,8 @@ import java.util.List;
  *
  * @param request  요청 파라미터. 저장 스냅샷에서 `requestHash`를 뺀 것
  * @param before   기준선. `coverage`(입력 누락 사유) 포함
- * @param after    적용 후. `assumptions`(적용 가정) 포함
+ * @param after    적용 후. `assumptions`(적용 가정) 포함. 585 유형은 `details`·`goalImpactDetails`도 포함
+ * @param goalImpacts 엔티티 날짜 + 저장 JSON의 status/reasons를 {@link SimulationGoalImpactResponseAssembler}로 결합한 것
  */
 public record SimulationResponse(
         Long simulationId,
@@ -45,6 +47,6 @@ public record SimulationResponse(
                 simulation.getSummary(), simulation.getStatus(), simulation.getCreatedAt(), simulation.getCompletedAt(),
                 request, scenarios.stream().map(SimulationScenarioResponse::from).toList(),
                 simulation.getBeforeSnapshot(), simulation.getAfterSnapshot(), simulation.getComparison(),
-                simulation.getCashflowImpact(), impacts.stream().map(SimulationGoalImpactResponse::from).toList());
+                simulation.getCashflowImpact(), SimulationGoalImpactResponseAssembler.assemble(simulation, impacts));
     }
 }

@@ -40,7 +40,10 @@ export function HomeScreen() {
 
   return (
     <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
-      <HomeHeader onLogoPress={handleHomeRefresh} />
+      <HomeHeader
+        onLogoPress={handleHomeRefresh}
+        onNotificationPress={() => router.push(routes.notifications)}
+      />
 
       <BouncyScrollView
         contentContainerStyle={styles.scrollContent}

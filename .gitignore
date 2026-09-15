@@ -43,3 +43,9 @@ SPRINT/
 # AI 에이전트 컨텍스트 (개인 작업용 — 공유 불필요)
 AGENTS.md
 CLAUDE.md
+
+# Python ML 스크립트 산출물 (backend/ml)
+__pycache__/
+.pytest_cache/
+backend/ml/**/*.csv
+backend/ml/**/reports/

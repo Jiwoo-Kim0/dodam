@@ -42,3 +42,11 @@ app:
   ssafy-finance:
     # 테스트에서는 SsafyFinanceClient를 Mock으로 대체하므로 실제 호출은 일어나지 않는다.
     api-key: test-only-api-key
+  pattern:
+    # H2 테스트는 인프로세스 학습을 검증한다. 아티팩트 로딩은 ClusterModelArtifactLoaderTest가 따로 본다.
+    model-location: ""
+  notification:
+    push:
+      enabled: false
+    events:
+      enabled: false            # 스케줄은 끄고 NotificationEventService를 테스트가 직접 호출한다

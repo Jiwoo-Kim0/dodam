@@ -1,8 +1,8 @@
 # 백엔드 남은 작업
 
-마지막 갱신: 2026-09-10
+마지막 갱신: 2026-09-14
 
-백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542이다.
+백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581이다.
 
 ## S15P21D105-535 — 예·적금 ERD 제약 동기화
 
@@ -871,3 +871,120 @@
 - [ ] "금융비용으로 인한 목표 달성 지연"은 대출 이자·상환 규칙(`LOAN_INTEREST_BURDEN` 등) 정책 확정 후 계산한다. 현재 `unavailable`로 표시.
 - [ ] 이전 진단은 같은 goalId 완전 일치 기준이다. 전체 진단과 목표 지정 진단 사이 비교가 필요하면 FE 요구를 확인한 뒤 확장한다.
 - [ ] `DiagnosisRepository.findPreviousCompleted`(NULL goalId 비교 JPQL)는 H2만 확인했다. MySQL에서 실행 계획·결과를 확인한다.
+
+## S15P21D105-516 — Pattern 분석 실행
+
+구현 계약: [pattern.md](pattern.md)
+
+### 금융 데이터 연동 조건
+
+- [ ] 명세 "금융 데이터 연동 완료 필요"를 "분석 기간에 거래가 있음"으로 구현했다. seed 사용자는 `finance_connection` 행이 없어 연결 상태를 강제하면 시연 계정이 전부 막히기 때문이다. 거래가 없을 때만 연결 상태를 봐서 `FINANCE_NOT_CONNECTED`와 `PATTERN_INSUFFICIENT_DATA`를 나눈다. 실계정 흐름(회원가입 → 연결 → 동기화 → 분석)에서 연결 상태를 우선할지 팀에서 정한다.
+
+### 분석 기간과 진행 중인 달
+
+- [ ] 기간은 기준일이 속한 달을 뺀 완료된 달 6개다. 시연일(2026-09)에는 seed 창(2026-03~08)과 정확히 맞지만, 10월 이후 시연하면 9월이 빈 달(0)로 들어와 규칙성·안정성이 떨어진다. 시연 날짜가 정해지면 seed 창을 옮기거나 `lookback-months`를 조정한다.
+- [ ] 저축성 지출은 API 6과 같이 NON_SPENDING EXPENSE 전체(저축·투자 + 이체)다. 일반 이체(TRANSFER 카테고리)가 많은 사용자는 저축률이 과대 계산된다. SAVING 카테고리만으로 좁힐지 API 6과 함께 정한다.
+
+### 실행 정책
+
+- [ ] 동기 실행이다. seed 4,000명 모집단 학습은 첫 요청에서만 일어나고(TTL 1시간) 그 뒤는 사용자 집계 1회라 응답 시간 문제가 없다고 봤지만 MySQL 실측은 아래 항목과 함께 한다.
+- [ ] 결과 재사용 기준은 "오늘 완료·같은 기간·같은 요청 모드"다. 거래가 새로 동기화되면 같은 날이라도 `forceRefresh=true`로 다시 분석해야 한다. Finance Data 동기화(499) 완료 시 자동 무효화(또는 `analyzed_at` < `last_synced_at`이면 재계산)를 붙일지 정한다.
+- [ ] FAILED 행은 조회에 나오지 않고 정리 배치도 없다. 누적되면 사용자별 최근 N건만 남기는 정리를 붙인다.
+
+### MySQL 검증
+
+- [x] 2026-09-14 Docker `mysql:8.0`에 V1~V19·V30·V31을 README 순서로 손 적용(40개 테이블)하고 `PatternMySqlIntegrationTest`(Flyway off, `ddl-auto: validate`)로 전체 엔티티 validate 통과, 월별 집계 SQL(YEAR/MONTH·CASE·IN)·41명 모집단 K-Means 학습·"저축 중심형" 배정, `JSON_EXTRACT`로 `cluster_stats_json.clusterLabel`·`feature_summary_json.windowStart` 읽기, `debt_burden = 0.1000` 저장을 확인했다.
+- [ ] seed 4,000명 모집단 학습 시간과 seed 사용자(`seed.kmeans.u0001`) 분석 결과는 미측정이다. seed 적재에 암호 fixture 테이블이 필요해(seeds README 2~3번) 이번에는 생략했다. 시연 전 한 번 실측해 `model-ttl`·동기 실행 정책을 확인한다.
+
+## S15P21D105-517 — Pattern 결과·프로필 조회
+
+구현 계약: [pattern.md](pattern.md) "조회"
+
+### 우선순위 프로필 계약
+
+- [ ] 가중치·집중 영역 규칙(부채부담 0.30, 재량소비 0.40, 소비/소득 0.80, 저축률 0.20·0.30, 고정지출 0.30~0.70, α = 0.2 × 신뢰도)은 기획안에 수치가 없어 정한 서비스 기본안이다. 추천 엔진(API 16, BE-B)이 `weights`·`clusterDeviationAlpha`·`focusAreas` 중 무엇을 어떻게 쓸지 맞춘 뒤 수치를 조정한다. 현재 Recommendation 우선순위 계산은 이 API를 읽지 않는다.
+- [ ] 성향검사(기획안 "선택")가 들어오면 `source`에 `PREFERENCE_SURVEY`를 추가하고 패턴분석과의 우선 규칙을 정한다.
+
+### 소비·자금운용 패턴
+
+- [ ] 소비 패턴의 `clusterProfile`은 `months`와 무관하게 최근 완료 분석의 것이다. `months=3` 요청에 6개월 기준 군집이 붙는 것이 FE 표시에 맞는지 확인한다.
+- [ ] 카테고리 비중은 소비 정의(NON_SPENDING 제외) 기준이라 API 6 `/spending/categories`와 같은 값이다. FE가 둘을 함께 쓰면 하나로 줄일 수 있다.
+- [ ] `months` 밖 형식(예: `abc`)은 공통 처리로 400 `INVALID_REQUEST`다. 명세에 오류 코드가 없어 다른 조회 API와 같은 방식을 따랐다.
+
+## S15P21D105-518 — Pattern 군집 메타데이터·Fallback
+
+구현 계약: [pattern.md](pattern.md) "군집 메타데이터·Fallback"
+
+### 모델 학습·배포 (Python 아티팩트)
+
+- [x] 2026-09-14 로컬 Docker MySQL 8.0에 seed 491·522·492를 적재(암호 fixture는 SHA-256 더미, 4,000명·거래 348,192건)하고 `train_cluster_model.py --k 4`로 `src/main/resources/ml/spending-kmeans-v1.json`을 만들어 커밋했다. `application-prod.yml`에 `train-in-process: false`를 넣었다. 평가 결과는 pattern.md "모델 평가"와 `docs/pattern-evaluation/`.
+- [x] 2026-09-14 시연 서버(j15D105.p.ssafy.io) DB에 seed 8종을 README 순서로 적재했다(사용자 4,000·계좌 9,001·카드 6,000·할부 3,000·대출 3,000·예적금 4,000·거래 348,192·목표 6,000·구독 6,000·상품 198). 491·522·523·524 fixture는 서버 `.env` 키로 애플리케이션 코덱과 같은 형식(AES-256-GCM IV12+태그, HMAC-SHA-256 NUMBER_HASH_KEY, AccountNumberMasker 규칙)으로 만들었다. 같은 날 develop(`716e566`) 배포로 Flyway V18·V19·V31이 적용됐고, 서버 DB로 `evaluate_cluster_model.py --artifact`를 돌려 4,000명 전원 설계 성향 일치(ARI·purity 1.0), 노출 98.8%를 확인했다.
+- [ ] seed 사용자는 `password_hash`가 NULL이라 로그인할 수 없다(491 seed 계약). 시연 계정(U0001~U0004)으로 API를 시연하려면 비밀번호를 넣는 절차(또는 소셜 로그인 연결)를 팀에서 정한다. 그래서 서버에서 `POST /patterns/analyze`의 실제 호출·아티팩트 로딩 로그는 아직 확인하지 못했다(로더는 첫 분석 요청 때 읽는다).
+- [ ] 서버 DB에 523·524 fixture 테이블 6개(`tmp_dodam_523_*`, `tmp_dodam_524_*`)가 남아 있다. 두 seed는 `DROP TEMPORARY TABLE`로 정리해 일반 테이블 fixture를 지우지 못한다. `DROP TABLE`로 정리하고 seeds README에 기록한다.
+- [ ] k 선택은 실루엣만으로 자동화하지 않는다(seed에서 실루엣은 k=6, ARI는 k=4). 실사용자 데이터가 쌓이면 정답 라벨이 없으므로 실루엣·안정성·도메인 해석으로 k를 다시 정한다.
+- [ ] 재학습 주기(월 1회, 데이터 창이 바뀔 때)와 실행 위치(개발 PC vs Jenkins 단계 + 커밋)를 정한다. 스크립트는 DB 읽기 권한만 필요하다.
+- [ ] 두 구현의 특징 정의 일치는 Java·Python 단위 테스트가 같은 기대값을 공유하는 방식으로만 확인한다. 실 DB에서 `--export-features`로 뽑은 벡터와 Java `featureSummary.clusterFeatures`를 표본 몇 명에 대해 대조하는 절차를 seed 적재 시 함께 한다.
+- [ ] 임계값(군집 표본 10, 신뢰도 0.2)과 k 범위(2~6, 실루엣 최대)는 seed 성향 4종을 전제로 한 기본안이다. 실사용자 분포에서 재검토한다. 기획안 "군집 이탈 점수 ≥ 임계값"은 진단(API 14)이 적용할 조건으로 보고 여기서는 점수(`deviationScore`)만 제공한다.
+- [ ] 라벨은 중심값 순위로 정한다. 두 군집의 저축률 중심이 거의 같으면 학습마다 라벨이 뒤바뀔 수 있다. 아티팩트를 커밋해 배포 단위로 고정하는 것이 1차 대응이고, 필요하면 운영자 고정 라벨을 아티팩트에 직접 적는다.
+- [ ] 아티팩트를 테이블(예: `cluster_model`)에 두고 재배포 없이 교체하는 방식은 ERD 변경이 필요해 보류했다. 파일 교체는 `app.pattern.model-location: file:/opt/dodam/models/...`로 가능하다.
+
+### 진단·추천 연동
+
+- [ ] Diagnosis(545)의 "군집 범위 이탈" 규칙은 "Preference 공급 경로의 유효한 군집 집계"를 기다리고 있다. `PatternAnalysis.clusterStats`(features[].deviation·p5·p95·sampleSize·modelVersion)가 그 공급 경로다. BE-B와 `DiagnosisIssue.clusterContext` 형식(`feature`, `rangeMin`, `rangeMax`, `userValue`, `sampleSize`)으로의 변환 위치를 정한다.
+- [ ] 모집단 특징은 INCOME 거래만 소득으로 쓴다(금융 기본정보 미조회). 급여 이체가 없는 사용자는 학습에서 빠지고 본인 분석은 PROFILE 소득으로 특징을 만들어 배정된다. 분포 차이가 크면 모집단도 기본정보 소득을 쓰도록 집계 SQL에 조인을 추가한다.
+
+## S15P21D105-519 — Notification 목록·상세·미확인 수
+
+구현 계약: [notification.md](notification.md)
+
+### 알림 생성 경로
+
+- [x] 2026-09-14 D10(581) 이벤트 연동으로 결제·상환·연체·현금흐름 위험·목표·추천·월간 리포트·브리핑 8규칙이 스케줄(매일 08:00, 매 정시)과 직접 실행 API로 알림을 만든다. 시연 seed(`DODAM_NOTIFICATION_SEED.sql`)는 그대로 유지한다.
+- [ ] 알림 유형 11종은 기획안 14-6·7-4에서 뽑은 서비스 기본안이다. FE 알림함 화면(아이콘·라우팅)이 정해지면 유형과 `source_type` 목록을 함께 확정한다. FE 알림 화면(`2d525f9`)이 머지됐으니 응답 필드·라우팅 키를 맞춘다.
+
+### 조회 정책
+
+- [ ] 날짜 필터는 `created_at`의 날짜(서비스 시간대 Asia/Seoul) 기준 양끝 포함이다. FE가 UTC로 보내면 하루가 어긋난다. 요청 시간대 규약을 FE와 맞춘다.
+- [ ] `type`은 VARCHAR로 저장하고 필터만 enum으로 검증한다. 다른 도메인이 SQL로 미지 유형을 넣으면 목록에는 나오지만 그 유형으로 필터할 수 없다. 유형 추가는 `NotificationType`에 한다.
+- [ ] `user_setting.notification_enabled`는 조회에 영향을 주지 않는다(알림함 항상 유지). 설정이 꺼진 사용자의 푸시만 D10에서 막는다. 설정 off일 때 알림함도 비울지는 기획 확인이 필요하다.
+
+### MySQL 검증
+
+- [x] 2026-09-14 로컬 Docker MySQL 8.0(V1~V19·V30~V32)에서 `NotificationMySqlIntegrationTest`로 `validate` 통과(`TEXT`·`CHAR(64)`·`TINYINT(1)` 매핑), `(user_id, dedupe_key)` 유일 제약, 벌크 전체 읽음 건수, 소프트 삭제를 확인했다. seed 8종 적재 후 `DODAM_NOTIFICATION_SEED.sql`을 두 번 실행해 22건(U0001 5·U0002 6·U0003 5·U0004 6, 미확인 10)이 멱등으로 유지됨을 확인했다.
+
+## S15P21D105-520 — Notification 읽음·전체읽음·삭제
+
+구현 계약: [notification.md](notification.md) "520"
+
+- [ ] 삭제는 소프트 삭제이며 물리 삭제·보관 기간 정책이 없다. 알림이 누적되면 `deleted_at`이 오래된 행을 지우는 배치(또는 사용자당 최근 N건 유지)를 정한다.
+- [ ] 전체 읽음은 한 번의 UPDATE로 처리하고 갱신 건수만 돌려준다. FE가 목록을 다시 불러야 개별 `readAt`이 보인다. 응답에 목록을 포함할지 FE와 맞춘다.
+- [ ] 읽음 처리 응답이 200 + 알림 본문이다. 명세는 상태 코드를 정하지 않았고 정기결제 변경 API와 같은 방식을 따랐다. FE가 204를 기대하면 조정한다.
+- [ ] 삭제 API가 `dedupe_key`를 남겨 두므로 같은 이벤트는 다시 만들어지지 않는다(의도). 사용자가 "다시 받기"를 원하는 유형이 있으면 그 유형은 dedupe 키에 발생 시각을 넣도록 D10에서 정한다.
+
+## S15P21D105-580 — Notification 기본 API (푸시 기기·FCM 발송)
+
+구현 계약: [notification.md](notification.md) "푸시(580)"
+
+- [ ] **실기기 FCM 발송은 아직 확인하지 않았다.** 서버 prod는 `push.enabled=true`·키 마운트가 되어 있지만 등록된 기기가 없다. FE가 `expo-notifications`로 받은 토큰을 `POST /notifications/devices`에 보내는 흐름을 붙인 뒤(Expo 토큰이면 Expo Push API, FCM 기기 토큰이면 FCM — 어느 토큰을 보낼지 FE와 확정) 실기기에서 수신을 확인한다. FCM Admin SDK는 **FCM 등록 토큰**만 받으므로 FE가 `getDevicePushTokenAsync()`의 토큰을 보내야 한다.
+- [ ] 기기 API는 명세 22 외 추가다. API 명세서(Notion)에 3개 엔드포인트를 등록한다.
+- [ ] 발송은 커밋 후 동기 호출이다(기기당 FCM 왕복). 사용자당 기기 1~2대 전제라 두었고, 대량 발송(스케줄 4,000명)은 서버가 순차 처리한다. 지연이 문제면 `@Async` 큐로 바꾼다.
+- [ ] FCM 응답 UNREGISTERED·INVALID_ARGUMENT만 기기 해제로 처리한다. SENDER_ID_MISMATCH·THIRD_PARTY_AUTH_ERROR 등은 로그로만 남으니 배포 후 로그를 확인한다.
+- [x] MySQL 검증: 2026-09-14 로컬 Docker MySQL 8.0(V1~V33)에서 `user_device` validate 통과(NotificationMySqlIntegrationTest 컨텍스트).
+
+## S15P21D105-581 — Notification 이벤트 연동
+
+구현 계약: [notification.md](notification.md) "이벤트 연동(581)"
+
+- [ ] 임계값(D+3, D+7, 추천 7일, 목표 25/50/75%)과 브리핑 기본 08:00은 서비스 기본안이다. 기획안 "결제일 D-3" 등 수치가 없어 정했다. FE·기획 확인 후 `app.notification.events.*`로 조정한다.
+- [ ] 목표 진행률은 `goal.current_amount / saving_goal.target_amount`(저장값)를 쓴다. Goal 계산 API가 갱신하기 전에는 오래된 값일 수 있다. 목표 계산 API 호출 시 이벤트 서비스의 목표 규칙을 함께 부르는 훅을 검토한다.
+- [ ] 월간 리포트 알림은 리포트 본문(API 20, 김지우 D11~12)이 없는 상태에서 `REPORT/yyyy-MM`만 가리킨다. 리포트 생성 시점에 맞춰 알림을 만들도록 리포트 구현 시 이 규칙을 그쪽 트리거로 옮긴다.
+- [ ] 브리핑의 "오늘 사용 가능 금액"은 줄이기 목표의 월 예산 합 기준이다. 예산이 없으면 문장을 생략한다. 기획안의 "전날 소비 급증 특이사항"은 아직 넣지 않았다(API 6 소비 급증 결과 연결 필요).
+- [ ] 스케줄은 단일 서버 전제로 매일 08:00 전체 사용자 순회다. 4,000명 seed 기준 규칙 8종 조회는 수 초 이내(로컬 MySQL). 사용자 수가 크게 늘면 배치 분할이 필요하다.
+- [x] MySQL 검증: 2026-09-14 로컬 MySQL(seed 4,000명·알림 seed)에서 `NotificationEventReaderMySqlTest`로 리더 SQL 8종 실행과 U0002 규칙 직접 실행·멱등을 확인했다(결과 건수는 seed 날짜에 따라 다름).
+
+## S15P21D105-521 — BE-A 담당 도메인 통합 테스트
+
+결과 기록: [notification.md](notification.md) "BE-A 통합 테스트"
+
+- [ ] seed 사용자(`seed.kmeans.u0001~u0004`)는 `password_hash`가 NULL이라 실제 로그인 토큰으로 서버 API를 통합 점검할 수 없다. 시연 계정 비밀번호 설정 절차가 정해지면 서버에서 BE-A 8개 API 스모크(로그인 → 계좌·거래·소비·목표·정기결제·패턴·알림)를 한 번 돌려 기록한다.
+- [ ] BE-A 통합 테스트는 H2 전체 회귀 + MySQL 게이트 테스트(Pattern·Notification) 조합이다. Goal·Subscription·Account·Transaction·Finance·Auth·User의 MySQL 게이트 테스트는 없다. 시연 전 서버 DB(seed 적재 완료)에서 API 스모크로 대신한다.

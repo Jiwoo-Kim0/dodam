@@ -1,0 +1,40 @@
+{
+  "modelVersion": "spending-kmeans-v1",
+  "algorithm": "kmeans",
+  "trainedAt": "2026-09-14T11:00:00",
+  "trainedBy": "python-sklearn-test",
+  "window": {"start": "2026-03", "end": "2026-08", "months": 6},
+  "referenceDate": "2026-09-14",
+  "minUserMonths": 3,
+  "features": ["spendingToIncomeRatio", "savingRate", "fixedExpenseShare", "discretionaryShare", "spendingVolatility"],
+  "populationSize": 40,
+  "clusterCount": 2,
+  "evaluation": {"kSelection": "fixed", "silhouette": 0.9},
+  "standardization": {"means": [0.7, 0.15, 0.4, 0.4, 0.05], "stds": [0.2, 0.15, 0.1, 0.2, 0.05]},
+  "centroids": [
+    [1.0, -1.0, -0.5, 1.0, 0.5],
+    [-1.0, 1.0, 0.5, -1.0, -0.5]
+  ],
+  "clusters": [
+    {
+      "clusterId": 0, "label": "소비 집중형", "sampleSize": 20,
+      "stats": {
+        "spendingToIncomeRatio": {"centroid": 0.9, "min": 0.85, "max": 0.95, "p5": 0.86, "p95": 0.94, "mean": 0.9, "std": 0.03},
+        "savingRate": {"centroid": 0.0, "min": 0.0, "max": 0.0, "p5": 0.0, "p95": 0.0, "mean": 0.0, "std": 0.0},
+        "fixedExpenseShare": {"centroid": 0.35, "min": 0.3, "max": 0.4, "p5": 0.31, "p95": 0.39, "mean": 0.35, "std": 0.03},
+        "discretionaryShare": {"centroid": 0.6, "min": 0.55, "max": 0.65, "p5": 0.56, "p95": 0.64, "mean": 0.6, "std": 0.03},
+        "spendingVolatility": {"centroid": 0.075, "min": 0.05, "max": 0.1, "p5": 0.055, "p95": 0.095, "mean": 0.075, "std": 0.015}
+      }
+    },
+    {
+      "clusterId": 1, "label": "저축 중심형", "sampleSize": 20,
+      "stats": {
+        "spendingToIncomeRatio": {"centroid": 0.5, "min": 0.45, "max": 0.55, "p5": 0.46, "p95": 0.54, "mean": 0.5, "std": 0.03},
+        "savingRate": {"centroid": 0.3, "min": 0.25, "max": 0.35, "p5": 0.26, "p95": 0.34, "mean": 0.3, "std": 0.03},
+        "fixedExpenseShare": {"centroid": 0.45, "min": 0.4, "max": 0.5, "p5": 0.41, "p95": 0.49, "mean": 0.45, "std": 0.03},
+        "discretionaryShare": {"centroid": 0.2, "min": 0.15, "max": 0.25, "p5": 0.16, "p95": 0.24, "mean": 0.2, "std": 0.03},
+        "spendingVolatility": {"centroid": 0.025, "min": 0.0, "max": 0.05, "p5": 0.005, "p95": 0.045, "mean": 0.025, "std": 0.015}
+      }
+    }
+  ]
+}
