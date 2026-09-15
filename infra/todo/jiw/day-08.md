@@ -295,12 +295,108 @@ dangling으로 분류돼 정리 대상이 된다. 3절 수정과 이 스크립�
 
 **아직 push하지 않았다.** GC 실행은 수정이 배포된 뒤로 미룬다(사용자 판단).
 
+## 2026-09-15
+
+### 13. 프론트 연동 문의에서 발견한 레이트 리밋 오설정 (수정)
+
+**착수 배경** — 프론트에서 "`EXPO_PUBLIC_API_BASE_URL=https://j15D105.p.ssafy.io/api`를 넣으면
+백엔드와 연동되는가"라는 질문이 들어왔다. 답하려고 경로 체계를 실측하다 별건을 찾았다.
+
+#### 연동 문의에 대한 답 (조회만, 변경 없음)
+
+외부에서 실측:
+
+```
+GET  https://j15D105.p.ssafy.io/api/health        → 200 {"success":true,"data":{"status":"UP"}}
+POST https://j15D105.p.ssafy.io/api/v1/auth/login → 400 (이메일/비밀번호 필수)
+```
+
+즉 **그 값으로 연동된다.** 다만 조건이 있다 — 백엔드에 `servlet.context-path`가 없고
+컨트롤러가 `@RequestMapping("/api/v1/...")` 절대경로를 쓴다. nginx `location /api/`는
+`proxy_pass`에 URI를 붙이지 않아 원본 경로를 그대로 넘긴다.
+따라서 base가 `.../api`면 FE는 `/v1/cards` 식으로 이어 붙여야 한다.
+`/api/v1/cards`로 붙이면 `/api/api/v1/cards`가 된다.
+
+**함정 — 인증 없이 찍으면 없는 경로도 401이다.**
+
+| 경로 | 응답 |
+| --- | --- |
+| `/api/v1/cards` (정상) | 401 |
+| `/api/api/v1/cards` (오타) | 401 |
+| `/api/v1/nonexistent-xyz` (없음) | 401 |
+
+`SecurityConfig`가 `/api/v1/**`를 `authenticated()`, 나머지를 `anyRequest().denyAll()`로 잡아
+라우팅 전에 거부하기 때문이다. **401을 "경로는 맞고 토큰만 없다"로 읽으면 안 된다.**
+경로 검증은 `permitAll`인 `GET /api/health`나 `POST /api/v1/auth/login`으로 해야 한다.
+(`permitAll`은 health + `signup`/`login`/`refresh` POST뿐)
+
+함께 전달한 것:
+- FE에 아직 `EXPO_PUBLIC_API_BASE_URL`을 읽는 코드가 없다 — 참조처는 `eas.json`과 `.env.example`뿐,
+  `frontend/src/api/`는 비어 있다.
+- `eas.json`의 `env`는 EAS 빌드 전용이라 로컬 `expo start`에는 적용되지 않는다. `frontend/.env` 필요.
+- 운영 `CORS_ALLOWED_ORIGINS=http://localhost:8081` 하나뿐 — 네이티브는 무관하지만 Expo 웹은 막힌다.
+- 호스트명 대문자 `j15D105`는 DNS·TLS·nginx `server_name` 모두 대소문자를 구분하지 않아 그대로 동작한다.
+
+#### 발견한 문제 — 로그인 레이트 리밋이 한 번도 적용되지 않고 있었다
+
+```nginx
+location ^~ /api/auth/ { limit_req zone=api_auth ... }   # 분당 10req
+```
+
+실제 인증 경로는 `/api/v1/auth/...`(`AuthController`의 `@RequestMapping`)다.
+**이 location은 매칭된 적이 없고**, 로그인 요청이 일반 버킷(초당 20req)으로 빠져
+무차별 대입 방어가 사실상 없는 상태였다. Day 3에 걸어둔 이래 계속 그랬다.
+
+주석에 "해당 엔드포인트는 아직 미구현, 미리 걸어둠"이라고 적혀 있던 것이 원인으로 보인다.
+구현 시점에 경로를 대조하지 않았다.
+
+#### 수정 — `infra/nginx/conf.d/default.conf`
+
+```nginx
+limit_req_zone $binary_remote_addr zone=api_auth:10m rate=20r/m;   # 10r/m → 20r/m
+
+location ~ ^/api/v1/auth/(login|signup)$ {
+    limit_req zone=api_auth burst=10 nodelay;
+```
+
+**설계 판단 3가지**
+
+| 판단 | 이유 |
+| --- | --- |
+| `refresh`·`logout`·`session` 제외 | 앱이 자동으로 도는 호출이다. 막으면 정상 사용 중에 429로 끊긴다 |
+| prefix가 아닌 **정규식** location | 아래 `location /api/`가 `^~` 없는 일반 prefix라 매칭 순서상 정규식이 먼저 이긴다. `^~ /api/v1/auth/`로 쓰면 위 3개까지 함께 걸린다 |
+| 10r/m → 20r/m, burst 5 → 10 | 버킷 기준이 `$binary_remote_addr`다. SSAFY 캠퍼스망처럼 팀 전체가 같은 공인 IP로 나가면 버킷을 공유해, 한 명의 로그인 테스트가 팀 전체를 막는다. FE 연동이 막 시작되는 시점이라 더 그렇다 |
+
+**검증** — 실행 중인 nginx는 건드리지 않고, EC2에서 동일한 인증서 볼륨을 붙인
+일회용 컨테이너로 `nginx -t`:
+
+```
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+--- exit=0 ---
+```
+
+**반영 시점**: `deploy.sh:163`이 배포마다 `docker exec nginx nginx -s reload`를 돌리므로
+**develop 머지 후 첫 배포에 자동 반영**된다. 수동 조치 불필요.
+(conf.d는 bind mount라 `git reset --hard`로 파일은 바뀌지만, reload가 없으면 최대 6시간
+— compose command의 6h reload 루프 — 동안 구 설정이 살아 있다)
+
+`infra/todo/security.md` R6의 레이트 리밋 항목을 체크하고 경위를 함께 적었다.
+"미적용이었다"는 사실이 남아야 발표 때 근거가 된다.
+
+### 남은 의문 — 같은 오설정이 더 있는지
+
+`^~ /api/auth/` 하나만 경로가 어긋나 있었는지, 다른 location도 대조가 필요하다.
+현재 확인된 것: `/api/health`(200), `/actuator/`(404 차단), `/jenkins/`(403),
+`/jenkins/project/`(웹훅), `/grafana/` — 전부 실제 경로와 일치한다.
+
 ## 남은 것
 - [ ] 이 수정 develop 머지 후 첫 배포에서 `infra-backend:deployed` 태그 생성 확인
 - [ ] 롤백 경로 실제 검증 — 일부러 깨는 커밋으로 "코드+이미지가 함께 되돌아오는지" 확인
       (지금까지 검증된 것은 코드 롤백까지다)
 - [ ] `docker-gc.sh` EC2 1회 수동 실행 + cron 등록 (스크립트 커밋 완료, **운영 미적용** — 위 수정이 배포된 뒤에 실행)
-- [ ] 위 커밋 push 및 develop 머지
+- [ ] 위 커밋 push 및 develop 머지 (머지 시 nginx reload로 레이트 리밋 수정도 함께 반영)
+- [ ] 배포 후 로그인 레이트 리밋이 실제로 걸리는지 확인 (연속 요청으로 429 유도)
+- [ ] FE가 Expo 웹으로 붙을 계획이면 `CORS_ALLOWED_ORIGINS` 추가 (현재 `http://localhost:8081` 하나)
 - [x] ~~develop 빌드 실패(#75·#76)~~ — #77(10:31)·#78(10:39) SUCCESS로 복구됨
 - [x] ~~V18·V19 미적용~~ — #78 배포 기동 시 V18·V19·V31 적용, 현재 v31
 - [ ] 시드 데이터 적재 — 1번(금융상품)은 선행 조건 충족, 즉시 가능 (**백엔드 담당자 진행**)
