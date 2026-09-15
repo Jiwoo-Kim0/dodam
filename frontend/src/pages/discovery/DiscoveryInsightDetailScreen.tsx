@@ -6,8 +6,8 @@ import { AppHeader } from '@/components/appHeader/AppHeader';
 import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import { DISCOVERY_INSIGHTS } from '@/mocks/discovery';
-import { formatNumber } from '@/utils/currency';
 
+import { BasicSimulationSection } from './components/BasicSimulationSection';
 import { styles } from './DiscoveryInsightDetailScreen.styles';
 
 type DiscoveryInsightDetailScreenProps = {
@@ -73,32 +73,7 @@ export function DiscoveryInsightDetailScreen({
               </View>
             </View>
 
-            <View style={styles.resultSection}>
-              <View style={styles.resultCard}>
-                <Text style={styles.resultTitle}>바꾸면 어떻게 되나요?</Text>
-                <View style={styles.divider} />
-                <View style={styles.resultRow}>
-                  <Text style={styles.resultLabel}>연 예상 절감액</Text>
-                  <Text style={styles.savingValue}>
-                    + {formatNumber(insight.annualSavingAmount)}원
-                  </Text>
-                </View>
-                <View style={styles.resultRow}>
-                  <Text style={styles.resultLabel}>모으기 목표 달성일</Text>
-                  <Text style={styles.dayValue}>- {insight.goalAccelerationDays}일</Text>
-                </View>
-                <View style={styles.noticeBox}>
-                  <Text style={styles.noticeIcon}>ⓘ</Text>
-                  <Text style={styles.noticeText}>{insight.resultNotice}</Text>
-                </View>
-              </View>
-              <Image
-                accessibilityLabel="개선 결과를 안내하는 토리"
-                contentFit="contain"
-                source={require('@/assets/images/discovery/discovery_detail_result.png')}
-                style={styles.resultImage}
-              />
-            </View>
+            <BasicSimulationSection insightId={insight.id} key={insight.id} />
           </>
         ) : (
           <View style={styles.emptyState}>

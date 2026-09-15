@@ -4,6 +4,7 @@ export { assetApi } from './assetApi';
 export { authApi } from './authApi';
 export { financeDataApi, financeErrorCodes } from './financeDataApi';
 export { ledgerApi } from './ledgerApi';
+export { simulationApi } from './simulationApi';
 export { socialAuthApi } from './socialAuthApi';
 export { userApi } from './userApi';
 export type {
