@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.ssafy.dodam.domain.simulation.entity.SimulationType;
 import java.time.LocalDate;
+import java.util.List;
 
 /**
  * 계산기에 넘기는 확정된 입력. HTTP 요청과 분리한 이유는 두 가지다.
@@ -28,6 +29,14 @@ public interface SimulationInput {
      */
     default SimulationInput withBaseDate(LocalDate baseDate) {
         return this;
+    }
+
+    /**
+     * `simulation_scenario`에 저장할 시나리오 목록(sequenceNo 1부터, 입력 순서). 단독 유형은 자기 자신 1건이고
+     * 복합(COMBINED)은 자식 N건이다 — 복합 부모 자체는 scenario 행이 아니다.
+     */
+    default List<SimulationInput> scenarios() {
+        return List.of(this);
     }
 
     int DEFAULT_DURATION_MONTHS = 12;

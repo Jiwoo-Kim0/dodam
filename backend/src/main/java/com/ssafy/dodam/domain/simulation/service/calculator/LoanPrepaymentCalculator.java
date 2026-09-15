@@ -5,6 +5,8 @@ import com.ssafy.dodam.domain.loan.service.LoanRepaymentScheduleItem;
 import com.ssafy.dodam.domain.loan.service.LoanRepaymentTerms;
 import com.ssafy.dodam.domain.simulation.dto.LoanPrepaymentInput;
 import com.ssafy.dodam.domain.simulation.dto.LoanSnapshot;
+import com.ssafy.dodam.domain.simulation.dto.ScenarioComputation;
+import com.ssafy.dodam.domain.simulation.dto.ScenarioLedger;
 import com.ssafy.dodam.domain.simulation.dto.SimulationBaseline;
 import com.ssafy.dodam.domain.simulation.dto.SimulationResult;
 import com.ssafy.dodam.domain.simulation.dto.SimulationResult.Comparison;
@@ -56,7 +58,7 @@ public class LoanPrepaymentCalculator implements SimulationCalculator<LoanPrepay
     }
 
     @Override
-    public SimulationResult calculate(SimulationBaseline baseline, LoanPrepaymentInput input) {
+    public ScenarioComputation compute(SimulationBaseline baseline, LoanPrepaymentInput input) {
         LoanSnapshot loan = Objects.requireNonNull(input.loan(), "loan 스냅샷이 준비되지 않았습니다.");
         LocalDate paymentDate = Objects.requireNonNull(input.paymentDate(), "paymentDate가 기준일로 채워지지 않았습니다.");
         LoanScenarios.requireComputable(loan, baseline.baseDate());
@@ -66,7 +68,7 @@ public class LoanPrepaymentCalculator implements SimulationCalculator<LoanPrepay
         return SimulationScenarios.exact(() -> build(baseline, input, loan, paymentDate));
     }
 
-    private SimulationResult build(SimulationBaseline baseline, LoanPrepaymentInput input, LoanSnapshot loan, LocalDate paymentDate) {
+    private ScenarioComputation build(SimulationBaseline baseline, LoanPrepaymentInput input, LoanSnapshot loan, LocalDate paymentDate) {
         LocalDate base = baseline.baseDate();
         long amount = input.prepaymentAmount();
         List<LoanRepaymentScheduleItem> before = LoanScenarios.schedule(scheduleCalculator, LoanScenarios.terms(loan, loan.balance()), base);
@@ -152,7 +154,12 @@ public class LoanPrepaymentCalculator implements SimulationCalculator<LoanPrepay
         String summary = "만기까지 이자 " + SimulationScenarios.won(beforeInterest) + " → " + SimulationScenarios.won(afterInterest)
                 + " (절감 " + SimulationScenarios.won(interestSaving) + ", 수수료 제외)"
                 + (balanceAfter == 0 ? ", 전액 상환" : ", 잔액 " + SimulationScenarios.won(balanceAfter));
-        return new SimulationResult(title, summary, beforeSnapshot, goals.after(), new Comparison(items, assets, debts, costs),
-                cashflow, goals.impacts(), assumptions, details, goals.details());
+        SimulationResult result = new SimulationResult(title, summary, beforeSnapshot, goals.after(),
+                new Comparison(items, assets, debts, costs), cashflow, goals.impacts(), assumptions, details, goals.details());
+        // 추가상환액은 행동일의 원금 납부다. 비용(이자)이 아니므로 평가기간 합산에는 영향이 없다
+        List<ScenarioLedger.Payment> afterPayments = new ArrayList<>(LoanScenarios.payments(after));
+        afterPayments.add(new ScenarioLedger.Payment(paymentDate, amount, 0L, 0L));
+        return new ScenarioComputation(result, new ScenarioLedger(LoanScenarios.payments(before), afterPayments,
+                loan.maturityDate(), loan.maturityDate(), true));
     }
 }

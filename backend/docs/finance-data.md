@@ -144,7 +144,23 @@ SSAFY 금융망 API 문서 2.7절 대출 API를 실시간 호출하며 결과를
 
 응답은 `{"Header": {...}, "REC": ...}`이며 `RestSsafyFinanceClient`는 REC만 꺼내 타입으로 변환한다. 정상 코드는 `H0000` 하나다. Header 검증 오류 `H1000`~`H1010`(예: `H1007` 기관거래고유번호 중복, `H1008` API_KEY 무효, `H1009` USER_KEY 무효)도 `H`로 시작하므로 "H로 시작하면 성공"으로 판정하면 안 된다. HTTP 4xx Body의 `responseCode`와 2xx Body의 `Header.responseCode ≠ H0000` 모두 `SsafyApiException`으로 처리한다. 응답 record의 숫자 필드는 Jackson 문자열→숫자 강제 변환에 의존하며, 알 수 없는 필드는 무시한다.
 
-`MockRestServiceServer` 기반 단위 테스트(`RestSsafyFinanceClientTest`)가 요청 Header 형식과 REC 해석을 문서의 요청·응답 예시로 검증한다. **실제 금융망 호출은 2026-09-09 시도했으나 전달받은 API Key가 `E4004`/`H1008`(API KEY 무효)로 거절되어 확인하지 못했다**(`docs/remaining-work.md`).
+`MockRestServiceServer` 기반 단위 테스트(`RestSsafyFinanceClientTest`)가 요청 Header 형식과 REC 해석을 문서의 요청·응답 예시로 검증한다. 실제 금융망 호출은 2026-09-09에는 전달받은 API Key가 `E4004`/`H1008`(API KEY 무효)로 거절되어 확인하지 못했고, 2026-09-15 새 키로 확인했다(아래).
+
+### 실호출 확인 (2026-09-15)
+
+담당자가 SSAFY 개발센터에서 확인한 앱 API Key로 로컬 curl 실행. 코드가 보내는 것과 같은 경로·Body·Header(기관코드 00100, 앱번호 001, 거래고유번호 20자리)를 썼다. 키와 userKey는 기록하지 않는다.
+
+| 호출 | 결과 | record 대조 |
+| --- | --- | --- |
+| `POST /member/search` (없는 이메일) | 400 `E4003` 존재하지 않는 ID | `FinanceMemberService`의 E4002→조회→E4003 판정 경로와 일치 |
+| `POST /member/` (신규 이메일 `dodam.keycheck@dodam.invalid`) | 201, `userId·userName·institutionCode·userKey·created·modified` | `SsafyMember` 4필드 일치, 나머지는 `ignoreUnknown` |
+| `inquireAssetBasedCreditRatingList` (userKey 제외 Header) | 200 `H0000`, REC 5개(A 1억~20억, B 8천만~, C 5천만~, D 3천만~, E 0~2,999만) | `SsafyCreditRatingCriterion` 4필드 일치. 금액은 문자열로 온다 |
+| `inquireMyCreditRating` (userKey 포함) | 200 `H0000`, REC `ratingName E, demandDepositAssetValue 0, depositSavingsAssetValue 0, totalAssetValue 0` | `SsafyCreditRating` 4필드 일치, `creditScore` 없음 확인 |
+| `inquireDemandDepositAccountList` | 200 `H0000`, REC `[]`(새 회원) | 빈 목록 처리 경로 |
+
+- 응답 Header에는 요청한 `apiKey`가 그대로 돌아온다. 로그에 응답 본문을 남길 때 Header를 마스킹해야 한다(현재 `RestSsafyFinanceClient`는 REC만 꺼내고 오류 시 코드·메시지만 남긴다).
+- 이 확인으로 금융망에 테스트 회원 1명(`dodam.keycheck@dodam.invalid`)이 생겼다. 교육용 사이트라 삭제 API가 없으며 서비스 사용자와 무관하다.
+- 시연 서버 `.env`의 키 교체는 remaining-work 500 절.
 
 ## 테스트
 

@@ -16,13 +16,14 @@ import com.ssafy.dodam.domain.simulation.repository.SimulationRepository;
 import com.ssafy.dodam.domain.simulation.repository.SimulationScenarioRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 결과를 `simulation` + `simulation_scenario` + `simulation_goal_impact`로 한 트랜잭션에 저장한다.
+ * 결과를 `simulation` + `simulation_scenario`(단독 1행, 복합은 자식 N행) + `simulation_goal_impact`로 한 트랜잭션에 저장한다.
  * Runner의 잠금 트랜잭션에 참여한다(MANDATORY) — 잠금 없이 저장하는 경로를 만들지 않기 위해서다.
  */
 @Component
@@ -67,7 +68,12 @@ public class SimulationStore {
 
         Simulation saved = simulations.save(Simulation.completed(userId, input.type(), result.title(), result.summary(),
                 request, before, after, comparison, cashflow, now));
-        scenarios.save(SimulationScenario.of(saved.getSimulationId(), 1, input.type(), input.parameters(json)));
+        // 단독은 자기 자신 1행, 복합은 자식 N행(입력 순서 = sequenceNo). 부모 파라미터는 request_snapshot에만 있다
+        List<SimulationInput> scenarioInputs = input.scenarios();
+        for (int i = 0; i < scenarioInputs.size(); i++) {
+            SimulationInput scenario = scenarioInputs.get(i);
+            scenarios.save(SimulationScenario.of(saved.getSimulationId(), i + 1, scenario.type(), scenario.parameters(json)));
+        }
         for (SimulationResult.GoalImpact impact : result.goalImpacts()) {
             goalImpacts.save(SimulationGoalImpact.of(userId, saved.getSimulationId(), impact.goalId(), impact.before(), impact.after()));
         }

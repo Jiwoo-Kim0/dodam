@@ -6,6 +6,8 @@ import com.ssafy.dodam.domain.loan.service.LoanRepaymentScheduleItem;
 import com.ssafy.dodam.domain.simulation.dto.LoanRefinanceInput;
 import com.ssafy.dodam.domain.simulation.dto.LoanSnapshot;
 import com.ssafy.dodam.domain.simulation.dto.ProductSnapshot;
+import com.ssafy.dodam.domain.simulation.dto.ScenarioComputation;
+import com.ssafy.dodam.domain.simulation.dto.ScenarioLedger;
 import com.ssafy.dodam.domain.simulation.dto.SimulationBaseline;
 import com.ssafy.dodam.domain.simulation.dto.SimulationResult;
 import com.ssafy.dodam.domain.simulation.dto.SimulationResult.Comparison;
@@ -64,7 +66,7 @@ public class LoanRefinanceCalculator implements SimulationCalculator<LoanRefinan
     }
 
     @Override
-    public SimulationResult calculate(SimulationBaseline baseline, LoanRefinanceInput input) {
+    public ScenarioComputation compute(SimulationBaseline baseline, LoanRefinanceInput input) {
         LoanSnapshot loan = Objects.requireNonNull(input.loan(), "loan 스냅샷이 준비되지 않았습니다.");
         ProductSnapshot product = Objects.requireNonNull(input.product(), "product 스냅샷이 준비되지 않았습니다.");
         LocalDate base = baseline.baseDate();
@@ -85,7 +87,7 @@ public class LoanRefinanceCalculator implements SimulationCalculator<LoanRefinan
         return SimulationScenarios.exact(() -> build(baseline, input, loan, product, amount));
     }
 
-    private SimulationResult build(SimulationBaseline baseline, LoanRefinanceInput input, LoanSnapshot loan, ProductSnapshot product,
+    private ScenarioComputation build(SimulationBaseline baseline, LoanRefinanceInput input, LoanSnapshot loan, ProductSnapshot product,
             long amount) {
         LocalDate base = baseline.baseDate();
         long balance = loan.balance();
@@ -199,8 +201,10 @@ public class LoanRefinanceCalculator implements SimulationCalculator<LoanRefinan
                 + selection.appliedRate().stripTrailingZeros().toPlainString() + "%(공시 최저), 만기까지 이자 "
                 + SimulationScenarios.won(beforeInterest) + " → " + SimulationScenarios.won(afterInterest)
                 + " (절감 " + SimulationScenarios.won(interestSaving) + ", 부대비용 제외)";
-        return new SimulationResult(title, summary, beforeSnapshot, afterSnapshot, new Comparison(items, assets, debts, costs),
-                cashflow, impacts, assumptions, details, goalDetails);
+        SimulationResult result = new SimulationResult(title, summary, beforeSnapshot, afterSnapshot,
+                new Comparison(items, assets, debts, costs), cashflow, impacts, assumptions, details, goalDetails);
+        return new ScenarioComputation(result, new ScenarioLedger(LoanScenarios.payments(before), LoanScenarios.payments(after),
+                loan.maturityDate(), loan.maturityDate(), true));
     }
 
     /** 같은 날짜·회차 수의 두 일정을 회차별로 합친다. 부분 대환의 회차별 반올림으로 같은 금리라도 1원 차이가 날 수 있다. */

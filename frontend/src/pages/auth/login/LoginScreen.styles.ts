@@ -1,10 +1,52 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, radius, spacing, typography } from '@/styles';
+import {
+  colors,
+  componentSize,
+  radius,
+  spacing,
+  typography,
+} from '@/styles';
 
 export const styles = StyleSheet.create({
   buttonGroup: {
     gap: spacing[2],
+  },
+  demoSection: {
+    borderTopColor: colors.divider,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: spacing[2],
+    marginTop: spacing[3],
+    paddingTop: spacing[4],
+  },
+  demoTitle: {
+    ...typography.body2,
+    color: colors.textSecondary,
+  },
+  demoInput: {
+    ...typography.body1,
+    backgroundColor: colors.ledger.softSurface,
+    borderRadius: radius.default,
+    color: colors.textPrimary,
+    minHeight: componentSize.button.compact,
+    paddingHorizontal: spacing[4],
+  },
+  demoButton: {
+    alignItems: 'center',
+    backgroundColor: colors.primary.green,
+    borderRadius: radius.default,
+    height: componentSize.button.compact,
+    justifyContent: 'center',
+  },
+  demoButtonPressed: {
+    opacity: 0.82,
+  },
+  demoButtonDisabled: {
+    backgroundColor: colors.disabledBackground,
+  },
+  demoButtonLabel: {
+    ...typography.buttonSmall,
+    color: colors.white,
   },
   errorText: {
     ...typography.body2,
@@ -12,23 +54,5 @@ export const styles = StyleSheet.create({
     lineHeight: 18,
     marginTop: spacing[2],
     textAlign: 'center',
-  },
-  // 시연용 진입점이라 소셜 버튼보다 눈에 덜 띄게 둔다. .env에 시연 계정이 있을 때만 보인다.
-  demoButton: {
-    marginTop: spacing[2],
-    paddingVertical: spacing[3],
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.default,
-    borderWidth: 1,
-    borderColor: colors.divider,
-    backgroundColor: colors.white,
-  },
-  demoButtonPressed: {
-    opacity: 0.8,
-  },
-  demoLabel: {
-    ...typography.buttonSmall,
-    color: colors.textSecondary,
   },
 });

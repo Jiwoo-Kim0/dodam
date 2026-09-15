@@ -75,6 +75,27 @@ function getSelectedDateLabel(dateKey: string) {
   return `${date.getDate()}일 ${WEEKDAYS[date.getDay()]}요일`;
 }
 
+function getInitialSelectedDate(
+  year: number,
+  month: number,
+  transactions: readonly LedgerTransaction[],
+) {
+  const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
+  const latestTransaction = transactions
+    .filter((transaction) => transaction.transactionDate.startsWith(yearMonth))
+    .sort((left, right) => right.transactionDate.localeCompare(left.transactionDate))[0];
+
+  if (latestTransaction) return latestTransaction.transactionDate;
+
+  const now = new Date();
+  const day =
+    year === now.getFullYear() && month === now.getMonth() + 1
+      ? now.getDate()
+      : new Date(year, month, 0).getDate();
+
+  return toDateKeyFromParts(year, month, day);
+}
+
 interface LedgerCalendarProps {
   year: number;
   month: number;
@@ -88,6 +109,8 @@ interface LedgerCalendarProps {
   onSelectMonth: (year: number, month: number) => void;
   onOpenTransaction: (transactionId: string) => void;
   onCreateTransaction: () => void;
+  onRefresh: () => void;
+  refreshing: boolean;
 }
 
 export function LedgerCalendar({
@@ -103,12 +126,13 @@ export function LedgerCalendar({
   onSelectMonth,
   onOpenTransaction,
   onCreateTransaction,
+  onRefresh,
+  refreshing,
 }: LedgerCalendarProps) {
   const scrollRef = useRef<BouncyScrollViewHandle>(null);
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const now = new Date();
-    return toDateKeyFromParts(now.getFullYear(), now.getMonth() + 1, now.getDate());
-  });
+  const [selectedDate, setSelectedDate] = useState(() =>
+    getInitialSelectedDate(year, month, transactions),
+  );
   const [visibleFeedDateCount, setVisibleFeedDateCount] = useState(FEED_PAGE_SIZE);
   const [searchQuery, setSearchQuery] = useState('');
   const [isMonthPickerVisible, setIsMonthPickerVisible] = useState(false);
@@ -201,8 +225,10 @@ export function LedgerCalendar({
       <RefreshableBouncyScrollView
         contentContainerStyle={styles.calendarContent}
         onEndReached={handleLoadMoreFeed}
+        onRefresh={onRefresh}
         onScrollOffsetChange={setScrollOffset}
-        ref={scrollRef}>
+        ref={scrollRef}
+        refreshing={refreshing}>
         <MonthSelector
           month={month}
           onNext={onNextMonth}
@@ -212,17 +238,18 @@ export function LedgerCalendar({
         />
 
         <View style={[styles.card, styles.totalsCard]}>
-          <View style={styles.totalItem}>
-            <Text style={styles.totalLabel}>수입</Text>
-            <Text style={styles.totalValue}>{`${formatNumber(summary.income)}원`}</Text>
-          </View>
-          <View style={styles.totalItem}>
-            <Text style={styles.totalLabel}>지출</Text>
-            <Text style={styles.totalValue}>{`${formatNumber(summary.expense)}원`}</Text>
-          </View>
-          <View style={styles.totalItem}>
-            <Text style={styles.totalLabel}>잔액</Text>
-            <Text style={styles.totalValue}>{`${formatNumber(summary.balance)}원`}</Text>
+          <Text style={styles.totalPrimaryLabel}>이번 달 지출</Text>
+          <Text style={styles.totalPrimaryValue}>{`${formatNumber(summary.expense)}원`}</Text>
+          <View style={styles.totalSecondaryRow}>
+            <View style={styles.totalSecondaryItem}>
+              <Text style={styles.totalSecondaryLabel}>수입</Text>
+              <Text style={styles.totalSecondaryValue}>{`${formatNumber(summary.income)}원`}</Text>
+            </View>
+            <View style={styles.totalSecondaryDivider} />
+            <View style={[styles.totalSecondaryItem, styles.totalSecondaryItemTrailing]}>
+              <Text style={styles.totalSecondaryLabel}>잔액</Text>
+              <Text style={styles.totalSecondaryValue}>{`${formatNumber(summary.balance)}원`}</Text>
+            </View>
           </View>
         </View>
 
@@ -260,7 +287,6 @@ export function LedgerCalendar({
               {calendarDays.map((calendarDay) => {
                 const total = totalsByDate.get(calendarDay.dateKey);
                 const isSelected = calendarDay.dateKey === selectedDate;
-                const hasBothTypes = Boolean(total?.income) && Boolean(total?.expense);
 
                 return (
                   <View key={calendarDay.dateKey} style={styles.calendarCell}>
@@ -275,6 +301,7 @@ export function LedgerCalendar({
                       <Text
                         style={[
                           styles.calendarDay,
+                          isSelected && styles.calendarDaySelectedText,
                           !calendarDay.isCurrentMonth && styles.calendarDayOutside,
                         ]}>
                         {calendarDay.day}
@@ -282,25 +309,24 @@ export function LedgerCalendar({
                     </Pressable>
                     {total?.income ? (
                       <Text
+                        accessibilityLabel={`수입 ${formatNumber(total.income)}원`}
                         adjustsFontSizeToFit
                         minimumFontScale={0.6}
                         numberOfLines={1}
                         style={[
                           styles.calendarTotal,
-                          hasBothTypes ? styles.calendarIncome : styles.calendarNeutral,
+                          styles.calendarIncome,
                         ]}>
                         {`+${formatNumber(total.income)}`}
                       </Text>
                     ) : null}
                     {total?.expense ? (
                       <Text
+                        accessibilityLabel={`지출 ${formatNumber(total.expense)}원`}
                         adjustsFontSizeToFit
                         minimumFontScale={0.6}
                         numberOfLines={1}
-                        style={[
-                          styles.calendarTotal,
-                          hasBothTypes ? styles.calendarExpense : styles.calendarNeutral,
-                        ]}>
+                        style={[styles.calendarTotal, styles.calendarNeutral]}>
                         {`-${formatNumber(total.expense)}`}
                       </Text>
                     ) : null}
@@ -309,7 +335,9 @@ export function LedgerCalendar({
               })}
             </View>
           </View>
+        </View>
 
+        <View style={[styles.card, styles.calendarFeedCard]}>
           {feedGroups.length > 0 ? (
             feedGroups.map((group) => (
               <View key={group.date} style={styles.calendarFeedGroup}>
@@ -319,6 +347,8 @@ export function LedgerCalendar({
                 {group.transactions.map((transaction) => (
                   <TransactionRow
                     amount={transaction.amount}
+                    categoryCode={transaction.categoryId}
+                    categoryLabel={categoryById.get(transaction.categoryId)?.label}
                     key={transaction.id}
                     merchantName={transaction.merchantName}
                     onPress={() => onOpenTransaction(transaction.id)}

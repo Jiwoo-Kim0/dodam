@@ -11,7 +11,11 @@ const DEMO_PASSWORD = process.env.EXPO_PUBLIC_DEMO_PASSWORD ?? '';
  */
 export function useDemoLogin() {
   const login = useCallback(
-    () => authApi.login({ email: DEMO_EMAIL, password: DEMO_PASSWORD }),
+    () =>
+      authApi.loginWithPassword({
+        email: DEMO_EMAIL,
+        password: DEMO_PASSWORD,
+      }),
     [],
   );
 

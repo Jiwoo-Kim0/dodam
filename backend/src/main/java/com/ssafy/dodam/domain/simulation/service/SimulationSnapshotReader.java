@@ -5,6 +5,7 @@ import com.ssafy.dodam.domain.loan.repository.LoanRepository;
 import com.ssafy.dodam.domain.product.entity.FinancialProduct;
 import com.ssafy.dodam.domain.product.entity.FinancialProductOption;
 import com.ssafy.dodam.domain.product.repository.FinancialProductRepository;
+import com.ssafy.dodam.domain.simulation.dto.CombinedInput;
 import com.ssafy.dodam.domain.simulation.dto.LoanNewInput;
 import com.ssafy.dodam.domain.simulation.dto.LoanPrepaymentInput;
 import com.ssafy.dodam.domain.simulation.dto.LoanRefinanceInput;
@@ -13,6 +14,7 @@ import com.ssafy.dodam.domain.simulation.dto.ProductSnapshot;
 import com.ssafy.dodam.domain.simulation.dto.SavingProductInput;
 import com.ssafy.dodam.domain.simulation.dto.SimulationInput;
 import com.ssafy.dodam.global.exception.ResourceNotFoundException;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import org.springframework.stereotype.Component;
@@ -38,8 +40,18 @@ public class SimulationSnapshotReader {
         this.loans = loans;
     }
 
-    /** 585 유형이 아니면 입력을 그대로 돌려준다(기존 spending/saving은 준비 단계가 없다). */
+    /**
+     * 585 유형이 아니면 입력을 그대로 돌려준다(기존 spending/saving은 준비 단계가 없다).
+     * 복합은 자식마다 같은 준비를 거친다 — 모든 자식이 같은 기준일·같은 시점의 스냅샷을 쓴다.
+     */
     public SimulationInput prepare(Long userId, SimulationInput input) {
+        if (input instanceof CombinedInput combined) {
+            List<SimulationInput> prepared = new ArrayList<>(combined.children().size());
+            for (SimulationInput child : combined.children()) {
+                prepared.add(prepare(userId, child));
+            }
+            return combined.withChildren(prepared);
+        }
         if (input instanceof SavingProductInput saving) {
             return saving.withProduct(readProduct(saving.productId()));
         }

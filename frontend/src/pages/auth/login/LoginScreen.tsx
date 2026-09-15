@@ -1,28 +1,30 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Pressable, Text, View } from 'react-native';
+import { Alert, Pressable, Text, TextInput, View } from 'react-native';
 
-import { isApiError, userApi } from '@/api';
+import { authApi, isApiError } from '@/api';
 import { routes } from '@/constants/routes';
-import { useDemoLogin } from '@/hooks/useDemoLogin';
 import { useGoogleLogin } from '@/hooks/useGoogleLogin';
 import { useKakaoLogin } from '@/hooks/useKakaoLogin';
 import { AuthScreenLayout } from '@/layout/authScreenLayout/AuthScreenLayout';
+import { colors } from '@/styles';
 import type { SocialLoginResult } from '@/types/auth.types';
 
 import { SocialLoginButton } from './components/SocialLoginButton';
 import { styles } from './LoginScreen.styles';
 
-type PendingLogin = 'kakao' | 'google' | 'demo';
+type SubmissionType = 'kakao' | 'google' | 'demo';
 
 export function LoginScreen() {
   const router = useRouter();
   const { login: loginWithKakao } = useKakaoLogin();
   const { login: loginWithGoogle } = useGoogleLogin();
-  const { isAvailable: isDemoLoginAvailable, login: loginWithDemoAccount } =
-    useDemoLogin();
   const [errorMessage, setErrorMessage] = useState('');
-  const [pendingLogin, setPendingLogin] = useState<PendingLogin | null>(null);
+  const [submissionType, setSubmissionType] =
+    useState<SubmissionType | null>(null);
+  const [demoEmail, setDemoEmail] = useState('');
+  const [demoPassword, setDemoPassword] = useState('');
+  const isSubmitting = submissionType !== null;
 
   const showError = (error: unknown, fallbackMessage: string) => {
     setErrorMessage(
@@ -34,14 +36,14 @@ export function LoginScreen() {
 
   /** 서버가 새로 만든 회원(201)만 약관·금융 연동 온보딩을 거친다. */
   const handleSocialLogin = async (
-    provider: PendingLogin,
+    provider: Exclude<SubmissionType, 'demo'>,
     login: () => Promise<SocialLoginResult | null>,
     failureMessage: string,
   ) => {
-    if (pendingLogin) return;
+    if (isSubmitting) return;
 
     setErrorMessage('');
-    setPendingLogin(provider);
+    setSubmissionType(provider);
 
     try {
       const result = await login();
@@ -51,30 +53,29 @@ export function LoginScreen() {
     } catch (error) {
       showError(error, failureMessage);
     } finally {
-      setPendingLogin(null);
+      setSubmissionType(null);
     }
   };
 
-  /** 시연 계정은 이미 가입된 회원이라, 금융망 연동을 아직 안 했으면 연동 화면부터 보여준다. */
   const handleDemoLogin = async () => {
-    if (pendingLogin) return;
+    if (isSubmitting) return;
+
+    const email = demoEmail.trim();
+    if (!email || !demoPassword) {
+      setErrorMessage('데모 이메일과 비밀번호를 입력해주세요.');
+      return;
+    }
 
     setErrorMessage('');
-    setPendingLogin('demo');
+    setSubmissionType('demo');
 
     try {
-      await loginWithDemoAccount();
-      const profile = await userApi.getMe();
-
-      router.replace(
-        profile.financeConnectionStatus === 'CONNECTED'
-          ? routes.home
-          : routes.financeConnection,
-      );
+      await authApi.loginWithPassword({ email, password: demoPassword });
+      router.replace(routes.terms);
     } catch (error) {
-      showError(error, '시연 계정으로 로그인하지 못했습니다.');
+      showError(error, '데모 로그인에 실패했어요. 다시 시도해주세요.');
     } finally {
-      setPendingLogin(null);
+      setSubmissionType(null);
     }
   };
 
@@ -86,7 +87,7 @@ export function LoginScreen() {
     <AuthScreenLayout title={'로그인하고\n시작하기'}>
       <View style={styles.buttonGroup}>
         <SocialLoginButton
-          label={pendingLogin === 'kakao' ? '카카오 로그인 중...' : undefined}
+          label={submissionType === 'kakao' ? '카카오 로그인 중...' : undefined}
           provider="kakao"
           onPress={() =>
             void handleSocialLogin(
@@ -98,7 +99,7 @@ export function LoginScreen() {
         />
 
         <SocialLoginButton
-          label={pendingLogin === 'google' ? '구글 로그인 중...' : undefined}
+          label={submissionType === 'google' ? '구글 로그인 중...' : undefined}
           provider="google"
           onPress={() =>
             void handleSocialLogin(
@@ -111,19 +112,49 @@ export function LoginScreen() {
 
         <SocialLoginButton provider="naver" onPress={showNaverComingSoon} />
 
-        {isDemoLoginAvailable ? (
-          <Pressable
-            accessibilityLabel="시연 계정으로 시작"
-            accessibilityRole="button"
-            accessibilityState={{ disabled: pendingLogin !== null }}
-            disabled={pendingLogin !== null}
-            onPress={() => void handleDemoLogin()}
-            style={({ pressed }) => [
-              styles.demoButton,
-              pressed && !pendingLogin && styles.demoButtonPressed,
-            ]}>
-            <Text style={styles.demoLabel}>시연 계정으로 시작</Text>
-          </Pressable>
+        {__DEV__ ? (
+          <View style={styles.demoSection}>
+            <Text style={styles.demoTitle}>개발용 로그인</Text>
+            <TextInput
+              autoCapitalize="none"
+              autoComplete="email"
+              editable={!isSubmitting}
+              keyboardType="email-address"
+              onChangeText={setDemoEmail}
+              placeholder="데모 이메일"
+              placeholderTextColor={colors.textTertiary}
+              style={styles.demoInput}
+              value={demoEmail}
+            />
+            <TextInput
+              autoCapitalize="none"
+              autoComplete="password"
+              editable={!isSubmitting}
+              onChangeText={setDemoPassword}
+              onSubmitEditing={() => void handleDemoLogin()}
+              placeholder="데모 비밀번호"
+              placeholderTextColor={colors.textTertiary}
+              returnKeyType="done"
+              secureTextEntry
+              style={styles.demoInput}
+              value={demoPassword}
+            />
+            <Pressable
+              accessibilityRole="button"
+              disabled={isSubmitting}
+              onPress={() => void handleDemoLogin()}
+              style={({ pressed }) => [
+                styles.demoButton,
+                pressed && styles.demoButtonPressed,
+                isSubmitting && styles.demoButtonDisabled,
+              ]}>
+              <Text style={styles.demoButtonLabel}>
+                {submissionType === 'demo'
+                  ? '로그인 중...'
+                  : '데모 계정으로 로그인'}
+              </Text>
+            </Pressable>
+          </View>
         ) : null}
 
         {errorMessage ? (

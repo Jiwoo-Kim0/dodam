@@ -1,8 +1,8 @@
 import { Text, View } from 'react-native';
 
 import { AssetDonutChart } from '@/components/assetDonutChart/AssetDonutChart';
-import { MOCK_ASSET_OVERVIEW } from '@/mocks/assets';
 import { colors } from '@/styles';
+import type { AssetOverview } from '@/types/asset.types';
 import { formatCurrency, formatNumber } from '@/utils/currency';
 
 import { styles } from './AssetOverviewCard.styles';
@@ -13,14 +13,16 @@ const compositionColors = {
   light: colors.home.assetChart.light,
 } as const;
 
-export function AssetOverviewCard() {
-  const { totalAsset, changeFromLastMonth, composition } =
-    MOCK_ASSET_OVERVIEW;
-  const isIncrease = changeFromLastMonth >= 0;
+interface AssetOverviewCardProps {
+  overview: AssetOverview;
+}
+
+export function AssetOverviewCard({ overview }: AssetOverviewCardProps) {
+  const { netAsset, changeFromLastMonth, composition } = overview;
 
   return (
     <View style={styles.card}>
-      <Text style={styles.label}>총자산</Text>
+      <Text style={styles.label}>순자산</Text>
 
       <Text
         adjustsFontSizeToFit
@@ -28,17 +30,19 @@ export function AssetOverviewCard() {
         numberOfLines={1}
         style={styles.totalAmount}
       >
-        {formatNumber(totalAsset)}
+        {formatNumber(netAsset)}
         <Text style={styles.currencyUnit}>원</Text>
       </Text>
 
-      <View style={styles.changeRow}>
-        <Text style={styles.change}>
-          {isIncrease ? '↑' : '↓'}{' '}
-          {formatCurrency(Math.abs(changeFromLastMonth))}
-        </Text>
-        <Text style={styles.changeDescription}> · 지난 달 대비</Text>
-      </View>
+      {changeFromLastMonth !== null && (
+        <View style={styles.changeRow}>
+          <Text style={styles.change}>
+            {changeFromLastMonth >= 0 ? '↑' : '↓'}{' '}
+            {formatCurrency(Math.abs(changeFromLastMonth))}
+          </Text>
+          <Text style={styles.changeDescription}> · 지난 달 대비</Text>
+        </View>
+      )}
 
       <View style={styles.divider} />
 

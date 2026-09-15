@@ -59,6 +59,30 @@ public final class SimulationAssumptions {
     /** 기준일에 이미 달성한 목표. 전후 모두 기준일이다. */
     public static final String ALREADY_ACHIEVED = "ALREADY_ACHIEVED";
 
+    // 카드(586: 할부·리볼빙·현금서비스)
+    /** 금리·수수료율·결제비율은 사용자 입력이며 카드 DB 값이나 실제 약정으로 검증하지 않았다. */
+    public static final String CARD_TERMS_USER_INPUT = "CARD_TERMS_USER_INPUT";
+    /** 연체료·추가 이용·금리 변동·기관별 최소결제액을 반영하지 않았다. 행동 전후의 현금 변화만 계산한다. */
+    public static final String NO_LATE_FEES_OR_ADDITIONAL_USAGE = "NO_LATE_FEES_OR_ADDITIONAL_USAGE";
+    /** 할부 수수료율을 생략해 0%로 계산했다. 실제 무이자 혜택을 확인한 것이 아니다. */
+    public static final String ZERO_FEE_ASSUMED = "ZERO_FEE_ASSUMED";
+    /** 리볼빙이 120회차 상한까지 완납되지 않았다. 잔액·이후 이자는 미상이며 0으로 채우지 않는다. */
+    public static final String REVOLVING_HORIZON_LIMIT = "REVOLVING_HORIZON_LIMIT";
+
+    // 복합(586)
+    /** 자식 시나리오는 같은 기준선에서 독립 계산했고 앞 자식의 결과를 다음 자식에 잇지 않았다. 현금흐름은 자식 delta 합이다. */
+    public static final String CHILD_SCENARIOS_INDEPENDENT = "CHILD_SCENARIOS_INDEPENDENT";
+    /** 금융비용은 공통 평가기간에 납부일이 포함된 이자·수수료 합이며 평생 총비용이 아니다. */
+    public static final String FINANCE_COST_EVALUATED = "FINANCE_COST_EVALUATED";
+    /** 미완납 자식이 있어 평가기간 비용이 계산된 부분의 합계다(costComplete=false). */
+    public static final String FINANCE_COST_PARTIAL = "FINANCE_COST_PARTIAL";
+    /** 복합 목표 투영은 각 자식의 durationMonths 안에서만 변경을 적용하고 종료 후 기준선 속도로 복귀했다. */
+    public static final String GOAL_EFFECT_LIMITED_TO_SCENARIO_DURATION = "GOAL_EFFECT_LIMITED_TO_SCENARIO_DURATION";
+    /** SAVING 입력은 변경 후 절대 저축액이므로 그 구간의 SPENDING 절감액을 목표에 다시 배분하지 않았다. */
+    public static final String SAVING_AMOUNT_IS_FINAL_TARGET = "SAVING_AMOUNT_IS_FINAL_TARGET";
+    /** 소비·저축 외 자식이 있어 목표 귀속을 안전하게 합성할 수 없다. 자식별 단독 목표 영향은 details.children에 있다. */
+    public static final String COMBINED_GOAL_EFFECT_NOT_COMPUTABLE = "COMBINED_GOAL_EFFECT_NOT_COMPUTABLE";
+
     private SimulationAssumptions() {
     }
 }

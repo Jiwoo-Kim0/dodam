@@ -19,8 +19,7 @@ export interface AuthResponse extends AuthTokens {
   user: AuthUser;
 }
 
-/** POST /v1/auth/login 요청 본문. */
-export interface LoginRequest {
+export interface PasswordLoginRequest {
   email: string;
   password: string;
 }
