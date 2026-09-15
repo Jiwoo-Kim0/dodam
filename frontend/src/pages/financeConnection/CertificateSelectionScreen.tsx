@@ -1,12 +1,14 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { View } from 'react-native';
+import { Text, View } from 'react-native';
 
+import { financeDataApi } from '@/api';
 import { AgreementItem } from '@/components/agreementItem/AgreementItem';
 import { BottomActionButton } from '@/components/bottomActionButton/BottomActionButton';
 import { routes } from '@/constants/routes';
 import { AuthScreenLayout } from '@/layout/authScreenLayout/AuthScreenLayout';
 import { SocialLoginButton } from '@/pages/auth/login/components/SocialLoginButton';
+import { getFinanceErrorMessage } from '@/utils/financeErrorMessage';
 
 import { styles } from './CertificateSelectionScreen.styles';
 
@@ -18,18 +20,32 @@ export function CertificateSelectionScreen() {
     useState<CertificateProvider | null>(null);
   const [isConsentStep, setIsConsentStep] = useState(false);
   const [isConsentChecked, setIsConsentChecked] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   const canContinue = selectedProvider !== null && isConsentChecked;
 
   const handleProviderPress = (provider: CertificateProvider) => {
     setSelectedProvider(provider);
     setIsConsentChecked(false);
+    setErrorMessage('');
     setIsConsentStep(true);
   };
 
-  const handleContinue = () => {
-    if (selectedProvider && isConsentChecked) {
+  const handleContinue = async () => {
+    if (!canContinue || isConnecting) return;
+
+    setIsConnecting(true);
+    setErrorMessage('');
+
+    try {
+      // 회원가입 때 이미 연결된 계정이면 ensureConnected가 현재 연결 상태를 그대로 돌려준다.
+      await financeDataApi.ensureConnected();
       router.push(routes.financeSync);
+    } catch (error) {
+      setErrorMessage(getFinanceErrorMessage(error));
+    } finally {
+      setIsConnecting(false);
     }
   };
 
@@ -45,9 +61,9 @@ export function CertificateSelectionScreen() {
       onBackPress={isConsentStep ? () => setIsConsentStep(false) : undefined}
       footer={isConsentStep ? (
         <BottomActionButton
-          label="동의하고 진행"
-          onPress={handleContinue}
-          disabled={!canContinue}
+          label={isConnecting ? '연결 중...' : '동의하고 진행'}
+          onPress={() => void handleContinue()}
+          disabled={!canContinue || isConnecting}
         />
       ) : undefined}>
       <View style={styles.optionList}>
@@ -72,6 +88,12 @@ export function CertificateSelectionScreen() {
             checked={isConsentChecked}
             onPress={() => setIsConsentChecked((checked) => !checked)}
           />
+
+          {errorMessage ? (
+            <Text accessibilityRole="alert" style={styles.errorText}>
+              {errorMessage}
+            </Text>
+          ) : null}
         </View>
       ) : null}
     </AuthScreenLayout>

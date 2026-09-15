@@ -2,6 +2,7 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Text, View } from 'react-native';
 
+import { userApi } from '@/api';
 import { BottomActionButton } from '@/components/bottomActionButton/BottomActionButton';
 import { routes } from '@/constants/routes';
 import { AuthScreenLayout } from '@/layout/authScreenLayout/AuthScreenLayout';
@@ -33,7 +34,14 @@ export function NotificationConsentScreen() {
 
     setIsRequesting(true);
 
-    await requestNotificationPermission().catch(() => false);
+    const isGranted = await requestNotificationPermission().catch(() => false);
+
+    try {
+      await userApi.updateSettings({ notificationEnabled: isGranted });
+    } catch {
+      // 알림 설정 저장이 실패해도 온보딩은 멈추지 않는다. 설정 화면에서 다시 바꿀 수 있다.
+    }
+
     router.replace(routes.goalSetup);
   };
 
