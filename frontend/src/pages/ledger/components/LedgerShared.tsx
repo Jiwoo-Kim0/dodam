@@ -1,7 +1,8 @@
 import { SymbolView } from 'expo-symbols';
-import { Pressable, Text, View } from 'react-native';
+import { Image, Pressable, Text, View } from 'react-native';
 
 import { AppHeader } from '@/components/appHeader/AppHeader';
+import { getTransactionCategoryIcon } from '@/constants/transactionCategoryIcons';
 import { colors } from '@/styles';
 import { formatCurrency } from '@/utils/currency';
 
@@ -102,14 +103,31 @@ export function MonthSelector({
   );
 }
 
-export function MerchantLogoPlaceholder() {
-  return <View accessibilityLabel="거래처 로고 자리" style={styles.merchantLogoPlaceholder} />;
+interface TransactionCategoryIconProps {
+  categoryCode?: string | null;
+  categoryLabel?: string;
+}
+
+export function TransactionCategoryIcon({
+  categoryCode,
+  categoryLabel,
+}: TransactionCategoryIconProps) {
+  return (
+    <Image
+      accessibilityLabel={`${categoryLabel ?? '기타'} 카테고리`}
+      resizeMode="contain"
+      source={getTransactionCategoryIcon(categoryCode)}
+      style={styles.transactionCategoryIcon}
+    />
+  );
 }
 
 interface TransactionRowProps {
   merchantName: string;
   amount: number;
   transactionType: 'expense' | 'income';
+  categoryCode?: string | null;
+  categoryLabel?: string;
   onPress?: () => void;
   compact?: boolean;
 }
@@ -118,6 +136,8 @@ export function TransactionRow({
   merchantName,
   amount,
   transactionType,
+  categoryCode,
+  categoryLabel,
   onPress,
   compact = false,
 }: TransactionRowProps) {
@@ -133,7 +153,7 @@ export function TransactionRow({
         compact && styles.transactionRowCompact,
         pressed && onPress && styles.rowPressed,
       ]}>
-      <MerchantLogoPlaceholder />
+      <TransactionCategoryIcon categoryCode={categoryCode} categoryLabel={categoryLabel} />
       <View style={styles.transactionCopy}>
         <Text
           numberOfLines={1}
