@@ -81,4 +81,4 @@
 - 대조 1: 계획 §2.2 fixture 그대로 통과. `over` 2,000,000, 가용자금 600,000 → 2,600,000. `RecommendationApiTest` 8건 통과.
 - 대조 2: 세 순서 모두 201·다른 id, `before`·`after`·`comparison`·`cashflow`·`goalImpacts`·`summary` 동일. `SimulationIntegrationApiTest` 4건 통과(fixture 대출 2개로 바꿔도 기존 3건 영향 없음).
 - 설계에서 달라진 점: (1) `after.details.financeCost.children[]`도 자식 순서를 따르는 목록이라 `details.children`과 함께 제외하고 집합으로 비교했다. (2) `title`은 자식 제목을 입력 순서로 이어 붙이므로 동일성 대신 건수 접두만 확인했다. (3) `goalImpacts[].reasons`·`goalImpactDetails[].reasons`의 원소 순서가 자식 순서를 따라 달랐다 — `CombinedCalculator.childReasons` 주석대로("중복 없이 자식 순서대로") 설계된 동작이고 집합은 같아 결함이 아니다. 테스트는 정렬해 비교하고 remaining-work.md에 기록했다.
-- 운영 코드 변경 없음. simulation·recommendation 129건(H2) 통과, MySQL 7건 skip. `gradlew clean build` 전체 1,053건 통과(MySQL 조건부 19건 skip. 이 브랜치는 617 이전 `cf5eb3c` 기준이라 617의 3건은 포함되지 않는다).
+- 운영 코드 변경 없음. simulation·recommendation 129건(H2) 통과, MySQL 7건 skip. `gradlew clean build` 전체 1,056건 통과(MySQL 조건부 22건 skip. 616·617 병합 후 `develop` `0d7e9f4` 위로 rebase해 재실행).
