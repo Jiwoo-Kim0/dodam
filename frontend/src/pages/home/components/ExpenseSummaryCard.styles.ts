@@ -30,4 +30,14 @@ export const styles = StyleSheet.create({
     fontSize: fontSize.caption,
     letterSpacing: -0.2,
   },
+  loadingIndicator: {
+    alignSelf: 'flex-start',
+    marginTop: spacing[2],
+  },
+  errorText: {
+    color: colors.textSecondary,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.body2,
+    marginTop: spacing[2],
+  },
 });

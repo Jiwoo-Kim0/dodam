@@ -11,7 +11,6 @@ import {
 } from '@/components/bouncyScrollView/BouncyScrollView';
 import { subscribeHomeTabReselect } from '@/components/bottomNavigation/homeTabReselectEvents';
 import { routes } from '@/constants/routes';
-import { useRefreshFeedback } from '@/hooks/useRefreshFeedback';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import { colors } from '@/styles';
 
@@ -22,6 +21,7 @@ import { GoalCarousel } from './components/GoalCarousel';
 import { HomeHeader } from './components/HomeHeader';
 import { SpendingTopList } from './components/SpendingTopList';
 import { styles } from './HomeScreen.styles';
+import { useHomeSummary } from './hooks/useHomeSummary';
 
 /** 로그인 연동 전까지 사용하는 임시 사용자명이다. */
 const MOCK_USER_NAME = '싸피';
@@ -30,13 +30,21 @@ export function HomeScreen() {
   const router = useRouter();
   const scrollRef = useRef<BouncyScrollViewHandle>(null);
   const [sectionSize, setSectionSize] = useState({ width: 0, height: 0 });
-  const { isRefreshing, triggerRefresh } = useRefreshFeedback();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const {
+    assetOverview,
+    error: summaryError,
+    isLoading: isSummaryLoading,
+    isRefreshing,
+    monthLabel,
+    monthlyExpense,
+    refetch: refetchSummary,
+  } = useHomeSummary();
 
   const handleHomeRefresh = useCallback(() => {
     scrollRef.current?.scrollToTop();
-    triggerRefresh();
-  }, [triggerRefresh]);
+    void refetchSummary();
+  }, [refetchSummary]);
 
   useEffect(() => subscribeHomeTabReselect(handleHomeRefresh), [handleHomeRefresh]);
 
@@ -120,9 +128,20 @@ export function HomeScreen() {
         </View>
 
         <View style={styles.body}>
-          <ExpenseSummaryCard onDetailPress={() => router.push(routes.ledger)} />
+          <ExpenseSummaryCard
+            hasError={summaryError !== null}
+            isLoading={isSummaryLoading}
+            monthLabel={monthLabel}
+            monthlyExpense={monthlyExpense}
+            onDetailPress={() => router.push(routes.ledger)}
+          />
           <BriefingCard onDetailPress={() => router.push(routes.dailyBriefing)} />
-          <AssetSummaryCard onDetailPress={() => router.push(routes.assets)} />
+          <AssetSummaryCard
+            hasError={summaryError !== null}
+            isLoading={isSummaryLoading}
+            onDetailPress={() => router.push(routes.assets)}
+            overview={assetOverview}
+          />
           <SpendingTopList />
         </View>
       </BouncyScrollView>
