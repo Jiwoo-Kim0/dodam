@@ -71,4 +71,14 @@ export const styles = StyleSheet.create({
     fontSize: fontSize.micro,
     lineHeight: 15,
   },
+  loadingIndicator: {
+    flex: 1,
+  },
+  unavailableText: {
+    color: colors.white,
+    flex: 1,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.caption,
+    lineHeight: 18,
+  },
 });

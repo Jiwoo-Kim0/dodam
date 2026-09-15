@@ -60,7 +60,7 @@ export function AssetSummaryCard({
                   </Text>
                 </View>
               ) : (
-                <Text style={styles.netAssetLabel}>순자산</Text>
+                <Text style={styles.netAssetLabel}>총자산</Text>
               )}
             </>
           ) : (

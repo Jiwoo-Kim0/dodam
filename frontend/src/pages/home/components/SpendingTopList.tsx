@@ -1,18 +1,36 @@
 import { SymbolView } from 'expo-symbols';
-import { Text, View } from 'react-native';
+import { ActivityIndicator, Text, View } from 'react-native';
 
-import { HOME_TOP_SPENDING } from '@/mocks/home';
 import { colors, componentSize } from '@/styles';
 import { formatCurrency } from '@/utils/currency';
+import type { HomeSpendingCategory } from '../hooks/useHomeSummary';
 
 import { styles } from './SpendingTopList.styles';
 
-export function SpendingTopList() {
+interface SpendingTopListProps {
+  hasError: boolean;
+  isLoading: boolean;
+  items: readonly HomeSpendingCategory[];
+  monthLabel: string;
+}
+
+export function SpendingTopList({
+  hasError,
+  isLoading,
+  items,
+  monthLabel,
+}: SpendingTopListProps) {
   return (
     <View style={styles.card}>
-      <Text style={styles.title}>이번 달 소비 TOP 3</Text>
+      <Text style={styles.title}>{`${monthLabel} 소비 TOP 3`}</Text>
 
-      {HOME_TOP_SPENDING.map((item, index) => (
+      {isLoading ? (
+        <ActivityIndicator color={colors.primary.green} style={styles.status} />
+      ) : items.length === 0 ? (
+        <Text style={styles.statusText}>
+          {hasError ? '소비 순위를 불러오지 못했어요' : '소비 내역이 없어요'}
+        </Text>
+      ) : items.map((item, index) => (
         <View
           key={item.rank}
           style={[

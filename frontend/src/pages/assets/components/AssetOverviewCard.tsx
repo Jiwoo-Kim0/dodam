@@ -22,7 +22,7 @@ export function AssetOverviewCard({ overview }: AssetOverviewCardProps) {
 
   return (
     <View style={styles.card}>
-      <Text style={styles.label}>순자산</Text>
+      <Text style={styles.label}>총자산</Text>
 
       <Text
         adjustsFontSizeToFit

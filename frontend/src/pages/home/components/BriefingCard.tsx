@@ -1,18 +1,26 @@
 import { Image } from 'expo-image';
-import { Text, View } from 'react-native';
+import { ActivityIndicator, Text, View } from 'react-native';
 
-import { HOME_BRIEFING } from '@/mocks/home';
 import { colors } from '@/styles';
+import type { HomeBriefing } from '../hooks/useHomeSummary';
 import { formatCurrency } from '@/utils/currency';
 
 import { styles } from './BriefingCard.styles';
 import { CardDetailButton } from './CardDetailButton';
 
 interface BriefingCardProps {
+  briefing: HomeBriefing | null;
+  hasError: boolean;
+  isLoading: boolean;
   onDetailPress: () => void;
 }
 
-export function BriefingCard({ onDetailPress }: BriefingCardProps) {
+export function BriefingCard({
+  briefing,
+  hasError,
+  isLoading,
+  onDetailPress,
+}: BriefingCardProps) {
   return (
     <View style={styles.card}>
       <Image
@@ -30,27 +38,32 @@ export function BriefingCard({ onDetailPress }: BriefingCardProps) {
       />
 
       <View style={styles.body}>
-        <View style={styles.spendingSummary}>
-          <Text style={styles.label}>어제 하루 쓴 돈</Text>
-          <Text style={styles.amount}>{formatCurrency(HOME_BRIEFING.yesterdaySpentAmount)}</Text>
-        </View>
+        {isLoading ? (
+          <ActivityIndicator color={colors.white} style={styles.loadingIndicator} />
+        ) : briefing ? (
+          <>
+            <View style={styles.spendingSummary}>
+              <Text style={styles.label}>어제 하루 쓴 돈</Text>
+              <Text style={styles.amount}>{formatCurrency(briefing.yesterdaySpentAmount)}</Text>
+            </View>
 
-        <View style={styles.messageBubble}>
-          <Image
-            contentFit="contain"
-            source={require('@/assets/icons/common/calendar.svg')}
-            style={styles.calendarIcon}
-            tintColor={colors.primary.brown}
-          />
-          <Text
-            adjustsFontSizeToFit
-            minimumFontScale={0.65}
-            numberOfLines={1}
-            style={styles.messageText}
-          >
-            {HOME_BRIEFING.message}
+            <View style={styles.messageBubble}>
+              <Image
+                contentFit="contain"
+                source={require('@/assets/icons/common/calendar.svg')}
+                style={styles.calendarIcon}
+                tintColor={colors.primary.brown}
+              />
+              <Text adjustsFontSizeToFit minimumFontScale={0.65} numberOfLines={1} style={styles.messageText}>
+                {briefing.message}
+              </Text>
+            </View>
+          </>
+        ) : (
+          <Text style={styles.unavailableText}>
+            {hasError ? '브리핑을 불러오지 못했어요' : '브리핑할 내역이 없어요'}
           </Text>
-        </View>
+        )}
       </View>
     </View>
   );

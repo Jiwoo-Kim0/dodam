@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { assetApi } from '@/api';
 import { fetchAllPages } from '@/api/pagination';
 import type { AssetOverview, AssetSection } from '@/types/asset.types';
-import { mapAssetOverview } from '@/utils/assetOverview';
+import { mapOwnedAssetOverview } from '@/utils/assetOverview';
 import { toDateKey } from '@/utils/date';
 
 import { mapAssetSections } from '../utils/assetMappers';
@@ -85,7 +85,7 @@ export function useAssetData() {
       if (requestId !== requestIdRef.current) return;
 
       setData({
-        overview: mapAssetOverview(accountSummary, loanSummary),
+        overview: mapOwnedAssetOverview(accountSummary),
         sections: mapAssetSections({
           accounts,
           accountSummary,
