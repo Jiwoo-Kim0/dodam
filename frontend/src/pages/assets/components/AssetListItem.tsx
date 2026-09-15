@@ -6,6 +6,10 @@ import { formatCurrency } from '@/utils/currency';
 
 import { styles } from './AssetListItem.styles';
 
+const DEFAULT_INSTITUTION_LOGO = require(
+  '@/assets/icons/common/wallet.png',
+);
+
 interface AssetListItemProps {
   item: AssetItem;
   isLast: boolean;
@@ -16,10 +20,6 @@ export function AssetListItem({ item, isLast }: AssetListItemProps) {
     ({ id }) => id === item.institutionId,
   );
 
-  if (!institution) {
-    return null;
-  }
-
   return (
     <View
       accessible
@@ -29,7 +29,7 @@ export function AssetListItem({ item, isLast }: AssetListItemProps) {
       style={[styles.container, !isLast && styles.divider]}
     >
       <Image
-        source={institution.logo}
+        source={institution?.logo ?? DEFAULT_INSTITUTION_LOGO}
         accessibilityIgnoresInvertColors
         style={styles.logo}
       />

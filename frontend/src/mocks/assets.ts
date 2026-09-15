@@ -102,7 +102,3 @@ export const MOCK_ASSET_SECTIONS: readonly AssetSection[] = [
     ],
   },
 ];
-
-export function getAssetSectionTotal(section: AssetSection) {
-  return section.items.reduce((total, item) => total + item.amount, 0);
-}

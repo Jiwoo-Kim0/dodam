@@ -1,11 +1,11 @@
 import { Text, View } from 'react-native';
 
-import { getAssetSectionTotal } from '@/mocks/assets';
 import type { AssetSection as AssetSectionData } from '@/types/asset.types';
 import { formatCurrency } from '@/utils/currency';
 
 import { AssetListItem } from './AssetListItem';
 import { styles } from './AssetSection.styles';
+import { getAssetSectionTotal } from '../utils/assetCalculations';
 
 interface AssetSectionProps {
   section: AssetSectionData;
