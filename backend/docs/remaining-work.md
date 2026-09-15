@@ -38,11 +38,8 @@
 
 ### MySQL 검증에서 빠진 항목
 
-- [ ] `SimulationMySqlIntegrationTest`에 계획(simulation-587-plan.md §6)에는 있었지만 넣지 않은 세 가지를 추가한다: 복합 N행 scenario 저장 중 중간 실패 시 `simulation`·`simulation_scenario`·`simulation_goal_impact` 0행 롤백, `idx_simulation_user_type_created` 순서(`created_at DESC`)의 목록 정렬, `uk_simulation_user_simulation_id`(user_id, simulation_id) 조합의 본인 조건 조회.
-- 근거: 4건은 스키마·저장/재사용/삭제·복합 CHECK/FK·동시 실행만 다뤘다. 롤백은 H2에서 입력 검증 실패(400) 시 미저장만 확인했고 저장 도중 예외는 MySQL 트랜잭션으로 확인하지 않았다. 목록 정렬은 H2로만 확인했다.
-- 선행 조건: Docker `mysql:8.0`과 `SIMULATION_MYSQL_TEST_URL` 설정(simulation.md §11.3의 V6→V11 우회 순서).
-- 담당 근거: 587에서 만든 BE-B 테스트다.
-- 완료 조건: 세 항목이 MySQL에서 통과하고 simulation.md §11.3에 결과를 기록한다.
+- [x] (617, 2026-09-16) 세 항목을 `SimulationMySqlIntegrationTest`에 추가해 MySQL 8.0에서 7건 통과. 결과는 simulation.md §11.3, 계획·결정은 [simulation-617-plan.md](simulation-617-plan.md).
+- 기록만 한 것: `type` 없는 목록 조회는 JPQL `(? IS NULL OR type = ?)` 때문에 `idx_simulation_user_type_created`의 두 번째 컬럼을 못 쓰고 filesort한다(사용자·하루 단위 양이 작아 587 설계 유지). EXPLAIN 실제 선택(`key`)은 단언하지 않았다.
 
 ### 계산 일관성 검증(계획 §4) 중 미고정 항목
 
