@@ -73,4 +73,14 @@ export const styles = StyleSheet.create({
     fontSize: fontSize.micro,
     lineHeight: 14,
   },
+  status: {
+    marginVertical: spacing[4],
+  },
+  statusText: {
+    color: colors.textSecondary,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.body1,
+    marginVertical: spacing[4],
+    textAlign: 'center',
+  },
 });
