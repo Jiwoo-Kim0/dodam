@@ -1,5 +1,6 @@
 package com.ssafy.dodam.domain.simulation.service;
 
+import com.ssafy.dodam.domain.simulation.dto.ScenarioComputation;
 import com.ssafy.dodam.domain.simulation.dto.SimulationBaseline;
 import com.ssafy.dodam.domain.simulation.dto.SimulationInput;
 import com.ssafy.dodam.domain.simulation.dto.SimulationResult;
@@ -11,6 +12,9 @@ import com.ssafy.dodam.domain.simulation.entity.SimulationType;
  *
  * <p>기준선이 있어야 판단할 수 있는 검증(감소액 ≤ 평균 지출 등)은 여기서 {@code BusinessException}으로 거부한다.
  *
+ * <p>586부터 계산기는 공개 결과와 함께 내부 계산 자료({@link ScenarioComputation#ledger()})를 돌려준다. 복합 계산기가
+ * 같은 자료로 공통 평가기간 비용을 조립하기 위해서다. 단독 실행 경로는 {@link #calculate}로 결과만 쓴다.
+ *
  * @param <Q> 확정된 입력 타입
  */
 public interface SimulationCalculator<Q extends SimulationInput> {
@@ -18,5 +22,9 @@ public interface SimulationCalculator<Q extends SimulationInput> {
 
     Class<Q> inputType();
 
-    SimulationResult calculate(SimulationBaseline baseline, Q input);
+    ScenarioComputation compute(SimulationBaseline baseline, Q input);
+
+    default SimulationResult calculate(SimulationBaseline baseline, Q input) {
+        return compute(baseline, input).result();
+    }
 }

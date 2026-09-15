@@ -1,5 +1,7 @@
 package com.ssafy.dodam.domain.simulation.service.calculator;
 
+import com.ssafy.dodam.domain.simulation.dto.ScenarioComputation;
+import com.ssafy.dodam.domain.simulation.dto.ScenarioLedger;
 import com.ssafy.dodam.domain.simulation.dto.SimulationBaseline;
 import com.ssafy.dodam.domain.simulation.dto.SimulationResult;
 import com.ssafy.dodam.domain.simulation.dto.SimulationResult.Comparison;
@@ -41,7 +43,7 @@ public class SpendingReductionCalculator implements SimulationCalculator<Spendin
     }
 
     @Override
-    public SimulationResult calculate(SimulationBaseline baseline, SpendingReductionInput input) {
+    public ScenarioComputation compute(SimulationBaseline baseline, SpendingReductionInput input) {
         long scopeSpending = input.categoryCode() == null ? baseline.averageMonthlySpending()
                 : baseline.spendingByCategory().getOrDefault(input.categoryCode(), 0L);
         if (input.monthlyReduction() > scopeSpending) {
@@ -75,9 +77,10 @@ public class SpendingReductionCalculator implements SimulationCalculator<Spendin
             assumptions.add(SimulationScenarios.SPLIT_BY_REMAINING);
         }
         String title = scopeLabel + " " + SimulationScenarios.won(reduction) + " 감소";
-        return new SimulationResult(title, summary(reduction, before, after), before, after,
+        SimulationResult result = new SimulationResult(title, summary(reduction, before, after), before, after,
                 new Comparison(items, assets, List.of(), List.of()),
                 SimulationScenarios.cashflow(before, after, input.durationMonths(), reduction), impacts, assumptions);
+        return new ScenarioComputation(result, ScenarioLedger.noCost(baseline.baseDate().plusMonths(input.durationMonths())));
     }
 
     private static String summary(long reduction, Snapshot before, Snapshot after) {
