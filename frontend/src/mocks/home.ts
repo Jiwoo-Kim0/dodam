@@ -1,4 +1,3 @@
-import type { AssetComposition } from '@/types/asset.types';
 import type { HomeGoal } from '@/types/goal.types';
 
 export const HOME_GOALS: readonly HomeGoal[] = [
@@ -25,18 +24,6 @@ export const HOME_GOALS: readonly HomeGoal[] = [
     characterImage: require('@/assets/characters/tori/tori_reducing_home.png'),
   },
 ];
-
-export const HOME_SUMMARY = {
-  monthLabel: '8월',
-  monthlyExpense: 2265000,
-  totalAsset: 8795830,
-  assetChangeFromLastMonth: 234000,
-  assetComposition: [
-    { label: '예·적금', amount: 6200000, tone: 'strong' },
-    { label: '입출금', amount: 1595830, tone: 'medium' },
-    { label: '대출', amount: 1000000, tone: 'light' },
-  ] as const satisfies readonly AssetComposition[],
-};
 
 export const HOME_BRIEFING = {
   yesterdaySpentAmount: 38500,

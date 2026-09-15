@@ -60,6 +60,10 @@ export function MonthSelector({
   onNext,
   onPressLabel,
 }: MonthSelectorProps) {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  const isNextDisabled = year > currentYear || (year === currentYear && month >= currentMonth);
   const label = <Text style={styles.monthLabel}>{`${year}년 ${month}월`}</Text>;
 
   return (
@@ -90,13 +94,15 @@ export function MonthSelector({
       <Pressable
         accessibilityLabel="다음 달"
         accessibilityRole="button"
+        accessibilityState={{ disabled: isNextDisabled }}
+        disabled={isNextDisabled}
         hitSlop={12}
         onPress={onNext}
         style={styles.monthArrowButton}>
         <SymbolView
           name={{ android: 'chevron_right', ios: 'chevron.right', web: 'chevron_right' }}
           size={20}
-          tintColor={colors.textPrimary}
+          tintColor={isNextDisabled ? colors.textTertiary : colors.textPrimary}
         />
       </Pressable>
     </View>
@@ -106,18 +112,23 @@ export function MonthSelector({
 interface TransactionCategoryIconProps {
   categoryCode?: string | null;
   categoryLabel?: string;
+  compact?: boolean;
 }
 
 export function TransactionCategoryIcon({
   categoryCode,
   categoryLabel,
+  compact = false,
 }: TransactionCategoryIconProps) {
   return (
     <Image
       accessibilityLabel={`${categoryLabel ?? '기타'} 카테고리`}
       resizeMode="contain"
       source={getTransactionCategoryIcon(categoryCode)}
-      style={styles.transactionCategoryIcon}
+      style={[
+        styles.transactionCategoryIcon,
+        compact && styles.transactionCategoryIconCompact,
+      ]}
     />
   );
 }
@@ -153,14 +164,27 @@ export function TransactionRow({
         compact && styles.transactionRowCompact,
         pressed && onPress && styles.rowPressed,
       ]}>
-      <TransactionCategoryIcon categoryCode={categoryCode} categoryLabel={categoryLabel} />
-      <View style={styles.transactionCopy}>
+      <TransactionCategoryIcon
+        categoryCode={categoryCode}
+        categoryLabel={categoryLabel}
+        compact={compact}
+      />
+      <View style={[styles.transactionCopy, compact && styles.transactionCopyCompact]}>
         <Text
           numberOfLines={1}
-          style={[styles.transactionAmount, transactionType === 'income' && styles.incomeText]}>
+          style={[
+            styles.transactionAmount,
+            compact && styles.transactionAmountCompact,
+            transactionType === 'income' && styles.incomeText,
+          ]}>
           {amountLabel}
         </Text>
-        <Text numberOfLines={1} style={styles.transactionMerchant}>
+        <Text
+          numberOfLines={1}
+          style={[
+            styles.transactionMerchant,
+            compact && styles.transactionMerchantCompact,
+          ]}>
           {merchantName}
         </Text>
       </View>

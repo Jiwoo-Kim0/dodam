@@ -4,6 +4,7 @@ import type {
   AuthSessionRestoreResult,
   AuthResponse,
   AuthTokens,
+  PasswordLoginRequest,
   SessionDeleteResponse,
 } from '@/types/auth.types';
 
@@ -24,6 +25,16 @@ function getTokensFromResponse(response: AuthResponse): AuthTokens {
 
 export async function persistAuthResponse(response: AuthResponse) {
   await setAuthTokens(getTokensFromResponse(response));
+}
+
+export async function loginWithPassword(request: PasswordLoginRequest) {
+  const response = await apiClient.post<AuthResponse>(`${AUTH_PATH}/login`, {
+    auth: false,
+    body: request,
+  });
+
+  await persistAuthResponse(response);
+  return response;
 }
 
 export async function logout() {
@@ -75,6 +86,7 @@ export async function deleteSessions(sessionId?: number) {
 }
 
 export const authApi = {
+  loginWithPassword,
   logout,
   refreshTokens: refreshAuthTokens,
   getSession,

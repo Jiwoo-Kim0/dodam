@@ -6,7 +6,13 @@ export interface AssetComposition {
   tone: AssetCompositionTone;
 }
 
-export type AssetSectionId = 'checking' | 'saving' | 'loan' | 'card';
+export interface AssetOverview {
+  netAsset: number;
+  changeFromLastMonth: number | null;
+  composition: readonly AssetComposition[];
+}
+
+export type AssetSectionId = 'checking' | 'saving' | 'loan' | 'card' | 'installment';
 
 export interface AssetItem {
   id: string;
@@ -20,5 +26,6 @@ export interface AssetSection {
   id: AssetSectionId;
   title: string;
   summaryPrefix?: string;
+  summaryAmount?: number;
   items: readonly AssetItem[];
 }

@@ -55,6 +55,7 @@ export interface LedgerMonthlySummary {
   income: number;
   expense: number;
   balance: number;
+  transactionCount: number;
   previousMonthDifference: number;
   dailyAverage: number;
   remainingDays: number;

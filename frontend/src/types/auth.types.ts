@@ -19,6 +19,11 @@ export interface AuthResponse extends AuthTokens {
   user: AuthUser;
 }
 
+export interface PasswordLoginRequest {
+  email: string;
+  password: string;
+}
+
 /** 백엔드가 지원하는 소셜 로그인 공급자. 네이버는 아직 미지원이다. */
 export type SocialProvider = 'kakao' | 'google';
 
