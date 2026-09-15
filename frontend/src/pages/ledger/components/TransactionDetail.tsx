@@ -9,7 +9,7 @@ import { formatCurrency } from '@/utils/currency';
 import { styles } from '../LedgerScreen.styles';
 import {
   LedgerHeader,
-  MerchantLogoPlaceholder,
+  TransactionCategoryIcon,
   TransactionRow,
 } from './LedgerShared';
 
@@ -54,6 +54,7 @@ export function TransactionDetail({
   const [memoDraft, setMemoDraft] = useState(transaction.memo);
   const categoryById = new Map(categories.map((category) => [category.id, category]));
   const isManual = transaction.sourceType === 'manual';
+  const category = categoryById.get(transaction.categoryId);
   const historyTotal = merchantHistory.reduce((sum, item) => sum + item.amount, 0);
 
   const commitMemo = () => {
@@ -73,7 +74,10 @@ export function TransactionDetail({
       <RefreshableBouncyScrollView contentContainerStyle={styles.detailContent}>
         <View style={[styles.card, styles.detailCard]}>
           <View style={styles.detailHero}>
-            <MerchantLogoPlaceholder />
+            <TransactionCategoryIcon
+              categoryCode={transaction.categoryId}
+              categoryLabel={category?.label}
+            />
             <Text style={styles.detailMerchant}>{transaction.merchantName}</Text>
           </View>
 
@@ -173,6 +177,8 @@ export function TransactionDetail({
               </Text>
               <TransactionRow
                 amount={historyItem.amount}
+                categoryCode={historyItem.categoryId}
+                categoryLabel={categoryById.get(historyItem.categoryId)?.label}
                 merchantName={historyItem.merchantName}
                 transactionType={historyItem.transactionType}
               />

@@ -159,6 +159,8 @@ export function LedgerOverview({
                 {todayTransactions.map((transaction) => (
                   <TransactionRow
                     amount={transaction.amount}
+                    categoryCode={transaction.categoryId}
+                    categoryLabel={categoryById.get(transaction.categoryId)?.label}
                     compact
                     key={transaction.id}
                     merchantName={transaction.merchantName}
@@ -173,6 +175,8 @@ export function LedgerOverview({
                 {yesterdayTransactions.map((transaction) => (
                   <TransactionRow
                     amount={transaction.amount}
+                    categoryCode={transaction.categoryId}
+                    categoryLabel={categoryById.get(transaction.categoryId)?.label}
                     compact
                     key={transaction.id}
                     merchantName={transaction.merchantName}
