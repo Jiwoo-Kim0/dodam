@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ledgerApi } from '@/api';
+import { fetchAllPages } from '@/api/pagination';
 import type {
   LedgerCategorySummary,
   LedgerDailyTotal,
@@ -84,18 +85,20 @@ export function useLedgerData(currentMonth: Date) {
 
       try {
         const [
-          transactionPage,
+          transactionResponses,
           monthlySummaryResponse,
           dailySpendingResponse,
           categorySpendingResponse,
           previousDailySpendingResponse,
         ] = await Promise.all([
-          ledgerApi.getTransactions({
-            startDate: dateParams.startDate,
-            endDate: dateParams.endDate,
-            page: 0,
-            size: 100,
-          }),
+          fetchAllPages((page, size) =>
+            ledgerApi.getTransactions({
+              startDate: dateParams.startDate,
+              endDate: dateParams.endDate,
+              page,
+              size,
+            }),
+          ),
           ledgerApi.getMonthlySummary(dateParams.yearMonth),
           ledgerApi.getDailySpending({
             startDate: dateParams.startDate,
@@ -112,7 +115,7 @@ export function useLedgerData(currentMonth: Date) {
 
         if (requestId !== requestIdRef.current) return;
 
-        const incomeByDate = transactionPage.content.reduce<Record<string, number>>(
+        const incomeByDate = transactionResponses.reduce<Record<string, number>>(
           (result, transaction) => {
             if (transaction.transactionType === 'INCOME') {
               result[transaction.transactionDate] =
@@ -130,7 +133,7 @@ export function useLedgerData(currentMonth: Date) {
         );
 
         setData({
-          transactions: mapTransactions(transactionPage.content),
+          transactions: mapTransactions(transactionResponses),
           monthlySummary: mapMonthlySummary(monthlySummaryResponse, income),
           dailyTotals: mapDailySpending(dailySpendingResponse, incomeByDate),
           previousDailyTotals: previousDailySpendingResponse
