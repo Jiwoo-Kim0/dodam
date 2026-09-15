@@ -387,43 +387,65 @@ export const styles = StyleSheet.create({
     paddingHorizontal: semanticSpacing.screenMargin,
   },
   totalsCard: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     paddingHorizontal: spacing[4],
-    paddingVertical: spacing[3],
+    paddingVertical: spacing[4],
   },
-  totalItem: {
+  totalPrimaryLabel: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  totalPrimaryValue: {
+    color: colors.textPrimary,
+    fontFamily: fontFamily.semiBold,
+    fontSize: fontSize.title,
+    marginTop: spacing[1],
+  },
+  totalSecondaryRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    marginTop: spacing[4],
+  },
+  totalSecondaryItem: {
+    flex: 1,
     gap: spacing[1],
   },
-  totalLabel: {
-    color: colors.textPrimary,
-    fontFamily: fontFamily.regular,
-    fontSize: fontSize.body1,
+  totalSecondaryItemTrailing: {
+    alignItems: 'flex-end',
   },
-  totalValue: {
+  totalSecondaryDivider: {
+    alignSelf: 'stretch',
+    backgroundColor: colors.divider,
+    marginHorizontal: spacing[4],
+    width: StyleSheet.hairlineWidth,
+  },
+  totalSecondaryLabel: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  totalSecondaryValue: {
+    ...typography.body2,
     color: colors.textPrimary,
     fontFamily: fontFamily.medium,
-    fontSize: fontSize.body2,
   },
   searchBox: {
     alignItems: 'center',
     backgroundColor: colors.ledger.softSurface,
-    borderRadius: 14,
+    borderRadius: radius.default,
     flexDirection: 'row',
-    minHeight: 44,
+    minHeight: 40,
     paddingHorizontal: spacing[3],
   },
   searchIcon: {
     color: colors.textTertiary,
     fontFamily: fontFamily.regular,
-    fontSize: fontSize.button,
+    fontSize: fontSize.subtitle,
     marginRight: spacing[2],
   },
   searchInput: {
     color: colors.textPrimary,
     flex: 1,
     fontFamily: fontFamily.regular,
-    fontSize: fontSize.buttonSmall,
+    fontSize: fontSize.body1,
     paddingVertical: spacing[2],
   },
   calendarCard: {
@@ -459,7 +481,11 @@ export const styles = StyleSheet.create({
     width: 26,
   },
   calendarDaySelected: {
-    backgroundColor: colors.ledger.selectedDay,
+    backgroundColor: colors.primary.lightGreen,
+  },
+  calendarDaySelectedText: {
+    color: colors.home.assetChart.strong,
+    fontFamily: fontFamily.semiBold,
   },
   calendarDay: {
     color: colors.textPrimary,
@@ -476,9 +502,6 @@ export const styles = StyleSheet.create({
     marginTop: 1,
     maxWidth: '100%',
   },
-  calendarExpense: {
-    color: colors.ledger.expense,
-  },
   calendarIncome: {
     color: colors.ledger.income,
   },
@@ -487,6 +510,10 @@ export const styles = StyleSheet.create({
   },
   calendarFeedGroup: {
     paddingHorizontal: spacing[2],
+  },
+  calendarFeedCard: {
+    paddingHorizontal: spacing[2],
+    paddingVertical: spacing[2],
   },
   selectedDateTitle: {
     color: colors.textPrimary,
