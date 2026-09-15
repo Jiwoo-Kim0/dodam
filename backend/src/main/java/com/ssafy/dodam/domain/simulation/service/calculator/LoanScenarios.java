@@ -8,6 +8,7 @@ import com.ssafy.dodam.domain.loan.service.LoanRepaymentTerms;
 import com.ssafy.dodam.domain.product.entity.ProductType;
 import com.ssafy.dodam.domain.simulation.dto.LoanSnapshot;
 import com.ssafy.dodam.domain.simulation.dto.ProductSnapshot;
+import com.ssafy.dodam.domain.simulation.dto.ScenarioLedger;
 import com.ssafy.dodam.domain.simulation.dto.SimulationInput;
 import com.ssafy.dodam.domain.simulation.dto.SimulationResult.Item;
 import com.ssafy.dodam.domain.simulation.service.ProductOptionSelector;
@@ -87,6 +88,15 @@ final class LoanScenarios {
             total = Math.addExact(total, item.interest());
         }
         return total;
+    }
+
+    /** 회차를 내부 납부 자료로 옮긴다. 대출 회차에는 수수료가 없으므로 fee = 0이다. */
+    static List<ScenarioLedger.Payment> payments(List<LoanRepaymentScheduleItem> items) {
+        List<ScenarioLedger.Payment> payments = new ArrayList<>(items.size());
+        for (LoanRepaymentScheduleItem item : items) {
+            payments.add(new ScenarioLedger.Payment(item.repaymentDate(), item.principal(), item.interest(), 0L));
+        }
+        return payments;
     }
 
     static long totalAmount(List<LoanRepaymentScheduleItem> items) {

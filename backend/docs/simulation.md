@@ -1,8 +1,8 @@
-# Simulation 공통 모델·소비/저축/예적금/대출 시뮬레이션 (S15P21D105-550 · 551 · 585)
+# Simulation 공통 모델·소비/저축/예적금/대출/카드/복합 시뮬레이션 (S15P21D105-550 · 551 · 585 · 586)
 
-작성일: 2026-09-13, 갱신 2026-09-14(585). API 17 Simulation의 저장 구조·계산 계약·공통 조회 API(550), 소비 감소·저축액 변경 실행 API(551),
-예적금 가입·신규 대출·추가상환·대환 실행 API(585, §9)다. 계획과 결정 배경은 [simulation-plan.md](simulation-plan.md)와
-[simulation-585-plan.md](simulation-585-plan.md)에 있다.
+작성일: 2026-09-13, 갱신 2026-09-14(585), 2026-09-15(586). API 17 Simulation의 저장 구조·계산 계약·공통 조회 API(550), 소비 감소·저축액 변경 실행 API(551),
+예적금 가입·신규 대출·추가상환·대환 실행 API(585, §9), 할부·리볼빙·현금서비스·복합 실행 API(586, §10)다. 계획과 결정 배경은
+[simulation-plan.md](simulation-plan.md), [simulation-585-plan.md](simulation-585-plan.md), [simulation-586-plan.md](simulation-586-plan.md)에 있다.
 
 기준 자료: [API 17](../../docs/API명세서/17%20Simulation%203cdbb6ea356480a38af4c6f56a5280f2.csv),
 [ERD SQL](../../docs/ERD/DODAM_ERDCLOUD_IMPORT.sql) 1089~1150행, [기획안](../../docs/기획안/기획안%20작성%203c3bb6ea35648097a693e0e321b3e9c0.md) 4-5·7-5·9-6.
@@ -11,9 +11,9 @@
 
 | 포함 | 제외(후속) |
 | --- | --- |
-| V19 마이그레이션 3테이블, 엔티티 3종, `SimulationType`·`SimulationStatus` | 명세의 나머지 실행 4종(installment, revolving, cash-advance, combined) — **경로 자체가 없다** |
-| 계산 계약 `SimulationCalculator` + 기준선 Reader + Runner/Store | 세후 계산, 중도상환 수수료·대환 부대비용 |
-| 실행: `POST /simulations/spending`, `/saving`(551), `/saving-product`, `/loan/new`, `/loan/prepayment`, `/loan/refinance`(585) | 현금흐름 예측(cashflow forecast)과의 연동 — 월 delta 표만 만든다 |
+| V19 마이그레이션 3테이블, 엔티티 3종, `SimulationType`·`SimulationStatus` | 실제 결제·약정 변경·대출 실행, 금융망 동기화 |
+| 계산 계약 `SimulationCalculator` + 기준선 Reader + Runner/Store | 세후 계산, 중도상환 수수료·대환 부대비용, 카드 연체료·기관별 최소결제액 |
+| 실행: `POST /simulations/spending`, `/saving`(551), `/saving-product`, `/loan/new`, `/loan/prepayment`, `/loan/refinance`(585), `/installment`, `/revolving`, `/cash-advance`, `/combined`(586) | 현금흐름 예측(cashflow forecast)과의 연동 — 월 delta 표만 만든다 |
 | 조회: 목록·상세·comparison·cashflow·goal-impact·assets·debts·costs, 삭제 | Recommendation → Simulation 연결, `improvement_action`, 실제 가입·대출·상환 실행 |
 
 ## 2. 스키마
@@ -36,13 +36,15 @@ domain/simulation/
   entity/      Simulation, SimulationScenario, SimulationGoalImpact, SimulationType, SimulationStatus
   repository/  SimulationRepository, SimulationScenarioRepository, SimulationGoalImpactRepository, SimulationUserLock
   dto/         SimulationInput(+SpendingReductionInput, SavingChangeInput, SavingProductInput, LoanNewInput, LoanPrepaymentInput,
-               LoanRefinanceInput), SimulationBaseline, SimulationResult, ProductSnapshot, LoanSnapshot, request/, response/
-  service/     SimulationCalculator, SimulationBaselineReader, SimulationSnapshotReader(585 상품·대출 스냅샷), SimulationInputResolver,
-               SimulationRunner, SimulationStore, SimulationQueryService, SimulationGoalImpactResponseAssembler, SimulationRequestHash,
-               SimulationCalculationVersion, GoalAchievementProjection, GoalDateProjection(585), ProductOptionSelector(585),
-               SimulationAssumptions(585 코드), SimulationClock
+               LoanRefinanceInput, InstallmentInput, RevolvingInput, CashAdvanceInput, CombinedInput), SimulationBaseline, SimulationResult,
+               ScenarioComputation·ScenarioLedger(586 내부 계산 자료), ProductSnapshot, LoanSnapshot, CardRates, request/, response/
+  service/     SimulationCalculator, SimulationCalculatorRegistry(586 dispatch), SimulationBaselineReader, SimulationSnapshotReader(585 상품·대출 스냅샷),
+               SimulationInputResolver, CombinedScenarioParser·CombinedScenarioValidator(586), SimulationRunner, SimulationStore,
+               SimulationQueryService, SimulationGoalImpactResponseAssembler, SimulationRequestHash, SimulationCalculationVersion,
+               GoalAchievementProjection, GoalDateProjection(585), ProductOptionSelector(585), SimulationAssumptions(585·586 코드), SimulationClock
   service/calculator/  SpendingReductionCalculator, SavingChangeCalculator, SavingProductCalculator, LoanNewCalculator,
-               LoanPrepaymentCalculator, LoanRefinanceCalculator, SimulationScenarios·LoanScenarios·ScenarioCashflow(공통 조립)
+               LoanPrepaymentCalculator, LoanRefinanceCalculator, InstallmentCalculator, RevolvingCalculator, CashAdvanceCalculator,
+               CombinedCalculator·CombinedGoalProjection(586), SimulationScenarios·LoanScenarios·CardScenarios·ScenarioCashflow(공통 조립)
 ```
 
 - **`SimulationInput`**: HTTP 요청과 분리된 확정 입력. `SimulationInputResolver`가 카테고리 문자열 → 코드(없으면 400), 계좌번호 → 본인 계좌 id(해시 조회, 없거나 타인이면 404)로 바꾼다. 계좌번호 원문·해시는 입력·지문·저장·응답 어디에도 들어가지 않는다.
@@ -53,15 +55,17 @@ domain/simulation/
   - 줄이기 목표(ACTIVE·SPENDING): 예산, 이번 달 지출, 예상 월말 지출(Goal과 같은 식 `spent × 월 일수 / 경과 일수`, 반올림).
 - **`GoalAchievementProjection.expectedDate(remaining, pace, base)`**: 남은 금액 ≤ 0 → base, 속도 ≤ 0 → null, 그 외 `base + ceil(remaining / pace)`개월. `GoalCalculationService.getForecast`와 같은 식이며 `SimulationApiTest.baselineForecastMatchesGoalForecastApi`가 Goal API 응답과 대조한다.
   Goal 코드를 호출하지 않는 이유: develop의 `getForecast`는 목표 잔액을 갱신하고 이력을 남기는 쓰기 경로이고, 546이 같은 메서드를 수정 중이라 550에서 Goal 도메인을 건드리면 충돌한다. **546 병합 후 Goal 쪽에 순수 함수가 생기면 이 클래스를 그 함수로 교체한다.**
-- **`SimulationCalculator<Q>`**: `type()`, `inputType()`, `calculate(baseline, input) → SimulationResult`. 순수 함수(저장·외부 호출·시각 조회 없음). 기준선이 있어야 판단하는 검증은 여기서 `BusinessException`으로 거부한다.
-- **`SimulationRunner.run(userId, input)`**: 한 트랜잭션 — 사용자 행 잠금(`SimulationUserLock`) → `input.withBaseDate(기준일)`로 생략값 확정 → 요청 지문 재사용 확인 → 기준선 → `SimulationSnapshotReader.prepare`(585 유형만 상품·대출 스냅샷을 입력에 채움) → 계산 → 저장. 계산 예외 시 행이 남지 않는다. 같은 유형 계산기가 둘이면 기동 실패. 계산기가 없는 유형은 `SIMULATION_TYPE_NOT_SUPPORTED`(계산기 빈이 0개여도 기동된다).
+- **`SimulationCalculator<Q>`**: `type()`, `inputType()`, `compute(baseline, input) → ScenarioComputation{result, ledger}`, `calculate(...)`는 `result`만 돌려주는 기본 메서드다. 순수 함수(저장·외부 호출·시각 조회 없음). 기준선이 있어야 판단하는 검증은 여기서 `BusinessException`으로 거부한다. `ledger`(586)는 전후 날짜별 `{date, principal, interest, fee}` 납부 자료·종료일·비용 확정 여부이며 복합 계산기만 읽고 저장하지 않는다.
+- **`SimulationCalculatorRegistry`**(586): 유형 → 계산기 조회와 순수 dispatch. Runner와 복합 계산기가 공유하며 복합 자식 계산은 Runner.run(잠금·지문·저장)을 재호출하지 않는다. 계산기 목록은 첫 조회 때 채운다(복합 계산기가 레지스트리를 주입받으므로 생성자에서 모으면 순환). 같은 유형 계산기가 둘이면 첫 실행에서 실패, 계산기가 없는 유형은 `SIMULATION_TYPE_NOT_SUPPORTED`(계산기 빈이 0개여도 기동된다).
+- **`SimulationRunner.run(userId, input)`**: 한 트랜잭션 — 사용자 행 잠금(`SimulationUserLock`) → `input.withBaseDate(기준일)`로 생략값 확정(복합은 자식에 전파) → 요청 지문 재사용 확인 → 기준선 → `SimulationSnapshotReader.prepare`(585 유형만 상품·대출 스냅샷을 입력에 채움, 복합은 자식별) → 계산 → 저장. 계산 예외 시 행이 남지 않는다.
+- **`SimulationStore.save`**: `simulation` 1행 + `simulation_scenario` N행(`input.scenarios()` — 단독은 자기 자신 1행, 복합은 자식 N행, sequenceNo = 입력 순서) + `simulation_goal_impact`. 복합 부모 자체는 scenario 행이 아니며 부모 파라미터는 `request_snapshot`에만 있다.
 
 ### 요청 지문과 중복 방지
 
 ERD에 멱등 컬럼이 없어 `SimulationRequestHash.of(userId, type, input.fingerprint(), 기준일, SimulationCalculationVersion.CURRENT)`(길이 접두 인코딩 SHA-256)를
 `request_snapshot.requestHash`에 저장한다. **같은 날 같은 지문의 미삭제 건이 있으면 새로 만들지 않고 그 건을 돌려준다**(`created=false`, HTTP 200).
 기준일이 바뀌면 기준선이 달라지므로 새 건이다. 삭제한 건은 재사용하지 않는다. DB UNIQUE가 없으므로 사용자 행 잠금이 실질 방어선이다.
-계산식이 바뀌면 `SimulationCalculationVersion.CURRENT`를 올린다. 585에서 `v2-saving-loan-product`로 올렸다 — 배포 후 v1으로 저장된 같은 날 결과는 재사용되지 않고 새로 만든다.
+계산식이 바뀌면 `SimulationCalculationVersion.CURRENT`를 올린다. 585에서 `v2-saving-loan-product`, 586에서 `v3-card-combined`로 올렸다 — 배포 후 이전 버전으로 저장된 같은 날 결과는 재사용되지 않고 새로 만든다.
 
 ### 상태
 
@@ -143,6 +147,9 @@ Body `{ accountNo?, monthlySavingAmount, durationMonths? }`. `monthlySavingAmoun
 | `SIMULATION_AMOUNT_EXCEEDS_BALANCE` | 400 | (585) 추가상환액 > 실행 시점 예상 잔액(만기 당일 약정상환 후 0 포함), 대환액 > 잔액 |
 | `SIMULATION_PERIOD_NOT_SUPPORTED` | 400 | (585) 보유 대출 잔여 회차 > 360 |
 | `SIMULATION_AMOUNT_OUT_OF_RANGE` | 400 | (585) 금액 합계·차이가 long 범위 초과 |
+| `SIMULATION_COMBINED_DUPLICATE_SCENARIO` | 400 | (586) 복합 자식 중 정규화 결과가 같은 행동이 둘 이상(할부는 수수료율 모드 제외 비교) |
+| `SIMULATION_COMBINED_SCENARIO_CONFLICT` | 400 | (586) 전체·카테고리 소비 감소 혼합, 같은 카테고리 반복, SAVING 2개 이상, 같은 대출의 추가상환·대환, 같은 카드 리볼빙, cardId 없는 리볼빙이 포함된 다중 리볼빙 |
+| `INVALID_REQUEST` | 400 | (586) 복합 자식 구조 오류: 알 수 없는 type·COMBINED 중첩·type/parameters 외 필드·parameters의 알 수 없는 필드·자식 DTO 검증 위반. 메시지에 `scenarios[i].parameters.<field>` 경로만 담고 입력 값은 넣지 않는다. 신규 4종의 정수 필드에 소수가 오면 같은 코드 |
 
 585 공통: 상품 없음·대출 없음·타인 대출은 모두 404 `RESOURCE_NOT_FOUND`(존재 여부 비노출). 실패 응답은 기존 `ApiResponse` 실패 형식이며 계좌번호·잔액 등 값을 메시지에 넣지 않는다. 계산 핵심 자료가 부족하면 저장하지 않고, 목표 영향만 계산할 수 없으면 나머지를 저장하고 목표별 `NOT_COMPUTABLE`을 돌려준다.
 
@@ -161,16 +168,25 @@ H2 (`.\gradlew.bat test --tests 'com.ssafy.dodam.domain.simulation.*'`, 2026-09-
 - `ProductLoanSimulationCalculatorTest` 13: 검산표의 예금 36,500·적금 870·윤년 36,600·0% 원금균등·1/31 약정일·360회 계산과 120개월 표 잘림, 추가상환 당일(24,000→20,000)·미래(22,000)·전액·만기 당일 400·과거/만기 초과 400·OVERDUE·오래된 다음 상환일, 원리금균등 재계산·날짜 보존, 부분 대환 18,000·원금 보존·목표 5개월 유지, 대환 목표 검산(3개월 유지/2개월 단축/여러 목표 배분/속도 0), 전액·동일 금리 대환의 일정·목표일 불변, 비교군 불일치·연결 상품 없음·기간 밴드 후보·방식 불일치·당일·잔액 초과·한도, 361회 거부·long 초과, 입력 범위·AUTO/FULL_BALANCE 지문·paymentDate 생략 정규화.
 - `SimulationProductLoanApiTest` 6: 예적금 실행·저장·상세/goal-impact/assets/costs/cashflow/목록 연결·타인 404·상품 금리 변경 후 같은 날 재사용·적금 870; 404/NOT_SUPPORTED/OPTION_UNAVAILABLE/검증 400 7종/401·저장 없음; 신규 대출 AUTO 저장 → 옵션 변경 후 생략·null 재요청 200 동일 id·명시 EQUAL_PRINCIPAL 400·명시 BULLET 신규 201·한도 초과·비대출 상품·enum 오류; 추가상환 계좌번호 해시 조회·paymentDate 기본값·응답/스냅샷에 원문·해시 부재·"오늘" 명시 재사용·미래 날짜 신규·타인/없는 대출 404·날짜/잔액/만기 400·OVERDUE 400·원본 `loan` 잔액 불변; 대환 목표 투영(8/1→7/1, −31일)·POST/상세/goal-impact/재사용 POST 배열 동일·엔티티 저장 날짜·부분 대환·비교군/비대출/잔액/404/0원·기간 불일치·당일 거부; spending/saving 회귀(확장 필드·status 없음).
 
+586 (2026-09-15, H2 `.\gradlew.bat test --tests 'com.ssafy.dodam.domain.simulation.*'` 67건 통과 = 550·551·585 45건 + 586 22건. `SimulationQueryApiTest.runnerRejectsTypesWithoutCalculator`는 10종 모두 계산기가 생겨 빈 레지스트리 계약 검증으로 바꿨다):
+
+- `CardSimulationCalculatorTest` 9: 할부 0%(원금 100,000씩·현금 합 0·ASSUMED_ZERO/EXPLICIT 지문·행동 키)·12% 2개월 검산(11,836/6,115)·1/31 말일 복원·원금 5원 12개월·1/120개월 경계·입력 범위; 리볼빙 검산(500,000/250,000/4,932)·완납·순현금 = −누적이자, 결제비율 100%·0%·1원, 120회차 미완납(잔액 999,879·종료일 null·순현금 = 잔액 − 이자); 현금서비스 9,863·생략/1 동일 지문·0%·120개월 3,653일·윤년 29일/365·반올림 0원; long 초과 400.
+- `CombinedSimulationCalculatorTest` 6: 소비+할부 현금흐름 합성·누적 재계산·집계 항목·목표 계산 불가 사유·details.children 보존·순서 교환 불변; 기간 제한 목표 투영(9개월, 5개월 아님)·총 감소액 상한; SAVING 유효 구간 절감액 미배분·종료 후 재개(5개월)·속도 0·달성 목표·목표 없음; 360개월 대출+12개월 할부 평가기간(2036-09-30) 비용·전체 비용 별도 보존·표 잘림 전파; 대환 절감 음수 delta(−2,137)·미완납 리볼빙 부분 비용·자료가 평가기간을 덮으면 완전; 중첩·개수·자식 오류 전파·지문 순서.
+- `CombinedScenarioValidatorTest` 2: 수수료율 모드 우회 중복·0/0.0000 중복·현금서비스 기본값 중복·같은 카테고리 중복, 전체+카테고리 혼합·SAVING 2개·같은 대출 추가상환+대환·같은 카드·cardId 없는 다중 리볼빙 충돌, 허용 조합.
+- `SimulationCardCombinedApiTest` 5: 할부 실행·저장·상세/goal-impact/costs/debts/목록·타인 404·12/12.0000 재사용·생략과 명시적 0 별개 저장·소수 금액 400 INVALID_REQUEST·검증 400 7종·401; 리볼빙 본인 카드 저장·타인/없는 카드 404·카드 미지정·미완납 표시·검증 400; 현금서비스 기본값·생략/null/1 재사용·120개월; 복합(저축 계좌번호+할부+대환 계좌번호) 201·`scenarios` 3행·요청/scenario 파라미터에 계좌번호·해시 부재·평가기간 비용 24,000→29,951·3경로 goalImpacts 동일·재사용 200·순서 교환 신규 201; 개수 0/1/11 400·알 수 없는 유형·중첩·참조 필드·알 수 없는 파라미터·자식 검증 경로(원문 미포함)·소수·비객체 원소·중복/충돌 코드·타인 카드/대출 404·자식 계산 오류(감소액 초과) 후 0행 저장·401.
+
+586 보완(2026-09-15): `CombinedSimulationCalculatorTest`에 자식 비례 배분의 산술 범위 초과와 부모 현금 유입 합계 범위 초과 회귀 테스트 2건을 추가했다. 해당 클래스 8건이 통과했으며 두 경로 모두 `SIMULATION_AMOUNT_OUT_OF_RANGE`를 반환한다.
+
 MySQL 통합 검증은 하지 않았다(§8).
 
 ## 8. 현재 제한사항과 인계
 
 - [ ] **MySQL 미검증**: V19 DDL·`ddl-auto: validate`·CHECK·복합 FK·JSON 타입은 H2에서 확인되지 않는다. 547의 `RecommendationMySqlIntegrationTest` 방식(`*_MYSQL_TEST_URL` 설정 시만 실행)으로 추가해야 한다. 빈 DB에서 V6이 V11보다 먼저 실행돼 Flyway가 실패하는 develop 기존 문제(recommendation.md §8)도 그대로다.
 - [ ] `GoalAchievementProjection`은 Goal 계산식의 복제다. 546 병합 후 Goal 도메인에 순수 함수가 생기면 교체한다.
-- [ ] 명세 17의 나머지 실행 8종은 경로가 없다. 계산기를 추가하고 컨트롤러 경로를 열면 된다(`SimulationType`·CHECK는 이미 10종).
+- [x] 명세 17의 실행 10종이 모두 열렸다(586). 계산기 추가 시 `SimulationCalculator.compute`가 내부 납부 자료(`ScenarioLedger`)도 만들어야 복합에 참여할 수 있다.
 - [ ] 소비 감소분을 목표에 돌리는 가정, 남은 금액 비례 배분, 이자 미반영은 `assumptions`로 노출하는 서비스 결정이다. 팀 합의가 다르면 계산기만 바꾸고 `SimulationCalculationVersion`을 올린다.
 - [ ] `cashflow`는 월 delta 표이며 예정 이벤트·현금흐름 예측과 연동하지 않았다.
-- `assets/debts/costs`는 저장 JSON의 메모리 페이징이다. 항목이 수십 건을 넘는 유형(대출·복합)이 생기면 구조를 다시 본다.
+- `assets/debts/costs`는 저장 JSON의 메모리 페이징이다. 복합 부모는 집계 항목만 두어 항목 수가 작지만, `after.details.children`은 자식 결과 전체를 담아 응답이 크다(자식 10건 × 월 항목 120개). 목록 조회에는 들어가지 않는다.
 - 명세 17에 응답 필드가 없으므로 이 문서가 응답 계약이다. 프론트 연동 시 공유 필요.
 
 ## 9. 예적금·대출 실행 API (585)
@@ -323,3 +339,98 @@ MySQL 통합 검증은 하지 않았다(§8).
 - 대출 자료는 로컬 `loan` 스냅샷이다. 다음 상환일이 지난 오래된 스냅샷은 `SIMULATION_LOAN_DATA_UNAVAILABLE`이며 금융 데이터 동기화 후 다시 실행해야 한다. 시연 seed(523)의 ACTIVE 대출은 `next_repayment_date`가 있다.
 - `LoanComparisonPolicy`(loan 도메인)를 public으로 열어 비교군·상환 코드 대응표를 재사용했다. 표 자체는 바꾸지 않았다.
 - 미검증: MySQL(V19 JSON·복합 FK·실제 seed 조회, `*_MYSQL_TEST_URL` 방식 미추가), 실제 seed 상품 옵션의 데이터 품질(`rate_type`·`repayment_type` 분포는 seed SQL 기준으로만 확인), 동시 요청 직렬화(사용자 행 잠금은 550 계약 재사용).
+
+## 10. 할부·리볼빙·현금서비스·복합 실행 API (586)
+
+기준: [simulation-586-plan.md](simulation-586-plan.md). 명세 17이 정한 경로·입력 외의 계산 정책은 서비스 보완안이며 실제 카드 약정이나 법정 상한을 뜻하지 않는다. 가정 코드는 `SimulationAssumptions`에 있다.
+
+### 10.1 공통
+
+- 인증·201/200 재사용·기준일·지문 규칙은 §3·§9.1과 같다. 계산 버전 `v3-card-combined`.
+- **입력 출처**: 금리·수수료율·결제비율·잔액은 모두 사용자 입력이다(`details.inputSource = USER_INPUT`, `CARD_TERMS_USER_INPUT`). 리볼빙 `cardId`는 소유권·식별에만 쓰고 카드 DB 값으로 입력을 덮어쓰지 않는다. 카드번호는 받지도 저장하지도 않는다. 기준선(소득·지출·목표)은 §3과 같은 로컬 DB다.
+- **연율·비율**: `BigDecimal`, 소수 4자리까지, 0~100(결제비율은 0 초과). 지문·저장에는 scale 4로 정규화한다 — `12`와 `12.0000`은 같은 요청이다.
+- **정수 필드**: 신규 4종의 금액·개월 수 필드는 전용 역직렬화로 소수(`1200000.5`, `2.5`)를 절사하지 않고 400 `INVALID_REQUEST`로 거부한다. 기존 6종의 전역 동작(`ACCEPT_FLOAT_AS_INT`)은 바꾸지 않았다.
+- **이자식**: `회차 시작 잔액 × 연율 / 100 × 실제 경과일수 / 365`(ACT/365, 윤년도 분모 365), 회차마다 원 단위 HALF_UP, 합계는 확정 회차 금액의 합(`SIMPLE_INTEREST_ACT_365`). 회차일은 `기준일.plusMonths(k)`로 매번 최초 날짜에서 구한다(1/31 → 2/28 → 3/31). 세금·연체료·추가 이용·금리 변동·기관별 최소결제액은 반영하지 않는다(`NO_LATE_FEES_OR_ADDITIONAL_USAGE`).
+- **목표 영향**: 할부·리볼빙·현금서비스는 자금 귀속을 알 수 없어 미달성 목표는 `NOT_COMPUTABLE` + `GOAL_ALLOCATION_UNKNOWN`, 이미 달성한 목표는 기준일·`ALREADY_ACHIEVED`(§9.6과 같은 계약).
+- **공개 상환 일정** `after.details.repaymentSchedule[]`: 날짜 오름차순 `{date, openingPrincipal, principalPayment, interest, fee, payment, closingPrincipal}`. 모든 회차에서 `payment = principalPayment + interest + fee`, `closingPrincipal = openingPrincipal − principalPayment`이며 해당 없는 비용은 0이다(할부는 `fee`, 리볼빙·현금서비스는 `interest`).
+
+| 경로 | Body(명세 17) | 검증 | fingerprint | 기본값 |
+| --- | --- | --- | --- | --- |
+| `POST /simulations/installment` | `purchaseAmount, months, feeRate?` | 금액 양수 정수, `months` 1~120, `feeRate` 0~100 | `purchaseAmount\|months\|feeRate(scale 4)\|feeRateMode` | `feeRate` 생략/null = 0%·`feeRateMode = ASSUMED_ZERO` + `ZERO_FEE_ASSUMED`. 명시(0 포함) = `EXPLICIT`. **생략과 명시적 0은 별개 지문** |
+| `POST /simulations/revolving` | `cardId?, balance, paymentRatio, rate` | `cardId` 양수·본인 카드(없거나 타인 404), 잔액 양수, `paymentRatio` 0 초과 100 이하, `rate` 0~100 | `cardId\|balance\|paymentRatio\|rate` | 없음 |
+| `POST /simulations/cash-advance` | `amount, rate, repaymentMonths?` | 금액 양수, `rate` 0~100, `repaymentMonths` 1~120 | `amount\|rate\|repaymentMonths` | `repaymentMonths` 생략/null = 1. **생략·null·1은 같은 지문** |
+| `POST /simulations/combined` | `scenarios[]` | 2~10개, 각 원소 `{type, parameters}` | 자식 `type:fingerprint`를 순서대로 길이 접두 인코딩 | 자식 기본값은 단독 API와 같다 |
+
+### 10.2 계산식
+
+- **할부**(`EQUAL_PRINCIPAL_FEE_ON_BALANCE_ACT_365`): 전 = 기준일 `purchaseAmount` 전액 결제. 후 = 기준일 결제 없음, 회차 k(1..n)에 원금 `floor(P/n)`(마지막 회차 잔액 전액, 원금 < n이면 앞 회차 0원 허용)과 회차 시작 잔액 × 직전 회차일부터의 일수 수수료. 현금 delta 기준일 +P, 회차 −(원금+수수료), 합 = −총수수료. 기준일 부채 +P, 순자산 0(구매 물품 가치는 전후 공통). 예: 2026-09-15, 1,200,000/2개월/12% → 10/15 원금 600,000·수수료 11,836(30일), 11/15 600,000·6,115(31일), 합 17,951.
+- **리볼빙**(`PRINCIPAL_RATIO_WITH_INTEREST_PAID_SEPARATELY`): `balance`는 기준일 결제 대상 카드대금. 전 = 전액 결제. 후 = 기준일 원금 `min(B, max(1, ceil(B × p/100)))` 결제, 이월 잔액에 회차마다 시작 잔액 × 일수 이자(전액 납부, 이자에 이자 없음)와 같은 비율식 원금. 최대 120회차까지 계산하며 남으면 강제 상환하지 않고 `paidOff=false, remainingBalance, evaluatedThrough, terminationReason=HORIZON_LIMIT`, `REVOLVING_HORIZON_LIMIT`, `cashflow.fullTermEndDate` 생략(null). `terminationReason`은 `PAID_OFF | HORIZON_LIMIT | NO_CARRY_OVER`(결제비율 100%). 현금 delta 기준일 +이월액, 회차 −(원금+이자), 계산 기간 합 = 잔액 − 누적이자(미상환 잔액을 이익으로 보지 않는다). 예: 1,000,000/50%/12% → 기준일 500,000, 10/15 원금 250,000·이자 4,932·잔액 250,000.
+- **현금서비스**(`BULLET_SIMPLE_INTEREST_ACT_365`): 전 = 미이용. 후 = 기준일 +A, `repaymentMonths`개월 뒤 만기에 원금 + 기준일~만기 단리 이자 일시 상환. 합 = −이자, 순자산 0. 기본 1개월·1개월 초과 모두 사용자 지정 상환기간의 추정이다. 예: 1,000,000/12%/1개월(9/15→10/15, 30일) → 9,863.
+- 합·차·누적은 `Math.*Exact`이며 long을 넘으면 `SIMULATION_AMOUNT_OUT_OF_RANGE`.
+
+### 10.3 비교표·현금흐름(단독 3종)
+
+| 섹션 | 할부 | 리볼빙 | 현금서비스 |
+| --- | --- | --- | --- |
+| `items` | `INITIAL_PAYMENT`(P→0), `INSTALLMENT_FEE_TOTAL`, `PAYMENT_TOTAL`(P→P+수수료), `FIRST_INSTALLMENT_PAYMENT`, `MONTHLY_PAYMENT_yyyy_MM` | `INITIAL_PAYMENT`(B→최초 결제), `CARRIED_BALANCE`, `REVOLVING_INTEREST_TOTAL`, `PAYMENT_TOTAL`, `REMAINING_BALANCE`, `PAYOFF_DATE`(날짜, 미완납 null), `MONTHLY_PAYMENT_yyyy_MM` | `CASH_ADVANCE_AMOUNT`, `INTEREST_TOTAL`, `REPAYMENT_TOTAL`, `REPAYMENT_DATE`(날짜), `MONTHLY_PAYMENT_yyyy_MM` |
+| `assets` | `INITIAL_CASH_CHANGE`(+P), `INITIAL_NET_ASSET_CHANGE`(0) | `INITIAL_CASH_CHANGE`(+이월액), `INITIAL_NET_ASSET_CHANGE`(0) | `INITIAL_CASH_CHANGE`(+A), `INITIAL_NET_ASSET_CHANGE`(0) |
+| `debts` | `INITIAL_DEBT_CHANGE`(+P) | `INITIAL_DEBT_CHANGE`(+이월액) | `INITIAL_DEBT_CHANGE`(+A) |
+| `costs` | `INSTALLMENT_FEE_TOTAL` | `REVOLVING_INTEREST_TOTAL`(미완납이면 계산 기간 합) | `INTEREST_TOTAL` |
+
+`cashflow`는 §9.4와 같은 `SCENARIO_NET_CASH_CHANGE`·`currentMonth`·최대 120개월이다. `details`에는 `calculationPolicy, inputSource, calculationAsOfDate, paidOff, evaluatedThrough, totalPrincipalPaid, repaymentSchedule, comparisonTiming`과 유형별 입력·합계(할부 `feeRate/feeRateMode/totalFee/totalPayment`, 리볼빙 `cardId/initialPayment/carriedBalance/remainingBalance/terminationReason/totalInterest`, 현금서비스 `repaymentDate/days/interest/totalRepayment`)가 있다.
+
+### 10.4 복합 (`POST /simulations/combined`)
+
+요청은 평면 목록이며 `parameters`는 해당 단독 API 본문과 같다(계좌번호는 같은 해시 조회, 저장에는 `accountId`/`loanId`만).
+
+```json
+{ "scenarios": [
+  { "type": "SAVING", "parameters": { "accountNo": "…", "monthlySavingAmount": 500000, "durationMonths": 2 } },
+  { "type": "INSTALLMENT", "parameters": { "purchaseAmount": 1200000, "months": 2, "feeRate": 12 } },
+  { "type": "LOAN_REFINANCE", "parameters": { "accountNo": "…", "targetProductId": 3 } } ] }
+```
+
+- **구조**: `type`은 COMBINED 제외 9종(대소문자 무시). 원소에 `type`·`parameters` 외 필드, `parameters`에 DTO가 모르는 필드, 자식 DTO 검증 위반은 400 `INVALID_REQUEST`이며 메시지는 `scenarios[i].parameters.<field>: <사유>`다(입력 값 미포함). 개수 위반은 `VALIDATION_ERROR`. 중첩·참조·의존 필드는 구조적으로 불가능하다.
+- **순서**: 모든 자식의 자원 존재·소유권(404) → 중복·충돌 검사(400) → 잠금·지문 → 신규 계산이면 자식별 스냅샷 준비 → 자식 독립 계산 → 합성 → 부모 1행 + 자식 N행(`sequenceNo` = 입력 순서) 저장. 자식 하나라도 실패하면 아무 행도 남지 않는다. 입력 순서는 지문에 들어가므로 순서를 바꾸면 별개 요청이지만 합계는 같다.
+- **중복·충돌**(§6 코드 표): 자식은 같은 기준선에서 독립 계산되므로 같은 대상을 두 자식이 바꾸는 조합은 거부한다. SPENDING+SAVING은 허용하되 SAVING은 변경 후 절대 저축액이라 SPENDING 절감액을 목표에 다시 배분하지 않는다. 카테고리별 감소액 합이 전체 평균 지출을 넘으면 `SIMULATION_REDUCTION_EXCEEDS_SPENDING`.
+- **현금흐름**: 자식의 `months[].delta`와 `currentMonth.delta`를 월별로 합한 뒤 누적을 처음부터 재계산한다. 종료 월은 자식 종료 중 최댓값(≤120), `truncated`는 자식 중 하나라도 잘리면 true, `fullTermEndDate`는 자식 종료일 최댓값이며 미완납 리볼빙이 있으면 생략(null)하고 `details.projectionIncomplete=true`·`cashflowEvaluatedThrough`를 둔다.
+- **금융비용**(`FINANCE_COST_EVALUATED`): 평가기간 `[기준일, min(자식 계산 종료일 최댓값, 기준일+120개월이 속한 달 말일)]`에 **납부일이 포함된** 이자+수수료를 자식별 전후로 합산한 `before/after/delta`(`details.evaluationFromDate/evaluationThroughDate`, `costBasis=PAYMENT_DATE`). 원금·상품 이자 수익은 넣지 않고 기간 밖 납부액을 안분하지 않는다. 대환·추가상환 절감은 음수 delta. 미완납 자식의 자료가 평가 종료일 전에 끝나면 `costComplete=false`, `FINANCE_COST_PARTIAL`, `details.financeCost.children[].costCoveredThrough/costComplete/reason`. 자식의 만기 전체 비용은 `details.children[].comparison`에 그대로 있다.
+- **비교표**: `items/assets/debts/costs`는 단위·기간·의미가 같은 집계만 — `INITIAL_CASH_CHANGE`, `INITIAL_DEBT_CHANGE`, `INITIAL_NET_ASSET_CHANGE`(자식 `INITIAL_*` 합), `FINANCE_COST_EVALUATED`, 목표 항목 `GOAL_<id>_*`. 자식별 항목은 `after.details.children[] { sequenceNo, type, title, summary, fullTermEndDate, costCoveredThrough, costComplete, assumptions, comparison, cashflow, goalImpacts, details }`.
+- **목표 영향**(`details.goalEffectPolicy`):
+  - `DURATION_LIMITED_PROJECTION` — 자식이 SPENDING/SAVING뿐일 때. `t(k) = 기준일 + k개월`마다 유효한 자식만 반영한다: SAVING 유효 구간은 그 자식의 대상 목표 선택·절대액 배분으로 목표별 속도를 **교체**하고 SPENDING 절감액은 배분하지 않는다(`SAVING_AMOUNT_IS_FINAL_TARGET`); 그 외 구간은 유효한 SPENDING 절감액 합을 기준일 미달성 목표의 remaining 비중(goalId 순, 마지막 나머지)으로 배분해 기준선 속도에 더한다. 마지막 자식 종료 후 기준선 속도로 복귀하며 미달성이면 필요한 개월 수를 올림해 잇는다(`GOAL_EFFECT_LIMITED_TO_SCENARIO_DURATION`). 기준선 속도 0이면 null + `SAVING_PACE_ZERO`. 예: 잔여 100만원·속도 10만원, 절감 10만원 1개월 → 9개월째(551 단독의 5개월과 다르다). `after.goals[].monthlySaving`은 첫 투영 구간(k=1)의 속도다.
+  - `NOT_COMPUTABLE` — 다른 유형이 하나라도 있으면 미달성 목표는 `COMBINED_GOAL_EFFECT_NOT_COMPUTABLE` + 자식의 계산 불가 사유(`FUNDING_SOURCE_UNKNOWN`, `GOAL_ALLOCATION_UNKNOWN` 등, 중복 제거). 대환처럼 단독으로는 날짜를 내는 자식의 결과는 `details.children[].goalImpacts`에만 있다.
+  - 두 경우 모두 부모 `after.goals[].expectedAchievementDate`·목표 비교 항목·`goalImpacts[]`는 같은 투영 결과에서 조립하며 자식 날짜를 섞지 않는다. `before/after`의 소득·지출·저축·가용자금 수준값은 참고 기준선으로 전후 동일하다.
+- **가정**: 부모 고유 코드(`CHILD_SCENARIOS_INDEPENDENT`, `FINANCE_COST_EVALUATED`, `FINANCE_COST_PARTIAL`?, `CASHFLOW_TABLE_TRUNCATED`?, 목표 코드) 뒤에 자식 가정의 합집합을 알파벳순으로 붙인다 — 순서를 바꾼 요청도 같은 집합이다.
+- **저장**: `request_snapshot = { scenarios: [{type, parameters}], requestHash, calculationVersion }`, `simulation_scenario`는 자식별 `(sequenceNo, scenarioType, parameters)`. 정규화된 자식 입력만 저장하며 원문 계좌번호·해시는 어느 깊이에도 없다.
+
+### 10.5 응답 예시 (H2 fixture, 2026-09-15 기준, 저축 500,000×2개월 + 할부 1,200,000/2개월/12% + 대환 1,200,000→6%)
+
+```json
+{ "type": "COMBINED", "title": "복합 시나리오 3건: 월 저축액 … + 할부 1,200,000원 · 2개월 12% + 신용대출 1,200,000원 대환 → 신용대출",
+  "scenarios": [ { "sequenceNo": 1, "scenarioType": "SAVING", "parameters": { "accountId": 1, "monthlySavingAmount": 500000, "durationMonths": 2 } },
+                 { "sequenceNo": 2, "scenarioType": "INSTALLMENT", "parameters": { "purchaseAmount": 1200000, "months": 2, "feeRate": 12.0000, "feeRateMode": "EXPLICIT" } },
+                 { "sequenceNo": 3, "scenarioType": "LOAN_REFINANCE", "parameters": { "loanId": 1, "targetProductId": 1, "refinanceAmount": null, "refinanceAmountMode": "FULL_BALANCE" } } ],
+  "comparison": { "costs": [ { "key": "FINANCE_COST_EVALUATED", "before": 24000, "after": 29951, "delta": 5951 } ],
+                  "debts": [ { "key": "INITIAL_DEBT_CHANGE", "before": 0, "after": 1200000, "delta": 1200000 } ] },
+  "cashflow": { "basis": "SCENARIO_NET_CASH_CHANGE", "currentMonth": { "yearMonth": "2026-09", "delta": 1200000 },
+                "months": [ { "yearMonth": "2026-10", "delta": -772503, "cumulative": 427497 }, { "yearMonth": "2026-11", "delta": -766782, "cumulative": -339285 } ],
+                "truncated": false, "coveredThrough": "2026-11", "fullTermEndDate": "2026-11-15" },
+  "after": { "details": { "calculationPolicy": "INDEPENDENT_CHILDREN_NET_CASH_SUM", "scenarioCount": 3, "evaluationFromDate": "2026-09-15",
+                          "evaluationThroughDate": "2026-11-15", "costBasis": "PAYMENT_DATE", "costComplete": true, "projectionIncomplete": false,
+                          "goalEffectPolicy": "NOT_COMPUTABLE", "financeCost": { "before": 24000, "after": 29951, "delta": 5951, "children": [ "…" ] },
+                          "children": [ "…" ] } },
+  "goalImpacts": [ { "goalId": 1, "beforeForecastDate": "2027-04-15", "afterForecastDate": null, "differenceDays": null,
+                     "status": "NOT_COMPUTABLE", "reasons": ["COMBINED_GOAL_EFFECT_NOT_COMPUTABLE", "GOAL_ALLOCATION_UNKNOWN"] } ] }
+```
+
+10월 delta = 저축 −166,667(500,000 − 기준선 333,333) + 할부 −611,836 + 대환 +6,000(12,000 → 6,000). `SimulationCardCombinedApiTest`가 고정한다.
+
+### 10.6 FE 인계와 제한
+
+- 카드 3종은 사용자 입력 조건의 추정치다. 실제 카드사 약정(할부 수수료 산식, 리볼빙 최소결제액, 현금서비스 취급수수료)과 다를 수 있음을 안내한다. `ZERO_FEE_ASSUMED`는 수수료율을 몰라 0으로 계산했다는 뜻이지 무이자 확인이 아니다.
+- 리볼빙 `paidOff=false`면 `cashflow.fullTermEndDate`가 없고 이자 합계는 계산 기간(120회차) 합이다. `REMAINING_BALANCE`를 반드시 함께 보여준다.
+- 복합의 `goalImpacts`는 소비·저축만 있는 조합에서만 날짜가 나온다. 그 외 조합은 `NOT_COMPUTABLE`이며 자식별 단독 날짜는 `after.details.children[].goalImpacts`에 있다 — 부모 날짜와 다를 수 있고 참고용이다.
+- 복합의 `FINANCE_COST_EVALUATED`는 평가기간 비용이며 평생 총비용이 아니다. `costComplete=false`면 부분합이다. 자식별 만기 총이자는 `details.children[].comparison.costs`에서 읽는다.
+- 복합 요청은 자식 하나의 400/404가 전체 실패다. `scenarios[i]…` 경로는 자식 구조·파싱·DTO 검증 오류에만 제공한다. 자원 존재·소유권 및 계산 오류는 기존 오류 코드와 메시지를 반환하며 실패한 자식 위치는 제공하지 않는다.
+- 복합 계산은 자식 계산·감소액 합산·부모 합성에서 발생한 산술 범위 초과를 모두 `SIMULATION_AMOUNT_OUT_OF_RANGE`로 반환한다.
+- 미검증: MySQL(V19 JSON·N행 scenario·CHECK, `*_MYSQL_TEST_URL` 방식 미추가), 동시 요청 직렬화(사용자 행 잠금은 550 계약 재사용), 실제 seed(491·492·493·522) 계정으로의 앱 통합.

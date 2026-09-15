@@ -3,6 +3,8 @@ package com.ssafy.dodam.domain.simulation.service.calculator;
 import com.ssafy.dodam.domain.product.entity.ProductType;
 import com.ssafy.dodam.domain.simulation.dto.ProductSnapshot;
 import com.ssafy.dodam.domain.simulation.dto.SavingProductInput;
+import com.ssafy.dodam.domain.simulation.dto.ScenarioComputation;
+import com.ssafy.dodam.domain.simulation.dto.ScenarioLedger;
 import com.ssafy.dodam.domain.simulation.dto.SimulationBaseline;
 import com.ssafy.dodam.domain.simulation.dto.SimulationResult;
 import com.ssafy.dodam.domain.simulation.dto.SimulationResult.Comparison;
@@ -54,12 +56,12 @@ public class SavingProductCalculator implements SimulationCalculator<SavingProdu
     }
 
     @Override
-    public SimulationResult calculate(SimulationBaseline baseline, SavingProductInput input) {
+    public ScenarioComputation compute(SimulationBaseline baseline, SavingProductInput input) {
         ProductSnapshot product = Objects.requireNonNull(input.product(), "product 스냅샷이 준비되지 않았습니다.");
         return SimulationScenarios.exact(() -> build(baseline, input, product));
     }
 
-    private SimulationResult build(SimulationBaseline baseline, SavingProductInput input, ProductSnapshot product) {
+    private ScenarioComputation build(SimulationBaseline baseline, SavingProductInput input, ProductSnapshot product) {
         ProductOptionSelector.Selection selection = ProductOptionSelector.selectSaving(product, input.term());
         LocalDate base = baseline.baseDate();
         LocalDate maturity = base.plusMonths(input.term());
@@ -133,7 +135,9 @@ public class SavingProductCalculator implements SimulationCalculator<SavingProdu
         String title = kind + " 가입 " + (deposit ? "" : "월 ") + SimulationScenarios.won(input.monthlyAmount()) + " · " + input.term() + "개월";
         String summary = "세전 이자 " + SimulationScenarios.won(grossInterest) + ", 만기(" + maturity + ") 수령 "
                 + SimulationScenarios.won(grossPayout) + " · 연 " + rate.stripTrailingZeros().toPlainString() + "% 단리, 세금·우대금리 미반영";
-        return new SimulationResult(title, summary, before, goals.after(), new Comparison(items, assets, List.of(), List.of()),
-                cashflow, goals.impacts(), assumptions, details, goals.details());
+        SimulationResult result = new SimulationResult(title, summary, before, goals.after(),
+                new Comparison(items, assets, List.of(), List.of()), cashflow, goals.impacts(), assumptions, details, goals.details());
+        // 상품 이자 수익은 금융비용이 아니다 — 복합 비용 평가에는 0으로 들어간다
+        return new ScenarioComputation(result, ScenarioLedger.noCost(maturity));
     }
 }

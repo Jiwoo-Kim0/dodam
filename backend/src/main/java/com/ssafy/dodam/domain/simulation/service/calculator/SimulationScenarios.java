@@ -175,7 +175,7 @@ final class SimulationScenarios {
     }
 
     /** 금액 합계·차이가 long 범위를 넘으면 전체 실행을 거부한다. {@code Math.*Exact}·{@code longValueExact}의 예외를 한 코드로 모은다. */
-    static SimulationResult exact(Supplier<SimulationResult> calculation) {
+    static <T> T exact(Supplier<T> calculation) {
         try {
             return calculation.get();
         } catch (ArithmeticException e) {

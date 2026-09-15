@@ -157,6 +157,18 @@ public enum ErrorCode {
     /** 계산 결과·차이가 원 단위 정수 범위를 넘는 경우. */
     SIMULATION_AMOUNT_OUT_OF_RANGE(HttpStatus.BAD_REQUEST, "계산 결과가 허용 범위를 초과합니다."),
 
+    // ---------- Simulation 할부·리볼빙·현금서비스·복합 (S15P21D105-586) ----------
+    /**
+     * 복합 시나리오에 정규화 결과가 같은 자식이 둘 이상인 경우. 같은 행동을 두 번 더해 효과를 이중 반영하지 않는다.
+     * 할부의 수수료율 모드(생략/명시적 0)는 지문에는 들어가지만 이 판정에서는 제외한다.
+     */
+    SIMULATION_COMBINED_DUPLICATE_SCENARIO(HttpStatus.BAD_REQUEST, "복합 시나리오에 같은 행동이 중복되었습니다."),
+    /**
+     * 서로 다른 자식이 같은 대상(대출·카드·저축 절대액·소비 범위)을 독립적으로 바꾸려는 경우. 앞 자식의 결과를 다음 자식이
+     * 이어받지 않으므로 같은 잔액을 두 번 변경한 합계는 의미가 없다.
+     */
+    SIMULATION_COMBINED_SCENARIO_CONFLICT(HttpStatus.BAD_REQUEST, "복합 시나리오의 자식이 같은 대상을 중복 변경합니다."),
+
     // ---------- Pattern (S15P21D105-516 ~ 518) ----------
     /**
      * 임대 기간 안의 진행 중 분석이 있는 경우(명세 "중복 분석 요청 방지").
