@@ -678,10 +678,79 @@ curl -s -X POST https://finopenapi.ssafy.io/ssafy/api/v1/member/search \
 `E4004 존재하지 않는 API KEY` → 키가 틀린 것.
 그 외 응답(사용자 없음 등)이 오면 **키는 통과한 것**이다.
 
+### 20. 금융망 API Key 교체 반영 — 해결 (17:1x~17:18)
+
+담당자가 새 키를 발급받아 `.env`를 갱신(17:10)했다. **배포 전에 유효성부터 확인**하고 반영했다.
+
+**1) 배포 전 검증 — 새 키는 통한다**
+
+| 검증 | 결과 |
+| --- | --- |
+| `member/search` (body 방식) | `E4003 존재하지 않는 ID입니다` ← **키는 통과**, 일부러 넣은 가짜 유저라서 난 에러 |
+| `edu/bank/inquireBankCodes` (Header 방식) | **`H0000 정상처리 되었습니다`** + 은행 목록 실수신 |
+
+19절의 옛 키(`EXCB…YJ`)는 양쪽 다 거부(E4004 / H1008)였다. 새 키(`83cb…f8`)는 양쪽 다 통과한다.
+**안 통하는 키로 배포를 돌리는 헛수고를 피하려고 순서를 이렇게 잡았다.**
+
+**2) 반영 방식 — 전체 재빌드 배포가 아니라 backend만 재생성**
+
+코드는 그대로고 환경변수만 바뀌므로 `up -d --build` 전체 배포는 과하다.
+다만 `up -d`는 `infra-backend:latest`를 쓰는데, **실행 중 이미지와 `latest`의 ID가 달랐다.**
+(15:54 배포에서 Build&Test가 `latest`를, deploy가 별도로 실행 이미지를 만들었다 — 1절의 이중 빌드)
+
+ID가 다르다고 코드가 다른 것은 아니므로 **`app.jar`를 직접 대조**했다.
+
+```
+:deployed(실행 중) /app/app.jar  26bf7998ddec9728140f7457bdea4c05cfa825bbd77291285304e196ba8c09d4
+:latest            /app/app.jar  26bf7998ddec9728140f7457bdea4c05cfa825bbd77291285304e196ba8c09d4
+```
+
+**바이트 단위로 동일하다.** 같은 커밋을 두 번 빌드한 것뿐이라 `latest`로 재생성해도 코드는 그대로다.
+확인 후 실행:
+
+```
+docker compose -f ~/app/infra/docker-compose.yml --env-file ~/app/infra/.env \
+    up -d --no-deps --force-recreate backend
+```
+
+**3) 반영 후 검증**
+
+| 확인 | 결과 |
+| --- | --- |
+| 컨테이너 env vs `.env` | 일치 (`83cb…f8`) |
+| **실행 중 프로세스의 키로 금융망 실호출** (컨테이너 내부) | **`H0000 정상처리`** + 은행 목록 수신 |
+| 컨테이너 헬스 | 6회차에 `healthy` |
+| 기동 로그 ERROR/WARN | Flyway out-of-order 경고 1건뿐 |
+| 외부 end-to-end | `/api/health` 200, `/api/v1/auth/login` 400(검증 에러) |
+
+**19절에서 "미검증"으로 남겼던 항목이 이로써 해소됐다** — env 주입뿐 아니라
+**실행 중인 프로세스가 그 키로 실제 응답을 받는 것**까지 확인했다.
+
+**4) `:deployed` 태그 정합성 복구**
+
+재생성으로 실행 이미지가 `cd26a23cba12` → `0b27a4ddf885`로 바뀌어,
+`:deployed`가 더 이상 실행 중 이미지를 가리키지 않게 됐다.
+지금 이미지는 두 단계 헬스체크를 모두 통과했으므로 `:deployed`를 여기로 옮겼다.
+
+```
+infra-backend:deployed  0b27a4ddf885   ← 실행 중, 갱신함
+infra-backend:latest    0b27a4ddf885
+infra-backend:rollback  cd26a23cba12   ← 직전 이미지, 그대로 둠
+```
+
+수동 재생성은 `deploy.sh`를 거치지 않으므로 태그 관리가 자동으로 되지 않는다.
+**"없는 안전망을 있는 척하지 않는다"는 3절의 원칙대로 손으로 맞춰뒀다.**
+
+**부수적으로 확인된 것 — 1절 수정이 운영에서 동작한다**
+
+15:54 배포 시점 태그 상태가 `:deployed` = `:rollback` = **실행 중 이미지**였다.
+수정 전이었다면 `latest`(별개 이미지)를 가리켰을 자리다.
+9절에서 기록한 오동작이 더는 재현되지 않는다.
+
 ## 남은 것
-- [ ] `infra-backend:deployed` 태그 생성 확인 (12:04 배포가 첫 적용분)
-- [ ] 🔴 **`SSAFY_FINANCE_API_KEY`가 금융망에서 거부됨(E4004)** — 유효한 키로 교체 후 배포 필요. 기동은 정상이라 첫 호출 때 런타임에서 터진다 (19절)
-- [ ] 금융망 연동을 실제로 1회 호출해 통하는지 확인 — Loki상 운영에서 호출된 이력이 0건이다
+- [x] ~~`infra-backend:deployed` 태그 생성 확인~~ — 15:54 배포에서 생성, 실행 중 이미지를 정확히 가리킴 (20절)
+- [x] ~~`SSAFY_FINANCE_API_KEY`가 금융망에서 거부됨~~ — 새 키로 교체·반영 완료, 실행 중 프로세스에서 H0000 확인 (20절)
+- [x] ~~금융망 연동을 실제로 1회 호출해 통하는지 확인~~ — `inquireBankCodes` H0000 (20절)
 - [ ] **`OPENAI_API_KEY`가 어디에도 배선돼 있지 않다** — compose·`application-prod.yml` 양쪽에 추가 필요 여부를 백엔드와 확인 (17절)
 - [ ] EC2 `.env`의 `KAKAO_CLIENT_*`·`GOOGLE_CLIENT_*`를 `.env.example`(day-07 정리분)에 맞추고, 빈 `FCM_SERVICE_ACCOUNT_PATH` 줄 제거
 - [ ] 롤백 경로 실제 검증 — 일부러 깨는 커밋으로 "코드+이미지가 함께 되돌아오는지" 확인
