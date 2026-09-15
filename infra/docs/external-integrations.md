@@ -16,7 +16,7 @@ FE팀 확정 (2026-09-10). 이 값들이 아래 모든 등록의 기준이 된�
 | 항목 | 값 | 쓰이는 곳 |
 | --- | --- | --- |
 | Android 패키지명 | `com.ssafy.d105.dodam` | Firebase 앱 등록, Google OAuth, 스토어 식별자 |
-| 앱 scheme | `dodam` | 소셜 로그인 Redirect URI |
+| 앱 scheme | `dodam` | 딥링크 (소셜 로그인에는 쓰이지 않음 — §4 참고) |
 | API BaseURL 변수 | `EXPO_PUBLIC_API_BASE_URL` | FE 빌드 시 주입 |
 | API BaseURL (운영) | `https://j15D105.p.ssafy.io/api` | 〃 |
 
@@ -113,39 +113,123 @@ API Key는 `.env`에 설정 완료.
 
 ---
 
-## 4. 소셜 로그인 — 등록할 Redirect URI
+## 4. 소셜 로그인 (Kakao / Google)
 
-**네이티브 앱이라 웹 방식(`https://...`)이 아니다.** 커스텀 스킴을 등록한다.
+### 인증 흐름 — 2026-09-11 백엔드 확정
 
-### Kakao Developers
+**앱이 네이티브 SDK로 로그인하고, 서버는 받은 토큰만 검증한다.**
 
-1. 애플리케이션 생성 → **플랫폼 → Android 등록**
+```
+앱 ──네이티브 SDK 로그인──> Kakao / Google
+앱 ──POST /api/v1/auth/oauth/{provider} (토큰)──> 서버
+                                                 서버 ──토큰 검증──> provider
+                                                 user_oauth_account 매핑
+앱 <──────── 우리 JWT (access/refresh) ────────── 서버
+```
+
+- 앱이 받는 것: 카카오 access token 또는 OIDC `id_token` / 구글 `id_token`
+- 서버 검증: 카카오 `GET https://kapi.kakao.com/v2/user/me` 또는 `id_token` 검증,
+  구글 `id_token` 서명·`aud`·만료 검증 (RestClient로 직접 호출)
+- 매핑: `user_oauth_account`(provider + `provider_user_id_hash`) → 기존 JWT 발급
+
+**서버 Redirect 방식을 쓰지 않는 이유**: RN 앱에서는 웹뷰·딥링크 왕복이 필요해 UX가 나쁘고,
+ERD도 provider 토큰을 저장하지 않는 구조다.
+
+> `build.gradle`에 `spring-boot-starter-oauth2-client`가 있지만 **이 흐름에서는 쓰지 않는다.**
+> 초기 세팅 때 향후 확장용으로 넣은 것이다. 이 의존성만 보고 "서버 Redirect 방식"으로
+> 오해하지 말 것.
+
+### ⚠️ 이 흐름에서는 Redirect URI를 등록하지 않는다
+
+네이티브 SDK는 **콘솔의 "Redirect URI" 항목을 쓰지 않는다.** 그 필드는 REST API / JS SDK
+흐름용이다. SDK는 자체 고정 스킴으로 돌아온다.
+
+| 값 | 정체 |
+| --- | --- |
+| `kakao{네이티브앱키}://oauth` | **카카오 SDK가 쓰는 값.** 고정이며 선택할 수 없다 |
+| `dodam://oauth/kakao` | `app.json`의 `scheme` 기반. **이 흐름에서는 쓰이지 않는다** |
+
+둘은 별개의 intent-filter이고 `scheme: "dodam"`과 무관하다.
+`dodam://oauth/kakao`를 콘솔에 등록해도 무해하지만 **아무 역할도 하지 않는다.**
+
+**대신 FE가 해야 하는 일**: AndroidManifest에 `kakao{앱키}://oauth` intent-filter가 들어가야
+한다. 빠지면 **로그인 후 앱으로 복귀하지 못한다.** Expo prebuild 환경이므로 카카오 로그인
+라이브러리의 config plugin 또는 `app.json`의 `android.intentFilters`로 넣는다.
+(2026-09-11 현재 `app.json`에 없음)
+
+구글도 같다 — Android·웹 클라이언트 **어느 쪽도 이 흐름에서 redirect URI를 쓰지 않는다.**
+Credential Manager가 처리한다.
+
+### Client Secret은 양쪽 모두 필요 없다
+
+서버가 authorization code를 토큰으로 교환하지 않으므로 secret을 쓸 자리가 없다.
+
+- **Kakao**: 콘솔에서 Client Secret을 **켜지 않는다.** 토큰 발급을 네이티브 SDK가 대신하므로
+  켤 이유가 없고 흐름이 어긋날 소지만 생긴다.
+- **Google**: 웹 클라이언트는 **ID만** 쓴다. Secret은 발급돼도 **어디에도 배포하지 않는다.**
+
+### Kakao Developers — 등록할 것
+
+1. 애플리케이션 생성
+2. **플랫폼 → Android 등록** ← 이 흐름에서 콘솔에 반드시 필요한 것
    - 패키지명: `com.ssafy.d105.dodam`
-   - 키 해시: FE팀이 빌드 시 생성해 등록 (디버그/릴리즈 각각)
-2. **카카오 로그인 → Redirect URI**
-   ```
-   dodam://oauth/kakao
-   ```
-3. 발급받은 **REST API 키**와 **Client Secret**을 인프라 담당에게 전달
-   → `.env`의 `KAKAO_CLIENT_ID`, `KAKAO_CLIENT_SECRET`
+   - 키 해시: SHA-1을 Base64로 변환한 값 (§5의 조회 절차)
+   - **debug keystore를 쓰는 팀원의 키 해시도 각각 등록**
+3. 카카오 로그인 **활성화 ON** (기본 OFF)
+4. 동의항목 — 백엔드가 쓸 항목만 (닉네임/이메일 등)
+5. OIDC `id_token`을 쓸 경우 **OpenID Connect 활성화 ON** (기본 OFF, 안 켜면 발급되지 않음)
 
-### Google Cloud Console
+**서버에 필요한 값** — 검증 방식에 따라 다르다.
 
-1. **OAuth 클라이언트 ID 생성 → 애플리케이션 유형: Android**
-   - 패키지 이름: `com.ssafy.d105.dodam`
-   - SHA-1 인증서 지문: FE팀이 빌드 키에서 추출해 등록
-2. 백엔드에서 토큰을 검증하려면 **웹 애플리케이션 유형 클라이언트도 별도로 필요**할 수 있다
-   (구현 방식에 따라 다르므로 백엔드팀과 확인)
-3. 발급값을 인프라 담당에게 전달 → `.env`의 `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+| 방식 | 서버에 필요한 카카오 값 |
+| --- | --- |
+| `GET /v2/user/me` + 사용자 access token | **없음** (사용자 토큰만 Bearer로 실음) |
+| OIDC `id_token` 검증 | 앱 키 1개 (`aud` 비교용) → `.env`의 `KAKAO_APP_KEY` |
 
-> **Android OAuth 클라이언트는 Client Secret이 없다.** 패키지명 + SHA-1 지문으로
-> 앱을 식별하므로, 백엔드가 secret을 요구하는 흐름이라면 웹 클라이언트를 함께 만들어야 한다.
+> ⚠️ 카카오 앱 키는 **4종**(네이티브 앱 키 / REST API 키 / JavaScript 키 / Admin 키)이다.
+> `aud`에 어느 것이 들어오는지는 **실제 발급된 `id_token`을 디코드해 확인**하고 넣을 것.
+> 잘못 넣으면 "aud 불일치"로만 보여서 원인이 드러나지 않는다.
+> FE의 SDK 초기화에는 **네이티브 앱 키**를 쓴다.
 
-### 왜 커스텀 스킴인가
+### Google Cloud Console — 등록할 것
 
-앱은 브라우저가 아니라서 로그인 완료 후 돌아올 곳이 URL이 아니다.
-`dodam://oauth/kakao` 같은 스킴을 OS가 앱으로 연결해준다.
-`app.json`의 `scheme: "dodam"` 값이 이 앞부분과 일치해야 한다.
+> 💡 **새 프로젝트를 만들지 않는다.** FCM 때 만든 **Firebase 프로젝트가 곧 GCP 프로젝트**다.
+
+**먼저 확인할 것 — 자동 생성된 클라이언트가 이미 있을 수 있다.**
+Firebase 콘솔에서 Android 앱에 SHA-1을 추가하면 **Android OAuth 클라이언트가 자동 생성**되고,
+Google 로그인을 활성화하면 **웹 클라이언트도 `Web client (auto created by Google Service)`
+이름으로 자동 생성**된다.
+→ 수동 생성 전에 **GCP → API 및 서비스 → 사용자 인증 정보** 목록을 먼저 볼 것.
+중복 생성하면 어느 ID를 `serverClientId`에 넣어야 하는지 헷갈린다.
+SHA-1 추가 후 `google-services.json`은 **재다운로드**해야 한다.
+
+필요한 것 3가지:
+
+| 항목 | 내용 |
+| --- | --- |
+| **웹 애플리케이션 유형 클라이언트** | Android SDK(Credential Manager)가 `id_token`을 받으려면 `serverClientId`로 이것이 필요하다. **ID만** 쓰고 Secret은 배포하지 않는다 → `.env`의 `GOOGLE_OAUTH_CLIENT_ID` |
+| **Android 유형 클라이언트** | 패키지명 `com.ssafy.d105.dodam` + SHA-1 |
+| **OAuth 동의 화면** | User Type External, 앱 이름/지원 이메일 + **테스트 사용자에 팀원 계정 전부** |
+
+> **미검증 앱은 테스트 사용자만 로그인된다.** 테스트 사용자 등록을 빠뜨리면 등록 안 된
+> 팀원 계정에서만 로그인이 막혀서, 원인을 찾기 전까지 "특정 사람만 안 된다"로 보인다.
+
+**서버 검증**: `id_token`의 서명·만료를 확인하고 **`aud`에 우리 웹 클라이언트 ID가 있는지**만
+보면 된다. Client Secret은 쓰지 않는다.
+
+### `.env`에 들어가는 값
+
+Secret은 **0개**다.
+
+```
+KAKAO_APP_KEY=              # OIDC 검증 방식일 때만 (aud 비교용)
+GOOGLE_OAUTH_CLIENT_ID=     # 웹 클라이언트 ID (aud 비교용)
+```
+
+> ⚠️ 백엔드가 이 값을 참조하기 시작하면 `docker-compose.yml`의 backend environment와
+> `application-prod.yml` **양쪽에** 추가해야 한다. 한쪽만 넣으면 `check-env.sh`가 잡아낸다
+> (2026-09-08 `JWT_SECRET` 유실 장애와 같은 유형).
+> 2026-09-11 현재 두 파일 모두 이 변수를 참조하지 않는다.
 
 ---
 
@@ -275,8 +359,8 @@ EAS가 keystore를 관리하므로 **인프라가 보관해야 할 서명 키는
 | SSAFY 금융망 API Key | ✅ 설정됨 | 백엔드 |
 | OpenAI API Key | ✅ 설정됨 | ? |
 | Firebase 서비스 계정 키 | ✅ 발급·마운트 완료 (2026-09-10) | 인프라 |
-| Kakao OAuth | ❌ **미발급** | ? |
-| Google OAuth | ❌ **미발급** | ? |
+| Kakao 네이티브 앱 키 + Android 플랫폼 등록 | ❌ **미발급** | ? |
+| Google 웹/Android 클라이언트 + 동의화면 | ❌ **미발급** | ? |
 
 미발급 2건(Kakao / Google OAuth)은 **로그인 기능의 선행조건**이다.
 패키지명과 scheme이 확정됐고 SHA-1 조회 절차도 정리됐으므로 바로 발급받을 수 있다.

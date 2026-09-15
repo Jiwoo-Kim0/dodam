@@ -21,3 +21,6 @@
 
 - `day-00-planning.md` — 문서 파악, 8일 계획 수립, 방향 결정(질문/답변) 기록
 - `day-01.md` — Day 1 실제 진행 기록
+- `day-02.md` / `day-02-plan-review.md` — Day 2 진행 기록 및 계획 재검토
+- `day-03.md` ~ `day-07.md` — Day 3~7 실제 진행 기록
+- `day-08.md` — Day 8 실제 진행 기록

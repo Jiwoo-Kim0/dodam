@@ -74,7 +74,13 @@
 
 ### R6. 저비용 방어 미적용
 - **대응 (Day 3 / Day 5)**
-  - [ ] nginx `limit_req`로 `/api/` 레이트 리밋 (특히 로그인/회원가입 경로를 더 엄격히)
+  - [x] nginx `limit_req`로 `/api/` 레이트 리밋 (특히 로그인/회원가입 경로를 더 엄격히)
+        - 일반 `/api/` 초당 20req(버스트 40), 로그인·회원가입 분당 20req(버스트 10)
+        - ⚠️ 2026-09-15까지 엄격 규칙이 `^~ /api/auth/`로 걸려 있어 **한 번도 매칭되지 않았다.**
+          실제 경로는 `/api/v1/auth/...`라 로그인이 일반 버킷으로 빠져 무차별 대입 방어가 없었다.
+          `location ~ ^/api/v1/auth/(login|signup)$`로 수정. 경위: [[jiw/day-08.md]] 13절
+        - `refresh`·`logout`·`session`은 의도적으로 제외 — 자동 호출이라 막으면 정상 사용이 끊긴다
+        - 버킷 기준이 `$binary_remote_addr`라 팀이 같은 공인 IP(캠퍼스망)로 나가면 공유된다
   - [ ] 보안 헤더: `HSTS`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`
   - [ ] `server_tokens off` (nginx 버전 숨김)
   - [ ] `/actuator/`가 외부로 새어나가지 않도록 nginx에서 차단 (Prometheus는 컨테이너 네트워크로만)
