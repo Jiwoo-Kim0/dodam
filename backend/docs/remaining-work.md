@@ -1,8 +1,33 @@
 # 백엔드 남은 작업
 
-마지막 갱신: 2026-09-14
+마지막 갱신: 2026-09-15
 
-백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 611이다.
+백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 587, 611이다.
+
+## S15P21D105-587 — Simulation 전체 통합·추천 연결
+
+구현 계약: [simulation.md](simulation.md) §11, [recommendation-api.md](recommendation-api.md) §5.1
+
+### 시연 seed 환경에서 10종 실행 확인
+
+- [ ] 시연 seed(491·492·493·522·523)와 상품 카탈로그를 적재한 MySQL에서 실행 10종이 실제 자료로 성립하는지(대출 `next_repayment_date`, 카드 소유권, 상품 옵션 기간·금리) 확인하고 금액을 simulation.md §7에 기록한다.
+- 근거: `SimulationMySqlIntegrationTest`는 사용자 입력만으로 성립하는 유형(saving·installment·cash-advance·combined)과 스키마 제약을 검증했다. 상품·대출·카드 참조 유형은 H2 fixture로만 확인했다.
+- 선행 조건: seed 적재 MySQL(`NUMBER_HASH_KEY` 일치).
+- 완료 조건: 시연 계정으로 10종 실행 201과 goal-impact 날짜를 실측으로 확인한다.
+
+### 저축 프리셋의 목표 지정
+
+- [ ] 추천이 겨냥한 `goalId`로 저축 시뮬레이션을 좁히려면 명세 17 `POST /simulations/saving` 본문에 `goalId?`를 추가해야 한다(`accountNo`와 동시 지정 400, 지문·저장 파라미터 포함, 타인 목표 404).
+- 근거: FE는 원문 계좌번호가 없어 `accountNo`를 보낼 수 없다. 현재 프리셋은 계좌 미지정으로 모든 모으기 목표에 비례 배분되며 `TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT`로 드러낸다. 목표가 하나면 결과가 같다.
+- 선행 조건: 루트 API 명세 변경은 사용자 요청이 필요하다. FE 146과 함께 결정한다.
+- 완료 조건: `goalId` 지정 실행이 해당 목표만 바꾸고 프리셋 `request.goalId`가 채워진다.
+
+### 테스트 컨텍스트 캐시와 공유 H2
+
+- [ ] 공유 H2(`jdbc:h2:mem:dodam`)와 `create-drop`을 쓰는 기존 통합 테스트(User·Transaction·Spending·Subscription 등)가 Spring 컨텍스트 캐시 축출에 취약하다. `spring.test.context.cache.maxSize` 상향(`junit-platform.properties`) 또는 해당 테스트의 DB URL 분리를 검토한다.
+- 근거: 587에서 새 컨텍스트 2개를 더한 첫 전체 빌드에서 96건이 `Table "auth_session" not found`로 실패했다. 같은 커밋의 깨끗한 worktree는 통과했으므로 컨텍스트 수 증가가 원인이다. 587은 신규 테스트가 기존 컨텍스트(586 URL·같은 MockitoBean)를 공유하도록 바꿔 우회했다.
+- 선행 조건: 공용 테스트 설정 변경이라 팀 확인이 필요하다. 다음에 새 `@SpringBootTest` 컨텍스트를 추가하는 작업에서 같은 문제가 재발할 수 있다.
+- 완료 조건: 컨텍스트를 추가해도 전체 빌드가 순서와 무관하게 통과한다.
 
 ## S15P21D105-535 — 예·적금 ERD 제약 동기화
 

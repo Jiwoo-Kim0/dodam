@@ -27,13 +27,15 @@ public class RecommendationStatusService {
     private final RecommendationHistoryRepository histories;
     private final RecommendationUserLock users;
     private final RecommendationClock clock;
+    private final RecommendationSimulationPresetAssembler presets;
 
     public RecommendationStatusService(RecommendationRepository recommendations, RecommendationHistoryRepository histories,
-            RecommendationUserLock users, RecommendationClock clock) {
+            RecommendationUserLock users, RecommendationClock clock, RecommendationSimulationPresetAssembler presets) {
         this.recommendations = recommendations;
         this.histories = histories;
         this.users = users;
         this.clock = clock;
+        this.presets = presets;
     }
 
     @Transactional
@@ -49,6 +51,6 @@ public class RecommendationStatusService {
         recommendation.changeStatus(next, now);
         RecommendationStatusChangeRequest body = request == null ? RecommendationStatusChangeRequest.EMPTY : request;
         histories.save(RecommendationHistory.of(recommendation.getRecommendationId(), next, body.reasonOrNull(), body.memoOrNull(), now));
-        return RecommendationResponse.from(recommendation);
+        return RecommendationResponse.from(recommendation, presets.assemble(userId, recommendation));
     }
 }

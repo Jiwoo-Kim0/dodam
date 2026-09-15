@@ -9,6 +9,7 @@ import com.ssafy.dodam.domain.recommendation.dto.response.RecommendationHistoryR
 import com.ssafy.dodam.domain.recommendation.dto.response.RecommendationPrioritiesResponse;
 import com.ssafy.dodam.domain.recommendation.dto.response.RecommendationReasonResponse;
 import com.ssafy.dodam.domain.recommendation.dto.response.RecommendationResponse;
+import com.ssafy.dodam.domain.recommendation.dto.response.RecommendationSimulationPreset;
 import com.ssafy.dodam.domain.recommendation.dto.response.RecommendationSummaryResponse;
 import com.ssafy.dodam.domain.recommendation.entity.Recommendation;
 import com.ssafy.dodam.domain.recommendation.entity.RecommendationHistory;
@@ -53,10 +54,11 @@ public class RecommendationQueryService {
     private final GoalRepository goals;
     private final QueryPeriodPolicy periodPolicy;
     private final RecommendationClock clock;
+    private final RecommendationSimulationPresetAssembler presets;
 
     public RecommendationQueryService(RecommendationRepository recommendations, RecommendationReasonRepository reasons,
             RecommendationHistoryRepository histories, DiagnosisRepository diagnoses, GoalRepository goals,
-            QueryPeriodPolicy periodPolicy, RecommendationClock clock) {
+            QueryPeriodPolicy periodPolicy, RecommendationClock clock, RecommendationSimulationPresetAssembler presets) {
         this.recommendations = recommendations;
         this.reasons = reasons;
         this.histories = histories;
@@ -64,11 +66,12 @@ public class RecommendationQueryService {
         this.goals = goals;
         this.periodPolicy = periodPolicy;
         this.clock = clock;
+        this.presets = presets;
     }
 
     public PageResponse<RecommendationResponse> list(Long userId, RecommendationStatus status, String domain, int page, int size) {
-        return PageResponse.from(recommendations.findOwned(userId, status, domain, PageRequest.of(page, size)),
-                RecommendationResponse::from);
+        Page<Recommendation> found = recommendations.findOwned(userId, status, domain, PageRequest.of(page, size));
+        return PageResponse.from(found, withPresets(userId, found.getContent()));
     }
 
     public RecommendationSummaryResponse summary(Long userId) {
@@ -107,16 +110,18 @@ public class RecommendationQueryService {
             return new RecommendationPrioritiesResponse(null, goalId, List.of());
         }
         Long diagnosisId = latest.get().getDiagnosisId();
-        List<RecommendationResponse> items = recommendations
+        List<Recommendation> open = recommendations
                 .findAllByUserIdAndDiagnosisIdOrderByCreatedAtDescRecommendationIdDesc(userId, diagnosisId).stream()
                 .filter(r -> OPEN_STATUSES.contains(r.getStatus()))
                 .sorted(Comparator.comparingInt(Recommendation::getPriority).thenComparing(Recommendation::getRecommendationId))
-                .map(RecommendationResponse::from).toList();
+                .toList();
+        List<RecommendationResponse> items = open.stream().map(withPresets(userId, open)).toList();
         return new RecommendationPrioritiesResponse(diagnosisId, goalId, items);
     }
 
     public RecommendationResponse detail(Long userId, Long recommendationId) {
-        return RecommendationResponse.from(owned(userId, recommendationId));
+        Recommendation recommendation = owned(userId, recommendationId);
+        return RecommendationResponse.from(recommendation, presets.assemble(userId, recommendation));
     }
 
     public List<RecommendationReasonResponse> reasons(Long userId, Long recommendationId) {
@@ -142,6 +147,12 @@ public class RecommendationQueryService {
                 : recommendations.findAllByUserIdAndRecommendationIdIn(userId, ids).stream()
                         .collect(Collectors.toMap(Recommendation::getRecommendationId, Function.identity()));
         return PageResponse.from(found, h -> RecommendationHistoryResponse.of(h, headers.get(h.getRecommendationId())));
+    }
+
+    /** 목록·priorities의 프리셋은 항목별로 조회하지 않고 한 번에 조립한다. */
+    private Function<Recommendation, RecommendationResponse> withPresets(Long userId, List<Recommendation> all) {
+        Map<Long, RecommendationSimulationPreset> byId = presets.assembleAll(userId, all);
+        return r -> RecommendationResponse.from(r, byId.get(r.getRecommendationId()));
     }
 
     Recommendation owned(Long userId, Long recommendationId) {
