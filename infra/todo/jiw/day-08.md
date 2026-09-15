@@ -603,8 +603,63 @@ mysql·redis·nginx는 09-09, grafana 09-09 17:04, prometheus/loki/promtail도 0
 | `07a7d0a` | 로그인 레이트 리밋 경로 수정 | `deploy.sh:163`의 `nginx -s reload`로 반영 |
 | `47dcfc7` | `backup.sh` 검증 로직 | 다음 04:00 cron부터 적용 |
 
+### 19. ⚠️ `SSAFY_FINANCE_API_KEY`가 금융망에서 거부된다 (12:4x, 조회만)
+
+17절에서 "env까지는 반영됐다"까지만 확인했고 **금융망이 그 키를 받아주는지는 미검증**으로 남겼다.
+"바뀐 키로 돌아가야 한다"는 확인 요청을 받아 실제 호출로 검증했다. **결과는 거부다.**
+
+**검증 — `member/search`(읽기 전용, 앱 단위 API)**
+
+```
+POST https://finopenapi.ssafy.io/ssafy/api/v1/member/search
+{"responseCode":"E4004","responseMessage":"존재하지 않는 API KEY입니다"}   HTTP 400
+```
+
+| 호출 주체 | 결과 |
+| --- | --- |
+| 호스트에서 `.env` 값으로 | **E4004** |
+| **backend 컨테이너가 실제로 들고 있는 값으로** | **E4004** |
+| 대조군: 일부러 틀린 32자 키 | E4004 (동일) |
+
+**파싱 문제가 아니다** — 따옴표·앞뒤 공백·CR 전부 없음, 길이 32.
+
+**값의 형태가 이상하다** (값 자체는 기록하지 않는다)
+
+```
+전체 32자 / 대문자 A-Z 32자 / 숫자 0 / 소문자 0 / 기호 0
+```
+
+32자 전부가 영문 대문자이고 숫자가 하나도 없다.
+발급받은 키를 붙여넣은 것이 아니라 **자리표시자나 가려진 값이 들어간 것으로 보인다.**
+
+**왜 아무도 몰랐나 — 기동 검증이 "비어 있지 않다"까지만 본다**
+
+`SsafyFinanceProperties`는 `apiKey`가 blank면 `IllegalStateException`으로 기동을 막지만,
+**값이 틀렸는지는 보지 않는다.** 그래서 backend는 12:04에 정상 기동했고 헬스체크도 통과했다.
+이 키는 **첫 실제 호출 때 런타임에서 터진다** — 시연 중에 드러나기 가장 나쁜 형태다.
+
+**과거 이력**: Loki에서 지난 3일 backend 로그를 `E4004|E4001|SsafyApiException|SsafyUnavailable`로
+조회했으나 **0건**이다. 실패 기록도 성공 기록도 없다.
+즉 "키 교체로 깨졌다"기보다 **운영에서 이 연동이 한 번도 호출된 적이 없는** 상태로 보인다.
+
+**필요한 조치 (인프라 밖 — 키 발급 주체)**: SSAFY 금융망 앱 관리자 API Key를 다시 확인해
+`~/app/infra/.env`의 `SSAFY_FINANCE_API_KEY`에 넣고 **배포**한다(`.env`만 고치면 반영되지 않는다, 17절).
+
+**교체 전 1분 검증법** — 배포하기 전에 키가 유효한지 먼저 확인할 수 있다.
+
+```bash
+curl -s -X POST https://finopenapi.ssafy.io/ssafy/api/v1/member/search \
+  -H 'Content-Type: application/json' \
+  -d '{"apiKey":"<새키>","userId":"아무@이메일"}'
+```
+
+`E4004 존재하지 않는 API KEY` → 키가 틀린 것.
+그 외 응답(사용자 없음 등)이 오면 **키는 통과한 것**이다.
+
 ## 남은 것
 - [ ] `infra-backend:deployed` 태그 생성 확인 (12:04 배포가 첫 적용분)
+- [ ] 🔴 **`SSAFY_FINANCE_API_KEY`가 금융망에서 거부됨(E4004)** — 유효한 키로 교체 후 배포 필요. 기동은 정상이라 첫 호출 때 런타임에서 터진다 (19절)
+- [ ] 금융망 연동을 실제로 1회 호출해 통하는지 확인 — Loki상 운영에서 호출된 이력이 0건이다
 - [ ] **`OPENAI_API_KEY`가 어디에도 배선돼 있지 않다** — compose·`application-prod.yml` 양쪽에 추가 필요 여부를 백엔드와 확인 (17절)
 - [ ] EC2 `.env`의 `KAKAO_CLIENT_*`·`GOOGLE_CLIENT_*`를 `.env.example`(day-07 정리분)에 맞추고, 빈 `FCM_SERVICE_ACCOUNT_PATH` 줄 제거
 - [ ] 롤백 경로 실제 검증 — 일부러 깨는 커밋으로 "코드+이미지가 함께 되돌아오는지" 확인
