@@ -237,6 +237,8 @@ export function LedgerOverview({
                     {groupTransactions.map((transaction) => (
                       <TransactionRow
                         amount={transaction.amount}
+                        categoryCode={transaction.categoryId}
+                        categoryLabel={categoryById.get(transaction.categoryId)?.label}
                         compact
                         key={transaction.id}
                         merchantName={transaction.merchantName}

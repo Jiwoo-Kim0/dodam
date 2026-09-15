@@ -1,7 +1,8 @@
 import { SymbolView } from 'expo-symbols';
-import { Pressable, Text, View } from 'react-native';
+import { Image, Pressable, Text, View } from 'react-native';
 
 import { AppHeader } from '@/components/appHeader/AppHeader';
+import { getTransactionCategoryIcon } from '@/constants/transactionCategoryIcons';
 import { colors } from '@/styles';
 import { formatCurrency } from '@/utils/currency';
 
@@ -108,13 +109,25 @@ export function MonthSelector({
   );
 }
 
-export function MerchantLogoPlaceholder({ compact = false }: { compact?: boolean }) {
+interface TransactionCategoryIconProps {
+  categoryCode?: string | null;
+  categoryLabel?: string;
+  compact?: boolean;
+}
+
+export function TransactionCategoryIcon({
+  categoryCode,
+  categoryLabel,
+  compact = false,
+}: TransactionCategoryIconProps) {
   return (
-    <View
-      accessibilityLabel="거래처 로고 자리"
+    <Image
+      accessibilityLabel={`${categoryLabel ?? '기타'} 카테고리`}
+      resizeMode="contain"
+      source={getTransactionCategoryIcon(categoryCode)}
       style={[
-        styles.merchantLogoPlaceholder,
-        compact && styles.merchantLogoPlaceholderCompact,
+        styles.transactionCategoryIcon,
+        compact && styles.transactionCategoryIconCompact,
       ]}
     />
   );
@@ -124,6 +137,8 @@ interface TransactionRowProps {
   merchantName: string;
   amount: number;
   transactionType: 'expense' | 'income';
+  categoryCode?: string | null;
+  categoryLabel?: string;
   onPress?: () => void;
   compact?: boolean;
 }
@@ -132,6 +147,8 @@ export function TransactionRow({
   merchantName,
   amount,
   transactionType,
+  categoryCode,
+  categoryLabel,
   onPress,
   compact = false,
 }: TransactionRowProps) {
@@ -147,7 +164,11 @@ export function TransactionRow({
         compact && styles.transactionRowCompact,
         pressed && onPress && styles.rowPressed,
       ]}>
-      <MerchantLogoPlaceholder compact={compact} />
+      <TransactionCategoryIcon
+        categoryCode={categoryCode}
+        categoryLabel={categoryLabel}
+        compact={compact}
+      />
       <View style={[styles.transactionCopy, compact && styles.transactionCopyCompact]}>
         <Text
           numberOfLines={1}

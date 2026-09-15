@@ -347,6 +347,8 @@ export function LedgerCalendar({
                 {group.transactions.map((transaction) => (
                   <TransactionRow
                     amount={transaction.amount}
+                    categoryCode={transaction.categoryId}
+                    categoryLabel={categoryById.get(transaction.categoryId)?.label}
                     key={transaction.id}
                     merchantName={transaction.merchantName}
                     onPress={() => onOpenTransaction(transaction.id)}

@@ -2,6 +2,7 @@ import { StyleSheet } from 'react-native';
 
 import {
   colors,
+  componentSize,
   fontFamily,
   fontSize,
   radius,
@@ -347,13 +348,11 @@ export const styles = StyleSheet.create({
   rowPressed: {
     backgroundColor: colors.ledger.softSurface,
   },
-  merchantLogoPlaceholder: {
-    backgroundColor: colors.ledger.logoPlaceholder,
-    borderRadius: radius.round,
-    height: 44,
-    width: 44,
+  transactionCategoryIcon: {
+    height: componentSize.touchTarget,
+    width: componentSize.touchTarget,
   },
-  merchantLogoPlaceholderCompact: {
+  transactionCategoryIconCompact: {
     height: 36,
     width: 36,
   },
