@@ -108,13 +108,15 @@ simulation.md §7 끝에 "616 시연 seed 실측(2026-09-17, 서버 MySQL)" 소�
 | # | 유형 | 계정 | HTTP | simulationId | 핵심 금액 | goal-impact (before → after) | 비고 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 
+실측 결과(2026-09-16 실행, 계획보다 하루 앞당김 — 대출 자료 유효 기간 §3 때문)는 simulation.md §7 "616 시연 seed 실측"에 채웠다. 9종 201, #6 대환은 예상대로 400 `SIMULATION_PRODUCT_OPTION_UNAVAILABLE`. 기준선 달성일 4건이 `GET /goals/{id}/forecast`와 일치했다.
+
 기준선 예상 달성일(`beforeForecastDate`)이 `GET /goals`의 값과 같은지 한 건 이상 대조한다(587 §11.2의 551 대조를 실자료로 재확인).
 
 ## 7. 문서 갱신
 
 - simulation.md §7: 위 표. §11.3 "하지 않은 것"에서 seed 10종 실행 문구 삭제.
 - remaining-work.md 587 절: "시연 seed MySQL 실행 확인" 항목을 완료로 바꾸거나 제거. #6이 400이면 대환 실측 불가 원인과 요청 사항을 새 항목으로 남긴다(담당 BE-A/BE-C).
-- 시연 계정에 남는 시뮬레이션 행: 삭제(`DELETE /simulations/{id}`, 소프트 삭제)할지 시연용으로 둘지 **사용자 결정**. 기본안은 두는 것이며 134 시연 기준에 맞지 않으면 삭제한다.
+- 시연 계정에 남는 시뮬레이션 행(id 7~17): 기본안대로 두었다. 134 시연 기준에 맞지 않으면 `DELETE /simulations/{id}`(소프트 삭제)로 지운다.
 
 ## 8. 위험과 미결
 
