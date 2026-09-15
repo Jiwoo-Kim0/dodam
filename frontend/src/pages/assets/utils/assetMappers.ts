@@ -3,6 +3,7 @@ import type {
   CardApiResponse,
   CardPaymentSchedulesApiResponse,
   DepositSavingApiResponse,
+  InstallmentApiResponse,
   LoanApiResponse,
 } from '@/types/assetApi.types';
 import type {
@@ -163,12 +164,32 @@ function mapCard(
   };
 }
 
+function mapInstallment(installment: InstallmentApiResponse): AssetItem {
+  const paymentDate = installment.nextPaymentDate
+    ? `${formatMonthDay(installment.nextPaymentDate)} 결제 예정`
+    : null;
+
+  return {
+    id: `installment-${installment.installmentId}`,
+    institutionId: 'installment',
+    productName: installment.merchantName,
+    description: [
+      `${installment.remainingMonths}개월 남음`,
+      paymentDate,
+    ]
+      .filter(Boolean)
+      .join(' · '),
+    amount: installment.monthlyAmount,
+  };
+}
+
 interface MapAssetSectionsParams {
   accounts: readonly AccountApiResponse[];
   depositSavings: readonly DepositSavingApiResponse[];
   loans: readonly LoanApiResponse[];
   cards: readonly CardApiResponse[];
   cardPaymentSchedules: CardPaymentSchedulesApiResponse;
+  installments: readonly InstallmentApiResponse[];
 }
 
 export function mapAssetSections({
@@ -177,6 +198,7 @@ export function mapAssetSections({
   loans,
   cards,
   cardPaymentSchedules,
+  installments,
 }: MapAssetSectionsParams): readonly AssetSection[] {
   return [
     {
@@ -203,6 +225,14 @@ export function mapAssetSections({
       items: cards.map((card) =>
         mapCard(card, cardPaymentSchedules),
       ),
+    },
+    {
+      id: 'installment',
+      title: '할부',
+      summaryPrefix: '이번 달 납부 예정',
+      items: installments
+        .filter(({ status }) => status === 'ACTIVE' || status === 'OVERDUE')
+        .map(mapInstallment),
     },
   ];
 }

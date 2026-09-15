@@ -150,6 +150,6 @@ export interface InstallmentApiResponse {
   remainingPrincipal: number | null;
   remainingMonths: number;
   monthlyAmount: number;
-  nextPaymentDate: string;
+  nextPaymentDate: string | null;
   status: 'ACTIVE' | 'COMPLETED' | 'CANCELED' | 'OVERDUE';
 }

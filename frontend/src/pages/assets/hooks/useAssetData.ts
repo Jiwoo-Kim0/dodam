@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { assetApi } from '@/api';
+import { fetchAllPages } from '@/api/pagination';
 import type { AssetOverview, AssetSection } from '@/types/asset.types';
 import { mapAssetOverview } from '@/utils/assetOverview';
 import { toDateKey } from '@/utils/date';
@@ -56,7 +57,8 @@ export function useAssetData() {
         cardPaymentSchedules,
         loans,
         loanSummary,
-        depositSavingsPage,
+        depositSavings,
+        installments,
       ] = await Promise.all([
         assetApi.getAccounts(),
         assetApi.getAccountSummary(),
@@ -64,7 +66,12 @@ export function useAssetData() {
         assetApi.getCardPaymentSchedules(schedulePeriod),
         assetApi.getLoans(),
         assetApi.getLoanSummary(),
-        assetApi.getDepositSavings({ page: 0, size: 100 }),
+        fetchAllPages((page, size) =>
+          assetApi.getDepositSavings({ page, size }),
+        ),
+        fetchAllPages((page, size) =>
+          assetApi.getInstallments({ page, size }),
+        ),
       ]);
 
       if (requestId !== requestIdRef.current) return;
@@ -75,7 +82,8 @@ export function useAssetData() {
           accounts,
           cards,
           cardPaymentSchedules,
-          depositSavings: depositSavingsPage.content,
+          depositSavings,
+          installments,
           loans,
         }),
       });

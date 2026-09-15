@@ -32,13 +32,17 @@ export function AssetSection({ section }: AssetSectionProps) {
       </View>
 
       <View style={styles.list}>
-        {section.items.map((item, index) => (
-          <AssetListItem
-            key={item.id}
-            item={item}
-            isLast={index === section.items.length - 1}
-          />
-        ))}
+        {section.items.length > 0 ? (
+          section.items.map((item, index) => (
+            <AssetListItem
+              key={item.id}
+              item={item}
+              isLast={index === section.items.length - 1}
+            />
+          ))
+        ) : (
+          <Text style={styles.emptyText}>{`${section.title} 내역이 없어요.`}</Text>
+        )}
       </View>
     </View>
   );

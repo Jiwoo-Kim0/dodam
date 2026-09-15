@@ -4,6 +4,7 @@ import type {
   CardApiResponse,
   CardPaymentSchedulesApiResponse,
   DepositSavingApiResponse,
+  InstallmentApiResponse,
   LoanApiResponse,
   LoanSummaryApiResponse,
 } from '@/types/assetApi.types';
@@ -21,6 +22,13 @@ interface GetDepositSavingsParams {
 interface GetCardPaymentSchedulesParams {
   startDate?: string;
   endDate?: string;
+}
+
+interface GetInstallmentsParams {
+  cardId?: number;
+  status?: 'ACTIVE' | 'COMPLETED' | 'CANCELED' | 'OVERDUE';
+  page?: number;
+  size?: number;
 }
 
 export const assetApi = {
@@ -52,5 +60,15 @@ export const assetApi = {
   }: GetDepositSavingsParams = {}) =>
     apiClient.get<PageResponse<DepositSavingApiResponse>>('/v1/deposit-savings', {
       query: { type, status, page, size },
+    }),
+
+  getInstallments: ({
+    cardId,
+    status,
+    page = 0,
+    size = 100,
+  }: GetInstallmentsParams = {}) =>
+    apiClient.get<PageResponse<InstallmentApiResponse>>('/v1/installments', {
+      query: { cardId, status, page, size },
     }),
 };

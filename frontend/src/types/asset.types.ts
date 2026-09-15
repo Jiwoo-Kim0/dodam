@@ -12,7 +12,7 @@ export interface AssetOverview {
   composition: readonly AssetComposition[];
 }
 
-export type AssetSectionId = 'checking' | 'saving' | 'loan' | 'card';
+export type AssetSectionId = 'checking' | 'saving' | 'loan' | 'card' | 'installment';
 
 export interface AssetItem {
   id: string;
