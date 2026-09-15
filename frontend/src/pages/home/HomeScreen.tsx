@@ -2,17 +2,19 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Text, View } from 'react-native';
+import { Alert, type AlertButton, Text, View } from 'react-native';
 
-import { authApi } from '@/api';
+import { authApi, financeDataApi } from '@/api';
 import {
   BouncyScrollView,
   type BouncyScrollViewHandle,
 } from '@/components/bouncyScrollView/BouncyScrollView';
 import { subscribeHomeTabReselect } from '@/components/bottomNavigation/homeTabReselectEvents';
 import { routes } from '@/constants/routes';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import { colors } from '@/styles';
+import { getFinanceErrorMessage } from '@/utils/financeErrorMessage';
 
 import { AssetSummaryCard } from './components/AssetSummaryCard';
 import { BriefingCard } from './components/BriefingCard';
@@ -23,14 +25,13 @@ import { SpendingTopList } from './components/SpendingTopList';
 import { styles } from './HomeScreen.styles';
 import { useHomeSummary } from './hooks/useHomeSummary';
 
-/** 로그인 연동 전까지 사용하는 임시 사용자명이다. */
-const MOCK_USER_NAME = '싸피';
-
 export function HomeScreen() {
   const router = useRouter();
   const scrollRef = useRef<BouncyScrollViewHandle>(null);
   const [sectionSize, setSectionSize] = useState({ width: 0, height: 0 });
+  const { user, reload: reloadUser } = useCurrentUser();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
   const {
     assetOverview,
     error: summaryError,
@@ -62,22 +63,60 @@ export function HomeScreen() {
     }
   };
 
-  const openLogoutMenu = () => {
-    Alert.alert('로그아웃할까요?', '현재 기기의 로그인 세션이 종료됩니다.', [
-      { text: '취소', style: 'cancel' },
-      {
-        text: '로그아웃',
-        style: 'destructive',
-        onPress: () => void handleLogout(),
-      },
-    ]);
+  const handleDisconnect = async () => {
+    if (isDisconnecting) return;
+
+    setIsDisconnecting(true);
+    try {
+      await financeDataApi.disconnect();
+      reloadUser();
+      Alert.alert(
+        '금융 연결을 해제했어요',
+        '다시 연결하면 금융 정보를 새로 가져올 수 있어요.',
+      );
+    } catch (error) {
+      Alert.alert('연결을 해제하지 못했어요', getFinanceErrorMessage(error));
+    } finally {
+      setIsDisconnecting(false);
+    }
+  };
+
+  const confirmDisconnect = () => {
+    Alert.alert(
+      '금융 연결을 해제할까요?',
+      '해제하면 새로운 금융 정보를 가져오지 않아요.',
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '연결 해제',
+          style: 'destructive',
+          onPress: () => void handleDisconnect(),
+        },
+      ],
+    );
+  };
+
+  const openMenu = () => {
+    const buttons: AlertButton[] = [{ text: '취소', style: 'cancel' }];
+
+    if (user?.financeConnectionStatus === 'CONNECTED') {
+      buttons.push({ text: '금융 연결 해제', onPress: confirmDisconnect });
+    }
+
+    buttons.push({
+      text: '로그아웃',
+      style: 'destructive',
+      onPress: () => void handleLogout(),
+    });
+
+    Alert.alert('메뉴', undefined, buttons);
   };
 
   return (
     <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
       <HomeHeader
         onLogoPress={handleHomeRefresh}
-        onMenuPress={openLogoutMenu}
+        onMenuPress={openMenu}
         onNotificationPress={() => router.push(routes.notifications)}
       />
 
@@ -118,8 +157,14 @@ export function HomeScreen() {
 
           <View style={styles.greeting}>
             <Text style={styles.greetingText}>
-              <Text style={styles.greetingName}>{`${MOCK_USER_NAME}님`}</Text>
-              {', 좋은 아침이에요'}
+              {user ? (
+                <>
+                  <Text style={styles.greetingName}>{`${user.name}님`}</Text>
+                  {', 좋은 아침이에요'}
+                </>
+              ) : (
+                '좋은 아침이에요'
+              )}
             </Text>
             <Text style={styles.greetingHeadline}>오늘도 목표를{'\n'}향해 한 걸음 더</Text>
           </View>

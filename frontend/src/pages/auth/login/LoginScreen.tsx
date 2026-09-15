@@ -4,40 +4,54 @@ import { Alert, Pressable, Text, TextInput, View } from 'react-native';
 
 import { authApi, isApiError } from '@/api';
 import { routes } from '@/constants/routes';
+import { useGoogleLogin } from '@/hooks/useGoogleLogin';
 import { useKakaoLogin } from '@/hooks/useKakaoLogin';
 import { AuthScreenLayout } from '@/layout/authScreenLayout/AuthScreenLayout';
 import { colors } from '@/styles';
+import type { SocialLoginResult } from '@/types/auth.types';
 
 import { SocialLoginButton } from './components/SocialLoginButton';
 import { styles } from './LoginScreen.styles';
 
+type SubmissionType = 'kakao' | 'google' | 'demo';
+
 export function LoginScreen() {
   const router = useRouter();
   const { login: loginWithKakao } = useKakaoLogin();
+  const { login: loginWithGoogle } = useGoogleLogin();
   const [errorMessage, setErrorMessage] = useState('');
-  const [submissionType, setSubmissionType] = useState<'kakao' | 'demo' | null>(null);
+  const [submissionType, setSubmissionType] =
+    useState<SubmissionType | null>(null);
   const [demoEmail, setDemoEmail] = useState('');
   const [demoPassword, setDemoPassword] = useState('');
   const isSubmitting = submissionType !== null;
 
-  const handleKakaoLogin = async () => {
+  const showError = (error: unknown, fallbackMessage: string) => {
+    setErrorMessage(
+      isApiError(error)
+        ? error.errors[0]?.reason ?? error.message
+        : fallbackMessage,
+    );
+  };
+
+  /** 서버가 새로 만든 회원(201)만 약관·금융 연동 온보딩을 거친다. */
+  const handleSocialLogin = async (
+    provider: Exclude<SubmissionType, 'demo'>,
+    login: () => Promise<SocialLoginResult | null>,
+    failureMessage: string,
+  ) => {
     if (isSubmitting) return;
 
     setErrorMessage('');
-    setSubmissionType('kakao');
+    setSubmissionType(provider);
 
     try {
-      const result = await loginWithKakao();
+      const result = await login();
       if (!result) return;
 
-      // 서버가 새로 만든 회원(201)만 약관·금융 연동 온보딩을 거친다.
       router.replace(result.isNewUser ? routes.terms : routes.home);
     } catch (error) {
-      setErrorMessage(
-        isApiError(error)
-          ? error.errors[0]?.reason ?? error.message
-          : '카카오 로그인 중 문제가 발생했습니다. 다시 시도해주세요.',
-      );
+      showError(error, failureMessage);
     } finally {
       setSubmissionType(null);
     }
@@ -59,18 +73,14 @@ export function LoginScreen() {
       await authApi.loginWithPassword({ email, password: demoPassword });
       router.replace(routes.terms);
     } catch (error) {
-      setErrorMessage(
-        isApiError(error)
-          ? error.errors[0]?.reason ?? error.message
-          : '데모 로그인에 실패했어요. 다시 시도해주세요.',
-      );
+      showError(error, '데모 로그인에 실패했어요. 다시 시도해주세요.');
     } finally {
       setSubmissionType(null);
     }
   };
 
-  const showComingSoon = () => {
-    Alert.alert('준비 중', '현재 카카오 로그인만 연동을 준비하고 있습니다.');
+  const showNaverComingSoon = () => {
+    Alert.alert('준비 중', '네이버 로그인은 아직 준비 중이에요.');
   };
 
   return (
@@ -79,11 +89,28 @@ export function LoginScreen() {
         <SocialLoginButton
           label={submissionType === 'kakao' ? '카카오 로그인 중...' : undefined}
           provider="kakao"
-          onPress={() => void handleKakaoLogin()}
+          onPress={() =>
+            void handleSocialLogin(
+              'kakao',
+              loginWithKakao,
+              '카카오 로그인 중 문제가 발생했습니다. 다시 시도해주세요.',
+            )
+          }
         />
 
-        <SocialLoginButton provider="google" onPress={showComingSoon} />
-        <SocialLoginButton provider="naver" onPress={showComingSoon} />
+        <SocialLoginButton
+          label={submissionType === 'google' ? '구글 로그인 중...' : undefined}
+          provider="google"
+          onPress={() =>
+            void handleSocialLogin(
+              'google',
+              loginWithGoogle,
+              '구글 로그인 중 문제가 발생했습니다. 다시 시도해주세요.',
+            )
+          }
+        />
+
+        <SocialLoginButton provider="naver" onPress={showNaverComingSoon} />
 
         {__DEV__ ? (
           <View style={styles.demoSection}>
@@ -122,7 +149,9 @@ export function LoginScreen() {
                 isSubmitting && styles.demoButtonDisabled,
               ]}>
               <Text style={styles.demoButtonLabel}>
-                {submissionType === 'demo' ? '로그인 중...' : '데모 계정으로 로그인'}
+                {submissionType === 'demo'
+                  ? '로그인 중...'
+                  : '데모 계정으로 로그인'}
               </Text>
             </Pressable>
           </View>

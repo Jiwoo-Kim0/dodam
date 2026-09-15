@@ -46,7 +46,7 @@ export function HomeHeader({
         </Pressable>
 
         <Pressable
-          accessibilityLabel="로그아웃 메뉴"
+          accessibilityLabel="메뉴 열기"
           accessibilityRole="button"
           hitSlop={8}
           onPress={onMenuPress}
