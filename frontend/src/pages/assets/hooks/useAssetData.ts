@@ -50,6 +50,7 @@ export function useAssetData() {
 
     try {
       const schedulePeriod = getCurrentMonthSchedulePeriod();
+      const yearMonth = schedulePeriod.startDate.slice(0, 7);
       const [
         accounts,
         accountSummary,
@@ -58,7 +59,9 @@ export function useAssetData() {
         loans,
         loanSummary,
         depositSavings,
+        depositSavingSummary,
         installments,
+        installmentSchedule,
       ] = await Promise.all([
         assetApi.getAccounts(),
         assetApi.getAccountSummary(),
@@ -69,9 +72,14 @@ export function useAssetData() {
         fetchAllPages((page, size) =>
           assetApi.getDepositSavings({ page, size }),
         ),
+        assetApi.getDepositSavingSummary(),
         fetchAllPages((page, size) =>
           assetApi.getInstallments({ page, size }),
         ),
+        assetApi.getInstallmentSchedule({
+          startMonth: yearMonth,
+          endMonth: yearMonth,
+        }),
       ]);
 
       if (requestId !== requestIdRef.current) return;
@@ -80,11 +88,15 @@ export function useAssetData() {
         overview: mapAssetOverview(accountSummary, loanSummary),
         sections: mapAssetSections({
           accounts,
+          accountSummary,
           cards,
           cardPaymentSchedules,
           depositSavings,
+          depositSavingSummary,
           installments,
+          installmentSchedule,
           loans,
+          loanSummary,
         }),
       });
     } catch (loadError) {

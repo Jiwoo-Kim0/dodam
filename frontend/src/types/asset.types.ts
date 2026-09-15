@@ -26,5 +26,6 @@ export interface AssetSection {
   id: AssetSectionId;
   title: string;
   summaryPrefix?: string;
+  summaryAmount?: number;
   items: readonly AssetItem[];
 }

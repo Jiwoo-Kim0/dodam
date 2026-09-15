@@ -153,3 +153,22 @@ export interface InstallmentApiResponse {
   nextPaymentDate: string | null;
   status: 'ACTIVE' | 'COMPLETED' | 'CANCELED' | 'OVERDUE';
 }
+
+export interface InstallmentMonthApiResponse {
+  yearMonth: string;
+  scheduledAmount: number;
+  installmentCount: number;
+}
+
+export interface InstallmentScheduleApiResponse {
+  asOfDate: string;
+  startMonth: string;
+  endMonth: string;
+  complete: boolean;
+  excludedInstallmentCount: number;
+  exclusions: readonly {
+    reason: string;
+    count: number;
+  }[];
+  months: readonly InstallmentMonthApiResponse[];
+}

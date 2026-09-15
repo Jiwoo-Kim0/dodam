@@ -1,10 +1,14 @@
 import type {
   AccountApiResponse,
+  AccountSummaryApiResponse,
   CardApiResponse,
   CardPaymentSchedulesApiResponse,
   DepositSavingApiResponse,
+  DepositSavingSummaryApiResponse,
   InstallmentApiResponse,
+  InstallmentScheduleApiResponse,
   LoanApiResponse,
+  LoanSummaryApiResponse,
 } from '@/types/assetApi.types';
 import type {
   AssetItem,
@@ -185,25 +189,34 @@ function mapInstallment(installment: InstallmentApiResponse): AssetItem {
 
 interface MapAssetSectionsParams {
   accounts: readonly AccountApiResponse[];
+  accountSummary: AccountSummaryApiResponse;
   depositSavings: readonly DepositSavingApiResponse[];
+  depositSavingSummary: DepositSavingSummaryApiResponse;
   loans: readonly LoanApiResponse[];
+  loanSummary: LoanSummaryApiResponse;
   cards: readonly CardApiResponse[];
   cardPaymentSchedules: CardPaymentSchedulesApiResponse;
   installments: readonly InstallmentApiResponse[];
+  installmentSchedule: InstallmentScheduleApiResponse;
 }
 
 export function mapAssetSections({
   accounts,
+  accountSummary,
   depositSavings,
+  depositSavingSummary,
   loans,
+  loanSummary,
   cards,
   cardPaymentSchedules,
   installments,
+  installmentSchedule,
 }: MapAssetSectionsParams): readonly AssetSection[] {
   return [
     {
       id: 'checking',
       title: '입출금',
+      summaryAmount: accountSummary.demandDepositBalance,
       items: accounts
         .filter(({ accountType }) => accountType === 'DEMAND_DEPOSIT')
         .map(mapCheckingAccount),
@@ -211,17 +224,20 @@ export function mapAssetSections({
     {
       id: 'saving',
       title: '예·적금',
+      summaryAmount: depositSavingSummary.totalBalance ?? 0,
       items: depositSavings.map(mapDepositSaving),
     },
     {
       id: 'loan',
       title: '대출',
+      summaryAmount: -Math.abs(loanSummary.totalBalance),
       items: loans.map(mapLoan),
     },
     {
       id: 'card',
       title: '카드',
       summaryPrefix: '이번 달 결제 예정',
+      summaryAmount: cardPaymentSchedules.totalScheduledAmount,
       items: cards.map((card) =>
         mapCard(card, cardPaymentSchedules),
       ),
@@ -230,6 +246,10 @@ export function mapAssetSections({
       id: 'installment',
       title: '할부',
       summaryPrefix: '이번 달 납부 예정',
+      summaryAmount:
+        installmentSchedule.months.find(
+          ({ yearMonth }) => yearMonth === installmentSchedule.startMonth,
+        )?.scheduledAmount ?? 0,
       items: installments
         .filter(({ status }) => status === 'ACTIVE' || status === 'OVERDUE')
         .map(mapInstallment),
