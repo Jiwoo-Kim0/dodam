@@ -179,9 +179,33 @@ H2 (`.\gradlew.bat test --tests 'com.ssafy.dodam.domain.simulation.*'`, 2026-09-
 
 MySQL 통합 검증은 587에서 수행했다(§11.3).
 
+### 616 시연 seed 실측 (2026-09-16, 시연 서버 MySQL)
+
+시연 서버(`j15D105.p.ssafy.io`, seed 1~10번 적재, 기준일 2026-09-16)에서 시연 계정 U0001~U0004로 API를 직접 호출했다. 계획·자료 근거는 [simulation-616-plan.md](simulation-616-plan.md). 계좌·카드번호는 마스킹 값만 적는다.
+
+| # | 유형 | 계정 | HTTP | id | 핵심 금액 | goal-impact (before → after) | 비고 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `spending` 100,000 | U0002 | 201 | 7 | 가용자금 −605,666 → −505,666 | 목표 2: 2035-02-16 → 2033-01-16 | 30,200,000 / 400,000 = 75.5 → 76개월 |
+| 2 | `saving` 300,000 (예금 `…3301`) | U0003 | 201 | 8 | 월 저축 3,333,333 → 300,000, 가용자금 −2,407,633 → 625,700 | 목표 4: 2027-07-16 → 2035-06-16 | 저축액 "변경"이라 기준선보다 작으면 늦어진다. 4,000,000으로 재실행(id 16) → 2027-05-16 |
+| 3 | `saving-product` 상품 1, 10,000,000 × 12개월 | U0003 | 201 | 9 | 세전 이자 360,000, 만기 2027-09-16 수령 10,360,000 | 목표 4: NOT_COMPUTABLE `FUNDING_SOURCE_UNKNOWN` | floor(10,000,000 × 3.60 × 365 / 36500) |
+| 4 | `loan/new` 상품 53, 10,000,000 × 12, `EQUAL_PAYMENT` | U0001 | 201 | 10 | 6.04% 총 이자 330,178, 첫 회차 860,848(2026-10-16), 만기 2027-09-16 | 목표 1: `ALREADY_ACHIEVED` | AUTO 생략 → 400 `REPAYMENT_TYPE_REQUIRED`(term 12 옵션 코드 4종) |
+| 5 | `loan/prepayment` 대출 `…4101` 10,000,000 | U0004 | 201 | 11 | 만기까지 이자 1,333,335 → 1,200,000 (절감 133,335), 잔액 90,000,000 | 목표 5: NOT_COMPUTABLE `FUNDING_SOURCE_UNKNOWN` | BULLET 3.2%, 잔여 5회(09/20·10/20·11/20·12/20·만기 01/19) × 266,667 |
+| 6 | `loan/refinance` 대출 `…4101` → 상품 18 | U0004 | **400** | — | `SIMULATION_PRODUCT_OPTION_UNAVAILABLE` | — | 잔여 5회와 같은 term 옵션이 없다(JEONSE군 옵션 6/12/24/36). 상품 15도 같다. **seed 자료 한계**, 코드 결함 아님 |
+| 7 | `installment` 1,200,000 × 12, 12% | U0002 | 201 | 12 | 수수료 77,820, 첫 회차 111,836(2026-10-16) | 목표 2: NOT_COMPUTABLE `GOAL_ALLOCATION_UNKNOWN` | |
+| 8 | `revolving` 카드 5, 500,000 / 50% / 18% | U0004 | 201 | 13 | 기준일 결제 250,000, 이월 250,000, 완납 2028-03-16까지 이자 7,478 | 목표 5: NOT_COMPUTABLE | 카드 1(U0001)·99999 → 404. 카드 6(EXPIRED) → 201(id 17, 소유권만 검사) |
+| 9 | `cash-advance` 1,000,000 / 18% | U0003 | 201 | 14 | 30일 이자 14,795, 2026-10-16 상환 1,014,795 | 목표 4: NOT_COMPUTABLE | |
+| 10 | `combined` [saving 300,000(적금 `…4401`), #7, #5] | U0004 | 201 | 15 | 2027-09-16까지 금융비용 1,333,335 → 1,277,820 (−55,515) | 목표 5: NOT_COMPUTABLE `COMBINED_GOAL_EFFECT_NOT_COMPUTABLE` | scenarios 3행 |
+
+- **기준선 일치**: 목표 1·2·4·5의 `beforeForecastDate`가 `GET /goals/{id}/forecast`의 `expectedAchievementDate`(2026-09-16 기준 2026-09-16 / 2035-02-16 / 2027-07-16 / 2032-03-16)와 모두 같다.
+- **재사용·소유권·자료 오류**: 10종 전부 같은 요청 재실행 200 `created:false`(행 증가 없음). U0001이 U0004의 id 11 조회 → 404. U0002 주택대출(`next_repayment_date` 2026-09-15, 기준일 이전)·U0004 사잇돌(OVERDUE) 추가상환 → 400 `SIMULATION_LOAN_DATA_UNAVAILABLE`. `GET /simulations/{id}/goal-impact`는 10건 모두 실행 응답의 `goalImpacts`와 동일.
+- **seed 자료 한계**(코드 변경 없음, 담당 BE-A/BE-C에 전달): (1) 523 seed의 `next_repayment_date`는 `'2026-09-01' + 상환일−1`로 고정돼 U0004 전세대출은 09-20까지만, 그 뒤엔 시연 계정 어디에도 추가상환·대환이 가능한 대출이 없다. (2) 대환은 잔여 회차가 카탈로그 옵션 term(6/12/24/36)과 일치하는 대출이 시연 계정에 없어 201을 낼 수 없다. (3) U0001의 유일한 목표는 이미 달성 상태라 저축·소비 시뮬레이션이 목표 변화를 보여주지 못한다.
+- **API 발견**: `GET /cards`가 `cardId`를 내려주지 않아 FE가 리볼빙 `cardId`를 채울 수 없다(실측은 `GET /installments`의 `cardId`로 역추적). remaining-work.md 587 절 참고.
+- 배포 코드가 587(`cf5eb3c`)인지는 시연 계정에 추천이 없어 `simulation` 필드로 확인하지 못했다. 위 10종은 586까지의 계산기라 결과에는 영향이 없다.
+- 실행으로 남은 시뮬레이션 행(id 7~17)은 삭제하지 않았다. 실행 전부터 U0004에 SPENDING id 1·2·3·6이 있었다(다른 팀원의 연동 테스트로 추정).
+
 ## 8. 현재 제한사항과 인계
 
-- [x] **MySQL 검증**(587, §11.3): `SimulationMySqlIntegrationTest`(`SIMULATION_MYSQL_TEST_URL` 설정 시만 실행)로 V19 DDL·`ddl-auto: validate`·CHECK 3종·복합 FK·JSON 타입·N행 scenario·동시 실행 1건 저장을 MySQL 8.0.46에서 확인했다. 시연 seed를 적재한 스키마에서의 10종 실행 확인은 남아 있다(remaining-work.md). 빈 DB에서 V6이 V11보다 먼저 실행돼 Flyway가 실패하는 develop 기존 문제(recommendation.md §8)는 그대로다.
+- [x] **MySQL 검증**(587, §11.3): `SimulationMySqlIntegrationTest`(`SIMULATION_MYSQL_TEST_URL` 설정 시만 실행)로 V19 DDL·`ddl-auto: validate`·CHECK 3종·복합 FK·JSON 타입·N행 scenario·동시 실행 1건 저장을 MySQL 8.0.46에서 확인했다. 시연 seed 10종 실행은 616에서 실측했다(§7). 빈 DB에서 V6이 V11보다 먼저 실행돼 Flyway가 실패하는 develop 기존 문제(recommendation.md §8)는 그대로다.
 - [ ] `GoalAchievementProjection`은 Goal 계산식의 복제다. 546 병합 후 Goal 도메인에 순수 함수가 생기면 교체한다.
 - [x] 명세 17의 실행 10종이 모두 열렸다(586). 계산기 추가 시 `SimulationCalculator.compute`가 내부 납부 자료(`ScenarioLedger`)도 만들어야 복합에 참여할 수 있다.
 - [ ] 소비 감소분을 목표에 돌리는 가정, 남은 금액 비례 배분, 이자 미반영은 `assumptions`로 노출하는 서비스 결정이다. 팀 합의가 다르면 계산기만 바꾸고 `SimulationCalculationVersion`을 올린다.
@@ -477,7 +501,7 @@ Flyway가 V18·V19·V30~V34를 적용하게 했다(recommendation.md §8과 같�
 - 실행·저장: `POST /saving` 후 `JSON_EXTRACT(after_snapshot, '$.monthlySaving')`가 숫자로 읽히고 `requestHash` 64자, `accountNo` 키 부재, scenario 1행, goal_impact 1행. 같은 날 재사용 200(DATETIME 범위 비교), 다음 날 신규, 상세 = 실행 응답, 타인 404, 삭제 후 `deleted_at` 기록·404·같은 요청 신규.
 - 복합: scenario 2행(sequence 1·2, `JSON_EXTRACT(parameters, '$.purchaseAmount')`), `details.children` 2개. `chk_simulation_type`·`chk_simulation_status`·`chk_simulation_scenario_sequence_no` 위반과 `uk_simulation_scenario_sequence`·`uk_simulation_goal_impact_simulation_goal` 중복, 타인 user_id의 goal_impact 복합 FK 거부.
 - 동시 실행: 같은 사용자 `POST /cash-advance` 4건 동시 → 201 1건·200 3건, `simulation` 1행. `SimulationUserLock`의 `SELECT … FOR UPDATE`가 InnoDB에서 직렬화됨을 확인했다.
-- 하지 않은 것: 시연 seed(491·492·493·522·523)와 상품 카탈로그를 적재한 스키마에서의 10종 실행·금액 확인. 복합 저장 중간 실패 시 0행 롤백, `idx_simulation_user_type_created` 순서의 목록 정렬, `uk_simulation_user_simulation_id` 본인 조건 조회(계획 §6에 있었으나 미작성, remaining-work.md). FE 앱 통합.
+- 하지 않은 것: ~~시연 seed를 적재한 스키마에서의 10종 실행·금액 확인~~(616, §7 실측 참고 — 대환은 seed 자료 한계로 400). 복합 저장 중간 실패 시 0행 롤백, `idx_simulation_user_type_created` 순서의 목록 정렬, `uk_simulation_user_simulation_id` 본인 조건 조회(계획 §6에 있었으나 미작성, remaining-work.md). FE 앱 통합.
 
 ### 11.4 FE 인계
 
