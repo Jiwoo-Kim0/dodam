@@ -986,5 +986,9 @@
 
 결과 기록: [notification.md](notification.md) "BE-A 통합 테스트"
 
-- [ ] seed 사용자(`seed.kmeans.u0001~u0004`)는 `password_hash`가 NULL이라 실제 로그인 토큰으로 서버 API를 통합 점검할 수 없다. 시연 계정 비밀번호 설정 절차가 정해지면 서버에서 BE-A 8개 API 스모크(로그인 → 계좌·거래·소비·목표·정기결제·패턴·알림)를 한 번 돌려 기록한다.
+- [x] 시연 계정 비밀번호 설정 절차를 정했다(2026-09-15). `database/seeds/DODAM_DEMO_PASSWORD_SEED.sql`(10번)이 U0001~U0004에만 BCrypt 해시를 넣고, 비밀번호는 `seeds/README.md` "시연 계정 로그인" 절에 있다. 나머지 seed 사용자는 NULL 유지.
+- [x] 서버 스모크 스크립트 `scripts/be-a-server-smoke.sh`를 만들었다(2026-09-15). 공개 API만 사용해 로그인 → 계좌·거래·소비·목표·정기결제·패턴·알림 순으로 호출하고 상태 코드를 표로 남긴다. 비밀번호 미적용 상태의 서버에서 로그인 401을 받아 실패 메시지로 멈추는 경로까지 확인했다.
+- [ ] 서버 DB에 10번 seed를 적용한 뒤 스모크를 한 번 돌려 결과를 notification.md "BE-A 통합 테스트" 절에 기록한다.
+- 선행 조건: 서버 DB 쓰기는 공용 자원 변경이므로 담당자가 직접 실행한다(`~/seed-load/`에 파일을 올리고 `mysql -h127.0.0.1`로 `dodam`에 적용). 패턴 `GET /me`는 서버에 분석 이력이 없으면 404가 정상이며 `--analyze` 옵션으로 먼저 실행할 수 있다.
+- 완료 조건: 8개 API 전부 기대 상태 코드(200, 패턴 미분석 시 404 허용)이고 결과 표가 문서에 남는다.
 - [ ] BE-A 통합 테스트는 H2 전체 회귀 + MySQL 게이트 테스트(Pattern·Notification) 조합이다. Goal·Subscription·Account·Transaction·Finance·Auth·User의 MySQL 게이트 테스트는 없다. 시연 전 서버 DB(seed 적재 완료)에서 API 스모크로 대신한다.

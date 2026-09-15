@@ -203,4 +203,10 @@ BE-A 담당 도메인별(H2 통합 + 단위):
 
 - 첫 실행에서 `PatternMySqlIntegrationTest`가 `populationSize == 41` 단정으로 실패했다. 같은 스키마에 seed 4,000명이 있으면 모집단이 4,041이 되기 때문이다.
   테스트가 DB에 자기 fixture만 있다고 가정한 문제라 하한(≥ 41) 단정으로 고쳤고 재실행에서 통과했다. 제품 코드 변경은 없다.
-- 서버(시연 DB)에서의 실제 로그인 토큰 기반 스모크는 seed 사용자에 비밀번호가 없어 아직 못 했다(remaining-work 521 절).
+- 서버(시연 DB)에서의 실제 로그인 토큰 기반 스모크는 seed 사용자에 비밀번호가 없어 2026-09-14에는 못 했다. 2026-09-15에 시연 계정 비밀번호 seed
+  (`database/seeds/DODAM_DEMO_PASSWORD_SEED.sql`)와 스모크 스크립트(`scripts/be-a-server-smoke.sh`, 로그인 → 계좌·거래·소비·목표·정기결제·패턴·알림)를
+  준비했다. 서버 DB에 seed를 적용한 뒤 실행 결과를 아래에 기록한다(remaining-work 521 절).
+
+### 서버 스모크 (2026-09-15, 대기)
+
+비밀번호 seed 적용 전 실행: `POST /v1/auth/login` 401 `INVALID_CREDENTIALS`로 스크립트가 멈춤(의도한 실패 경로). 적용 후 결과 표는 여기에 추가한다.
