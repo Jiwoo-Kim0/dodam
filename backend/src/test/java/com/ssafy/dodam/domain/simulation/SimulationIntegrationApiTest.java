@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ssafy.dodam.domain.goal.entity.Goal;
 import com.ssafy.dodam.domain.goal.entity.GoalAccount;
@@ -29,6 +30,8 @@ import com.ssafy.dodam.global.security.SensitiveNumberHasher;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -58,6 +61,8 @@ import org.springframework.test.web.servlet.ResultActions;
 class SimulationIntegrationApiTest {
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 9, 15, 12, 0);
     private static final String LOAN_NO = "1234567890123";
+    // 618: 복합에서 추가상환·대환은 같은 loanId면 충돌이라 두 번째 대출을 둔다
+    private static final String LOAN_NO_2 = "1234567890124";
     private static final String GOAL_ACCOUNT_NO = "1111222233334444";
     private static final List<String> QUERY_PATHS = List.of("", "/comparison", "/cashflow", "/goal-impact", "/assets", "/debts", "/costs");
     @Autowired MockMvc mvc;
@@ -74,6 +79,9 @@ class SimulationIntegrationApiTest {
     private Long owner;
     private Long other;
     private Long goalId;
+    private Long cardId;
+    private long deposit;
+    private long credit;
     /** 실행 경로 → 요청 본문. 10종 전부이며 순서는 명세 17 순서다. */
     private Map<String, String> requests;
 
@@ -104,16 +112,17 @@ class SimulationIntegrationApiTest {
         goalId = goal.getId();
         savingGoals.save(SavingGoal.create(goalId, 3_000_000L, NOW.toLocalDate().plusYears(1)));
         goalAccounts.save(GoalAccount.link(owner, goalId, accountId, "DEMAND_DEPOSIT"));
-        Long cardId = insertCard(owner, accountId);
+        cardId = insertCard(owner, accountId);
 
         jdbc.update("INSERT INTO financial_company (company_code, company_name, sector) VALUES ('TESTBANK', '테스트은행', 'BANK')");
         long company = jdbc.queryForObject("SELECT company_id FROM financial_company WHERE company_code = 'TESTBANK'", Long.class);
-        long deposit = insertProduct(company, "DEPOSIT", "정기예금", "FIXED_DEPOSIT", null);
+        deposit = insertProduct(company, "DEPOSIT", "정기예금", "FIXED_DEPOSIT", null);
         option(deposit, 12, "3.65", null);
-        long credit = insertProduct(company, "LOAN", "신용대출", null, "PERSONAL_CREDIT");
+        credit = insertProduct(company, "LOAN", "신용대출", null, "PERSONAL_CREDIT");
         option(credit, 2, "6", "BULLET");
         option(credit, 12, "6", "EQUAL_PRINCIPAL");
         insertLoan(owner, LOAN_NO, credit, 1_200_000L, LocalDate.of(2026, 10, 15), LocalDate.of(2026, 11, 15));
+        insertLoan(owner, LOAN_NO_2, credit, 1_200_000L, LocalDate.of(2026, 10, 15), LocalDate.of(2026, 11, 15));
 
         requests = new LinkedHashMap<>();
         requests.put("/spending", "{\"monthlyReduction\":100000}");
@@ -139,7 +148,8 @@ class SimulationIntegrationApiTest {
                     .andExpect(jsonPath("$.data.simulation.status").value("COMPLETED"))
                     .andExpect(jsonPath("$.data.simulation.request.requestHash").doesNotExist())
                     .andReturn().getResponse().getContentAsString();
-            assertThat(body).as(path).doesNotContain(LOAN_NO).doesNotContain(GOAL_ACCOUNT_NO).doesNotContain(hasher.hash(LOAN_NO));
+            assertThat(body).as(path).doesNotContain(LOAN_NO).doesNotContain(LOAN_NO_2).doesNotContain(GOAL_ACCOUNT_NO)
+                    .doesNotContain(hasher.hash(LOAN_NO)).doesNotContain(hasher.hash(LOAN_NO_2));
             JsonNode simulation = json.readTree(body).at("/data/simulation");
             long id = simulation.path("simulationId").asLong();
 
@@ -253,6 +263,105 @@ class SimulationIntegrationApiTest {
     private ResultActions run(Long userId, String path, String body) throws Exception {
         return mvc.perform(post("/api/v1/simulations" + path).with(user(userId.toString()))
                 .contentType(MediaType.APPLICATION_JSON).content(body));
+    }
+
+    /**
+     * 618: 자식 9종을 모두 넣은 복합(10개, 추가상환·대환은 서로 다른 대출)은 입력 순서를 바꿔도 합성 결과가 같다.
+     * 순서는 지문에 들어가므로 세 실행 모두 신규(201)이고, 순서를 보존하는 것은 scenarios·details.children뿐이어야 한다(§10.4).
+     * 계산기 단위 테스트는 2개 조합만 다루므로 여기서 전체 조합을 API 수준으로 고정한다.
+     */
+    @Test
+    void combinedWithEveryChildTypeIsOrderInvariant() throws Exception {
+        List<String> children = List.of(
+                "{\"type\":\"SPENDING\",\"parameters\":{\"monthlyReduction\":100000}}",
+                "{\"type\":\"SAVING\",\"parameters\":{\"monthlySavingAmount\":500000}}",
+                "{\"type\":\"SAVING_PRODUCT\",\"parameters\":{\"productId\":" + deposit + ",\"monthlyAmount\":1000000,\"term\":12}}",
+                "{\"type\":\"LOAN_NEW\",\"parameters\":{\"productId\":" + credit + ",\"principal\":1200000,\"term\":12}}",
+                "{\"type\":\"LOAN_PREPAYMENT\",\"parameters\":{\"accountNo\":\"" + LOAN_NO + "\",\"prepaymentAmount\":200000}}",
+                "{\"type\":\"LOAN_REFINANCE\",\"parameters\":{\"accountNo\":\"" + LOAN_NO_2 + "\",\"targetProductId\":" + credit + "}}",
+                "{\"type\":\"INSTALLMENT\",\"parameters\":{\"purchaseAmount\":1200000,\"months\":2,\"feeRate\":12}}",
+                "{\"type\":\"REVOLVING\",\"parameters\":{\"cardId\":" + cardId + ",\"balance\":1000000,\"paymentRatio\":50,\"rate\":12}}",
+                "{\"type\":\"CASH_ADVANCE\",\"parameters\":{\"amount\":1000000,\"rate\":12}}",
+                // 10번째: 같은 유형·다른 금액은 중복(정규화 입력 동일)도 충돌도 아니다
+                "{\"type\":\"CASH_ADVANCE\",\"parameters\":{\"amount\":500000,\"rate\":12}}");
+        List<String> reversed = new ArrayList<>(children);
+        Collections.reverse(reversed);
+        List<String> rotated = new ArrayList<>(children);
+        Collections.rotate(rotated, 3);
+
+        List<JsonNode> results = new ArrayList<>();
+        List<List<String>> orders = List.of(children, reversed, rotated);
+        for (List<String> order : orders) {
+            String body = run(owner, "/combined", "{\"scenarios\":[" + String.join(",", order) + "]}")
+                    .andExpect(status().isCreated()).andExpect(jsonPath("$.data.created").value(true))
+                    .andReturn().getResponse().getContentAsString();
+            assertThat(body).doesNotContain(LOAN_NO).doesNotContain(LOAN_NO_2).doesNotContain(GOAL_ACCOUNT_NO);
+            JsonNode simulation = json.readTree(body).at("/data/simulation");
+            assertThat(simulation.path("scenarios")).hasSize(10);
+            // 입력 순서 보존: scenarios[i].sequenceNo = i + 1, type = 입력 i번째 유형
+            for (int i = 0; i < order.size(); i++) {
+                assertThat(simulation.at("/scenarios/" + i + "/sequenceNo").asInt()).isEqualTo(i + 1);
+                assertThat(simulation.at("/scenarios/" + i + "/scenarioType").asText()).isEqualTo(json.readTree(order.get(i)).path("type").asText());
+                assertThat(simulation.at("/after/details/children/" + i + "/type").asText())
+                        .isEqualTo(json.readTree(order.get(i)).path("type").asText());
+            }
+            results.add(simulation);
+        }
+        assertThat(results.stream().map(r -> r.path("simulationId").asLong()).distinct()).hasSize(3);
+        // 같은 순서 재실행만 재사용
+        run(owner, "/combined", "{\"scenarios\":[" + String.join(",", children) + "]}").andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.simulation.simulationId").value(results.get(0).path("simulationId").asLong()));
+
+        JsonNode base = results.get(0);
+        for (int i = 1; i < results.size(); i++) {
+            JsonNode other = results.get(i);
+            String label = "order " + i;
+            assertThat(withoutChildren(other.path("after"))).as(label + " after").isEqualTo(withoutChildren(base.path("after")));
+            assertThat(other.path("before")).as(label + " before").isEqualTo(base.path("before"));
+            assertThat(other.path("comparison")).as(label + " comparison").isEqualTo(base.path("comparison"));
+            assertThat(other.path("cashflow")).as(label + " cashflow").isEqualTo(base.path("cashflow"));
+            assertThat(sortedReasons(other.path("goalImpacts"))).as(label + " goalImpacts").isEqualTo(sortedReasons(base.path("goalImpacts")));
+            assertThat(other.path("summary")).as(label + " summary").isEqualTo(base.path("summary"));
+            // title은 자식 제목을 입력 순서로 이어 붙이므로 순서를 따른다(표시용). 건수만 같다
+            assertThat(other.path("title").asText()).as(label + " title").startsWith("복합 시나리오 10건");
+            assertThat(childrenWithoutSequence(other)).as(label + " children")
+                    .containsExactlyInAnyOrderElementsOf(childrenWithoutSequence(base));
+        }
+    }
+
+    /**
+     * 자식 순서를 보존하는 두 목록(details.children, details.financeCost.children)을 빼고, 계산 불가 사유(reasons)는 정렬한 after.
+     * reasons는 자식 순서대로 중복 제거되므로(CombinedCalculator.childReasons) 집합만 같으면 된다. 나머지는 순서와 무관해야 한다.
+     */
+    private JsonNode withoutChildren(JsonNode after) {
+        ObjectNode copy = after.deepCopy();
+        ((ObjectNode) copy.path("details")).remove("children");
+        ((ObjectNode) copy.at("/details/financeCost")).remove("children");
+        copy.set("goalImpactDetails", sortedReasons(copy.path("goalImpactDetails")));
+        return copy;
+    }
+
+    private JsonNode sortedReasons(JsonNode impacts) {
+        JsonNode copy = impacts.deepCopy();
+        for (JsonNode impact : copy) {
+            List<String> reasons = new ArrayList<>();
+            impact.path("reasons").forEach(reason -> reasons.add(reason.asText()));
+            Collections.sort(reasons);
+            ((ObjectNode) impact).putPOJO("reasons", reasons);
+        }
+        return json.valueToTree(copy);
+    }
+
+    private List<JsonNode> childrenWithoutSequence(JsonNode simulation) {
+        List<JsonNode> children = new ArrayList<>();
+        for (String path : List.of("/after/details/children", "/after/details/financeCost/children")) {
+            for (JsonNode child : simulation.at(path)) {
+                ObjectNode copy = child.deepCopy();
+                copy.remove("sequenceNo");
+                children.add(copy);
+            }
+        }
+        return children;
     }
 
     private void expense(LocalDate date, long amount) {
