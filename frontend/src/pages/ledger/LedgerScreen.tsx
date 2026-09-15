@@ -1,16 +1,15 @@
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
+import { AppHeader } from '@/components/appHeader/AppHeader';
 import { routes } from '@/constants/routes';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import {
   EMPTY_LEDGER_DRAFT,
   LEDGER_CATEGORIES,
-  LEDGER_CATEGORY_SUMMARIES,
-  LEDGER_DAILY_TOTALS,
-  LEDGER_MONTHLY_SUMMARY,
-  MOCK_LEDGER_TRANSACTIONS,
 } from '@/mocks/ledger';
+import { colors } from '@/styles';
 import type {
   LedgerTransaction,
   LedgerTransactionDraft,
@@ -23,6 +22,7 @@ import { LedgerCalendar } from './components/LedgerCalendar';
 import { LedgerOverview } from './components/LedgerOverview';
 import { TransactionDetail } from './components/TransactionDetail';
 import { TransactionForm } from './components/TransactionForm';
+import { useLedgerData } from './hooks/useLedgerData';
 
 type LedgerView = 'overview' | 'calendar' | 'detail' | 'category' | 'form';
 type LedgerListView = 'overview' | 'calendar';
@@ -50,9 +50,19 @@ export function LedgerScreen() {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
-  const [transactions, setTransactions] = useState<LedgerTransaction[]>(() =>
-    MOCK_LEDGER_TRANSACTIONS.map((transaction) => ({ ...transaction })),
-  );
+  const {
+    transactions,
+    monthlySummary,
+    dailyTotals,
+    categorySummaries,
+    isLoading,
+    isRefreshing,
+    error,
+    refetch,
+    updateTransaction,
+    prependTransaction,
+    removeTransaction,
+  } = useLedgerData(currentMonth);
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
   const [draft, setDraft] = useState<LedgerTransactionDraft>({ ...EMPTY_LEDGER_DRAFT });
 
@@ -74,13 +84,7 @@ export function LedgerScreen() {
   const updateSelectedTransaction = (patch: Partial<LedgerTransaction>) => {
     if (!selectedTransactionId) return;
 
-    setTransactions((current) =>
-      current.map((transaction) =>
-        transaction.id === selectedTransactionId
-          ? { ...transaction, ...patch }
-          : transaction,
-      ),
-    );
+    updateTransaction(selectedTransactionId, patch);
   };
 
   const changeMonth = (offset: number) => {
@@ -164,7 +168,7 @@ export function LedgerScreen() {
       sourceType: 'manual',
     };
 
-    setTransactions((current) => [newTransaction, ...current]);
+    prependTransaction(newTransaction);
     setSelectedTransactionId(transactionId);
     setView(previousListView);
   };
@@ -172,9 +176,7 @@ export function LedgerScreen() {
   const deleteTransaction = () => {
     if (!selectedTransactionId || selectedTransaction?.sourceType !== 'manual') return;
 
-    setTransactions((current) =>
-      current.filter((transaction) => transaction.id !== selectedTransactionId),
-    );
+    removeTransaction(selectedTransactionId);
     setSelectedTransactionId(null);
     setView(previousListView);
   };
@@ -186,13 +188,50 @@ export function LedgerScreen() {
   const year = currentMonth.getFullYear();
   const month = currentMonth.getMonth() + 1;
 
+  if (isLoading || !monthlySummary) {
+    return (
+      <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
+        <AppHeader
+          onBackPress={() =>
+            view === 'calendar'
+              ? setView('overview')
+              : router.replace(routes.home)
+          }
+          showBackButton
+          title={view === 'calendar' ? '전체 내역' : '가계부'}
+        />
+        <View style={styles.statusContainer}>
+          {error ? (
+            <>
+              <Text style={styles.statusTitle}>가계부를 불러오지 못했어요.</Text>
+              <Text style={styles.statusDescription}>
+                네트워크 상태를 확인한 뒤 다시 시도해주세요.
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => void refetch()}
+                style={({ pressed }) => [
+                  styles.retryButton,
+                  pressed && styles.retryButtonPressed,
+                ]}>
+                <Text style={styles.retryButtonLabel}>다시 시도</Text>
+              </Pressable>
+            </>
+          ) : (
+            <ActivityIndicator color={colors.primary.green} size="small" />
+          )}
+        </View>
+      </SafeAreaLayout>
+    );
+  }
+
   let content;
 
   if (view === 'calendar') {
     content = (
       <LedgerCalendar
         categories={LEDGER_CATEGORIES}
-        dailyTotals={LEDGER_DAILY_TOTALS}
+        dailyTotals={dailyTotals}
         key={`${year}-${month}`}
         month={month}
         onBackPress={() => setView('overview')}
@@ -200,8 +239,10 @@ export function LedgerScreen() {
         onNextMonth={() => changeMonth(1)}
         onOpenTransaction={openTransaction}
         onPreviousMonth={() => changeMonth(-1)}
+        onRefresh={() => void refetch()}
         onSelectMonth={selectMonth}
-        summary={LEDGER_MONTHLY_SUMMARY}
+        refreshing={isRefreshing}
+        summary={monthlySummary}
         transactions={transactions}
         year={year}
       />
@@ -252,14 +293,16 @@ export function LedgerScreen() {
     content = (
       <LedgerOverview
         categories={LEDGER_CATEGORIES}
-        categorySummaries={LEDGER_CATEGORY_SUMMARIES}
+        categorySummaries={categorySummaries}
         month={month}
         onBackPress={() => router.replace(routes.home)}
         onNextMonth={() => changeMonth(1)}
         onOpenCalendar={() => setView('calendar')}
         onOpenTransaction={openTransaction}
         onPreviousMonth={() => changeMonth(-1)}
-        summary={LEDGER_MONTHLY_SUMMARY}
+        onRefresh={() => void refetch()}
+        refreshing={isRefreshing}
+        summary={monthlySummary}
         transactions={transactions}
         year={year}
       />

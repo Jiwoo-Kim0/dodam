@@ -88,6 +88,8 @@ interface LedgerCalendarProps {
   onSelectMonth: (year: number, month: number) => void;
   onOpenTransaction: (transactionId: string) => void;
   onCreateTransaction: () => void;
+  onRefresh: () => void;
+  refreshing: boolean;
 }
 
 export function LedgerCalendar({
@@ -103,6 +105,8 @@ export function LedgerCalendar({
   onSelectMonth,
   onOpenTransaction,
   onCreateTransaction,
+  onRefresh,
+  refreshing,
 }: LedgerCalendarProps) {
   const scrollRef = useRef<BouncyScrollViewHandle>(null);
   const [selectedDate, setSelectedDate] = useState(() => {
@@ -201,8 +205,10 @@ export function LedgerCalendar({
       <RefreshableBouncyScrollView
         contentContainerStyle={styles.calendarContent}
         onEndReached={handleLoadMoreFeed}
+        onRefresh={onRefresh}
         onScrollOffsetChange={setScrollOffset}
-        ref={scrollRef}>
+        ref={scrollRef}
+        refreshing={refreshing}>
         <MonthSelector
           month={month}
           onNext={onNextMonth}

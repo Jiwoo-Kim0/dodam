@@ -29,6 +29,8 @@ interface LedgerOverviewProps {
   onNextMonth: () => void;
   onOpenCalendar: () => void;
   onOpenTransaction: (transactionId: string) => void;
+  onRefresh: () => void;
+  refreshing: boolean;
 }
 
 export function LedgerOverview({
@@ -43,6 +45,8 @@ export function LedgerOverview({
   onNextMonth,
   onOpenCalendar,
   onOpenTransaction,
+  onRefresh,
+  refreshing,
 }: LedgerOverviewProps) {
   const categoryById = new Map(categories.map((category) => [category.id, category]));
   const visibleTransactions = transactions.filter((transaction) => !transaction.hidden);
@@ -61,7 +65,10 @@ export function LedgerOverview({
         title="가계부"
       />
 
-      <RefreshableBouncyScrollView contentContainerStyle={styles.scrollContent}>
+      <RefreshableBouncyScrollView
+        contentContainerStyle={styles.scrollContent}
+        onRefresh={onRefresh}
+        refreshing={refreshing}>
         <MonthSelector
           month={month}
           onNext={onNextMonth}
