@@ -23,8 +23,11 @@ import com.ssafy.dodam.domain.recommendation.repository.RecommendationHistoryRep
 import com.ssafy.dodam.domain.recommendation.repository.RecommendationRepository;
 import com.ssafy.dodam.domain.recommendation.service.RecommendationClock;
 import com.ssafy.dodam.domain.simulation.service.SimulationClock;
+import com.ssafy.dodam.domain.user.entity.FinancialProfile;
 import com.ssafy.dodam.domain.user.entity.User;
+import com.ssafy.dodam.domain.user.repository.FinancialProfileRepository;
 import com.ssafy.dodam.domain.user.repository.UserRepository;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -34,6 +37,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -56,6 +60,8 @@ class RecommendationApiTest {
     @Autowired SpendingGoalRepository spendingGoals;
     @Autowired RecommendationRepository recommendations;
     @Autowired RecommendationHistoryRepository histories;
+    @Autowired FinancialProfileRepository profiles;
+    @Autowired JdbcTemplate jdbc;
     @MockitoBean DiagnosisClock diagnosisClock;
     @MockitoBean RecommendationClock clock;
     // 587: 추천 프리셋을 그대로 실행하는 검증에서 시뮬레이션 기준일을 진단 기준일과 같은 날로 고정한다
@@ -354,5 +360,71 @@ class RecommendationApiTest {
                         .content(json.writeValueAsString(preset.path("request"))))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.created").value(false))
                 .andExpect(jsonPath("$.data.simulation.simulationId").value(simulation.path("simulationId").asLong()));
+    }
+    /**
+     * 618: 소비 추천 효과 = 프리셋 실행의 가용자금 증가. 진단은 이번 달 지출(spent·projected)로 초과분을 내고 시뮬레이션 기준선은
+     * 직전 3개월 평균 지출을 쓰므로 두 창 모두에 거래가 있어야 하며, 초과분이 평균 지출 이하이고 소득이 있어야 등식이 성립한다.
+     */
+    @Test
+    void spendingRecommendationEffectEqualsPresetRunAvailableFundsGain() throws Exception {
+        // 예산 1,000,000. 09-05 지출 1,300,000 → spent 1,300,000 > 예산(OVER_BUDGET), projected = 1,300,000 × 30 / 13 = 3,000,000 → over 2,000,000
+        Long spendingGoal = goals.save(Goal.create(owner, "생활비 줄이기", GoalType.SPENDING, NOW.minusMonths(2))).getId();
+        spendingGoals.save(SpendingGoal.create(spendingGoal, 1_000_000L));
+        expense(LocalDate.of(2026, 9, 5), 1_300_000L);
+        // 시뮬레이션 기준선: 6·7·8월 평균 2,400,000 ≥ 감소액 2,000,000. 소득 3,000,000 → 가용자금 600,000
+        for (int month = 6; month <= 8; month++) {
+            expense(LocalDate.of(2026, month, 20), 2_400_000L);
+        }
+        FinancialProfile profile = FinancialProfile.empty(owner);
+        profile.update(3_000_000L, null, null, null, null);
+        profiles.save(profile);
+
+        long diagnosisId = diagnose(owner, spendingGoal);
+        mvc.perform(get("/api/v1/diagnoses/{id}/issues?type=SPENDING_GOAL_RISK", diagnosisId).with(user(owner.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1));
+        String generated = mvc.perform(post("/api/v1/recommendations/generate").with(user(owner.toString())).contentType(JSON)
+                        .content("{\"diagnosisId\":" + diagnosisId + "}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        JsonNode item = null;
+        for (JsonNode candidate : json.readTree(generated).at("/data/items")) {
+            if ("REDUCE_SPENDING".equals(candidate.at("/recommendation/type").asText())) {
+                item = candidate.path("recommendation");
+            }
+        }
+        assertThat(item).as("REDUCE_SPENDING 추천").isNotNull();
+        long monthlyCostSaving = item.at("/effect/monthlyCostSaving").asLong();
+        assertThat(monthlyCostSaving).isEqualTo(2_000_000L);
+        JsonNode preset = item.path("simulation");
+        assertThat(preset.path("available").asBoolean()).isTrue();
+        assertThat(preset.path("type").asText()).isEqualTo("SPENDING");
+        assertThat(preset.path("endpoint").asText()).isEqualTo("/api/v1/simulations/spending");
+        assertThat(preset.path("request").path("monthlyReduction").asLong()).isEqualTo(monthlyCostSaving);
+        assertThat(preset.path("request").path("category").isNull()).isTrue();
+        assertThat(preset.path("request").path("durationMonths").isNull()).isTrue();
+
+        // 프리셋 본문 그대로 실행 → 가용자금 증가분 = 지출 감소분 = 추천 효과. 날짜 식이 아니라 기준일이 달라도 금액은 같다
+        String run = mvc.perform(post(preset.path("endpoint").asText()).with(user(owner.toString())).contentType(JSON)
+                        .content(json.writeValueAsString(preset.path("request"))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.simulation.type").value("SPENDING"))
+                .andExpect(jsonPath("$.data.simulation.before.monthlySpending").value(2_400_000))
+                .andExpect(jsonPath("$.data.simulation.before.monthlyAvailableFunds").value(600_000))
+                .andReturn().getResponse().getContentAsString();
+        JsonNode simulation = json.readTree(run).at("/data/simulation");
+        long before = simulation.at("/before/monthlyAvailableFunds").asLong();
+        long after = simulation.at("/after/monthlyAvailableFunds").asLong();
+        assertThat(after - before).isEqualTo(monthlyCostSaving);
+        assertThat(simulation.at("/before/monthlySpending").asLong() - simulation.at("/after/monthlySpending").asLong())
+                .isEqualTo(monthlyCostSaving);
+    }
+
+    private void expense(LocalDate date, long amount) {
+        jdbc.update("""
+                INSERT INTO `transaction` (transaction_id, user_id, account_id, card_id, category_id, transaction_date,
+                    transaction_time, transaction_type, amount, balance_after, merchant_name, payment_method, spending_type,
+                    summary, memo, hidden, source_type, created_at, updated_at)
+                VALUES (?, ?, NULL, NULL, NULL, ?, NULL, 'EXPENSE', ?, NULL, NULL, 'CARD', 'VARIABLE', 'test', NULL, FALSE, 'SEED', ?, NULL)
+                """, UUID.randomUUID().toString(), owner, date, amount, NOW);
     }
 }

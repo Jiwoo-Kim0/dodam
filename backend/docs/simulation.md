@@ -478,7 +478,7 @@ DDL·새 엔드포인트 없음. 계약은 [recommendation-api.md](recommendatio
 - FE는 `request`를 그대로(또는 사용자가 고쳐서) `endpoint`에 POST한다. 응답·저장은 기존 계약 그대로이며 시뮬레이션은 추천 id를 저장하지 않는다(재사용 지문과 충돌하므로 결과 추적은 Improvement/Report 이슈의 계약을 따른다).
 - 계좌 미지정 저축은 모든 모으기 목표에 남은 금액 비례 배분된다(`TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT`). 특정 목표만 겨냥하려면 명세 17 `saving` 본문에 `goalId?`를 더해야 하며 이는 루트 명세 변경이라 보류했다(simulation-587-plan.md §3.2).
 - **일관성**: 진단 기준일 = 시뮬레이션 기준일이고 목표가 하나면 추천 `effect.improvedForecastDate`와 프리셋 실행의 `goalImpacts[0].afterForecastDate`가 같다(같은 `base + ceil(remaining / R)` 식). 기준일이 다르면 그 차이만큼 달라진다 — 추천은 진단 스냅샷 `asOf`, 시뮬레이션은 실행일 기준이다. `RecommendationApiTest.savingRecommendationCarriesPresetEverywhereAndPresetRunMatchesRecommendedForecast`가 고정한다.
-  소비 추천 `effect.monthlyCostSaving` vs 프리셋 실행의 `after.monthlyAvailableFunds − before.monthlyAvailableFunds` 대조는 예산 초과 거래 fixture가 필요해 API 테스트로 고정하지 않았다(프리셋 값만 단위 테스트, remaining-work.md).
+  소비 추천 `effect.monthlyCostSaving` = 프리셋 실행의 `after.monthlyAvailableFunds − before.monthlyAvailableFunds` = `before.monthlySpending − after.monthlySpending`는 618에서 `RecommendationApiTest.spendingRecommendationEffectEqualsPresetRunAvailableFundsGain`으로 고정했다(2026-09-16). fixture: 예산 1,000,000·이번 달 지출 1,300,000(진단 `spent`, `projected = 1,300,000 × 30 / 13 = 3,000,000` → `over` 2,000,000)·직전 3개월 각 2,400,000(시뮬레이션 기준선 평균)·소득 3,000,000 → 가용자금 600,000 → 2,600,000. **진단은 이번 달, 시뮬레이션 기준선은 직전 3개월을 읽으므로** 등식은 `over ≤ 평균 지출`이고 소득이 있을 때만 성립한다. 초과분이 평균 지출을 넘으면 프리셋 실행이 400 `SIMULATION_REDUCTION_EXCEEDS_SPENDING`이며 이는 587 프리셋 설계의 알려진 제한이다(FE 146은 사용자가 값을 고쳐 실행). 저축과 달리 날짜 식이 아니라 진단 기준일과 실행일이 달라도 금액은 같다.
 
 ### 11.2 통합 회귀 (`SimulationIntegrationApiTest` 3건, H2)
 
@@ -488,7 +488,10 @@ DDL·새 엔드포인트 없음. 계약은 [recommendation-api.md](recommendatio
 - 인증·소유권: 실행 10종 401, 목록·조회 7경로·삭제 401, 타인의 조회 7경로·삭제 404 `RESOURCE_NOT_FOUND`(존재 미노출), 타인 목록 0건. 삭제 후 7경로 404·재삭제 404·목록 제외·같은 요청은 새 id.
 - 빈 결과·경계값: 목표·소득·거래·계좌가 없는 사용자는 `cash-advance`가 실행되고 `goalImpacts=[]`·`monthlyIncome=null`·`coverage` 배열, goal-impact `[]`, 범위를 넘긴 섹션 페이지는 빈 content. 목록·섹션 `page=-1`·`size=0`·`size=101` 400, `size=100` 200. `simulationId` 0·음수·비숫자 400, 없는 id 404, `type=UNKNOWN` 400. 자원 참조 유형(대출·카드)은 자료가 없으면 404, 소비 감소는 소비 0이면 400이며 저장하지 않는다.
 
-복합의 순서 교환 불변은 2개 조합(`CombinedSimulationCalculatorTest`)까지만 확인했고 자식 9종 전체 조합은 확인하지 않았다(remaining-work.md).
+복합의 순서 교환 불변은 618에서 자식 9종 전체(10개: 9종 + 금액이 다른 `CASH_ADVANCE`, 추가상환·대환은 서로 다른 대출)를 `SimulationIntegrationApiTest.combinedWithEveryChildTypeIsOrderInvariant`로 고정했다(2026-09-16). 명세 순서·역순·3칸 회전 세 실행이 모두 201·서로 다른 id(지문에 순서 포함)이고 같은 순서 재실행만 200이다. 세 실행에서 `before`, `after`(아래 목록 제외), `comparison`(`items/assets/debts/costs`), `cashflow`, `goalImpacts`, `summary`가 같다.
+
+- 입력 순서를 따르는 것(계약): `scenarios[].sequenceNo`·`scenarioType`, `after.details.children[]`, `after.details.financeCost.children[]`(집합으로는 같음), `title`(자식 제목을 순서대로 이어 붙임).
+- 발견: `goalImpacts[].reasons`·`after.goalImpactDetails[].reasons`의 **원소 순서**가 자식 순서를 따른다(`CombinedCalculator.childReasons`가 "중복 없이 자식 순서대로"로 설계됨). 집합은 같으므로 결함으로 보지 않고 테스트는 정렬해 비교한다. 가정(`assumptions`)처럼 알파벳순으로 고정하고 싶으면 별도 항목이다(remaining-work.md).
 
 기존 검증(§7)과 합쳐 Simulation 72건·Recommendation 58건이 H2에서 통과했고 `gradlew clean build` 전체 1,051건 통과(MySQL 조건부 19건 skip).
 

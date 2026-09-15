@@ -43,11 +43,9 @@
 
 ### 계산 일관성 검증(계획 §4) 중 미고정 항목
 
-- [ ] 소비 추천 `effect.monthlyCostSaving`과 프리셋 그대로 실행한 `POST /simulations/spending`의 `after.monthlyAvailableFunds − before.monthlyAvailableFunds`가 같은지 API 테스트로 고정한다.
-- 근거: 진단 `SPENDING_GOAL_RISK`가 나오려면 목표 예산을 초과한 거래 fixture가 필요해 587에서는 프리셋 값만 `RecommendationSimulationPresetAssemblerTest`로 확인했다. 저축 쪽 대조(`improvedForecastDate` = `afterForecastDate`)는 `RecommendationApiTest`로 고정했다.
-- [ ] 복합의 순서 교환 불변을 자식 9종 전체 조합(최대 10개, 추가상환·대환은 서로 다른 `loanId`)에서 확인한다. `CombinedSimulationCalculatorTest`는 2개(소비 감소·할부) 교환만, `SimulationIntegrationApiTest`의 복합도 2개 조합만 실행했다.
-- 완료 조건: 두 대조가 테스트로 고정된다. 기준선 예상 달성일의 유형 간 일치는 `SimulationRunner`가 10종 모두 같은 `baselineReader.read`를 쓰므로 `SimulationApiTest`의 551 대조 1건으로 충분하다고 보고 별도 항목으로 두지 않는다.
-- 담당 근거: Simulation·Recommendation 테스트 모두 BE-B 도메인이다.
+- [x] (618, 2026-09-16) 소비 추천 효과 = 프리셋 실행 가용자금 증가(`RecommendationApiTest`), 복합 자식 9종 전체(10개) 순서 교환 불변(`SimulationIntegrationApiTest`)을 고정했다. 결과는 simulation.md §11.1·§11.2, 계획·결정은 [simulation-618-plan.md](simulation-618-plan.md).
+- 기록만 한 것 1: 소비 프리셋의 `monthlyReduction`(이번 달 예산 초과분)이 시뮬레이션 기준선 평균 지출(직전 3개월)을 넘으면 실행이 400 `SIMULATION_REDUCTION_EXCEEDS_SPENDING`이다. 587 프리셋 설계의 알려진 제한이며 FE 146은 사용자가 값을 고쳐 실행한다. 프리셋 조립 시 상한을 잘라 넣을지는 팀 결정.
+- 기록만 한 것 2: 복합의 `goalImpacts[].reasons` 원소 순서가 자식 순서를 따른다(집합은 같음). `assumptions`처럼 알파벳순으로 고정하려면 `CombinedCalculator.childReasons`를 정렬하면 되지만 저장 JSON이 바뀌므로 계산 버전과 함께 결정한다.
 
 ### Jira 원문 확인
 
