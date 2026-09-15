@@ -25,7 +25,7 @@
 | V31 | `pattern_analysis` 생성 (API 3 사용자 패턴 분석) | S15P21D105-516, S15P21D105-517, S15P21D105-518 |
 | V32 | `notification` 생성 (API 22 알림) | S15P21D105-519, S15P21D105-520 |
 | V33 | `user_device` 생성 (FCM 푸시 기기 토큰) | S15P21D105-580 |
-| V34 | `user_oauth_account` 생성 (소셜 로그인 카카오·구글 계정 연결) | 소셜 로그인(Jira 키 미정, backend/docs/auth-social.md) |
+| V34 | `user_oauth_account` 생성 (소셜 로그인 카카오·구글 계정 연결) | S15P21D105-611 |
 
 ## 버전 번호 할당
 

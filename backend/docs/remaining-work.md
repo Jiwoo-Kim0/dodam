@@ -2,7 +2,7 @@
 
 마지막 갱신: 2026-09-14
 
-백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 그리고 소셜 로그인(Jira 키 미정)이다.
+백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 611이다.
 
 ## S15P21D105-535 — 예·적금 ERD 제약 동기화
 
@@ -982,10 +982,10 @@
 - [ ] 스케줄은 단일 서버 전제로 매일 08:00 전체 사용자 순회다. 4,000명 seed 기준 규칙 8종 조회는 수 초 이내(로컬 MySQL). 사용자 수가 크게 늘면 배치 분할이 필요하다.
 - [x] MySQL 검증: 2026-09-14 로컬 MySQL(seed 4,000명·알림 seed)에서 `NotificationEventReaderMySqlTest`로 리더 SQL 8종 실행과 U0002 규칙 직접 실행·멱등을 확인했다(결과 건수는 seed 날짜에 따라 다름).
 
-## 소셜 로그인 (카카오·구글, Jira 키 미정) — 백엔드 범위 구현
+## S15P21D105-611 — 소셜 로그인 백엔드 지원 (카카오·구글)
 
-구현 계약: [auth-social.md](auth-social.md). 2026-09-15 백엔드(V34 `user_oauth_account`, `POST /api/v1/auth/social/{provider}`, 카카오·구글 토큰 검증기, H2 테스트 27개)만 먼저 구현했다.
-API 명세 1 Auth에 없는 확장이므로 팀이 시연 범위로 확정하고 Jira 이슈를 만든 뒤 브랜치·커밋의 키를 맞춘다.
+구현 계약: [auth-social.md](auth-social.md). 2026-09-15 백엔드(V34 `user_oauth_account`, `POST /api/v1/auth/social/{provider}`, 카카오·구글 토큰 검증기, H2 테스트 27개 + MySQL 게이트 2개)만 먼저 구현했다.
+API 명세 1 Auth에 없는 확장이다. 시연 범위 포함 여부는 FE 연동 일정과 함께 팀이 정한다.
 
 ### FE·인프라 연동 (백엔드 외)
 
@@ -996,7 +996,7 @@ API 명세 1 Auth에 없는 확장이므로 팀이 시연 범위로 확정하고
 ### 실토큰 검증
 
 - [ ] 실제 카카오 access token·구글 ID token으로 서버 `POST /auth/social/{provider}`가 200/201을 돌려주는지 확인하고 결과를 auth-social.md에 기록한다. 현재는 공급자 응답을 Mock·MockRestServiceServer·디코더 대체로만 검증했다.
-- [ ] MySQL 8.0에서 V34 적용과 `ddl-auto: validate` 통과(`UserOauthAccount` 매핑: VARCHAR(30) enum, CHAR(64), VARBINARY(512))를 확인한다. H2 테스트만 수행했다.
+- [x] MySQL 8.0에서 V34 적용과 `ddl-auto: validate` 통과를 확인했다(2026-09-15, `SocialLoginMySqlIntegrationTest`, 결과는 auth-social.md "테스트").
 
 ### 기능 보완
 

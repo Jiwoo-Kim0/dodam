@@ -1,7 +1,7 @@
 # 소셜 로그인 (카카오·구글)
 
-API 명세 1 Auth에는 없는 확장이다. 기획안·아키텍처(소셜 로그인 Kakao/Google)와 ERD `user_oauth_account`를 근거로 백엔드 범위만 먼저 구현했다(2026-09-15).
-Jira 키는 아직 없다. FE(로그인 화면의 카카오·구글 버튼)와 인프라(개발자 콘솔 앱 등록, `.env`) 작업은 아래 "FE·인프라 인계"에 있다.
+JIRA `S15P21D105-611`(소셜 로그인 백엔드 지원) 구현 기준이다. API 명세 1 Auth에는 없는 확장으로, 기획안·아키텍처(소셜 로그인 Kakao/Google)와 ERD `user_oauth_account`를 근거로
+백엔드 범위만 먼저 구현했다(2026-09-15). FE(로그인 화면의 카카오·구글 버튼)와 인프라(개발자 콘솔 앱 등록, `.env`) 작업은 아래 "FE·인프라 인계"에 있다.
 
 ## 흐름
 
@@ -97,6 +97,10 @@ ERD 정의 그대로다. 공급자 사용자 ID는 원문을 저장하지 않고
 - `SocialAuthApiIntegrationTest`(H2, 13개): 공급자 검증기를 Mock으로 두고 신규 생성(대체 이메일·실제 이메일·금융망 연결 상태), 재로그인 200, 이메일 일치 연결, 같은 공급자 중복 409, 공급자 2개 연결, 소셜 전용 회원의 비밀번호 로그인 401, 탈퇴 403, 토큰 무효 401, 공급자·토큰 검증 400.
 - `KakaoIdentityClientTest`(MockRestServiceServer, 6개): 신원 매핑, 미확인 이메일, 401→무효, 5xx→장애, app-id 대조.
 - `GoogleIdentityClientTest`(디코더 대체, 8개): 클레임 매핑, aud·iss 불일치, 만료→무효, JWK 실패→장애, 미설정→장애.
+- `SocialLoginMySqlIntegrationTest`(MySQL 8.0 게이트, 2개, `PATTERN_MYSQL_TEST_URL`로 켬): 2026-09-15 로컬 Docker `mysql:8.0`에 V1~V34를 적용한 `dodam_516_test`에서
+  `ddl-auto: validate` 통과, `(provider, provider_user_id_hash)`·`(user_id, provider)` UNIQUE와 provider CHECK가 DB 단계에서 동작, VARBINARY 암호문 왕복, 소셜 가입 경로가
+  user·user_setting·financial_profile·finance_connection(FAILED)·user_oauth_account·auth_session을 함께 만드는 것을 확인했다. MySQL CHECK 위반(3819)은 Spring이
+  `UncategorizedSQLException`으로 남기므로 애플리케이션은 enum으로 값을 막고 CHECK는 마지막 방어선이다.
 - 실제 카카오·구글 토큰으로의 검증은 개발자 콘솔 앱과 FE SDK 연동이 있어야 가능해 아직 하지 않았다("남은 작업").
 
 ## FE·인프라 인계
@@ -115,4 +119,4 @@ FE(로그인 화면 `SocialLoginButton` 카카오·구글, 네이버 버튼은 �
 
 ## 남은 작업
 
-`remaining-work.md` "소셜 로그인" 절에 기록한다.
+`remaining-work.md` S15P21D105-611 절에 기록한다.
