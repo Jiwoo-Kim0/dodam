@@ -6,6 +6,12 @@ export interface AssetComposition {
   tone: AssetCompositionTone;
 }
 
+export interface AssetOverview {
+  totalAsset: number;
+  changeFromLastMonth: number | null;
+  composition: readonly AssetComposition[];
+}
+
 export type AssetSectionId = 'checking' | 'saving' | 'loan' | 'card';
 
 export interface AssetItem {
