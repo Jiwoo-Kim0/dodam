@@ -82,9 +82,9 @@ export function mapTransactions(
 }
 
 const CATEGORY_COLORS = [
-  colors.ledger.expense,
-  colors.primary.orange,
-  colors.primary.yellow,
+  colors.primary.green,
+  colors.ledger.categorySecondary,
+  colors.ledger.categoryTertiary,
 ] as const;
 
 export function mapMonthlySummary(
@@ -99,6 +99,7 @@ export function mapMonthlySummary(
     income,
     expense: summary.totalSpending,
     balance: income - summary.totalSpending,
+    transactionCount: summary.transactionCount,
     previousMonthDifference: summary.changeFromPreviousMonth,
     dailyAverage: summary.dailyAverage,
     remainingDays: Math.max(summary.daysInMonth - summary.daysElapsed, 0),
@@ -138,42 +139,19 @@ export function mapCategorySpending(
   const aggregatedCategories = Array.from(categoriesById.values()).sort(
     (left, right) => right.amount - left.amount,
   );
-  const visibleCategories = aggregatedCategories
+
+  const topCategories = aggregatedCategories.slice(0, 3);
+  const rankedCategoryIds = topCategories
     .filter((category) => category.categoryId !== 'etc')
-    .slice(0, 2);
-  const visibleCategoryIds = new Set(
-    visibleCategories.map((category) => category.categoryId),
-  );
-  const remainingCategories = aggregatedCategories.filter(
-    (category) => !visibleCategoryIds.has(category.categoryId),
-  );
+    .map((category) => category.categoryId);
 
-  const summaries: LedgerCategorySummary[] = visibleCategories.map(
-    (category, index) => ({
-      categoryId: category.categoryId,
-      amount: category.amount,
-      ratio: Math.round(category.ratio),
-      color: CATEGORY_COLORS[index],
-    }),
-  );
-
-  if (remainingCategories.length > 0) {
-    const otherAmount = remainingCategories.reduce(
-      (total, category) => total + category.amount,
-      0,
-    );
-    const otherRatio = remainingCategories.reduce(
-      (total, category) => total + category.ratio,
-      0,
-    );
-
-    summaries.push({
-      categoryId: 'etc',
-      amount: otherAmount,
-      ratio: Math.round(otherRatio),
-      color: CATEGORY_COLORS[2],
-    });
-  }
-
-  return summaries;
+  return topCategories.map((category) => ({
+    categoryId: category.categoryId,
+    amount: category.amount,
+    ratio: Math.round(category.ratio),
+    color:
+      category.categoryId === 'etc'
+        ? colors.ledger.categoryOther
+        : CATEGORY_COLORS[rankedCategoryIds.indexOf(category.categoryId)],
+  }));
 }

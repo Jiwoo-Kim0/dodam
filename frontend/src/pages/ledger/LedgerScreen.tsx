@@ -62,6 +62,7 @@ export function LedgerScreen() {
     transactions,
     monthlySummary,
     dailyTotals,
+    previousDailyTotals,
     categorySummaries,
     isLoading,
     isRefreshing,
@@ -311,12 +312,14 @@ export function LedgerScreen() {
       <LedgerOverview
         categories={LEDGER_CATEGORIES}
         categorySummaries={categorySummaries}
+        dailyTotals={dailyTotals}
         month={month}
         onBackPress={() => router.replace(routes.home)}
         onNextMonth={() => changeMonth(1)}
         onOpenCalendar={() => setView('calendar')}
         onOpenTransaction={openTransaction}
         onPreviousMonth={() => changeMonth(-1)}
+        previousDailyTotals={previousDailyTotals}
         onRefresh={() => void refetch()}
         refreshing={isRefreshing}
         summary={monthlySummary}

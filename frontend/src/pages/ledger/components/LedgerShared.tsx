@@ -108,8 +108,16 @@ export function MonthSelector({
   );
 }
 
-export function MerchantLogoPlaceholder() {
-  return <View accessibilityLabel="거래처 로고 자리" style={styles.merchantLogoPlaceholder} />;
+export function MerchantLogoPlaceholder({ compact = false }: { compact?: boolean }) {
+  return (
+    <View
+      accessibilityLabel="거래처 로고 자리"
+      style={[
+        styles.merchantLogoPlaceholder,
+        compact && styles.merchantLogoPlaceholderCompact,
+      ]}
+    />
+  );
 }
 
 interface TransactionRowProps {
@@ -139,14 +147,23 @@ export function TransactionRow({
         compact && styles.transactionRowCompact,
         pressed && onPress && styles.rowPressed,
       ]}>
-      <MerchantLogoPlaceholder />
-      <View style={styles.transactionCopy}>
+      <MerchantLogoPlaceholder compact={compact} />
+      <View style={[styles.transactionCopy, compact && styles.transactionCopyCompact]}>
         <Text
           numberOfLines={1}
-          style={[styles.transactionAmount, transactionType === 'income' && styles.incomeText]}>
+          style={[
+            styles.transactionAmount,
+            compact && styles.transactionAmountCompact,
+            transactionType === 'income' && styles.incomeText,
+          ]}>
           {amountLabel}
         </Text>
-        <Text numberOfLines={1} style={styles.transactionMerchant}>
+        <Text
+          numberOfLines={1}
+          style={[
+            styles.transactionMerchant,
+            compact && styles.transactionMerchantCompact,
+          ]}>
           {merchantName}
         </Text>
       </View>

@@ -142,6 +142,15 @@ export const styles = StyleSheet.create({
     paddingHorizontal: spacing[5],
     paddingVertical: spacing[4],
   },
+  expenseSummaryContent: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing[3],
+  },
+  expenseSummaryCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
   cardEyebrow: {
     color: colors.textPrimary,
     fontFamily: fontFamily.medium,
@@ -178,41 +187,46 @@ export const styles = StyleSheet.create({
     fontSize: fontSize.buttonSmall,
     lineHeight: 20,
   },
-  categoryBar: {
-    borderRadius: radius.round,
-    flexDirection: 'row',
-    height: 10,
-    marginTop: spacing[3],
-    overflow: 'hidden',
-    width: '100%',
-  },
-  categoryBarSegment: {
-    height: '100%',
-  },
-  categoryLegend: {
-    gap: spacing[1],
+  categorySummaryList: {
+    gap: spacing[3],
     marginTop: spacing[4],
   },
-  categoryLegendRow: {
+  categoryItem: {
+    gap: spacing[2],
+  },
+  categoryItemHeader: {
     alignItems: 'center',
     flexDirection: 'row',
-    minHeight: 28,
+    justifyContent: 'space-between',
   },
-  categoryLegendDot: {
-    borderRadius: radius.round,
-    height: 7,
-    marginRight: spacing[2],
-    width: 7,
+  categoryNameRow: {
+    alignItems: 'baseline',
+    flexDirection: 'row',
+    gap: spacing[2],
   },
   categoryLegendLabel: {
     ...typography.body2,
-    color: colors.textSecondary,
-    flex: 1,
+    color: colors.textPrimary,
+    fontFamily: fontFamily.medium,
   },
   categoryLegendAmount: {
     ...typography.body2,
     color: colors.textPrimary,
     fontFamily: fontFamily.medium,
+  },
+  categoryLegendRatio: {
+    ...typography.caption,
+    color: colors.textTertiary,
+  },
+  categoryProgressTrack: {
+    backgroundColor: colors.ledger.categoryTrack,
+    borderRadius: radius.round,
+    flexDirection: 'row',
+    height: 5,
+    overflow: 'hidden',
+  },
+  categoryProgressFill: {
+    borderRadius: radius.round,
   },
   glanceSection: {
     gap: spacing[2],
@@ -221,37 +235,61 @@ export const styles = StyleSheet.create({
     gap: spacing[5],
     padding: spacing[4],
   },
-  glanceOuterCard: {
+  glanceStats: {
     backgroundColor: colors.ledger.softSurface,
-    borderRadius: radius.card,
-    padding: spacing[1],
-  },
-  glanceGrid: {
-    flexDirection: 'row',
-    gap: spacing[1],
-  },
-  glanceItem: {
-    alignItems: 'center',
-    backgroundColor: colors.white,
     borderRadius: radius.default,
-    flex: 1,
-    gap: spacing[1],
-    paddingHorizontal: spacing[1],
+    flexDirection: 'row',
+    marginTop: spacing[1],
+    paddingHorizontal: spacing[4],
     paddingVertical: spacing[3],
   },
+  glanceStat: {
+    flex: 1,
+    gap: spacing[1],
+  },
+  glanceStatTrailing: {
+    alignItems: 'flex-end',
+  },
+  glanceStatDivider: {
+    alignSelf: 'stretch',
+    backgroundColor: colors.divider,
+    marginHorizontal: spacing[4],
+    width: StyleSheet.hairlineWidth,
+  },
   glanceLabel: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  glanceStatValue: {
+    ...typography.subtitle,
+    color: colors.textPrimary,
+    fontFamily: fontFamily.semiBold,
+  },
+  glanceComparison: {
+    alignItems: 'center',
+    borderRadius: radius.default,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
+  },
+  glanceComparisonLabel: {
     ...typography.body2,
-    color: colors.textPrimary,
-    fontFamily: fontFamily.medium,
-    textAlign: 'center',
+    color: colors.textSecondary,
   },
-  glanceValue: {
-    ...typography.body1,
-    color: colors.textPrimary,
-    textAlign: 'center',
+  glanceComparisonValue: {
+    ...typography.body2,
+    fontFamily: fontFamily.semiBold,
+    textAlign: 'right',
   },
-  glanceValueNumber: {
-    fontFamily: fontFamily.bold,
+  spendingIncreaseSurface: {
+    backgroundColor: colors.ledger.spendingIncreaseSurface,
+  },
+  spendingDecreaseSurface: {
+    backgroundColor: colors.ledger.spendingDecreaseSurface,
+  },
+  spendingNeutralSurface: {
+    backgroundColor: colors.ledger.softSurface,
   },
   expenseText: {
     color: colors.ledger.expense,
@@ -260,7 +298,7 @@ export const styles = StyleSheet.create({
     color: colors.ledger.income,
   },
   spendingDecreaseText: {
-    color: colors.primary.green,
+    color: colors.ledger.income,
   },
   sectionTitleRow: {
     alignItems: 'center',
@@ -268,8 +306,9 @@ export const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   textButton: {
-    ...typography.buttonSmall,
-    color: colors.textPrimary,
+    ...typography.body2,
+    color: colors.textSecondary,
+    fontFamily: fontFamily.medium,
   },
   recentSection: {
     borderTopColor: colors.divider,
@@ -284,12 +323,12 @@ export const styles = StyleSheet.create({
     paddingTop: spacing[2],
   },
   recentGroupSeparated: {
-    marginTop: spacing[3],
+    marginTop: spacing[4],
   },
   groupLabel: {
     ...typography.caption,
     color: colors.textTertiary,
-    marginBottom: spacing[1],
+    marginBottom: spacing[2],
     paddingHorizontal: spacing[1],
   },
   transactionRow: {
@@ -302,7 +341,7 @@ export const styles = StyleSheet.create({
   },
   transactionRowCompact: {
     borderBottomWidth: 0,
-    minHeight: 56,
+    minHeight: 48,
     paddingHorizontal: spacing[1],
   },
   rowPressed: {
@@ -314,20 +353,33 @@ export const styles = StyleSheet.create({
     height: 44,
     width: 44,
   },
+  merchantLogoPlaceholderCompact: {
+    height: 36,
+    width: 36,
+  },
   transactionCopy: {
     flex: 1,
     marginLeft: spacing[3],
+  },
+  transactionCopyCompact: {
+    marginLeft: spacing[2],
   },
   transactionAmount: {
     color: colors.textPrimary,
     fontFamily: fontFamily.semiBold,
     fontSize: typography.subtitle.fontSize - 2,
   },
+  transactionAmountCompact: {
+    fontSize: fontSize.body1,
+  },
   transactionMerchant: {
     color: colors.textSecondary,
     fontFamily: fontFamily.regular,
     fontSize: fontSize.body1,
     marginTop: 2,
+  },
+  transactionMerchantCompact: {
+    fontSize: fontSize.body2,
   },
   calendarContent: {
     gap: spacing[3],

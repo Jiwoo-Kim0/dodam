@@ -19,6 +19,7 @@ interface LedgerData {
   transactions: LedgerTransaction[];
   monthlySummary: LedgerMonthlySummary | null;
   dailyTotals: LedgerDailyTotal[];
+  previousDailyTotals: LedgerDailyTotal[];
   categorySummaries: LedgerCategorySummary[];
 }
 
@@ -26,6 +27,7 @@ const EMPTY_LEDGER_DATA: LedgerData = {
   transactions: [],
   monthlySummary: null,
   dailyTotals: [],
+  previousDailyTotals: [],
   categorySummaries: [],
 };
 
@@ -50,11 +52,19 @@ export function useLedgerData(currentMonth: Date) {
       year === today.getFullYear() && month === today.getMonth() + 1
         ? today.getDate()
         : lastDay;
+    const previousMonthDate = new Date(year, month - 2, 1);
+    const previousYear = previousMonthDate.getFullYear();
+    const previousMonth = previousMonthDate.getMonth() + 1;
+    const previousYearMonth = `${previousYear}-${padDatePart(previousMonth)}`;
+    const previousLastDay = new Date(previousYear, previousMonth, 0).getDate();
+    const previousEndDay = Math.min(endDay, previousLastDay);
 
     return {
       yearMonth,
       startDate: `${yearMonth}-01`,
       endDate: `${yearMonth}-${padDatePart(endDay)}`,
+      previousStartDate: `${previousYearMonth}-01`,
+      previousEndDate: `${previousYearMonth}-${padDatePart(previousEndDay)}`,
     };
   }, [currentMonth]);
 
@@ -78,6 +88,7 @@ export function useLedgerData(currentMonth: Date) {
           monthlySummaryResponse,
           dailySpendingResponse,
           categorySpendingResponse,
+          previousDailySpendingResponse,
         ] = await Promise.all([
           ledgerApi.getTransactions({
             startDate: dateParams.startDate,
@@ -91,6 +102,12 @@ export function useLedgerData(currentMonth: Date) {
             endDate: dateParams.endDate,
           }),
           ledgerApi.getCategorySpending(dateParams.yearMonth),
+          ledgerApi
+            .getDailySpending({
+              startDate: dateParams.previousStartDate,
+              endDate: dateParams.previousEndDate,
+            })
+            .catch(() => null),
         ]);
 
         if (requestId !== requestIdRef.current) return;
@@ -116,6 +133,9 @@ export function useLedgerData(currentMonth: Date) {
           transactions: mapTransactions(transactionPage.content),
           monthlySummary: mapMonthlySummary(monthlySummaryResponse, income),
           dailyTotals: mapDailySpending(dailySpendingResponse, incomeByDate),
+          previousDailyTotals: previousDailySpendingResponse
+            ? mapDailySpending(previousDailySpendingResponse)
+            : [],
           categorySummaries: mapCategorySpending(categorySpendingResponse),
         });
       } catch (loadError) {
