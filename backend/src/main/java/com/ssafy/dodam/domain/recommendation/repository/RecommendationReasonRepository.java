@@ -1,6 +1,7 @@
 package com.ssafy.dodam.domain.recommendation.repository;
 
 import com.ssafy.dodam.domain.recommendation.entity.RecommendationReason;
+import java.util.Collection;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -26,5 +27,19 @@ public interface RecommendationReasonRepository extends JpaRepository<Recommenda
     List<RecommendationReason> findOwned(
             @Param("userId") Long userId,
             @Param("recommendationId") Long recommendationId
+    );
+
+    /** 목록·priorities에서 추천 여러 건의 시뮬레이션 프리셋을 한 번에 조립할 때(587). 소유권 조건은 {@link #findOwned}와 같다. */
+    @Query("""
+            select rs
+              from RecommendationReason rs, Recommendation r
+             where rs.recommendationId = r.recommendationId
+               and r.recommendationId in :recommendationIds
+               and r.userId = :userId
+             order by rs.recommendationId asc, rs.reasonId asc
+            """)
+    List<RecommendationReason> findAllOwnedIn(
+            @Param("userId") Long userId,
+            @Param("recommendationIds") Collection<Long> recommendationIds
     );
 }

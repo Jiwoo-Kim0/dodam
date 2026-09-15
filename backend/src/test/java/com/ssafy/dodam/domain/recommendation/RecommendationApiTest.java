@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ssafy.dodam.domain.diagnosis.service.DiagnosisClock;
 import com.ssafy.dodam.domain.goal.entity.Goal;
@@ -17,9 +18,11 @@ import com.ssafy.dodam.domain.goal.entity.SpendingGoal;
 import com.ssafy.dodam.domain.goal.repository.GoalRepository;
 import com.ssafy.dodam.domain.goal.repository.SavingGoalRepository;
 import com.ssafy.dodam.domain.goal.repository.SpendingGoalRepository;
+import com.ssafy.dodam.domain.goal.service.GoalClock;
 import com.ssafy.dodam.domain.recommendation.repository.RecommendationHistoryRepository;
 import com.ssafy.dodam.domain.recommendation.repository.RecommendationRepository;
 import com.ssafy.dodam.domain.recommendation.service.RecommendationClock;
+import com.ssafy.dodam.domain.simulation.service.SimulationClock;
 import com.ssafy.dodam.domain.user.entity.User;
 import com.ssafy.dodam.domain.user.repository.UserRepository;
 import java.time.LocalDateTime;
@@ -55,6 +58,9 @@ class RecommendationApiTest {
     @Autowired RecommendationHistoryRepository histories;
     @MockitoBean DiagnosisClock diagnosisClock;
     @MockitoBean RecommendationClock clock;
+    // 587: 추천 프리셋을 그대로 실행하는 검증에서 시뮬레이션 기준일을 진단 기준일과 같은 날로 고정한다
+    @MockitoBean SimulationClock simulationClock;
+    @MockitoBean GoalClock goalClock;
     private Long owner;
     private Long other;
     private Long goalId;
@@ -63,6 +69,9 @@ class RecommendationApiTest {
     void setup() {
         given(diagnosisClock.now()).willReturn(NOW);
         given(clock.now()).willReturn(NOW);
+        given(simulationClock.now()).willReturn(NOW);
+        given(goalClock.now()).willReturn(NOW);
+        given(goalClock.today()).willReturn(NOW.toLocalDate());
         owner = users.save(User.createLocalUser(UUID.randomUUID() + "@example.com", "unused", "추천")).getId();
         other = users.save(User.createLocalUser(UUID.randomUUID() + "@example.com", "unused", "다른 사용자")).getId();
         // 2개월 전 시작, 1개월 뒤 100만 원 목표, 연결 계좌 없음 → 속도 0, 필요 월 100만 원 → SAVING_GOAL_RISK
@@ -280,5 +289,70 @@ class RecommendationApiTest {
             assertThat(item.at("/recommendation/effect/annualCostSaving").asLong())
                     .isEqualTo(item.at("/recommendation/effect/monthlyCostSaving").asLong() * 12);
         }
+    }
+
+    @Test
+    void savingRecommendationCarriesPresetEverywhereAndPresetRunMatchesRecommendedForecast() throws Exception {
+        String diagnosis = mvc.perform(post("/api/v1/diagnoses").with(user(owner.toString())).contentType(JSON)
+                        .content("{\"goalId\":" + goalId + ",\"forceRefresh\":true}"))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        long diagnosisId = json.readTree(diagnosis).at("/data/diagnosis/diagnosisId").asLong();
+
+        String generated = mvc.perform(post("/api/v1/recommendations/generate").with(user(owner.toString())).contentType(JSON)
+                        .content("{\"diagnosisId\":" + diagnosisId + "}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.items[0].recommendation.type").value("INCREASE_MONTHLY_SAVING"))
+                .andExpect(jsonPath("$.data.items[0].recommendation.effect.contributionAmount").value(1_000_000))
+                .andExpect(jsonPath("$.data.items[0].recommendation.effect.improvedForecastDate").value("2026-10-13"))
+                .andReturn().getResponse().getContentAsString();
+        JsonNode item = json.readTree(generated).at("/data/items/0/recommendation");
+        long id = item.path("recommendationId").asLong();
+        JsonNode preset = item.path("simulation");
+        assertThat(preset.path("available").asBoolean()).isTrue();
+        assertThat(preset.path("type").asText()).isEqualTo("SAVING");
+        assertThat(preset.path("endpoint").asText()).isEqualTo("/api/v1/simulations/saving");
+        assertThat(preset.path("request").path("monthlySavingAmount").asLong()).isEqualTo(1_000_000L);
+        assertThat(preset.path("request").path("accountNo").isNull()).isTrue();
+        assertThat(preset.path("request").path("durationMonths").isNull()).isTrue();
+        assertThat(preset.path("unavailableReason").isMissingNode()).isTrue();
+        assertThat(preset.path("assumptions").get(0).asText()).isEqualTo("TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT");
+
+        // 상세·목록·priorities·상태변경이 같은 프리셋을 싣는다
+        for (String path : new String[] {"$.data", "$.data.content[0]", "$.data.recommendations[0]"}) {
+            String url = path.equals("$.data") ? "/api/v1/recommendations/" + id
+                    : path.startsWith("$.data.content") ? "/api/v1/recommendations" : "/api/v1/recommendations/priorities";
+            mvc.perform(get(url).with(user(owner.toString())))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath(path + ".simulation.available").value(true))
+                    .andExpect(jsonPath(path + ".simulation.type").value("SAVING"))
+                    .andExpect(jsonPath(path + ".simulation.request.monthlySavingAmount").value(1_000_000));
+        }
+        mvc.perform(post("/api/v1/recommendations/{id}/defer", id).with(user(owner.toString())))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("DEFERRED"))
+                .andExpect(jsonPath("$.data.simulation.request.monthlySavingAmount").value(1_000_000));
+        mvc.perform(get("/api/v1/recommendations/{id}", id).with(user(other.toString()))).andExpect(status().isNotFound());
+
+        // 프리셋 본문을 그대로 실행 → 201. 추천의 improvedForecastDate(진단 기준일 + ceil(1,000,000/1,000,000)개월)와 같은 날짜
+        String run = mvc.perform(post(preset.path("endpoint").asText()).with(user(owner.toString())).contentType(JSON)
+                        .content(json.writeValueAsString(preset.path("request"))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.created").value(true))
+                .andExpect(jsonPath("$.data.simulation.type").value("SAVING"))
+                .andExpect(jsonPath("$.data.simulation.after.monthlySaving").value(1_000_000))
+                .andExpect(jsonPath("$.data.simulation.goalImpacts.length()").value(1))
+                .andExpect(jsonPath("$.data.simulation.goalImpacts[0].goalId").value(goalId))
+                .andExpect(jsonPath("$.data.simulation.goalImpacts[0].beforeForecastDate").isEmpty())
+                .andReturn().getResponse().getContentAsString();
+        JsonNode simulation = json.readTree(run).at("/data/simulation");
+        assertThat(simulation.at("/goalImpacts/0/afterForecastDate").asText())
+                .isEqualTo(item.at("/effect/improvedForecastDate").asText());
+        assertThat(simulation.at("/request/accountId").isNull()).isTrue();
+        assertThat(run).doesNotContain("requestHash");
+
+        // 같은 날 같은 프리셋 재실행은 재사용(멱등)
+        mvc.perform(post(preset.path("endpoint").asText()).with(user(owner.toString())).contentType(JSON)
+                        .content(json.writeValueAsString(preset.path("request"))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.created").value(false))
+                .andExpect(jsonPath("$.data.simulation.simulationId").value(simulation.path("simulationId").asLong()));
     }
 }

@@ -31,7 +31,7 @@ public class SavingGoalRiskGenerator implements RecommendationCandidateGenerator
     public static final String VERSION = "548.1";
     public static final String DOMAIN = "SAVING";
     public static final String TYPE = "INCREASE_MONTHLY_SAVING";
-    static final String REASON_SHORTFALL = "GOAL_SAVING_SHORTFALL";
+    public static final String REASON_SHORTFALL = "GOAL_SAVING_SHORTFALL";
     static final String REASON_FORECAST_DELAY = "GOAL_FORECAST_DELAY";
     static final String REASON_FIELD_MISSING = "SNAPSHOT_FIELD_MISSING";
     private final ObjectMapper json;
