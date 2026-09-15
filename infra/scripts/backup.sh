@@ -54,14 +54,37 @@ rm -f /tmp/backup-err.$$
 # 빈 덤프가 "성공"으로 남지 않도록 검증한다.
 [ -s "$TMP" ] || fail "덤프 파일이 비어 있음"
 gzip -t "$TMP" 2>/dev/null || fail "덤프 파일이 손상됨(gzip 검증 실패)"
-zcat "$TMP" | grep -q "MySQL dump" || fail "덤프 내용이 예상과 다름"
+
+# mysqldump가 끝까지 썼는지 확인한다.
+# 마지막 행이 `-- Dump completed on ...`이다. 중간에 끊긴 덤프는 이 표식이 없다.
+# (gzip -t로는 못 잡는다 — mysqldump가 중간에 죽어도 gzip 스트림 자체는 정상 종료될 수 있다)
+#
+# ★ `zcat "$TMP" | grep -q "MySQL dump"` 를 쓰면 안 된다 (2026-09-15 수정).
+#   grep -q는 첫 매칭에서 즉시 종료하는데, "MySQL dump"는 헤더 1행에 있으므로
+#   덤프가 크면 zcat이 아직 쓰는 중에 파이프가 닫혀 SIGPIPE(141)로 죽는다.
+#   상단의 `set -o pipefail`이 그 141을 파이프라인 실패로 잡아 백업이 통째로 실패한다.
+#   DB가 작을 때는 zcat이 grep보다 먼저 끝나 드러나지 않다가, 시드 적재로 덤프가
+#   8.7KB → 8.1MB가 된 2026-09-15부터 매일 실패했다. 덤프 자체는 멀쩡했고
+#   검증 단계만 죽인 것이라 `.partial`만 남고 조용히 넘어갔다.
+#   경위: infra/todo/jiw/day-08.md 15절
+#
+#   tail은 EOF까지 읽으므로 조기 종료가 없고, 따라서 SIGPIPE도 없다.
+#   헤더가 아니라 꼬리를 보는 쪽이 검증으로서도 낫다 — 시작이 아니라 완주를 확인한다.
+TAIL="$(zcat "$TMP" 2>/dev/null | tail -3)"
+case "$TAIL" in
+    *"Dump completed"*) ;;
+    *) fail "덤프가 끝까지 기록되지 않음(완료 표식 없음)" ;;
+esac
 
 mv "$TMP" "$OUT"
 chmod 600 "$OUT"
 log "완료: $(du -h "$OUT" | cut -f1)"
 
 log "보관 기간(${RETENTION_DAYS}일) 지난 백업 정리"
-find "$BACKUP_DIR" -maxdepth 1 -name "*.sql.gz" -mtime "+$RETENTION_DAYS" -print -delete | sed 's/^/  삭제: /'
+# .partial 도 포함한다. 검증 실패로 중단되면 남는 파일인데, 예전에는 이름이
+# "*.sql.gz"에 걸리지 않아 영원히 쌓였다.
+find "$BACKUP_DIR" -maxdepth 1 \( -name "*.sql.gz" -o -name "*.sql.gz.partial" \) \
+    -mtime "+$RETENTION_DAYS" -print -delete | sed 's/^/  삭제: /'
 
 USED_PCT="$(df --output=pcent "$BACKUP_DIR" | tail -1 | tr -dc '0-9')"
 if [ "$USED_PCT" -ge "$DISK_WARN_PCT" ]; then

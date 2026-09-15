@@ -1,6 +1,6 @@
 # CI/CD 파이프라인
 
-도담 백엔드의 배포 자동화 구조. 최종 갱신 2026-09-09.
+도담 백엔드의 배포 자동화 구조. 최종 갱신 2026-09-14.
 
 관련 문서: [운영 안내](../README.md) · [보안 방침](../todo/security.md) · [일자별 작업 로그](../todo/jiw/)
 
@@ -19,7 +19,7 @@ flowchart TD
     F -->|테스트 실패| X1[빌드 실패<br/>배포 진행 안 함]
     F -->|통과| G[③ Deploy]
 
-    G --> G1[롤백 지점 확보<br/>커밋 + 이미지 보존]
+    G --> G1[롤백 지점 확보<br/>커밋 + 실행 중 이미지 보존]
     G1 --> G2[소스 동기화<br/>git reset --hard]
     G2 --> G3[환경변수 사전 검사]
     G3 -->|이상| X2[배포 중단<br/>컨테이너 안 건드림]
@@ -80,7 +80,7 @@ docker compose -f "$WORKSPACE/infra/docker-compose.yml" build backend
 
 | 순서 | 동작 | 목적 |
 | --- | --- | --- |
-| 1 | 롤백 지점 확보 | 동기화 **전** 커밋 + 현재 backend 이미지를 `infra-backend:rollback`으로 태그 |
+| 1 | 롤백 지점 확보 | 동기화 **전** 커밋 + **실행 중인** backend 컨테이너의 이미지를 `infra-backend:rollback`으로 태그 |
 | 2 | 소스 동기화 | `git reset --hard origin/develop` |
 | 3 | 환경변수 사전 검사 | `check-env.sh` (아래 참고) |
 | 4 | 배포 목록 대조 | compose에 있는데 배포 대상이 아닌 서비스를 WARN |
@@ -91,6 +91,23 @@ docker compose -f "$WORKSPACE/infra/docker-compose.yml" build backend
 
 **이미지까지 보존하는 이유**: 코드만 되돌리고 다시 빌드하면 시간이 걸리고,
 **빌드 자체가 깨져 있으면 롤백조차 못 한다.**
+
+> ⚠️ **`infra-backend:latest`를 롤백 지점으로 잡으면 안 된다** (2026-09-14 수정 전까지 그랬다).
+> Build & Test 단계가 `deploy.sh`보다 먼저 `compose build backend`를 돌리는데,
+> 워크스페이스와 `$APP_DIR`의 compose 프로젝트명이 **둘 다 `infra`**(compose 파일이 있는 디렉터리명)라
+> 같은 `infra-backend:latest` 태그를 공유한다. 그래서 `deploy.sh`가 보는 `latest`는 이미
+> **방금 빌드한, 아직 검증되지 않은 이미지**였다.
+>
+> 실측(2026-09-14): `latest`와 `rollback`이 동일 ID(`93a784911df3`)였고,
+> 실제 서비스 중인 컨테이너는 별개 이미지(`9ad0e1d19698`)였다.
+> → 코드는 롤백돼도 **이미지는 그대로**여서, 앱 자체가 기동을 깨뜨리는 경우 롤백이 무력했다.
+>
+> 지금은 `docker inspect -f '{{.Image}}' backend`로 **실제 서비스 중인 이미지**를 기준으로 잡는다.
+> 더불어 배포가 두 단계 헬스체크를 통과하면 그 이미지에 **`infra-backend:deployed` 고정 태그**를 붙인다.
+> 태그가 없는 이미지는 GC 대상이 되어 실제로 사라진 적이 있기 때문이다
+> (위 `9ad0e1d19698`이 `docker image inspect`로 조회되지 않았다).
+> 실행 중 이미지를 찾지 못하면 이 `deployed` 태그를 fallback으로 쓰고,
+> 둘 다 없으면 **WARN을 남기고 코드만 롤백**한다 — 없는 안전망을 있는 척하지 않는다.
 
 ---
 
@@ -181,6 +198,8 @@ MySQL을 정지시킨 상태에서 실측한 결과:
 | --- | --- | --- |
 | Grafana | 1분 평가 | 수집 대상 다운(3분 유예), 디스크 15% 미만, 메모리 10% 미만 |
 | cron `container-watch.sh` | 5분 | 컨테이너 정지 / unhealthy / **크래시 루프** |
+| cron `backup.sh` | 매일 04:00 | MySQL 덤프 + 보관기간 정리 (디스크 임계 시 로그 경고) |
+| cron `docker-gc.sh` | 주 1회 (**등록 예정**) | 배포마다 쌓이는 이미지·빌드 캐시 정리 |
 
 `container-watch.sh`가 별도로 필요한 이유: Prometheus의 `up` 알림은 **스크레이프 대상만** 본다.
 `mysql`, `redis`, `backend`는 수집 대상이 아니므로 그쪽 이상은 잡지 못한다.
@@ -210,6 +229,27 @@ cd ~/app/infra && docker compose up -d --build --no-deps jenkins
 > 설정을 고쳐 머지해도 반영되지 않고, 수동으로 올린 변경은 다음 배포의 `git reset --hard`에
 > 밀려 조용히 원복된다.
 > 그래서 배포할 때마다 compose 전체 서비스와 대조해 누락을 WARN으로 남긴다.
+
+---
+
+## 디스크 정리 — `docker-gc.sh`
+
+배포 한 번마다 backend 이미지(약 744MB)와 gradle 빌드 캐시가 쌓이는데, 파이프라인 안에는
+정리하는 단계가 없다. 배포 경로에 `prune`을 넣으면 **배포 시간이 들쭉날쭉해지고 실패 지점이 늘어나므로**
+파이프라인 밖 cron으로 분리했다.
+
+| 대상 | 처리 | 남기는 것 |
+| --- | --- | --- |
+| 이미지 | `docker image prune -f` (**`-a` 금지**) | `infra-backend:latest` / `:rollback` / `:deployed` — 태그가 있어 대상이 아니다 |
+| 빌드 캐시 | `builder prune -f --max-used-space 10GB` | 상한선까지만. 전부 지우면 다음 배포의 gradle 빌드가 처음부터 돈다 |
+| 중지된 컨테이너 | `container prune -f` | — |
+| **볼륨·네트워크** | **건드리지 않는다** | `mysql_data`·`jenkins_home`. `system prune --volumes`를 넣지 말 것 |
+
+> **`:deployed` 태그가 이 정리의 안전 장치다.** 태그가 없으면 "방금 서비스에 올린 이미지"가
+> dangling으로 분류되어 정리 대상이 된다. 위 ③ Deploy의 롤백 지점 보존과 짝을 이룬다.
+
+배포와 겹치지 않도록 `deploy.sh` 프로세스가 떠 있으면 정리를 건너뛴다.
+(`--keep-storage`는 Docker 29에서 빠졌다 — `--max-used-space`를 쓴다)
 
 ---
 

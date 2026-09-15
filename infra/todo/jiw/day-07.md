@@ -123,6 +123,40 @@ Day 3에서 겪은 "파일과 실제 상태가 어긋난 채 방치"와 같은 �
 정정 방법: `8eb6e1a`로 리셋 후 두 커밋을 cherry-pick하며 메시지만 amend. 원래 author date는 유지된다.
 검증: 정정 전 상태를 `backup-before-key-fix` 태그로 보관하고 `git diff --stat backup-before-key-fix HEAD`가 **빈 출력**임을 확인 — 메시지만 바뀌고 내용은 동일하다.
 
+### 9. 소셜 로그인 인증 흐름 확정 — 내가 문서에 적은 값이 틀렸다
+사용자가 *"Redirect URI가 `dodam://oauth/kakao`라고 되어있는데 이건 그냥 내가 원하는 값 아무거나 넣는거임?"* 이라고 물어서 확인하다가 **내 문서의 오류를 찾았다.**
+
+레포를 실측했더니 방식이 확정된 근거가 없었다.
+
+| 확인 | 결과 |
+| --- | --- |
+| FE 인증 라이브러리 | 없음 (kakao / auth-session / google-signin 전부 미설치) |
+| 백엔드 OAuth 코드·설정 | 없음 (`application*.yml`에 0건) |
+| 백엔드 의존성 | `spring-boot-starter-oauth2-client` **있음** |
+
+마지막 줄 때문에 "서버가 Authorization Code Flow를 처리하는 구성일 수 있다"는 의심이 생겼다. 그 경우 등록값은 `dodam://oauth/kakao`가 아니라 서버 URL(`{baseUrl}/login/oauth2/code/{registrationId}`)이다. **즉 내가 "확정"으로 적어둔 값은 "네이티브 앱이니 커스텀 스킴일 것"이라는 추정이었다.**
+
+백엔드팀(사용자)에 확인 요청 → **앱이 네이티브 SDK로 로그인하고 서버는 토큰만 검증**하는 방식으로 확정.
+- 앱: 카카오 access token 또는 OIDC `id_token` / 구글 `id_token` 수령
+- 서버: `POST /api/v1/auth/oauth/{provider}`로 받아 provider에 검증 후 `user_oauth_account` 매핑 → 기존 JWT 발급
+- `oauth2-client` 의존성은 초기 세팅 때 넣은 향후 확장용이며 이 흐름에서는 쓰지 않는다
+
+**그 결과 내 안내에서 3건을 정정했다.**
+
+1. **Redirect URI를 등록하지 않는다** — 네이티브 SDK는 콘솔의 Redirect URI 항목을 쓰지 않는다(그 필드는 REST API/JS SDK용). SDK는 고정 스킴 `kakao{네이티브앱키}://oauth`로 돌아오고, 이는 `app.json`의 `scheme: "dodam"`과 **무관한 별개의 intent-filter**다.
+   → `dodam://oauth/kakao`를 등록해도 **무해하지만 아무 역할도 하지 않는다.**
+   → 실제로 필요한 것은 **AndroidManifest의 `kakao{앱키}://oauth` intent-filter**이고, 빠지면 **로그인 후 앱으로 복귀하지 못한다.** 09-11 현재 `app.json`에 없어 FE에 공유 필요.
+
+2. **Client Secret이 양쪽 모두 불필요** — 서버가 code를 교환하지 않으므로 쓸 자리가 없다. `.env.example`에서 `KAKAO_CLIENT_SECRET` / `GOOGLE_CLIENT_SECRET`을 제거했다. 구글은 웹 클라이언트의 **ID만** `aud` 비교에 쓰고 Secret은 배포하지 않는다.
+
+3. **서버에 필요한 카카오 값이 0개일 수 있다** — `GET /v2/user/me`는 사용자 access token만 Bearer로 실으므로 앱 키가 안 들어간다. OIDC `id_token` 검증 방식일 때만 aud 비교용 앱 키 1개가 필요하고, 그때는 콘솔에서 **OpenID Connect 활성화**(기본 OFF)를 켜야 한다.
+
+**변수명도 실제 용도에 맞게 바꿨다**: `KAKAO_CLIENT_ID`/`GOOGLE_CLIENT_ID` → `KAKAO_APP_KEY`/`GOOGLE_OAUTH_CLIENT_ID`. 자유롭게 바꿀 수 있었던 이유는 **compose와 `application-prod.yml` 어느 쪽도 아직 이 변수를 참조하지 않기 때문**이다(`check-env.sh`는 필수 목록을 compose에서 뽑으므로 현재 검사 대상도 아니다). 백엔드가 참조를 시작할 때 **양쪽에 함께** 추가해야 한다고 `.env.example`에 경고를 달았다 — 09-08 `JWT_SECRET` 유실 장애와 같은 유형이다.
+
+**부수 발견 (Google)**: Firebase 프로젝트가 곧 GCP 프로젝트이고, Firebase에서 Android 앱에 SHA-1을 추가하면 **Android OAuth 클라이언트가 자동 생성**되며 Google 로그인 활성화 시 **웹 클라이언트도 자동 생성**된다. 수동 생성 전에 GCP 사용자 인증 정보 목록을 먼저 볼 것 — 중복 생성하면 어느 ID를 `serverClientId`에 넣을지 헷갈린다.
+
+**교훈**: 외부 연동 값을 "확정"으로 적을 때는 **구현 방식이 확정됐는지 먼저 확인해야 한다.** 같은 provider라도 방식에 따라 등록값의 형태 자체가 달라지고, 이 오류는 콘솔에 값을 넣고 `redirect_uri_mismatch`로 헤맬 때까지 드러나지 않는다.
+
 ## 현재 외부 연동 상태
 
 | 연동 | 상태 | 남은 것 |
@@ -135,9 +169,12 @@ Day 3에서 겪은 "파일과 실제 상태가 어긋난 채 방치"와 같은 �
 | FE 빌드 | ✅ EAS 확정 + SHA-1 절차 문서화 | `eas init`/`eas.json`, APK 배포처 (FE팀) |
 
 ## 남은 것
-- [ ] Kakao Developers 등록 → `KAKAO_CLIENT_ID` / `KAKAO_CLIENT_SECRET` 전달 (**사용자 액션**)
-- [ ] Google Cloud Console OAuth 클라이언트 → `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` 전달 (**사용자 액션**)
+- [ ] Kakao Developers — 플랫폼 Android 등록(패키지명 + 키 해시) + 네이티브 앱 키 (**사용자 액션**)
+      OIDC 방식이면 OpenID Connect 활성화 ON + aud 비교용 앱 키 → `KAKAO_APP_KEY`
+- [ ] Google Cloud Console — 웹 클라이언트 ID → `GOOGLE_OAUTH_CLIENT_ID` (**사용자 액션**)
+      Android 클라이언트 + 동의화면(테스트 사용자 전원)도 필요. **Secret은 필요 없음**
       SHA-1은 `eas credentials -p android`로 조회 — EAS 설정이 선행
+- [ ] FE에 공유: AndroidManifest `kakao{앱키}://oauth` intent-filter 추가 (누락 시 로그인 복귀 실패)
 - [ ] OpenAI 사용량 한도·결제 담당자 확인 (**사용자 액션**)
 - [ ] 금융망 호출 타임아웃/재시도 정책을 어디서 관리할지 백엔드팀과 협의
       (`application.yml`에 `connect-timeout: PT3S` / `read-timeout: PT5S`가 이미 있음 — 인프라는 아웃바운드 네트워크만 보장)
