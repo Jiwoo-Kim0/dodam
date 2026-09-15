@@ -67,6 +67,13 @@ public class User {
         return new User(email, passwordHash, name, UserRole.USER);
     }
 
+    /**
+     * 소셜 로그인으로 가입하는 회원을 생성한다. 비밀번호가 없으므로 {@link #hasPassword()}가 false이고 이메일·비밀번호 로그인은 불가하다.
+     */
+    public static User createSocialUser(String email, String name) {
+        return new User(email, null, name, UserRole.USER);
+    }
+
     @PrePersist
     void onPersist() {
         LocalDateTime now = LocalDateTime.now();

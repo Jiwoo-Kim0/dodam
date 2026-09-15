@@ -27,6 +27,19 @@ public enum ErrorCode {
     SESSION_EXPIRED(HttpStatus.UNAUTHORIZED, "로그인 세션이 만료되었습니다."),
     SESSION_NOT_FOUND(HttpStatus.NOT_FOUND, "세션을 찾을 수 없습니다."),
 
+    // ---------- 소셜 로그인 (명세 외 확장, backend/docs/auth-social.md) ----------
+    SOCIAL_PROVIDER_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "지원하지 않는 소셜 로그인 공급자입니다."),
+    /**
+     * 만료·위조·다른 앱에서 발급된 토큰. 세부 원인은 서버 로그에만 남긴다.
+     */
+    SOCIAL_TOKEN_INVALID(HttpStatus.UNAUTHORIZED, "소셜 로그인 토큰이 유효하지 않습니다."),
+    SOCIAL_PROVIDER_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "소셜 로그인 공급자에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요."),
+    /**
+     * 공급자 이메일과 같은 이메일의 회원에게 이미 같은 공급자의 다른 소셜 계정이 연결되어 있다.
+     */
+    SOCIAL_ACCOUNT_ALREADY_LINKED(HttpStatus.CONFLICT, "해당 이메일의 계정에는 이미 같은 공급자의 소셜 계정이 연결되어 있습니다."),
+    USER_WITHDRAWN(HttpStatus.FORBIDDEN, "탈퇴한 계정입니다."),
+
     INVALID_TIMEZONE(HttpStatus.BAD_REQUEST, "지원하지 않는 타임존입니다."),
     NO_FIELDS_TO_UPDATE(HttpStatus.BAD_REQUEST, "수정할 항목이 없습니다."),
 

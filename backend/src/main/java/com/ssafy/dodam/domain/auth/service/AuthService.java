@@ -113,7 +113,14 @@ public class AuthService {
         if (!user.hasPassword() || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
         }
+        return startSession(user);
+    }
 
+    /**
+     * 신원 확인이 끝난 회원에게 새 세션을 만들고 토큰을 발급한다. 이메일·비밀번호 로그인과 소셜 로그인({@link SocialAuthService})이 공유한다.
+     */
+    @Transactional
+    public LoginResponse startSession(User user) {
         String refreshToken = refreshTokenFactory.generate();
         AuthSession session = authSessionRepository.save(AuthSession.issue(
                 user.getId(),

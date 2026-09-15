@@ -23,6 +23,17 @@ app:
     base-url: https://finopenapi.ssafy.io
     connect-timeout: PT3S
     read-timeout: PT5S
+  social:
+    # 소셜 로그인(backend/docs/auth-social.md). 서버는 클라이언트가 받은 토큰을 공급자에 검증만 하므로 client secret은 필요 없다.
+    kakao:
+      user-info-url: https://kapi.kakao.com/v2/user/me
+      token-info-url: https://kapi.kakao.com/v1/user/access_token_info
+      app-id: ${KAKAO_APP_ID:}          # 카카오 개발자 콘솔 앱 ID(숫자). 비어 있으면 "우리 앱에서 발급된 토큰인지" 검사를 생략한다
+    google:
+      jwk-set-uri: https://www.googleapis.com/oauth2/v3/certs
+      client-ids: ${GOOGLE_CLIENT_ID:}  # ID token의 aud로 허용할 OAuth 클라이언트 ID. 쉼표로 여러 개(Android·웹). 비어 있으면 구글 로그인 불가
+    connect-timeout: PT3S
+    read-timeout: PT5S
   pattern:
     # API 3 패턴 분석 정책값. 명세·기획안에 수치가 없는 항목의 서비스 기본안(backend/docs/pattern.md).
     lookback-months: 6          # 분석 기간(완료된 달 기준)
