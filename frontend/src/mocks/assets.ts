@@ -17,7 +17,7 @@ const shinhanAccount = findGoalAccount('goal-account-shinhan');
 const nonghyupAccount = findGoalAccount('goal-account-nonghyup');
 
 export const MOCK_ASSET_OVERVIEW = {
-  totalAsset: 8795830,
+  netAsset: 8795830,
   changeFromLastMonth: 234000,
   composition: [
     { label: '예·적금', amount: 6200000, tone: 'strong' },

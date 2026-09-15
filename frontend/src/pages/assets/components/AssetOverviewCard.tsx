@@ -18,11 +18,11 @@ interface AssetOverviewCardProps {
 }
 
 export function AssetOverviewCard({ overview }: AssetOverviewCardProps) {
-  const { totalAsset, changeFromLastMonth, composition } = overview;
+  const { netAsset, changeFromLastMonth, composition } = overview;
 
   return (
     <View style={styles.card}>
-      <Text style={styles.label}>총자산</Text>
+      <Text style={styles.label}>순자산</Text>
 
       <Text
         adjustsFontSizeToFit
@@ -30,7 +30,7 @@ export function AssetOverviewCard({ overview }: AssetOverviewCardProps) {
         numberOfLines={1}
         style={styles.totalAmount}
       >
-        {formatNumber(totalAsset)}
+        {formatNumber(netAsset)}
         <Text style={styles.currencyUnit}>원</Text>
       </Text>
 

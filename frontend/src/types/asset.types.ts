@@ -7,7 +7,7 @@ export interface AssetComposition {
 }
 
 export interface AssetOverview {
-  totalAsset: number;
+  netAsset: number;
   changeFromLastMonth: number | null;
   composition: readonly AssetComposition[];
 }
