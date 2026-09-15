@@ -207,6 +207,23 @@ BE-A 담당 도메인별(H2 통합 + 단위):
   (`database/seeds/DODAM_DEMO_PASSWORD_SEED.sql`)와 스모크 스크립트(`scripts/be-a-server-smoke.sh`, 로그인 → 계좌·거래·소비·목표·정기결제·패턴·알림)를
   준비했다. 서버 DB에 seed를 적용한 뒤 실행 결과를 아래에 기록한다(remaining-work 521 절).
 
-### 서버 스모크 (2026-09-15, 대기)
+### 서버 스모크 (2026-09-15)
 
-비밀번호 seed 적용 전 실행: `POST /v1/auth/login` 401 `INVALID_CREDENTIALS`로 스크립트가 멈춤(의도한 실패 경로). 적용 후 결과 표는 여기에 추가한다.
+시연 서버 `https://j15D105.p.ssafy.io/api`, 담당자가 `DODAM_DEMO_PASSWORD_SEED.sql`을 서버 DB에 적용(검증 SELECT `demo_users_with_password 4 / other_users_with_password 0`)한 뒤
+`DEMO_PASSWORD=... bash backend/scripts/be-a-server-smoke.sh --analyze`를 U0001로 실행했다(13:12 KST). 15개 호출 전부 기대 상태 코드.
+
+| 도메인 | 호출 | 상태 | 응답 확인 |
+| --- | --- | --- | --- |
+| Auth | `POST /v1/auth/login` | 200 | Bearer accessToken·refreshToken 발급 |
+| Account | `GET /v1/accounts`, `GET /v1/accounts/summary` | 200, 200 | 계좌 2개(KB국민 주거래 마스킹 `110000-**-**1301`), 요구불 잔액 19,160,000 |
+| Transaction | `GET /v1/transactions?page=0&size=5` | 200 | seed 거래 `SEED-U0001-202608-VAR-06` 등 |
+| Spending | `GET /v1/spending/monthly-summary?yearMonth=2026-08` | 200 | 총 소비 1,585,800원, 20건 |
+| Goal | `GET /v1/goals`, `GET /v1/goals/summary` | 200, 200 | 모으기 목표 1개(여행 자금) ACTIVE |
+| Subscription | `GET /v1/subscriptions`, `GET /v1/subscriptions/summary` | 200, 200 | 구독 1개(도담 비디오), 월 12,400원 |
+| Pattern | `POST /v1/patterns/analyze`, `GET /v1/patterns/me` | 201, 200 | analysisId 1 COMPLETED, HYBRID, 6개월(서버 DB 첫 분석 이력) |
+| Notification | `GET /v1/notifications`, `GET /v1/notifications/unread-count` | 200, 200 | 최신 알림은 이벤트 스케줄이 만든 `GOAL_ACHIEVED`(id 2139), 미확인 3 |
+| Auth | `GET /v1/auth/session`, `POST /v1/auth/logout` | 200, 200 | userId 1, 세션 폐기 |
+
+- U0002~U0004도 로그인 200, `GET /v1/accounts/summary` 200, 미확인 알림 5·4·5로 확인했다.
+- 패턴 분석은 `--analyze`로 서버 DB에 U0001의 분석 이력 1건을 만들었다(시연 홈에서 패턴 조회가 404가 되지 않도록 의도한 쓰기). U0002~U0004는 아직 분석 이력이 없어 시연 전 같은 방식으로 실행하거나 앱에서 분석을 호출해야 한다.
+- 알림함에 seed 외 알림(`GOAL_ACHIEVED` 2139)이 있는 것은 D10 이벤트 스케줄(08:00)이 서버에서 실제로 돌았다는 뜻이다.
