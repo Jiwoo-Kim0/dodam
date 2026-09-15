@@ -59,6 +59,10 @@ export function MonthSelector({
   onNext,
   onPressLabel,
 }: MonthSelectorProps) {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  const isNextDisabled = year > currentYear || (year === currentYear && month >= currentMonth);
   const label = <Text style={styles.monthLabel}>{`${year}년 ${month}월`}</Text>;
 
   return (
@@ -89,13 +93,15 @@ export function MonthSelector({
       <Pressable
         accessibilityLabel="다음 달"
         accessibilityRole="button"
+        accessibilityState={{ disabled: isNextDisabled }}
+        disabled={isNextDisabled}
         hitSlop={12}
         onPress={onNext}
         style={styles.monthArrowButton}>
         <SymbolView
           name={{ android: 'chevron_right', ios: 'chevron.right', web: 'chevron_right' }}
           size={20}
-          tintColor={colors.textPrimary}
+          tintColor={isNextDisabled ? colors.textTertiary : colors.textPrimary}
         />
       </Pressable>
     </View>

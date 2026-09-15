@@ -41,15 +41,23 @@ function draftFromTransaction(transaction: LedgerTransaction): LedgerTransaction
   };
 }
 
+function getCurrentMonthStart() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), 1);
+}
+
+function clampToCurrentMonth(month: Date) {
+  const currentMonth = getCurrentMonthStart();
+  return month.getTime() > currentMonth.getTime() ? currentMonth : month;
+}
+
 export function LedgerScreen() {
   const router = useRouter();
   const [view, setView] = useState<LedgerView>('overview');
   const [previousListView, setPreviousListView] = useState<LedgerListView>('overview');
   const [formMode, setFormMode] = useState<TransactionFormMode>('create');
-  const [currentMonth, setCurrentMonth] = useState(() => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), 1);
-  });
+  const [currentMonth, setCurrentMonth] = useState(getCurrentMonthStart);
+  const visibleMonth = useMemo(() => clampToCurrentMonth(currentMonth), [currentMonth]);
   const {
     transactions,
     monthlySummary,
@@ -62,7 +70,7 @@ export function LedgerScreen() {
     updateTransaction,
     prependTransaction,
     removeTransaction,
-  } = useLedgerData(currentMonth);
+  } = useLedgerData(visibleMonth);
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
   const [draft, setDraft] = useState<LedgerTransactionDraft>({ ...EMPTY_LEDGER_DRAFT });
 
@@ -88,13 +96,20 @@ export function LedgerScreen() {
   };
 
   const changeMonth = (offset: number) => {
-    setCurrentMonth(
-      (current) => new Date(current.getFullYear(), current.getMonth() + offset, 1),
-    );
+    setCurrentMonth((current) => {
+      const safeCurrent = clampToCurrentMonth(current);
+      const next = new Date(
+        safeCurrent.getFullYear(),
+        safeCurrent.getMonth() + offset,
+        1,
+      );
+
+      return clampToCurrentMonth(next);
+    });
   };
 
   const selectMonth = (year: number, month: number) => {
-    setCurrentMonth(new Date(year, month - 1, 1));
+    setCurrentMonth(clampToCurrentMonth(new Date(year, month - 1, 1)));
   };
 
   const openTransaction = (transactionId: string) => {
@@ -185,8 +200,8 @@ export function LedgerScreen() {
     setView(formMode === 'edit' ? 'detail' : previousListView);
   };
 
-  const year = currentMonth.getFullYear();
-  const month = currentMonth.getMonth() + 1;
+  const year = visibleMonth.getFullYear();
+  const month = visibleMonth.getMonth() + 1;
 
   if (isLoading || !monthlySummary) {
     return (
@@ -205,7 +220,9 @@ export function LedgerScreen() {
             <>
               <Text style={styles.statusTitle}>가계부를 불러오지 못했어요.</Text>
               <Text style={styles.statusDescription}>
-                네트워크 상태를 확인한 뒤 다시 시도해주세요.
+                {__DEV__
+                  ? error.message
+                  : '네트워크 상태를 확인한 뒤 다시 시도해주세요.'}
               </Text>
               <Pressable
                 accessibilityRole="button"

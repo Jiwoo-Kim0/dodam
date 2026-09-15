@@ -45,11 +45,16 @@ export function useLedgerData(currentMonth: Date) {
     const month = currentMonth.getMonth() + 1;
     const yearMonth = `${year}-${padDatePart(month)}`;
     const lastDay = new Date(year, month, 0).getDate();
+    const today = new Date();
+    const endDay =
+      year === today.getFullYear() && month === today.getMonth() + 1
+        ? today.getDate()
+        : lastDay;
 
     return {
       yearMonth,
       startDate: `${yearMonth}-01`,
-      endDate: `${yearMonth}-${padDatePart(lastDay)}`,
+      endDate: `${yearMonth}-${padDatePart(endDay)}`,
     };
   }, [currentMonth]);
 
