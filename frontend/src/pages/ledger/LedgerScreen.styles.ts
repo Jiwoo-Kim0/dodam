@@ -259,6 +259,9 @@ export const styles = StyleSheet.create({
   incomeText: {
     color: colors.ledger.income,
   },
+  spendingDecreaseText: {
+    color: colors.primary.green,
+  },
   sectionTitleRow: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -443,6 +446,10 @@ export const styles = StyleSheet.create({
   emptyState: {
     alignItems: 'center',
     paddingVertical: spacing[8],
+  },
+  sectionEmptyState: {
+    alignItems: 'center',
+    paddingVertical: spacing[5],
   },
   emptyStateText: {
     color: colors.textTertiary,

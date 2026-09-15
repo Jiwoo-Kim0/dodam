@@ -33,6 +33,33 @@ interface LedgerOverviewProps {
   refreshing: boolean;
 }
 
+function getSpendingComparisonText(difference: number) {
+  if (difference > 0) {
+    return `지난달보다 ${formatCurrency(difference)} 더 썼어요`;
+  }
+
+  if (difference < 0) {
+    return `지난달보다 ${formatCurrency(Math.abs(difference))} 덜 썼어요`;
+  }
+
+  return '지난달과 같은 금액을 썼어요';
+}
+
+function getSignedDifference(difference: number) {
+  if (difference === 0) return '0';
+
+  const sign = difference > 0 ? '+' : '-';
+  return `${sign}${formatNumber(Math.abs(difference))}`;
+}
+
+function getRecentDateLabel(dateKey: string) {
+  if (dateKey === dateKeyDaysAgo(0)) return '오늘';
+  if (dateKey === dateKeyDaysAgo(1)) return '어제';
+
+  const [, month, day] = dateKey.split('-').map(Number);
+  return `${month}월 ${day}일`;
+}
+
 export function LedgerOverview({
   year,
   month,
@@ -50,12 +77,30 @@ export function LedgerOverview({
 }: LedgerOverviewProps) {
   const categoryById = new Map(categories.map((category) => [category.id, category]));
   const visibleTransactions = transactions.filter((transaction) => !transaction.hidden);
-  const todayTransactions = visibleTransactions.filter(
-    (transaction) => transaction.transactionDate === dateKeyDaysAgo(0),
+  const recentTransactions = [...visibleTransactions]
+    .sort((left, right) =>
+      `${right.transactionDate} ${right.transactionTime}`.localeCompare(
+        `${left.transactionDate} ${left.transactionTime}`,
+      ),
+    )
+    .slice(0, 3);
+  const recentGroups = Array.from(
+    recentTransactions.reduce<Map<string, LedgerTransaction[]>>(
+      (groups, transaction) => {
+        const group = groups.get(transaction.transactionDate) ?? [];
+        group.push(transaction);
+        groups.set(transaction.transactionDate, group);
+        return groups;
+      },
+      new Map(),
+    ),
   );
-  const yesterdayTransactions = visibleTransactions
-    .filter((transaction) => transaction.transactionDate === dateKeyDaysAgo(1))
-    .slice(0, 1);
+  const comparisonValueStyle =
+    summary.previousMonthDifference > 0
+      ? styles.expenseText
+      : summary.previousMonthDifference < 0
+        ? styles.spendingDecreaseText
+        : undefined;
 
   return (
     <View style={styles.fill}>
@@ -83,37 +128,50 @@ export function LedgerOverview({
             <Text style={styles.expenseAmountUnit}>원</Text>
           </Text>
           <Text style={styles.expenseComparison}>
-            {`지난달보다 ${formatCurrency(summary.previousMonthDifference)} 더 썼어요`}
+            {getSpendingComparisonText(summary.previousMonthDifference)}
           </Text>
         </View>
 
         <View style={[styles.card, styles.sectionCard]}>
           <Text style={styles.categorySectionTitle}>카테고리별 소비</Text>
-          <View style={styles.categoryBar}>
-            {categorySummaries.map((item) => (
-              <View
-                key={item.categoryId}
-                style={[
-                  styles.categoryBarSegment,
-                  { backgroundColor: item.color, flex: item.ratio },
-                ]}
-              />
-            ))}
-          </View>
-
-          <View style={styles.categoryLegend}>
-            {categorySummaries.map((item) => (
-              <View key={item.categoryId} style={styles.categoryLegendRow}>
-                <View style={[styles.categoryLegendDot, { backgroundColor: item.color }]} />
-                <Text style={styles.categoryLegendLabel}>
-                  {categoryById.get(item.categoryId)?.label ?? '기타'}
-                </Text>
-                <Text style={styles.categoryLegendAmount}>
-                  {`${formatCurrency(item.amount)} (${item.ratio}%)`}
-                </Text>
+          {categorySummaries.length > 0 ? (
+            <>
+              <View style={styles.categoryBar}>
+                {categorySummaries.map((item) => (
+                  <View
+                    key={item.categoryId}
+                    style={[
+                      styles.categoryBarSegment,
+                      { backgroundColor: item.color, flex: item.ratio },
+                    ]}
+                  />
+                ))}
               </View>
-            ))}
-          </View>
+
+              <View style={styles.categoryLegend}>
+                {categorySummaries.map((item) => (
+                  <View key={item.categoryId} style={styles.categoryLegendRow}>
+                    <View
+                      style={[
+                        styles.categoryLegendDot,
+                        { backgroundColor: item.color },
+                      ]}
+                    />
+                    <Text style={styles.categoryLegendLabel}>
+                      {categoryById.get(item.categoryId)?.label ?? '기타'}
+                    </Text>
+                    <Text style={styles.categoryLegendAmount}>
+                      {`${formatCurrency(item.amount)} (${item.ratio}%)`}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </>
+          ) : (
+            <View style={styles.sectionEmptyState}>
+              <Text style={styles.emptyStateText}>이번 달 소비 내역이 없어요.</Text>
+            </View>
+          )}
         </View>
 
         <View style={[styles.card, styles.activityCard]}>
@@ -138,9 +196,9 @@ export function LedgerOverview({
                 </View>
                 <View style={styles.glanceItem}>
                   <Text style={styles.glanceLabel}>저번달 대비</Text>
-                  <Text style={[styles.glanceValue, styles.expenseText]}>
-                    <Text style={[styles.glanceValueNumber, styles.expenseText]}>
-                      {`-${formatNumber(summary.previousMonthDifference)}`}
+                  <Text style={[styles.glanceValue, comparisonValueStyle]}>
+                    <Text style={[styles.glanceValueNumber, comparisonValueStyle]}>
+                      {getSignedDifference(summary.previousMonthDifference)}
                     </Text>
                     원
                   </Text>
@@ -161,33 +219,32 @@ export function LedgerOverview({
             </View>
 
             <View style={styles.transactionList}>
-              <View style={styles.recentGroup}>
-                <Text style={styles.groupLabel}>오늘</Text>
-                {todayTransactions.map((transaction) => (
-                  <TransactionRow
-                    amount={transaction.amount}
-                    compact
-                    key={transaction.id}
-                    merchantName={transaction.merchantName}
-                    onPress={() => onOpenTransaction(transaction.id)}
-                    transactionType={transaction.transactionType}
-                  />
-                ))}
-              </View>
-
-              <View style={[styles.recentGroup, styles.recentGroupSeparated]}>
-                <Text style={styles.groupLabel}>어제</Text>
-                {yesterdayTransactions.map((transaction) => (
-                  <TransactionRow
-                    amount={transaction.amount}
-                    compact
-                    key={transaction.id}
-                    merchantName={transaction.merchantName}
-                    onPress={() => onOpenTransaction(transaction.id)}
-                    transactionType={transaction.transactionType}
-                  />
-                ))}
-              </View>
+              {recentGroups.length > 0 ? (
+                recentGroups.map(([date, groupTransactions], index) => (
+                  <View
+                    key={date}
+                    style={[
+                      styles.recentGroup,
+                      index > 0 && styles.recentGroupSeparated,
+                    ]}>
+                    <Text style={styles.groupLabel}>{getRecentDateLabel(date)}</Text>
+                    {groupTransactions.map((transaction) => (
+                      <TransactionRow
+                        amount={transaction.amount}
+                        compact
+                        key={transaction.id}
+                        merchantName={transaction.merchantName}
+                        onPress={() => onOpenTransaction(transaction.id)}
+                        transactionType={transaction.transactionType}
+                      />
+                    ))}
+                  </View>
+                ))
+              ) : (
+                <View style={styles.sectionEmptyState}>
+                  <Text style={styles.emptyStateText}>이번 달 거래 내역이 없어요.</Text>
+                </View>
+              )}
             </View>
           </View>
         </View>

@@ -119,25 +119,51 @@ export function mapDailySpending(
 export function mapCategorySpending(
   response: CategorySpendingApiResponse,
 ): LedgerCategorySummary[] {
-  const visibleCategories = response.categories.slice(0, 2);
-  const remainingCategories = response.categories.slice(2);
+  const categoriesById = new Map<
+    string,
+    Pick<LedgerCategorySummary, 'categoryId' | 'amount' | 'ratio'>
+  >();
+
+  response.categories.forEach((category) => {
+    const categoryId = getCategoryId(category.code);
+    const current = categoriesById.get(categoryId);
+
+    categoriesById.set(categoryId, {
+      categoryId,
+      amount: (current?.amount ?? 0) + category.totalSpending,
+      ratio: (current?.ratio ?? 0) + category.sharePercent,
+    });
+  });
+
+  const aggregatedCategories = Array.from(categoriesById.values()).sort(
+    (left, right) => right.amount - left.amount,
+  );
+  const visibleCategories = aggregatedCategories
+    .filter((category) => category.categoryId !== 'etc')
+    .slice(0, 2);
+  const visibleCategoryIds = new Set(
+    visibleCategories.map((category) => category.categoryId),
+  );
+  const remainingCategories = aggregatedCategories.filter(
+    (category) => !visibleCategoryIds.has(category.categoryId),
+  );
 
   const summaries: LedgerCategorySummary[] = visibleCategories.map(
     (category, index) => ({
-      categoryId: getCategoryId(category.code),
-      amount: category.totalSpending,
-      ratio: Math.round(category.sharePercent),
+      categoryId: category.categoryId,
+      amount: category.amount,
+      ratio: Math.round(category.ratio),
       color: CATEGORY_COLORS[index],
     }),
   );
 
   if (remainingCategories.length > 0) {
     const otherAmount = remainingCategories.reduce(
-      (total, category) => total + category.totalSpending,
+      (total, category) => total + category.amount,
       0,
     );
     const otherRatio = remainingCategories.reduce(
-      (total, category) => total + category.sharePercent,
+      (total, category) => total + category.ratio,
       0,
     );
 
