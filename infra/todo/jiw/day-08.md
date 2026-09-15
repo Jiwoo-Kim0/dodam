@@ -548,12 +548,69 @@ exit=0
 `container-watch.sh`는 컨테이너를 보지 cron 작업을 보지 않는다.
 이번에도 09-15 04:00에 ERROR가 찍혔지만 하루 가까이 아무도 몰랐다.
 
+### 17. `.env` 변경이 컨테이너까지 도달하는지 점검 (12:31, 조회만)
+
+"`.env`에서 값을 바꿨는데 반영돼서 배포되고 있는가"라는 질문에서 출발해,
+**`.env`의 모든 키가 실제로 컨테이너에 도달하는지 전수 대조**했다.
+방법: `.env` 각 값의 sha256 앞 10자와 각 컨테이너 `Config.Env`의 같은 키 값을 비교(값은 노출하지 않음).
+
+**질문의 답 — `SSAFY_FINANCE_API_KEY`는 반영됐다**
+
+| 단계 | 확인 |
+| --- | --- |
+| `.env` → 컨테이너 | 해시 일치 (`74d86eac0419`, 32자) |
+| 배선 | `docker-compose.yml:200` → `application-prod.yml:36` → `SsafyFinanceProperties` |
+| 기동 | 값이 비면 `IllegalStateException`으로 기동을 막는 검증이 있는데 정상 기동(12:04:45) |
+
+타이밍: `.env` 수정 10:38 → 배포로 backend 재생성 12:04.
+EC2의 `~/seed-load/` 스크립트·Jenkins 자격증명에 옛 키 사본 없음.
+
+**증명되지 않은 것**: 기동 검증은 "비어 있지 않다"까지만 본다.
+금융망이 그 키를 받아주는지는 첫 호출이 나가야 안다 — 12:04 이후 호출 로그가 없다.
+
+**전수 대조로 드러난 것 — `.env`에 있지만 아무 데도 안 가는 키**
+
+| 키 | 상태 |
+| --- | --- |
+| **`OPENAI_API_KEY`** | **47자 값이 들어 있으나 참조처 0건** — compose·`application-prod.yml`·컨테이너 env 어디에도 없다. 값을 바꿔도 백엔드가 못 본다 |
+| `KAKAO_CLIENT_ID/SECRET`, `GOOGLE_CLIENT_ID/SECRET` | 동일. day-07에서 `.env.example`은 `KAKAO_APP_KEY`/`GOOGLE_OAUTH_CLIENT_ID`로 정리하고 secret을 지웠는데, **EC2의 `.env`는 옛 이름 그대로 남아 있다** |
+| `FCM_SERVICE_ACCOUNT_PATH` | `.env` 값이 **빈 문자열**인데 compose가 `/run/secrets/fcm-service-account.json`을 리터럴로 넣는다. 동작은 정상(파일도 컨테이너 안에 있음)이나 `.env` 줄은 아무 역할이 없으면서 있는 것처럼 보인다 |
+
+**상태를 가진 서비스의 함정 (조치 안 함, 인지용)**
+
+`MYSQL_ROOT_PASSWORD`·`MYSQL_PASSWORD`·`GRAFANA_ADMIN_PASSWORD`는 compose가 참조하므로
+컨테이너 환경변수는 새 값으로 바뀌지만, **MySQL·Grafana는 이 값을 데이터 볼륨 최초 초기화 때만 쓴다.**
+볼륨이 이미 있으면 실제 비밀번호는 옛 값 그대로다 — 컨테이너 env는 새 값, 실제 인증은 옛 값으로
+**어긋난 채 조용히 돌아간다.** 이 셋을 바꿀 때는 별도 절차가 필요하다.
+
+**반영 조건**: compose는 배포 때 `--env-file`로 `.env`를 다시 읽는다(`deploy.sh:160`).
+**`.env`만 고치고 배포가 없으면 컨테이너는 옛 값 그대로다.**
+이번에는 마침 12:04 배포가 있어 반영됐다.
+
+현재 기동 시각으로 본 반영 범위: backend만 09-15 12:04이고
+mysql·redis·nginx는 09-09, grafana 09-09 17:04, prometheus/loki/promtail도 09-09다.
+즉 그 서비스들이 쓰는 키는 **09-09 이후 바뀐 적이 없다**(바뀌었으면 compose가 재생성했을 것).
+
+### 18. 머지·배포 확인 — 12절~16절 수정이 모두 반영됐다
+
+세션 중 develop 머지가 이루어져, 이 문서의 커밋 6건이 모두 `origin/develop`에 올라가고
+**09-15 12:04 배포로 반영**됐다. EC2 `~/app`에서도 확인된다.
+
+| 커밋 | 내용 | 반영 경로 |
+| --- | --- | --- |
+| `75cb038` | 롤백 지점을 실행 중 이미지 기준으로 | 다음 배포부터 `:deployed` 태그 생성 |
+| `3129a92` | `docker-gc.sh` | 파일만 배포됨 — **cron 미등록, 여전히 미실행** |
+| `07a7d0a` | 로그인 레이트 리밋 경로 수정 | `deploy.sh:163`의 `nginx -s reload`로 반영 |
+| `47dcfc7` | `backup.sh` 검증 로직 | 다음 04:00 cron부터 적용 |
+
 ## 남은 것
-- [ ] 이 수정 develop 머지 후 첫 배포에서 `infra-backend:deployed` 태그 생성 확인
+- [ ] `infra-backend:deployed` 태그 생성 확인 (12:04 배포가 첫 적용분)
+- [ ] **`OPENAI_API_KEY`가 어디에도 배선돼 있지 않다** — compose·`application-prod.yml` 양쪽에 추가 필요 여부를 백엔드와 확인 (17절)
+- [ ] EC2 `.env`의 `KAKAO_CLIENT_*`·`GOOGLE_CLIENT_*`를 `.env.example`(day-07 정리분)에 맞추고, 빈 `FCM_SERVICE_ACCOUNT_PATH` 줄 제거
 - [ ] 롤백 경로 실제 검증 — 일부러 깨는 커밋으로 "코드+이미지가 함께 되돌아오는지" 확인
       (지금까지 검증된 것은 코드 롤백까지다)
 - [ ] `docker-gc.sh` EC2 1회 수동 실행 + cron 등록 (스크립트 커밋 완료, **운영 미적용** — 위 수정이 배포된 뒤에 실행)
-- [ ] 위 커밋 push 및 develop 머지 (머지 시 nginx reload로 레이트 리밋 수정도 함께 반영)
+- [x] ~~커밋 push 및 develop 머지~~ — 09-15 12:04 배포로 반영 (18절)
 - [ ] 배포 후 로그인 레이트 리밋이 실제로 걸리는지 확인 (연속 요청으로 429 유도)
 - [x] ~~`backup.sh` SIGPIPE 버그 수정~~ — 완주 표식 검증으로 교체, 11:53 백업 성공으로 공백 해소 (16절)
 - [x] ~~`*.sql.gz.partial` 보관 정리 대상 포함~~ — 16절에서 함께 수정
