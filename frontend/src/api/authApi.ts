@@ -4,6 +4,7 @@ import type {
   AuthSessionRestoreResult,
   AuthResponse,
   AuthTokens,
+  LoginRequest,
   SessionDeleteResponse,
 } from '@/types/auth.types';
 
@@ -24,6 +25,17 @@ function getTokensFromResponse(response: AuthResponse): AuthTokens {
 
 export async function persistAuthResponse(response: AuthResponse) {
   await setAuthTokens(getTokensFromResponse(response));
+}
+
+/** 이메일·비밀번호 로그인. 응답 본문은 소셜 로그인과 같다. */
+export async function login(request: LoginRequest): Promise<AuthResponse> {
+  const response = await apiClient.post<AuthResponse>(`${AUTH_PATH}/login`, {
+    auth: false,
+    body: request,
+  });
+
+  await persistAuthResponse(response);
+  return response;
 }
 
 export async function logout() {
@@ -75,6 +87,7 @@ export async function deleteSessions(sessionId?: number) {
 }
 
 export const authApi = {
+  login,
   logout,
   refreshTokens: refreshAuthTokens,
   getSession,
