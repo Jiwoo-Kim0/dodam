@@ -13,6 +13,7 @@
 - [ ] 시연 seed(491·492·493·522·523)와 상품 카탈로그를 적재한 MySQL에서 실행 10종이 실제 자료로 성립하는지(대출 `next_repayment_date`, 카드 소유권, 상품 옵션 기간·금리) 확인하고 금액을 simulation.md §7에 기록한다.
 - 근거: `SimulationMySqlIntegrationTest`는 사용자 입력만으로 성립하는 유형(saving·installment·cash-advance·combined)과 스키마 제약을 검증했다. 상품·대출·카드 참조 유형은 H2 fixture로만 확인했다.
 - 선행 조건: seed 적재 MySQL(`NUMBER_HASH_KEY` 일치).
+- 담당 근거: 실행·검증은 587(또는 QA 124, 09/17)의 BE-B 범위다. seed 491·492·493은 BE-A 자료이고 시연 기준 데이터·QA 버전 인계는 134(BE-C)이므로 적재된 DB는 그쪽 결과를 쓴다.
 - 완료 조건: 시연 계정으로 10종 실행 201과 goal-impact 날짜를 실측으로 확인한다.
 
 ### 저축 프리셋의 목표 지정
@@ -20,6 +21,7 @@
 - [ ] 추천이 겨냥한 `goalId`로 저축 시뮬레이션을 좁히려면 명세 17 `POST /simulations/saving` 본문에 `goalId?`를 추가해야 한다(`accountNo`와 동시 지정 400, 지문·저장 파라미터 포함, 타인 목표 404).
 - 근거: FE는 원문 계좌번호가 없어 `accountNo`를 보낼 수 없다. 현재 프리셋은 계좌 미지정으로 모든 모으기 목표에 비례 배분되며 `TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT`로 드러낸다. 목표가 하나면 결과가 같다.
 - 선행 조건: 루트 API 명세 변경은 사용자 요청이 필요하다. FE 146과 함께 결정한다.
+- 담당 근거: BE-B가 맡는다. 루트 명세 변경이라 FE 146(사용처) 의견을 확인한 뒤 결정하며, 결정 전에는 착수하지 않는다.
 - 완료 조건: `goalId` 지정 실행이 해당 목표만 바꾸고 프리셋 `request.goalId`가 채워진다.
 
 ### 테스트 컨텍스트 캐시와 공유 H2
@@ -27,7 +29,29 @@
 - [ ] 공유 H2(`jdbc:h2:mem:dodam`)와 `create-drop`을 쓰는 기존 통합 테스트(User·Transaction·Spending·Subscription 등)가 Spring 컨텍스트 캐시 축출에 취약하다. `spring.test.context.cache.maxSize` 상향(`junit-platform.properties`) 또는 해당 테스트의 DB URL 분리를 검토한다.
 - 근거: 587에서 새 컨텍스트 2개를 더한 첫 전체 빌드에서 96건이 `Table "auth_session" not found`로 실패했다. 같은 커밋의 깨끗한 worktree는 통과했으므로 컨텍스트 수 증가가 원인이다. 587은 신규 테스트가 기존 컨텍스트(586 URL·같은 MockitoBean)를 공유하도록 바꿔 우회했다.
 - 선행 조건: 공용 테스트 설정 변경이라 팀 확인이 필요하다. 다음에 새 `@SpringBootTest` 컨텍스트를 추가하는 작업에서 같은 문제가 재발할 수 있다.
+- 담당 근거: BE-B 소관이 아니다. 깨지는 테스트는 BE-A 도메인이고 `application-test.yml`(과 새로 둘 `junit-platform.properties`)은 공용 설정이다. 587은 발견·기록만 했으며 담당은 팀에서 정한다(BE-A 113 인계 이슈에 전달).
 - 완료 조건: 컨텍스트를 추가해도 전체 빌드가 순서와 무관하게 통과한다.
+
+### MySQL 검증에서 빠진 항목
+
+- [ ] `SimulationMySqlIntegrationTest`에 계획(simulation-587-plan.md §6)에는 있었지만 넣지 않은 세 가지를 추가한다: 복합 N행 scenario 저장 중 중간 실패 시 `simulation`·`simulation_scenario`·`simulation_goal_impact` 0행 롤백, `idx_simulation_user_type_created` 순서(`created_at DESC`)의 목록 정렬, `uk_simulation_user_simulation_id`(user_id, simulation_id) 조합의 본인 조건 조회.
+- 근거: 4건은 스키마·저장/재사용/삭제·복합 CHECK/FK·동시 실행만 다뤘다. 롤백은 H2에서 입력 검증 실패(400) 시 미저장만 확인했고 저장 도중 예외는 MySQL 트랜잭션으로 확인하지 않았다. 목록 정렬은 H2로만 확인했다.
+- 선행 조건: Docker `mysql:8.0`과 `SIMULATION_MYSQL_TEST_URL` 설정(simulation.md §11.3의 V6→V11 우회 순서).
+- 담당 근거: 587에서 만든 BE-B 테스트다.
+- 완료 조건: 세 항목이 MySQL에서 통과하고 simulation.md §11.3에 결과를 기록한다.
+
+### 계산 일관성 검증(계획 §4) 중 미고정 항목
+
+- [ ] 소비 추천 `effect.monthlyCostSaving`과 프리셋 그대로 실행한 `POST /simulations/spending`의 `after.monthlyAvailableFunds − before.monthlyAvailableFunds`가 같은지 API 테스트로 고정한다.
+- 근거: 진단 `SPENDING_GOAL_RISK`가 나오려면 목표 예산을 초과한 거래 fixture가 필요해 587에서는 프리셋 값만 `RecommendationSimulationPresetAssemblerTest`로 확인했다. 저축 쪽 대조(`improvedForecastDate` = `afterForecastDate`)는 `RecommendationApiTest`로 고정했다.
+- [ ] 복합의 순서 교환 불변을 자식 9종 전체 조합(최대 10개, 추가상환·대환은 서로 다른 `loanId`)에서 확인한다. `CombinedSimulationCalculatorTest`는 2개(소비 감소·할부) 교환만, `SimulationIntegrationApiTest`의 복합도 2개 조합만 실행했다.
+- 완료 조건: 두 대조가 테스트로 고정된다. 기준선 예상 달성일의 유형 간 일치는 `SimulationRunner`가 10종 모두 같은 `baselineReader.read`를 쓰므로 `SimulationApiTest`의 551 대조 1건으로 충분하다고 보고 별도 항목으로 두지 않는다.
+- 담당 근거: Simulation·Recommendation 테스트 모두 BE-B 도메인이다.
+
+### Jira 원문 확인
+
+- [ ] Jira 587 원문은 미확인이다. 로컬 내보내기(`SPRINT/Jira (4).csv`)가 572까지라 스프린트 보조 자료 Issue ID 123으로 범위를 정했다(simulation-587-plan.md §1). 제목·완료 조건이 다르면 계획서 §1과 이 절 제목을 갱신한다.
+- 담당 근거: 본인 이슈다. Jira 티켓으로 올리지 않고 직접 확인한다.
 
 ## S15P21D105-535 — 예·적금 ERD 제약 동기화
 
