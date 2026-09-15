@@ -2,8 +2,9 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Alert, Text, View } from 'react-native';
 
+import { authApi } from '@/api';
 import {
   BouncyScrollView,
   type BouncyScrollViewHandle,
@@ -30,6 +31,7 @@ export function HomeScreen() {
   const scrollRef = useRef<BouncyScrollViewHandle>(null);
   const [sectionSize, setSectionSize] = useState({ width: 0, height: 0 });
   const { isRefreshing, triggerRefresh } = useRefreshFeedback();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const handleHomeRefresh = useCallback(() => {
     scrollRef.current?.scrollToTop();
@@ -38,10 +40,36 @@ export function HomeScreen() {
 
   useEffect(() => subscribeHomeTabReselect(handleHomeRefresh), [handleHomeRefresh]);
 
+  const handleLogout = async () => {
+    if (isLoggingOut) return;
+
+    setIsLoggingOut(true);
+    try {
+      await authApi.logout();
+    } catch {
+      // The local session is cleared by authApi even if the server is unavailable.
+    } finally {
+      router.replace(routes.login);
+      setIsLoggingOut(false);
+    }
+  };
+
+  const openLogoutMenu = () => {
+    Alert.alert('로그아웃할까요?', '현재 기기의 로그인 세션이 종료됩니다.', [
+      { text: '취소', style: 'cancel' },
+      {
+        text: '로그아웃',
+        style: 'destructive',
+        onPress: () => void handleLogout(),
+      },
+    ]);
+  };
+
   return (
     <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
       <HomeHeader
         onLogoPress={handleHomeRefresh}
+        onMenuPress={openLogoutMenu}
         onNotificationPress={() => router.push(routes.notifications)}
       />
 

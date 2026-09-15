@@ -1,0 +1,274 @@
+import { clearAuthTokens, getAuthTokens, setAuthTokens } from '@/services/authTokenStorage';
+import type { AuthResponse, AuthTokens } from '@/types/auth.types';
+
+import { ApiError, isApiError } from './ApiError';
+import type {
+  ApiQuery,
+  ApiRequestOptions,
+  ApiResponse,
+} from './api.types';
+
+type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL?.trim().replace(/\/+$/, '');
+const AUTH_REFRESH_PATH = '/v1/auth/refresh';
+
+let refreshRequest: Promise<AuthTokens> | null = null;
+
+function getApiBaseUrl() {
+  if (!API_BASE_URL) {
+    throw new ApiError({
+      status: 0,
+      code: 'API_BASE_URL_MISSING',
+      message: 'EXPO_PUBLIC_API_BASE_URL 환경 변수가 설정되지 않았습니다.',
+    });
+  }
+
+  return API_BASE_URL;
+}
+
+function appendQuery(url: string, query?: ApiQuery) {
+  if (!query) return url;
+
+  const searchParams = new URLSearchParams();
+
+  Object.entries(query).forEach(([key, rawValue]) => {
+    const values = Array.isArray(rawValue) ? rawValue : [rawValue];
+
+    values.forEach((value) => {
+      if (value !== null && value !== undefined) {
+        searchParams.append(key, String(value));
+      }
+    });
+  });
+
+  const queryString = searchParams.toString();
+  return queryString ? `${url}?${queryString}` : url;
+}
+
+function buildUrl(path: string, query?: ApiQuery) {
+  const baseUrl = getApiBaseUrl();
+  let normalizedPath = path.startsWith('/') ? path : `/${path}`;
+
+  // 배포 Base URL이 /api로 끝나는 현재 인프라 계약과 전체 endpoint 표기를 모두 허용한다.
+  if (baseUrl.endsWith('/api') && normalizedPath.startsWith('/api/')) {
+    normalizedPath = normalizedPath.slice(4);
+  }
+
+  return appendQuery(`${baseUrl}${normalizedPath}`, query);
+}
+
+function isApiResponse(value: unknown): value is ApiResponse<unknown> {
+  if (!value || typeof value !== 'object') return false;
+
+  const response = value as Partial<ApiResponse<unknown>>;
+  return typeof response.success === 'boolean' && 'data' in response;
+}
+
+async function parseResponse<T>(response: Response): Promise<T> {
+  const responseText = await response.text();
+  let payload: unknown = null;
+
+  if (responseText) {
+    try {
+      payload = JSON.parse(responseText);
+    } catch {
+      throw new ApiError({
+        status: response.status,
+        code: 'INVALID_RESPONSE',
+        message: '서버 응답을 해석할 수 없습니다.',
+      });
+    }
+  }
+
+  if (isApiResponse(payload)) {
+    if (response.ok && payload.success) return payload.data as T;
+
+    throw new ApiError({
+      status: response.status,
+      code: payload.code ?? 'API_ERROR',
+      message: payload.message ?? '요청을 처리하지 못했습니다.',
+      errors: payload.errors ?? [],
+    });
+  }
+
+  if (!response.ok) {
+    throw new ApiError({
+      status: response.status,
+      code: 'HTTP_ERROR',
+      message: `서버 요청에 실패했습니다. (${response.status})`,
+    });
+  }
+
+  throw new ApiError({
+    status: response.status,
+    code: 'INVALID_RESPONSE',
+    message: '서버 응답 형식이 올바르지 않습니다.',
+  });
+}
+
+function createRequestBody(body: unknown, headers: Headers) {
+  if (body === undefined) return undefined;
+
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
+  const isBlob = typeof Blob !== 'undefined' && body instanceof Blob;
+  const isRawBody =
+    typeof body === 'string' ||
+    isFormData ||
+    isBlob ||
+    body instanceof ArrayBuffer ||
+    ArrayBuffer.isView(body);
+
+  if (isRawBody) return body as BodyInit;
+
+  if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  return JSON.stringify(body);
+}
+
+async function fetchOnce<T>(
+  method: HttpMethod,
+  path: string,
+  options: ApiRequestOptions,
+  accessToken?: string,
+) {
+  const {
+    auth: _auth,
+    body: requestBody,
+    headers: requestHeaders,
+    query,
+    retryOnUnauthorized: _retryOnUnauthorized,
+    ...requestInit
+  } = options;
+  const headers = new Headers(requestHeaders);
+  headers.set('Accept', 'application/json');
+
+  if (accessToken) {
+    headers.set('Authorization', `Bearer ${accessToken}`);
+  } else {
+    headers.delete('Authorization');
+  }
+
+  const body = createRequestBody(requestBody, headers);
+
+  let response: Response;
+  try {
+    response = await fetch(buildUrl(path, query), {
+      ...requestInit,
+      method,
+      headers,
+      body,
+    });
+  } catch (error) {
+    throw new ApiError({
+      status: 0,
+      code: 'NETWORK_ERROR',
+      message: '서버에 연결할 수 없습니다. 네트워크 상태를 확인해주세요.',
+      cause: error,
+    });
+  }
+
+  return { response, data: () => parseResponse<T>(response) };
+}
+
+function toAuthTokens(response: AuthResponse): AuthTokens {
+  return {
+    tokenType: response.tokenType,
+    accessToken: response.accessToken,
+    accessTokenExpiresAt: response.accessTokenExpiresAt,
+    refreshToken: response.refreshToken,
+    refreshTokenExpiresAt: response.refreshTokenExpiresAt,
+  };
+}
+
+export async function refreshAuthTokens(): Promise<AuthTokens> {
+  if (refreshRequest) return refreshRequest;
+
+  refreshRequest = (async () => {
+    const currentTokens = await getAuthTokens();
+    if (!currentTokens) {
+      throw new ApiError({
+        status: 401,
+        code: 'UNAUTHENTICATED',
+        message: '저장된 로그인 정보가 없습니다.',
+      });
+    }
+
+    try {
+      const request = await fetchOnce<AuthResponse>('POST', AUTH_REFRESH_PATH, {
+        auth: false,
+        body: { refreshToken: currentTokens.refreshToken },
+      });
+      const response = await request.data();
+      const nextTokens = toAuthTokens(response);
+      await setAuthTokens(nextTokens);
+      return nextTokens;
+    } catch (error) {
+      if (isApiError(error) && error.isUnauthorized) {
+        await clearAuthTokens();
+      }
+      throw error;
+    }
+  })().finally(() => {
+    refreshRequest = null;
+  });
+
+  return refreshRequest;
+}
+
+async function request<T>(
+  method: HttpMethod,
+  path: string,
+  options: ApiRequestOptions = {},
+): Promise<T> {
+  const requiresAuth = options.auth !== false;
+  const tokens = requiresAuth ? await getAuthTokens() : null;
+  const firstRequest = await fetchOnce<T>(
+    method,
+    path,
+    options,
+    tokens?.accessToken,
+  );
+
+  if (
+    firstRequest.response.status !== 401 ||
+    !requiresAuth ||
+    !tokens ||
+    options.retryOnUnauthorized === false
+  ) {
+    return firstRequest.data();
+  }
+
+  const latestTokens = await getAuthTokens();
+  const refreshedTokens =
+    latestTokens && latestTokens.accessToken !== tokens.accessToken
+      ? latestTokens
+      : await refreshAuthTokens();
+  const retryRequest = await fetchOnce<T>(
+    method,
+    path,
+    { ...options, retryOnUnauthorized: false },
+    refreshedTokens.accessToken,
+  );
+
+  if (retryRequest.response.status === 401) {
+    await clearAuthTokens();
+  }
+
+  return retryRequest.data();
+}
+
+export const apiClient = {
+  get: <T>(path: string, options?: ApiRequestOptions) =>
+    request<T>('GET', path, options),
+  post: <T>(path: string, options?: ApiRequestOptions) =>
+    request<T>('POST', path, options),
+  put: <T>(path: string, options?: ApiRequestOptions) =>
+    request<T>('PUT', path, options),
+  patch: <T>(path: string, options?: ApiRequestOptions) =>
+    request<T>('PATCH', path, options),
+  delete: <T>(path: string, options?: ApiRequestOptions) =>
+    request<T>('DELETE', path, options),
+};
