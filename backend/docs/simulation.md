@@ -454,6 +454,7 @@ DDL·새 엔드포인트 없음. 계약은 [recommendation-api.md](recommendatio
 - FE는 `request`를 그대로(또는 사용자가 고쳐서) `endpoint`에 POST한다. 응답·저장은 기존 계약 그대로이며 시뮬레이션은 추천 id를 저장하지 않는다(재사용 지문과 충돌하므로 결과 추적은 Improvement/Report 이슈의 계약을 따른다).
 - 계좌 미지정 저축은 모든 모으기 목표에 남은 금액 비례 배분된다(`TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT`). 특정 목표만 겨냥하려면 명세 17 `saving` 본문에 `goalId?`를 더해야 하며 이는 루트 명세 변경이라 보류했다(simulation-587-plan.md §3.2).
 - **일관성**: 진단 기준일 = 시뮬레이션 기준일이고 목표가 하나면 추천 `effect.improvedForecastDate`와 프리셋 실행의 `goalImpacts[0].afterForecastDate`가 같다(같은 `base + ceil(remaining / R)` 식). 기준일이 다르면 그 차이만큼 달라진다 — 추천은 진단 스냅샷 `asOf`, 시뮬레이션은 실행일 기준이다. `RecommendationApiTest.savingRecommendationCarriesPresetEverywhereAndPresetRunMatchesRecommendedForecast`가 고정한다.
+  소비 추천 `effect.monthlyCostSaving` vs 프리셋 실행의 `after.monthlyAvailableFunds − before.monthlyAvailableFunds` 대조는 예산 초과 거래 fixture가 필요해 API 테스트로 고정하지 않았다(프리셋 값만 단위 테스트, remaining-work.md).
 
 ### 11.2 통합 회귀 (`SimulationIntegrationApiTest` 3건, H2)
 
@@ -462,6 +463,8 @@ DDL·새 엔드포인트 없음. 계약은 [recommendation-api.md](recommendatio
 - 10종 모두 201·`COMPLETED`·`requestHash` 미노출·계좌/대출번호·해시 부재. 상세·comparison·cashflow·goal-impact가 실행 응답과 JSON 동일, assets/debts/costs 페이지 content가 `comparison.<section>`과 동일하고 `totalElements`가 항목 수와 같다. 같은 날 재요청은 10종 모두 200·같은 id, 다음 날은 10종 모두 신규 201. 목록은 10종 type을 모두 담는다.
 - 인증·소유권: 실행 10종 401, 목록·조회 7경로·삭제 401, 타인의 조회 7경로·삭제 404 `RESOURCE_NOT_FOUND`(존재 미노출), 타인 목록 0건. 삭제 후 7경로 404·재삭제 404·목록 제외·같은 요청은 새 id.
 - 빈 결과·경계값: 목표·소득·거래·계좌가 없는 사용자는 `cash-advance`가 실행되고 `goalImpacts=[]`·`monthlyIncome=null`·`coverage` 배열, goal-impact `[]`, 범위를 넘긴 섹션 페이지는 빈 content. 목록·섹션 `page=-1`·`size=0`·`size=101` 400, `size=100` 200. `simulationId` 0·음수·비숫자 400, 없는 id 404, `type=UNKNOWN` 400. 자원 참조 유형(대출·카드)은 자료가 없으면 404, 소비 감소는 소비 0이면 400이며 저장하지 않는다.
+
+복합의 순서 교환 불변은 2개 조합(`CombinedSimulationCalculatorTest`)까지만 확인했고 자식 9종 전체 조합은 확인하지 않았다(remaining-work.md).
 
 기존 검증(§7)과 합쳐 Simulation 72건·Recommendation 58건이 H2에서 통과했고 `gradlew clean build` 전체 1,051건 통과(MySQL 조건부 19건 skip).
 
@@ -474,7 +477,7 @@ Flyway가 V18·V19·V30~V34를 적용하게 했다(recommendation.md §8과 같�
 - 실행·저장: `POST /saving` 후 `JSON_EXTRACT(after_snapshot, '$.monthlySaving')`가 숫자로 읽히고 `requestHash` 64자, `accountNo` 키 부재, scenario 1행, goal_impact 1행. 같은 날 재사용 200(DATETIME 범위 비교), 다음 날 신규, 상세 = 실행 응답, 타인 404, 삭제 후 `deleted_at` 기록·404·같은 요청 신규.
 - 복합: scenario 2행(sequence 1·2, `JSON_EXTRACT(parameters, '$.purchaseAmount')`), `details.children` 2개. `chk_simulation_type`·`chk_simulation_status`·`chk_simulation_scenario_sequence_no` 위반과 `uk_simulation_scenario_sequence`·`uk_simulation_goal_impact_simulation_goal` 중복, 타인 user_id의 goal_impact 복합 FK 거부.
 - 동시 실행: 같은 사용자 `POST /cash-advance` 4건 동시 → 201 1건·200 3건, `simulation` 1행. `SimulationUserLock`의 `SELECT … FOR UPDATE`가 InnoDB에서 직렬화됨을 확인했다.
-- 하지 않은 것: 시연 seed(491·492·493·522·523)와 상품 카탈로그를 적재한 스키마에서의 10종 실행·금액 확인. FE 앱 통합.
+- 하지 않은 것: 시연 seed(491·492·493·522·523)와 상품 카탈로그를 적재한 스키마에서의 10종 실행·금액 확인. 복합 저장 중간 실패 시 0행 롤백, `idx_simulation_user_type_created` 순서의 목록 정렬, `uk_simulation_user_simulation_id` 본인 조건 조회(계획 §6에 있었으나 미작성, remaining-work.md). FE 앱 통합.
 
 ### 11.4 FE 인계
 
