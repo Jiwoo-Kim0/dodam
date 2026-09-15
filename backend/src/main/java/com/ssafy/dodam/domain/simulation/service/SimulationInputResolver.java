@@ -1,17 +1,28 @@
 package com.ssafy.dodam.domain.simulation.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.ssafy.dodam.domain.account.repository.AccountRepository;
+import com.ssafy.dodam.domain.card.repository.CardRepository;
 import com.ssafy.dodam.domain.loan.repository.LoanRepository;
 import com.ssafy.dodam.domain.product.repository.FinancialProductRepository;
+import com.ssafy.dodam.domain.simulation.dto.CashAdvanceInput;
+import com.ssafy.dodam.domain.simulation.dto.CombinedInput;
+import com.ssafy.dodam.domain.simulation.dto.InstallmentInput;
 import com.ssafy.dodam.domain.simulation.dto.LoanNewInput;
 import com.ssafy.dodam.domain.simulation.dto.LoanPrepaymentInput;
 import com.ssafy.dodam.domain.simulation.dto.LoanRefinanceInput;
+import com.ssafy.dodam.domain.simulation.dto.RevolvingInput;
 import com.ssafy.dodam.domain.simulation.dto.SavingChangeInput;
 import com.ssafy.dodam.domain.simulation.dto.SavingProductInput;
+import com.ssafy.dodam.domain.simulation.dto.SimulationInput;
 import com.ssafy.dodam.domain.simulation.dto.SpendingReductionInput;
+import com.ssafy.dodam.domain.simulation.dto.request.CashAdvanceSimulationRequest;
+import com.ssafy.dodam.domain.simulation.dto.request.CombinedSimulationRequest;
+import com.ssafy.dodam.domain.simulation.dto.request.InstallmentSimulationRequest;
 import com.ssafy.dodam.domain.simulation.dto.request.LoanNewSimulationRequest;
 import com.ssafy.dodam.domain.simulation.dto.request.LoanPrepaymentSimulationRequest;
 import com.ssafy.dodam.domain.simulation.dto.request.LoanRefinanceSimulationRequest;
+import com.ssafy.dodam.domain.simulation.dto.request.RevolvingSimulationRequest;
 import com.ssafy.dodam.domain.simulation.dto.request.SavingProductSimulationRequest;
 import com.ssafy.dodam.domain.simulation.dto.request.SavingSimulationRequest;
 import com.ssafy.dodam.domain.simulation.dto.request.SpendingSimulationRequest;
@@ -20,6 +31,8 @@ import com.ssafy.dodam.domain.transaction.service.SpendingQueryService;
 import com.ssafy.dodam.global.exception.InvalidRequestException;
 import com.ssafy.dodam.global.exception.ResourceNotFoundException;
 import com.ssafy.dodam.global.security.SensitiveNumberHasher;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,6 +45,10 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>585 유형은 여기서 상품 존재(404)와 대출 소유권(404)만 확인한다. 상품 유형·옵션 적합성(400)은 Runner의 지문 조회 뒤
  * 신규 계산에서만 검증한다 — 같은 날 상품이 바뀌어도 같은 요청은 첫 결과를 재사용해야 하기 때문이다.
+ *
+ * <p>586: 리볼빙 cardId는 소유권 조건이 들어간 조회로 확인한다(없거나 타인이면 같은 404). 복합은 자식마다 같은 해석·검증을
+ * 거쳐 모든 자식의 자원 존재·소유권을 지문 조회 <b>전</b>에 끝낸 뒤 자식 간 중복·충돌을 검사한다 — 재사용 반환 경로로
+ * 소유권 검증을 우회할 수 없다.
  */
 @Component
 @Transactional(readOnly = true)
@@ -39,19 +56,25 @@ public class SimulationInputResolver {
     static final String CATEGORY_CODE_NOT_FOUND_MESSAGE = "존재하지 않는 카테고리 코드입니다.";
     static final String PRODUCT_NOT_FOUND_MESSAGE = "상품을 찾을 수 없습니다.";
     static final String LOAN_NOT_FOUND_MESSAGE = "대출을 찾을 수 없습니다.";
+    static final String CARD_NOT_FOUND_MESSAGE = "카드를 찾을 수 없습니다.";
     private final TransactionCategoryRepository categories;
     private final AccountRepository accounts;
     private final FinancialProductRepository products;
     private final LoanRepository loans;
+    private final CardRepository cards;
     private final SensitiveNumberHasher hasher;
+    private final CombinedScenarioParser scenarioParser;
 
     public SimulationInputResolver(TransactionCategoryRepository categories, AccountRepository accounts,
-            FinancialProductRepository products, LoanRepository loans, SensitiveNumberHasher hasher) {
+            FinancialProductRepository products, LoanRepository loans, CardRepository cards, SensitiveNumberHasher hasher,
+            CombinedScenarioParser scenarioParser) {
         this.categories = categories;
         this.accounts = accounts;
         this.products = products;
         this.loans = loans;
+        this.cards = cards;
         this.hasher = hasher;
+        this.scenarioParser = scenarioParser;
     }
 
     public SpendingReductionInput resolve(SpendingSimulationRequest request) {
@@ -92,6 +115,48 @@ public class SimulationInputResolver {
     public LoanRefinanceInput resolve(Long userId, LoanRefinanceSimulationRequest request) {
         return new LoanRefinanceInput(ownedLoanId(userId, request.accountNo()), existingProductId(request.targetProductId()),
                 request.refinanceAmount());
+    }
+
+    public InstallmentInput resolve(InstallmentSimulationRequest request) {
+        return InstallmentInput.of(request.purchaseAmount(), request.months(), request.feeRate());
+    }
+
+    public RevolvingInput resolve(Long userId, RevolvingSimulationRequest request) {
+        Long cardId = request.cardId();
+        if (cardId != null && !cards.existsByIdAndUserId(cardId, userId)) {
+            throw new ResourceNotFoundException(CARD_NOT_FOUND_MESSAGE);
+        }
+        return new RevolvingInput(cardId, request.balance(), request.paymentRatio(), request.rate());
+    }
+
+    public CashAdvanceInput resolve(CashAdvanceSimulationRequest request) {
+        return CashAdvanceInput.of(request.amount(), request.rate(), request.repaymentMonths());
+    }
+
+    /** 자식은 입력 순서대로 단독 API와 같은 해석을 거친다. 자식 하나의 오류(400/404)는 전체 요청 오류다. */
+    public CombinedInput resolve(Long userId, CombinedSimulationRequest request) {
+        List<SimulationInput> children = new ArrayList<>(request.scenarios().size());
+        for (int i = 0; i < request.scenarios().size(); i++) {
+            JsonNode scenario = request.scenarios().get(i);
+            children.add(resolveChild(userId, scenarioParser.parse(i, scenario)));
+        }
+        CombinedScenarioValidator.validate(children);
+        return new CombinedInput(children);
+    }
+
+    private SimulationInput resolveChild(Long userId, CombinedScenarioParser.ParsedScenario scenario) {
+        return switch (scenario.type()) {
+            case SPENDING -> resolve((SpendingSimulationRequest) scenario.request());
+            case SAVING -> resolve(userId, (SavingSimulationRequest) scenario.request());
+            case SAVING_PRODUCT -> resolve((SavingProductSimulationRequest) scenario.request());
+            case LOAN_NEW -> resolve((LoanNewSimulationRequest) scenario.request());
+            case LOAN_PREPAYMENT -> resolve(userId, (LoanPrepaymentSimulationRequest) scenario.request());
+            case LOAN_REFINANCE -> resolve(userId, (LoanRefinanceSimulationRequest) scenario.request());
+            case INSTALLMENT -> resolve((InstallmentSimulationRequest) scenario.request());
+            case REVOLVING -> resolve(userId, (RevolvingSimulationRequest) scenario.request());
+            case CASH_ADVANCE -> resolve((CashAdvanceSimulationRequest) scenario.request());
+            case COMBINED -> throw new IllegalStateException("파서가 중첩 복합을 거르지 못했습니다.");
+        };
     }
 
     private Long existingProductId(Long productId) {

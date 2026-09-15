@@ -1,51 +1,26 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, radius, spacing } from '@/styles';
-
-const LOGO_SIZE = 56;
+import { spacing } from '@/styles';
 
 export const styles = StyleSheet.create({
   container: {
     width: '100%',
     maxWidth: 350,
     alignSelf: 'center',
-    justifyContent: 'center',
-    gap: spacing[5],
-  },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
     alignItems: 'center',
+    gap: spacing[6],
   },
-  middleRow: {
-    minHeight: 132,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  /** 로고가 흩어지는 영역. 비율을 고정해 화면 크기가 달라져도 구도가 유지된다. */
+  scatter: {
+    width: '100%',
+    aspectRatio: 1.36,
   },
-  sideGroup: {
-    gap: spacing[5],
+  floatingSlot: {
+    position: 'absolute',
   },
-  characterSpace: {
-    width: 132,
-    height: 132,
-  },
-  logoContainer: {
-    width: LOGO_SIZE,
-    height: LOGO_SIZE,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.round,
-    backgroundColor: colors.white,
-    shadowColor: colors.textPrimary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  logo: {
-    width: 44,
-    height: 44,
-    resizeMode: 'contain',
+  /** 로고 아래에 자리한 캐릭터. 원본 비율(약 1.6:1)을 유지한다. */
+  character: {
+    width: '58%',
+    aspectRatio: 1.6,
   },
 });

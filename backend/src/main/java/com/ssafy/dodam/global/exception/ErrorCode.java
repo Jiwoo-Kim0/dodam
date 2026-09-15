@@ -27,6 +27,19 @@ public enum ErrorCode {
     SESSION_EXPIRED(HttpStatus.UNAUTHORIZED, "로그인 세션이 만료되었습니다."),
     SESSION_NOT_FOUND(HttpStatus.NOT_FOUND, "세션을 찾을 수 없습니다."),
 
+    // ---------- 소셜 로그인 (명세 외 확장, backend/docs/auth-social.md) ----------
+    SOCIAL_PROVIDER_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "지원하지 않는 소셜 로그인 공급자입니다."),
+    /**
+     * 만료·위조·다른 앱에서 발급된 토큰. 세부 원인은 서버 로그에만 남긴다.
+     */
+    SOCIAL_TOKEN_INVALID(HttpStatus.UNAUTHORIZED, "소셜 로그인 토큰이 유효하지 않습니다."),
+    SOCIAL_PROVIDER_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "소셜 로그인 공급자에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요."),
+    /**
+     * 공급자 이메일과 같은 이메일의 회원에게 이미 같은 공급자의 다른 소셜 계정이 연결되어 있다.
+     */
+    SOCIAL_ACCOUNT_ALREADY_LINKED(HttpStatus.CONFLICT, "해당 이메일의 계정에는 이미 같은 공급자의 소셜 계정이 연결되어 있습니다."),
+    USER_WITHDRAWN(HttpStatus.FORBIDDEN, "탈퇴한 계정입니다."),
+
     INVALID_TIMEZONE(HttpStatus.BAD_REQUEST, "지원하지 않는 타임존입니다."),
     NO_FIELDS_TO_UPDATE(HttpStatus.BAD_REQUEST, "수정할 항목이 없습니다."),
 
@@ -143,6 +156,18 @@ public enum ErrorCode {
     SIMULATION_PERIOD_NOT_SUPPORTED(HttpStatus.BAD_REQUEST, "잔여 상환 회차가 계산 상한을 초과합니다."),
     /** 계산 결과·차이가 원 단위 정수 범위를 넘는 경우. */
     SIMULATION_AMOUNT_OUT_OF_RANGE(HttpStatus.BAD_REQUEST, "계산 결과가 허용 범위를 초과합니다."),
+
+    // ---------- Simulation 할부·리볼빙·현금서비스·복합 (S15P21D105-586) ----------
+    /**
+     * 복합 시나리오에 정규화 결과가 같은 자식이 둘 이상인 경우. 같은 행동을 두 번 더해 효과를 이중 반영하지 않는다.
+     * 할부의 수수료율 모드(생략/명시적 0)는 지문에는 들어가지만 이 판정에서는 제외한다.
+     */
+    SIMULATION_COMBINED_DUPLICATE_SCENARIO(HttpStatus.BAD_REQUEST, "복합 시나리오에 같은 행동이 중복되었습니다."),
+    /**
+     * 서로 다른 자식이 같은 대상(대출·카드·저축 절대액·소비 범위)을 독립적으로 바꾸려는 경우. 앞 자식의 결과를 다음 자식이
+     * 이어받지 않으므로 같은 잔액을 두 번 변경한 합계는 의미가 없다.
+     */
+    SIMULATION_COMBINED_SCENARIO_CONFLICT(HttpStatus.BAD_REQUEST, "복합 시나리오의 자식이 같은 대상을 중복 변경합니다."),
 
     // ---------- Pattern (S15P21D105-516 ~ 518) ----------
     /**

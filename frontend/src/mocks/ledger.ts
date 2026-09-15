@@ -94,6 +94,7 @@ export const LEDGER_MONTHLY_SUMMARY: LedgerMonthlySummary = {
   income: 3500000,
   expense: 2265000,
   balance: 1235000,
+  transactionCount: 42,
   previousMonthDifference: 135000,
   dailyAverage: 72900,
   remainingDays: remainingDaysInMonth(TODAY),

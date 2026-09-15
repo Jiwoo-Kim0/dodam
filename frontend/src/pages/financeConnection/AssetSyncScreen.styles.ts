@@ -64,6 +64,29 @@ export const styles = StyleSheet.create({
   syncingStatus: {
     color: colors.primary.orange,
   },
+  failedStatus: {
+    // 팔레트에 정의된 유일한 경고색이다.
+    color: colors.ledger.expense,
+  },
+  errorSection: {
+    marginTop: 'auto',
+    alignItems: 'center',
+    gap: spacing[3],
+  },
+  errorMessage: {
+    ...typography.body1,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  skipButton: {
+    paddingVertical: spacing[2],
+    paddingHorizontal: spacing[4],
+  },
+  skipLabel: {
+    ...typography.buttonSmall,
+    color: colors.textSecondary,
+  },
   notice: {
     ...typography.body2,
     marginTop: 'auto',

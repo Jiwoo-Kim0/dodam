@@ -2,17 +2,19 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Alert, type AlertButton, Text, View } from 'react-native';
 
+import { authApi, financeDataApi } from '@/api';
 import {
   BouncyScrollView,
   type BouncyScrollViewHandle,
 } from '@/components/bouncyScrollView/BouncyScrollView';
 import { subscribeHomeTabReselect } from '@/components/bottomNavigation/homeTabReselectEvents';
 import { routes } from '@/constants/routes';
-import { useRefreshFeedback } from '@/hooks/useRefreshFeedback';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import { colors } from '@/styles';
+import { getFinanceErrorMessage } from '@/utils/financeErrorMessage';
 
 import { AssetSummaryCard } from './components/AssetSummaryCard';
 import { BriefingCard } from './components/BriefingCard';
@@ -21,27 +23,103 @@ import { GoalCarousel } from './components/GoalCarousel';
 import { HomeHeader } from './components/HomeHeader';
 import { SpendingTopList } from './components/SpendingTopList';
 import { styles } from './HomeScreen.styles';
-
-/** 로그인 연동 전까지 사용하는 임시 사용자명이다. */
-const MOCK_USER_NAME = '싸피';
+import { useHomeSummary } from './hooks/useHomeSummary';
 
 export function HomeScreen() {
   const router = useRouter();
   const scrollRef = useRef<BouncyScrollViewHandle>(null);
   const [sectionSize, setSectionSize] = useState({ width: 0, height: 0 });
-  const { isRefreshing, triggerRefresh } = useRefreshFeedback();
+  const { user, reload: reloadUser } = useCurrentUser();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const {
+    assetOverview,
+    error: summaryError,
+    isLoading: isSummaryLoading,
+    isRefreshing,
+    monthLabel,
+    monthlyExpense,
+    goals,
+    briefing,
+    topSpending,
+    refetch: refetchSummary,
+  } = useHomeSummary();
 
   const handleHomeRefresh = useCallback(() => {
     scrollRef.current?.scrollToTop();
-    triggerRefresh();
-  }, [triggerRefresh]);
+    void refetchSummary();
+  }, [refetchSummary]);
 
   useEffect(() => subscribeHomeTabReselect(handleHomeRefresh), [handleHomeRefresh]);
+
+  const handleLogout = async () => {
+    if (isLoggingOut) return;
+
+    setIsLoggingOut(true);
+    try {
+      await authApi.logout();
+    } catch {
+      // The local session is cleared by authApi even if the server is unavailable.
+    } finally {
+      router.replace(routes.login);
+      setIsLoggingOut(false);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    if (isDisconnecting) return;
+
+    setIsDisconnecting(true);
+    try {
+      await financeDataApi.disconnect();
+      reloadUser();
+      Alert.alert(
+        '금융 연결을 해제했어요',
+        '다시 연결하면 금융 정보를 새로 가져올 수 있어요.',
+      );
+    } catch (error) {
+      Alert.alert('연결을 해제하지 못했어요', getFinanceErrorMessage(error));
+    } finally {
+      setIsDisconnecting(false);
+    }
+  };
+
+  const confirmDisconnect = () => {
+    Alert.alert(
+      '금융 연결을 해제할까요?',
+      '해제하면 새로운 금융 정보를 가져오지 않아요.',
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '연결 해제',
+          style: 'destructive',
+          onPress: () => void handleDisconnect(),
+        },
+      ],
+    );
+  };
+
+  const openMenu = () => {
+    const buttons: AlertButton[] = [{ text: '취소', style: 'cancel' }];
+
+    if (user?.financeConnectionStatus === 'CONNECTED') {
+      buttons.push({ text: '금융 연결 해제', onPress: confirmDisconnect });
+    }
+
+    buttons.push({
+      text: '로그아웃',
+      style: 'destructive',
+      onPress: () => void handleLogout(),
+    });
+
+    Alert.alert('메뉴', undefined, buttons);
+  };
 
   return (
     <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
       <HomeHeader
         onLogoPress={handleHomeRefresh}
+        onMenuPress={openMenu}
         onNotificationPress={() => router.push(routes.notifications)}
       />
 
@@ -82,20 +160,52 @@ export function HomeScreen() {
 
           <View style={styles.greeting}>
             <Text style={styles.greetingText}>
-              <Text style={styles.greetingName}>{`${MOCK_USER_NAME}님`}</Text>
-              {', 좋은 아침이에요'}
+              {user ? (
+                <>
+                  <Text style={styles.greetingName}>{`${user.name}님`}</Text>
+                  {', 좋은 아침이에요'}
+                </>
+              ) : (
+                '좋은 아침이에요'
+              )}
             </Text>
             <Text style={styles.greetingHeadline}>오늘도 목표를{'\n'}향해 한 걸음 더</Text>
           </View>
 
-          <GoalCarousel />
+          <GoalCarousel
+            key={goals.map((goal) => goal.id).join(':')}
+            goals={goals}
+            hasError={summaryError !== null}
+            isLoading={isSummaryLoading}
+          />
         </View>
 
         <View style={styles.body}>
-          <ExpenseSummaryCard onDetailPress={() => router.push(routes.ledger)} />
-          <BriefingCard onDetailPress={() => router.push(routes.dailyBriefing)} />
-          <AssetSummaryCard onDetailPress={() => router.push(routes.assets)} />
-          <SpendingTopList />
+          <ExpenseSummaryCard
+            hasError={summaryError !== null}
+            isLoading={isSummaryLoading}
+            monthLabel={monthLabel}
+            monthlyExpense={monthlyExpense}
+            onDetailPress={() => router.push(routes.ledger)}
+          />
+          <BriefingCard
+            briefing={briefing}
+            hasError={summaryError !== null}
+            isLoading={isSummaryLoading}
+            onDetailPress={() => router.push(routes.dailyBriefing)}
+          />
+          <AssetSummaryCard
+            hasError={summaryError !== null}
+            isLoading={isSummaryLoading}
+            onDetailPress={() => router.push(routes.assets)}
+            overview={assetOverview}
+          />
+          <SpendingTopList
+            hasError={summaryError !== null}
+            isLoading={isSummaryLoading}
+            items={topSpending}
+            monthLabel={monthLabel}
+          />
         </View>
       </BouncyScrollView>
     </SafeAreaLayout>

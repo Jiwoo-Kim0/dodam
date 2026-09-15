@@ -8,10 +8,15 @@ import { styles } from './HomeHeader.styles';
 
 interface HomeHeaderProps {
   onLogoPress: () => void;
+  onMenuPress: () => void;
   onNotificationPress: () => void;
 }
 
-export function HomeHeader({ onLogoPress, onNotificationPress }: HomeHeaderProps) {
+export function HomeHeader({
+  onLogoPress,
+  onMenuPress,
+  onNotificationPress,
+}: HomeHeaderProps) {
   return (
     <View style={styles.container}>
       <Pressable
@@ -40,17 +45,18 @@ export function HomeHeader({ onLogoPress, onNotificationPress }: HomeHeaderProps
           />
         </Pressable>
 
-        {/* 메뉴 화면이 아직 없어 임시로 비활성 아이콘만 노출한다. 화면이 추가되면 Pressable + onPress로 라우팅을 연결한다. */}
-        <View
-          accessible={false}
-          importantForAccessibility="no-hide-descendants"
-          style={styles.actionButton}>
+        <Pressable
+          accessibilityLabel="메뉴 열기"
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={onMenuPress}
+          style={({ pressed }) => [styles.actionButton, pressed && styles.actionButtonPressed]}>
           <SymbolView
             name={{ android: 'menu', ios: 'line.horizontal.3', web: 'menu' }}
             size={componentSize.icon.small + 4}
             tintColor={colors.textPrimary}
           />
-        </View>
+        </Pressable>
       </View>
     </View>
   );

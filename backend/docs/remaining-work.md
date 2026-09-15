@@ -2,7 +2,7 @@
 
 마지막 갱신: 2026-09-14
 
-백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581이다.
+백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 611이다.
 
 ## S15P21D105-535 — 예·적금 ERD 제약 동기화
 
@@ -117,9 +117,8 @@
 ### 금융망 실호출 대조
 
 - [x] SSAFY 금융망 API 문서(2.3.1 공통 Header, 2.7.1 신용등급 기준 조회, 2.7.4 내 신용등급 조회)와 필드명·경로·Header 규칙을 대조해 수정했다(2026-09-09). 기준 조회는 `inquireAssetBasedCreditRatingList`(userKey 제외, REC `ratingUniqueNo/ratingName/minAssetValue/maxAssetValue`), 내 신용등급 REC에는 `creditScore`가 없다. 정상 코드는 `H0000` 하나이며 `H1000~H1010`은 오류다.
-- [ ] 실제 금융망 호출로 200 응답을 확인한다. 2026-09-09 로컬에서 curl로 시도했으나 전달받은 API Key가 사용자 계정 API에서 `E4004`, 거래 API에서 `H1008`(API KEY 무효)로 거절됐다.
-- 선행 조건: SSAFY 개발센터에서 유효한 앱 API Key 확인(만료·재발급 여부). 키는 레포·문서에 기록하지 않는다.
-- 완료 조건: 회원 생성 → 내 신용등급 조회 → 기준 조회의 200 응답과 REC 필드를 확인한다. 차이가 있으면 record·문서·테스트 픽스처를 함께 고친다.
+- [x] 실제 금융망 호출로 200 응답을 확인했다(2026-09-15, 담당자가 개발센터에서 확인한 새 앱 API Key로 로컬 curl). 2026-09-09의 키는 `E4004`/`H1008`로 거절됐던 것으로, 키가 바뀐 것이 원인이었다. 결과는 finance-data.md "실호출 확인(2026-09-15)". 키는 레포·문서에 기록하지 않는다.
+- [ ] 시연 서버 `infra/.env`의 `SSAFY_FINANCE_API_KEY`를 새 키로 바꾸고 backend를 재기동한다(인프라). 바뀌기 전까지 서버의 회원가입·금융망 연결은 FAILED로 떨어진다.
 
 ### 통합 요약 범위
 
@@ -982,9 +981,36 @@
 - [ ] 스케줄은 단일 서버 전제로 매일 08:00 전체 사용자 순회다. 4,000명 seed 기준 규칙 8종 조회는 수 초 이내(로컬 MySQL). 사용자 수가 크게 늘면 배치 분할이 필요하다.
 - [x] MySQL 검증: 2026-09-14 로컬 MySQL(seed 4,000명·알림 seed)에서 `NotificationEventReaderMySqlTest`로 리더 SQL 8종 실행과 U0002 규칙 직접 실행·멱등을 확인했다(결과 건수는 seed 날짜에 따라 다름).
 
+## S15P21D105-611 — 소셜 로그인 백엔드 지원 (카카오·구글)
+
+구현 계약: [auth-social.md](auth-social.md). 2026-09-15 백엔드(V34 `user_oauth_account`, `POST /api/v1/auth/social/{provider}`, 카카오·구글 토큰 검증기, H2 테스트 27개 + MySQL 게이트 2개)만 먼저 구현했다.
+API 명세 1 Auth에 없는 확장이다. 시연 범위 포함 여부는 FE 연동 일정과 함께 팀이 정한다.
+
+### FE·인프라 연동 (백엔드 외)
+
+- [ ] FE: 로그인 화면 카카오·구글 버튼을 SDK 로그인 → `POST /auth/social/{provider}` 호출로 연결한다(현재 두 버튼은 약관 화면으로만 이동). 구글은 **ID token**을 보낸다. 네이버 버튼은 백엔드 미지원이므로 숨기거나 이월한다.
+- [ ] 인프라: 카카오 개발자 콘솔·구글 클라우드 콘솔 앱 등록(`infra/docs/external-integrations.md` 4절) 후 `GOOGLE_CLIENT_ID`(필수)·`KAKAO_APP_ID`(선택)를 서버 `.env`에 넣고 backend를 재기동한다. 구글 클라이언트 ID가 비어 있으면 구글 로그인은 503이다.
+- 선행 조건: FE EAS 빌드 설정(SHA-1·키 해시 추출)이 아직 없다(외부 연동 문서 2026-09-11 상태).
+
+### 실토큰 검증
+
+- [ ] 실제 카카오 access token·구글 ID token으로 서버 `POST /auth/social/{provider}`가 200/201을 돌려주는지 확인하고 결과를 auth-social.md에 기록한다. 현재는 공급자 응답을 Mock·MockRestServiceServer·디코더 대체로만 검증했다.
+- [x] MySQL 8.0에서 V34 적용과 `ddl-auto: validate` 통과를 확인했다(2026-09-15, `SocialLoginMySqlIntegrationTest`, 결과는 auth-social.md "테스트").
+
+### 기능 보완
+
+- [ ] 연결된 소셜 계정 조회·해제 API(`GET/DELETE /api/v1/users/me/social-accounts`). 해제는 비밀번호가 있거나 다른 공급자가 남아 있을 때만 허용해야 로그인 수단이 사라지지 않는다.
+- [ ] 대체 이메일(`*@social.dodam.invalid`) 회원의 실제 이메일 등록 흐름. 금융망 회원 등록에 이메일이 필요하므로 이 회원은 Finance Data 연결(498)도 실제 이메일을 받은 뒤에야 가능하다. User API(2)의 이메일 변경 또는 온보딩 입력 중 어디서 받을지 정한다.
+- [ ] 회원 탈퇴(`DELETE /users/me`) 시 `user_oauth_account` 행 처리. 현재는 행이 남고 로그인 시 403 `USER_WITHDRAWN`이다(이메일 UNIQUE라 재가입도 불가한 기존 정책과 같음). 행을 지워 같은 소셜 계정의 재가입을 허용할지 정한다.
+- [ ] 소셜 전용 회원의 비밀번호 설정(이메일 로그인 전환) 여부. 현재 `hasPassword() == false`면 `/auth/login`은 401이다.
+- [ ] API 명세서(docs/API명세서 1 Auth)에 소셜 로그인 엔드포인트를 반영한다.
+
 ## S15P21D105-521 — BE-A 담당 도메인 통합 테스트
 
 결과 기록: [notification.md](notification.md) "BE-A 통합 테스트"
 
-- [ ] seed 사용자(`seed.kmeans.u0001~u0004`)는 `password_hash`가 NULL이라 실제 로그인 토큰으로 서버 API를 통합 점검할 수 없다. 시연 계정 비밀번호 설정 절차가 정해지면 서버에서 BE-A 8개 API 스모크(로그인 → 계좌·거래·소비·목표·정기결제·패턴·알림)를 한 번 돌려 기록한다.
-- [ ] BE-A 통합 테스트는 H2 전체 회귀 + MySQL 게이트 테스트(Pattern·Notification) 조합이다. Goal·Subscription·Account·Transaction·Finance·Auth·User의 MySQL 게이트 테스트는 없다. 시연 전 서버 DB(seed 적재 완료)에서 API 스모크로 대신한다.
+- [x] 시연 계정 비밀번호 설정 절차를 정했다(2026-09-15). `database/seeds/DODAM_DEMO_PASSWORD_SEED.sql`(10번)이 U0001~U0004에만 BCrypt 해시를 넣고, 비밀번호는 `seeds/README.md` "시연 계정 로그인" 절에 있다. 나머지 seed 사용자는 NULL 유지.
+- [x] 서버 스모크 스크립트 `scripts/be-a-server-smoke.sh`를 만들었다(2026-09-15). 공개 API만 사용해 로그인 → 계좌·거래·소비·목표·정기결제·패턴·알림 순으로 호출하고 상태 코드를 표로 남긴다. 비밀번호 미적용 상태의 서버에서 로그인 401을 받아 실패 메시지로 멈추는 경로까지 확인했다.
+- [x] 서버 DB에 10번 seed를 적용(2026-09-15, 담당자 실행)한 뒤 U0001로 스모크 15개 호출 전부 기대 상태 코드, U0002~U0004 로그인·계좌 요약 200. 결과 표는 notification.md "서버 스모크 (2026-09-15)".
+- [ ] U0002~U0004는 서버 DB에 패턴 분석 이력이 없다. 시연 전 `DEMO_EMAIL=seed.kmeans.u000N@dodam.invalid ... --analyze`로 한 번씩 실행하거나 앱에서 분석을 호출한다.
+- [x] Goal·Subscription·Account·Transaction·Auth의 MySQL 검증은 위 서버 스모크(seed 적재된 서버 DB, prod 프로필)로 대신했다(2026-09-15). Finance Data·User는 스모크 대상 8개 API 밖이라 H2 회귀만 있다.

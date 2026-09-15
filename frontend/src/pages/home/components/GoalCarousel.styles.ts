@@ -1,6 +1,6 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, radius, semanticSpacing, spacing } from '@/styles';
+import { colors, fontFamily, fontSize, radius, semanticSpacing, spacing } from '@/styles';
 
 export const styles = StyleSheet.create({
   container: {
@@ -33,5 +33,18 @@ export const styles = StyleSheet.create({
   dotActive: {
     backgroundColor: colors.primary.green,
     width: 16,
+  },
+  status: {
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderRadius: radius.card,
+    justifyContent: 'center',
+    marginHorizontal: 0,
+    minHeight: 190,
+  },
+  statusText: {
+    color: colors.textSecondary,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.body1,
   },
 });

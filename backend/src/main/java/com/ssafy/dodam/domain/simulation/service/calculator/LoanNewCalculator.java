@@ -5,6 +5,8 @@ import com.ssafy.dodam.domain.loan.service.LoanRepaymentScheduleItem;
 import com.ssafy.dodam.domain.loan.service.LoanRepaymentTerms;
 import com.ssafy.dodam.domain.simulation.dto.LoanNewInput;
 import com.ssafy.dodam.domain.simulation.dto.ProductSnapshot;
+import com.ssafy.dodam.domain.simulation.dto.ScenarioComputation;
+import com.ssafy.dodam.domain.simulation.dto.ScenarioLedger;
 import com.ssafy.dodam.domain.simulation.dto.SimulationBaseline;
 import com.ssafy.dodam.domain.simulation.dto.SimulationResult;
 import com.ssafy.dodam.domain.simulation.dto.SimulationResult.Comparison;
@@ -52,12 +54,12 @@ public class LoanNewCalculator implements SimulationCalculator<LoanNewInput> {
     }
 
     @Override
-    public SimulationResult calculate(SimulationBaseline baseline, LoanNewInput input) {
+    public ScenarioComputation compute(SimulationBaseline baseline, LoanNewInput input) {
         ProductSnapshot product = Objects.requireNonNull(input.product(), "product 스냅샷이 준비되지 않았습니다.");
         return SimulationScenarios.exact(() -> build(baseline, input, product));
     }
 
-    private SimulationResult build(SimulationBaseline baseline, LoanNewInput input, ProductSnapshot product) {
+    private ScenarioComputation build(SimulationBaseline baseline, LoanNewInput input, ProductSnapshot product) {
         ProductOptionSelector.Selection selection = ProductOptionSelector.selectLoan(product, input.term(), input.repaymentType(),
                 input.principal());
         LocalDate base = baseline.baseDate();
@@ -125,8 +127,10 @@ public class LoanNewCalculator implements SimulationCalculator<LoanNewInput> {
         String summary = "연 " + selection.appliedRate().stripTrailingZeros().toPlainString() + "%(공시 최저) 기준 총 이자 "
                 + SimulationScenarios.won(totalInterest) + ", 첫 회차 " + SimulationScenarios.won(schedule.get(0).amount())
                 + " (" + first + "), 만기 " + maturity;
-        return new SimulationResult(title, summary, before, goals.after(), new Comparison(items, assets, debts, costs),
+        SimulationResult result = new SimulationResult(title, summary, before, goals.after(), new Comparison(items, assets, debts, costs),
                 cashflow, goals.impacts(), assumptions, details, goals.details());
+        return new ScenarioComputation(result,
+                new ScenarioLedger(List.of(), LoanScenarios.payments(schedule), maturity, maturity, true));
     }
 
     static String repaymentLabel(String repaymentType) {

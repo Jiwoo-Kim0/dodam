@@ -37,4 +37,11 @@ export const styles = StyleSheet.create({
     borderRadius: radius.card,
     backgroundColor: colors.white,
   },
+  emptyText: {
+    ...typography.body2,
+    color: colors.textSecondary,
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[5],
+    textAlign: 'center',
+  },
 });

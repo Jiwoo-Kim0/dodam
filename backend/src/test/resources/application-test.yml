@@ -42,6 +42,10 @@ app:
   ssafy-finance:
     # 테스트에서는 SsafyFinanceClient를 Mock으로 대체하므로 실제 호출은 일어나지 않는다.
     api-key: test-only-api-key
+  social:
+    # 통합 테스트는 Kakao/GoogleIdentityClient를 Mock으로 대체한다. 단위 테스트가 이 값을 aud 대조에 쓴다.
+    google:
+      client-ids: test-google-client-id.apps.googleusercontent.com
   pattern:
     # H2 테스트는 인프로세스 학습을 검증한다. 아티팩트 로딩은 ClusterModelArtifactLoaderTest가 따로 본다.
     model-location: ""

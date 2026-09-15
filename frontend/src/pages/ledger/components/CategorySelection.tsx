@@ -5,7 +5,7 @@ import type { LedgerCategory } from '@/types/ledger.types';
 import { formatCurrency } from '@/utils/currency';
 
 import { styles } from '../LedgerScreen.styles';
-import { LedgerHeader, MerchantLogoPlaceholder } from './LedgerShared';
+import { LedgerHeader, TransactionCategoryIcon } from './LedgerShared';
 
 interface CategorySelectionProps {
   categories: readonly LedgerCategory[];
@@ -26,13 +26,18 @@ export function CategorySelection({
   onBackPress,
   onSelect,
 }: CategorySelectionProps) {
+  const selectedCategory = categories.find((category) => category.id === selectedCategoryId);
+
   return (
     <View style={styles.fill}>
       <LedgerHeader onBackPress={onBackPress} title="카테고리" />
 
       <RefreshableBouncyScrollView contentContainerStyle={styles.categoryScreenContent}>
         <View style={styles.categoryTransactionPreview}>
-          <MerchantLogoPlaceholder />
+          <TransactionCategoryIcon
+            categoryCode={selectedCategoryId}
+            categoryLabel={selectedCategory?.label}
+          />
           <View style={styles.categoryPreviewCopy}>
             <Text style={styles.categoryPreviewAmount}>
               {amount === 0

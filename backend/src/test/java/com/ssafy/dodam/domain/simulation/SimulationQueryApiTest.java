@@ -21,9 +21,9 @@ import com.ssafy.dodam.domain.simulation.entity.Simulation;
 import com.ssafy.dodam.domain.simulation.entity.SimulationType;
 import com.ssafy.dodam.domain.simulation.repository.SimulationRepository;
 import com.ssafy.dodam.domain.simulation.service.SimulationCalculationVersion;
+import com.ssafy.dodam.domain.simulation.service.SimulationCalculatorRegistry;
 import com.ssafy.dodam.domain.simulation.service.SimulationClock;
 import com.ssafy.dodam.domain.simulation.service.SimulationRequestHash;
-import com.ssafy.dodam.domain.simulation.service.SimulationRunner;
 import com.ssafy.dodam.domain.simulation.service.SimulationStore;
 import com.ssafy.dodam.domain.user.entity.User;
 import com.ssafy.dodam.domain.user.repository.UserRepository;
@@ -61,7 +61,6 @@ class SimulationQueryApiTest {
     @Autowired GoalRepository goals;
     @Autowired SimulationRepository simulations;
     @Autowired SimulationStore store;
-    @Autowired SimulationRunner runner;
     @MockitoBean SimulationClock clock;
     private Long owner;
     private Long other;
@@ -140,8 +139,10 @@ class SimulationQueryApiTest {
     }
 
     @Test
-    void runnerRejectsTypesWithoutCalculator() {
-        assertThatThrownBy(() -> runner.run(owner, new StubInput(SimulationType.INSTALLMENT, "x")))
+    void registryRejectsTypesWithoutCalculator() {
+        // 586부터 10종 모두 계산기가 있어 실제 유형으로는 재현할 수 없다. 계산기 빈이 없는 배포를 흉내 낸 레지스트리로 계약만 고정한다
+        SimulationCalculatorRegistry empty = new SimulationCalculatorRegistry(java.util.List::of);
+        assertThatThrownBy(() -> empty.require(SimulationType.INSTALLMENT))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(ErrorCode.SIMULATION_TYPE_NOT_SUPPORTED);
         assertThat(simulations.count()).isZero();

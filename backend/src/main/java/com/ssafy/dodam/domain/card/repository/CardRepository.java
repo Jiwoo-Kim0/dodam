@@ -19,4 +19,7 @@ public interface CardRepository extends
 
     @EntityGraph(attributePaths = "withdrawalAccount")
     Optional<Card> findByUserIdAndCardNoHash(Long userId, String cardNoHash);
+
+    /** 소유권 조건이 조회 자체에 들어간다. 시뮬레이션(586)이 cardId 입력의 본인 여부를 확인할 때 쓴다. */
+    boolean existsByIdAndUserId(Long id, Long userId);
 }

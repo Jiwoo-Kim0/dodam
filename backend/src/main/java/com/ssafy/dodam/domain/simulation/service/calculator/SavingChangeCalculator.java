@@ -1,6 +1,8 @@
 package com.ssafy.dodam.domain.simulation.service.calculator;
 
 import com.ssafy.dodam.domain.simulation.dto.SavingChangeInput;
+import com.ssafy.dodam.domain.simulation.dto.ScenarioComputation;
+import com.ssafy.dodam.domain.simulation.dto.ScenarioLedger;
 import com.ssafy.dodam.domain.simulation.dto.SimulationBaseline;
 import com.ssafy.dodam.domain.simulation.dto.SimulationResult;
 import com.ssafy.dodam.domain.simulation.dto.SimulationResult.Comparison;
@@ -40,19 +42,14 @@ public class SavingChangeCalculator implements SimulationCalculator<SavingChange
     }
 
     @Override
-    public SimulationResult calculate(SimulationBaseline baseline, SavingChangeInput input) {
+    public ScenarioComputation compute(SimulationBaseline baseline, SavingChangeInput input) {
         if (baseline.monthlyIncome() != null && input.monthlySavingAmount() > baseline.monthlyIncome()) {
             throw new BusinessException(ErrorCode.SIMULATION_SAVING_EXCEEDS_INCOME);
         }
         List<String> assumptions = new ArrayList<>(List.of(SimulationScenarios.INTEREST_NOT_APPLIED));
-        Predicate<SimulationBaseline.SavingGoal> eligible = g -> true;
-        if (input.accountId() != null) {
-            boolean linked = baseline.savingGoals().stream().anyMatch(g -> g.linkedAccountIds().contains(input.accountId()));
-            if (linked) {
-                eligible = g -> g.linkedAccountIds().contains(input.accountId());
-            } else {
-                assumptions.add(ACCOUNT_NOT_LINKED_TO_GOAL);
-            }
+        Predicate<SimulationBaseline.SavingGoal> eligible = eligibleGoals(baseline, input);
+        if (input.accountId() != null && !isLinked(baseline, input)) {
+            assumptions.add(ACCOUNT_NOT_LINKED_TO_GOAL);
         }
         long currentSaving = baseline.averageMonthlySaving();
         Map<Long, Long> beforePaces = SimulationScenarios.currentPaces(baseline);
@@ -77,9 +74,21 @@ public class SavingChangeCalculator implements SimulationCalculator<SavingChange
             assumptions.add(SimulationScenarios.SPLIT_BY_REMAINING);
         }
         String title = "월 저축액 " + SimulationScenarios.won(currentSaving) + " → " + SimulationScenarios.won(afterSaving);
-        return new SimulationResult(title, summary(delta, before, after), before, after,
+        SimulationResult result = new SimulationResult(title, summary(delta, before, after), before, after,
                 new Comparison(items, assets, List.of(), List.of()),
                 SimulationScenarios.cashflow(before, after, input.durationMonths(), -delta), impacts, assumptions);
+        return new ScenarioComputation(result, ScenarioLedger.noCost(baseline.baseDate().plusMonths(input.durationMonths())));
+    }
+
+    /** 지정 계좌가 어떤 모으기 목표에 연결돼 있는지. 복합 목표 투영도 같은 대상 선택 규칙을 쓴다. */
+    static boolean isLinked(SimulationBaseline baseline, SavingChangeInput input) {
+        return input.accountId() != null
+                && baseline.savingGoals().stream().anyMatch(g -> g.linkedAccountIds().contains(input.accountId()));
+    }
+
+    /** 새 저축액을 받을 목표. 계좌가 연결된 목표가 있으면 그 목표만, 아니면 모든 모으기 목표. */
+    static Predicate<SimulationBaseline.SavingGoal> eligibleGoals(SimulationBaseline baseline, SavingChangeInput input) {
+        return isLinked(baseline, input) ? g -> g.linkedAccountIds().contains(input.accountId()) : g -> true;
     }
 
     private static String summary(long delta, Snapshot before, Snapshot after) {

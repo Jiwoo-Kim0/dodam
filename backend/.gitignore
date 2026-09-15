@@ -23,3 +23,6 @@ application-*-private.yml
 logs/
 .DS_Store
 Thumbs.db
+
+# Eclipse/Gradle build output
+bin/

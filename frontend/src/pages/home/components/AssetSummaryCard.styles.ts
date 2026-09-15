@@ -63,6 +63,23 @@ export const styles = StyleSheet.create({
     fontSize: fontSize.micro,
     lineHeight: 14,
   },
+  netAssetLabel: {
+    color: colors.textSecondary,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.micro,
+    lineHeight: 14,
+    marginTop: spacing[1],
+  },
+  loadingIndicator: {
+    alignSelf: 'flex-start',
+    marginTop: spacing[2],
+  },
+  errorText: {
+    color: colors.textSecondary,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.body2,
+    marginTop: spacing[2],
+  },
   chartGroup: {
     alignItems: 'center',
     flexDirection: 'row',

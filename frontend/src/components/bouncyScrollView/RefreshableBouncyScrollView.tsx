@@ -12,22 +12,30 @@ import {
 type RefreshableBouncyScrollViewProps = Omit<
   ComponentProps<typeof BouncyScrollView>,
   'onRefresh' | 'refreshing'
->;
+> & {
+  onRefresh?: () => void;
+  refreshing?: boolean;
+};
 
 export const RefreshableBouncyScrollView = forwardRef<
   BouncyScrollViewHandle,
   RefreshableBouncyScrollViewProps
 >(function RefreshableBouncyScrollView(props, ref) {
-  const { isRefreshing, triggerRefresh } = useRefreshFeedback();
+  const {
+    onRefresh,
+    refreshing,
+    ...scrollViewProps
+  } = props;
+  const { isRefreshing: isFeedbackRefreshing, triggerRefresh } = useRefreshFeedback();
 
   return (
     <BouncyScrollView
-      {...props}
-      onRefresh={triggerRefresh}
+      {...scrollViewProps}
+      onRefresh={onRefresh ?? triggerRefresh}
       ref={ref}
       refreshBackgroundColor={props.refreshBackgroundColor ?? colors.background}
       refreshIndicatorColor={props.refreshIndicatorColor ?? colors.primary.green}
-      refreshing={isRefreshing}
+      refreshing={refreshing ?? isFeedbackRefreshing}
     />
   );
 });
