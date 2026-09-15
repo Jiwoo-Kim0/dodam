@@ -17,6 +17,7 @@
 | 7 | `DODAM_GOAL_SEED.sql` | 493 | 491, 524, V5·V7·V8·V9 |
 | 8 | `DODAM_SUBSCRIPTION_SEED.sql` | 492 | 491, 522, 6번, V30 (`subscription`·`subscription_payment_history`, 2026-09-11 추가) |
 | 9 | `DODAM_NOTIFICATION_SEED.sql` | 519, 520 | 491, 523, 493, 8번, V32 (`notification`, 2026-09-14 추가). 시연 사용자 U0001~U0004의 알림함 최대 6건씩(원천 행이 없는 유형은 생략), `dedupe_key LIKE 'SEED-%'`로 재실행 시 지우고 다시 만든다 |
+| 10 | `DODAM_DEMO_PASSWORD_SEED.sql` | 521 | 491, V1. 시연 사용자 U0001~U0004에만 시연 비밀번호의 BCrypt 해시를 넣는다(2026-09-15 추가). 나머지 사용자는 NULL 유지, 재실행 안전 |
 
 2~5는 계좌·카드번호 원문을 파일에 두지 않기 위해 애플리케이션 코덱으로 만든 fixture 테이블(`tmp_dodam_*_crypto`, `*_account_keys`)이
 같은 스키마에 있어야 한다. 각 파일 머리말에 정확한 계약이 있다. 6~8은 fixture 없이 자연키(사용자 이메일, 계좌 유형·이름)로 참조한다.
@@ -46,6 +47,19 @@
 월말 스냅샷 이력. 524가 CLOSED로 만든 예·적금만 가진 사용자 1,000명은 주거래 계좌를 대신 연결한다(Goal API가 CLOSED 연결을 400으로 막음).
 연결 4,750건 = 예금 1,500 + 적금 1,500 + 주거래 1,750. `goal.current_amount`는 연결 계좌 잔액 합으로, Goal API(509·510)가 재계산하는 값과 같다.
 seed 목표는 `created_at = '2026-03-01 09:00:00'`으로 식별해 재실행 시 지우고 다시 만든다.
+
+## 시연 계정 로그인 (`DODAM_DEMO_PASSWORD_SEED.sql`)
+
+491 seed는 `password_hash`를 NULL로 두므로 seed 사용자는 API 로그인이 불가하다. 10번이 시연 사용자 4명에게만 비밀번호를 설정한다.
+
+| 계정 | 이메일 | 비밀번호 |
+| --- | --- | --- |
+| U0001~U0004 | `seed.kmeans.u0001@dodam.invalid` ~ `u0004` | `dodam1234` |
+
+- 시연·테스트 전용 값이다. 회원가입 규칙(8~72자, 영문+숫자, 공백 없음)을 만족하며, 해시는 애플리케이션의 `BCryptPasswordEncoder`와 같은 형식(`$2a$`, cost 10)이다.
+- 비밀번호를 바꾸려면 새 해시를 만들어 파일의 UPDATE 값만 교체한다(예: gradle 캐시의 `spring-security-crypto` jar로 `BCrypt.hashpw` 실행).
+- 적용 후 `backend/scripts/be-a-server-smoke.sh`로 BE-A 8개 API(로그인 → 계좌·거래·소비·목표·정기결제·패턴·알림)를 서버에서 한 번에 점검한다(S15P21D105-521).
+- 시연 종료 후 되돌리려면 같은 4개 이메일 조건으로 `password_hash = NULL`.
 
 ## 검증 상태
 
