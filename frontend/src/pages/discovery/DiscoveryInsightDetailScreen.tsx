@@ -147,7 +147,6 @@ export function DiscoveryInsightDetailScreen({
                 </Text>
               </View>
               <Text style={styles.title}>{issue.title}</Text>
-              <Text style={styles.description}>{issue.description}</Text>
             </View>
 
             <View style={styles.adviceSection}>
@@ -158,27 +157,10 @@ export function DiscoveryInsightDetailScreen({
                 style={styles.adviceImage}
               />
               <View style={styles.adviceBubble}>
-                <Text style={styles.adviceText}>
-                  {coachMessage(explanation) ??
-                    explanationError ??
-                    'AI 설명을 확인하고 있어요.'}
-                </Text>
+                {/* 도리는 진단이 계산한 근거를 말한다. AI 조언은 추천 아래 별도 자리에 둔다. */}
+                <Text style={styles.adviceText}>{issue.description}</Text>
               </View>
             </View>
-
-            {explanation ? (
-              <Text style={styles.disclaimer}>{explanation.disclaimer}</Text>
-            ) : null}
-
-            {explanationError ? (
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => {
-                  void load();
-                }}>
-                <Text style={styles.emptyAction}>다시 시도하기</Text>
-              </Pressable>
-            ) : null}
 
             <View style={styles.recommendationSection}>
               <Text style={styles.sectionTitle}>이렇게 바꿔볼 수 있어요</Text>
@@ -249,6 +231,27 @@ export function DiscoveryInsightDetailScreen({
                   </View>
                 ))}
               </View>
+            </View>
+
+            <View style={styles.coachSection}>
+              <Text style={styles.coachLabel}>도담의 조언</Text>
+              <Text style={styles.adviceText}>
+                {coachMessage(explanation) ??
+                  explanationError ??
+                  '조언을 준비하고 있어요.'}
+              </Text>
+              {explanation ? (
+                <Text style={styles.disclaimer}>{explanation.disclaimer}</Text>
+              ) : null}
+              {explanationError ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => {
+                    void load();
+                  }}>
+                  <Text style={styles.emptyAction}>다시 시도하기</Text>
+                </Pressable>
+              ) : null}
             </View>
 
             {recommendations.length > 0 ? (

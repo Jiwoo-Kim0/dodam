@@ -39,11 +39,6 @@ export const styles = StyleSheet.create({
     lineHeight: 34,
     marginTop: spacing[4],
   },
-  description: {
-    ...typography.body1,
-    color: colors.textTertiary,
-    marginTop: spacing[2],
-  },
   adviceSection: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -70,6 +65,19 @@ export const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textTertiary,
     marginTop: spacing[2],
+  },
+  coachSection: {
+    backgroundColor: colors.report.patternSurface,
+    borderRadius: radius.card,
+    marginTop: spacing[6],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[4],
+  },
+  coachLabel: {
+    color: colors.primary.green,
+    fontFamily: fontFamily.semiBold,
+    fontSize: fontSize.body2,
+    marginBottom: spacing[2],
   },
   recommendationSection: {
     marginTop: spacing[6],
