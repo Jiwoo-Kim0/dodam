@@ -22,7 +22,7 @@ import org.springframework.stereotype.Component;
 @Component
 @Order(20)
 public class SpendingGoalRiskGenerator implements RecommendationCandidateGenerator {
-    public static final String VERSION = "548.1";
+    public static final String VERSION = "604.1";
     public static final String DOMAIN = "SPENDING";
     public static final String TYPE = "REDUCE_SPENDING";
     static final String REASON_OVER_BUDGET = "SPENDING_OVER_BUDGET";
@@ -63,11 +63,10 @@ public class SpendingGoalRiskGenerator implements RecommendationCandidateGenerat
         Recommendation.Effect effect = new Recommendation.Effect(over, over * MONTHS_PER_YEAR, null, null, null, null, null, null);
         String label = goalName == null ? "소비 목표" : "'" + goalName + "'";
         return Outcome.of(new RecommendationCandidate(VERSION, TYPE + ":" + goalId, issue.issueId(), DOMAIN, TYPE,
-                "월 소비 " + GeneratorSupport.won(over) + " 줄이기",
-                label + " 예산은 월 " + GeneratorSupport.won(budget) + "인데 이번 달 예상 지출은 "
-                        + GeneratorSupport.won(Math.max(spent, projected)) + "입니다. 월 " + GeneratorSupport.won(over) + "을 줄이면 예산을 지킬 수 있습니다.",
+                "이번 달 소비 줄여보기",
+                "월 " + GeneratorSupport.won(over) + "을 줄이면 " + label + " 예산을 지킬 수 있어요.",
                 List.of(new RecommendationCandidate.Reason(REASON_OVER_BUDGET,
-                        "예산 " + GeneratorSupport.won(budget) + " 대비 " + GeneratorSupport.won(over) + " 초과가 예상됩니다.", evidence)),
+                        "예산 " + GeneratorSupport.won(budget) + " 대비 " + GeneratorSupport.won(over) + " 초과가 예상돼요.", evidence)),
                 effect));
     }
 }

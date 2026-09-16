@@ -8,6 +8,7 @@ import com.ssafy.dodam.domain.coach.dto.CoachFacts.Fact;
 import com.ssafy.dodam.domain.coach.dto.CoachFacts.Section;
 import com.ssafy.dodam.domain.coach.dto.CoachTopic;
 import com.ssafy.dodam.domain.coach.service.CoachCacheKey;
+import com.ssafy.dodam.domain.coach.service.CoachPromptFactory;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -40,8 +41,10 @@ class CoachCacheKeyTest {
     }
 
     @Test
-    void keyCarriesUserAndTopicForOperability() {
-        assertThat(keys.of(7L, facts("2건"))).startsWith("coach:7:FINANCIAL_SUMMARY:");
+    void keyCarriesPromptVersionUserAndTopicForOperability() {
+        // 프롬프트 버전이 앞에 붙는다. 문구 규칙을 고치면 facts는 그대로여도 옛 문장이 나가면 안 된다
+        assertThat(keys.of(7L, facts("2건")))
+                .startsWith("coach:" + CoachPromptFactory.VERSION + ":7:FINANCIAL_SUMMARY:");
     }
 
     @Test
