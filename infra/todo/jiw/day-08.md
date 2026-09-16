@@ -743,7 +743,7 @@ GOOGLE_CLIENT_ID=<Android>,<웹>   (184017850372- 계열 2개)
 - [ ] `check-env.sh` 3-1 대조에 `application.yml`도 포함 (17절 발견 1의 사각지대)
 - [x] ~~`external-integrations.md` 4절 갱신~~ — 21절에서 처리
 - [ ] 카카오 동의항목에서 **닉네임** 권한 상태 확인 (이것도 막히면 회원 이름이 전부 "도담 회원")
-- [ ] 구글 동의 화면 **테스트 사용자**에 팀원 계정 전부 등록
+- [x] ~~구글 동의 화면 **테스트 사용자** 등록~~ — 2026-09-16 완료(사용자 직접). 이후 합류하는 팀원은 그때마다 추가 필요
 - [x] ~~EC2 → `kapi.kakao.com` / `www.googleapis.com` 아웃바운드 연결성 확인~~ — 20절, 호스트·컨테이너 모두 도달 확인
 - [ ] 카카오·구글 콘솔 앱 등록 후 `.env`에 `KAKAO_APP_ID`·`GOOGLE_CLIENT_ID` 채우고 backend 재기동
 - [ ] `SPRING_JPA_HIBERNATE_DDL_AUTO: none` 제거하고 `validate` 복귀 — **선행 조건 충족됨**(V18·V19 적용 완료)
