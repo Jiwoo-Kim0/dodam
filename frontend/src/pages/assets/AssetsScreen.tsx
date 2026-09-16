@@ -6,12 +6,14 @@ import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import { colors } from '@/styles';
 
 import { AssetOverviewCard } from './components/AssetOverviewCard';
+import { AssetAnalysisCard } from './components/AssetAnalysisCard';
 import { AssetSection } from './components/AssetSection';
 import { useAssetData } from './hooks/useAssetData';
 import { styles } from './AssetsScreen.styles';
 
 export function AssetsScreen() {
   const {
+    analysis,
     error,
     isLoading,
     isRefreshing,
@@ -66,6 +68,8 @@ export function AssetsScreen() {
         refreshing={isRefreshing}
       >
         <AssetOverviewCard overview={overview} />
+
+        {analysis ? <AssetAnalysisCard analysis={analysis} /> : null}
 
         <View style={styles.sections}>
           {sections.map((section) => (

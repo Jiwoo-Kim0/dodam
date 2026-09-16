@@ -12,6 +12,14 @@ export interface AssetOverview {
   composition: readonly AssetComposition[];
 }
 
+export interface AssetAnalysis {
+  cashTotal: number;
+  cashAccountCount: number;
+  inactiveAccountCount: number;
+  inactiveBalance: number;
+  inactiveMonths: number;
+}
+
 export type AssetSectionId = 'checking' | 'saving' | 'loan' | 'card' | 'installment';
 
 export interface AssetItem {

@@ -31,6 +31,44 @@ export interface AccountSummaryApiResponse {
   netAssets: number;
 }
 
+export interface AccountBalanceSummaryItemApiResponse {
+  accountId: number;
+  bankName: string;
+  accountNoMasked: string;
+  accountName: string;
+  status: string;
+  balance: number;
+  sharePercent: number;
+}
+
+export interface AccountBalanceSummaryApiResponse {
+  totalCash: number;
+  accountCount: number;
+  accounts: readonly AccountBalanceSummaryItemApiResponse[];
+}
+
+export interface InactiveAccountApiResponse {
+  accountId: number;
+  bankName: string;
+  accountNoMasked: string;
+  accountName: string;
+  status: string;
+  balance: number;
+  lastActivityDate: string;
+  inactiveMonths: number;
+}
+
+export interface InactiveAccountsApiResponse {
+  criteria: {
+    inactiveMonths: number;
+    maxBalance: number | null;
+    asOfDate: string;
+  };
+  count: number;
+  totalBalance: number;
+  accounts: readonly InactiveAccountApiResponse[];
+}
+
 export interface CardWithdrawalAccountApiResponse {
   bankCode: string;
   bankName: string;
