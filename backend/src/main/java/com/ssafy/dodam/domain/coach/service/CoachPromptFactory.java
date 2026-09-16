@@ -40,7 +40,9 @@ public class CoachPromptFactory {
         return COMMON_RULES + "\n" + switch (topic) {
             case FINANCIAL_SUMMARY -> """
                     이번 요청은 '금융현황 요약'이다. 진단 결과 전체를 사용자가 한눈에 이해하도록 풀어 쓴다.
-                    문제가 없으면 없다고 쓴다.
+                    탐지된 문제가 없으면 '검사한 범위 안에서 탐지된 문제가 없다'고 쓴다.
+                    검사하지 못한 항목이 있으면 그 사실을 빠뜨리지 않는다 — 문제 0건은 이상이 없다는
+                    뜻이 아니라 검사하지 못했다는 뜻일 수 있다.
                     """;
             case INEFFICIENCY_EXPLANATION -> """
                     이번 요청은 '비효율 원인 설명'이다. 서버가 이미 문제로 판정한 항목에 대해,

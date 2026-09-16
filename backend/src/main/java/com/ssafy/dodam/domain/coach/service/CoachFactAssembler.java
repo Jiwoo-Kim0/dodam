@@ -61,6 +61,8 @@ public class CoachFactAssembler {
     static final int TOP_ISSUE_LIMIT = 3;
     /** 군집 특징은 이탈이 큰 것부터 이만큼만. 12종을 모두 넣으면 무엇이 중요한지 사라진다. */
     static final int TOP_CLUSTER_FEATURE_LIMIT = 3;
+    /** 검사하지 못한 규칙 이름은 이만큼만 나열한다. 개수는 따로 싣는다. */
+    static final int COVERAGE_NAME_LIMIT = 6;
 
     private static final Logger log = LoggerFactory.getLogger(CoachFactAssembler.class);
     private static final Comparator<DiagnosisIssue> BY_SEVERITY = Comparator
@@ -106,11 +108,25 @@ public class CoachFactAssembler {
             sections.add(new Section("주요 문제(심각도 순)", topIssues(found)));
         }
 
+        Coverage coverage = coverage(diagnosis);
+        coverage.section().ifPresent(sections::add);
+
         List<String> notes = new ArrayList<>();
         notes.add("종합 상태·심각도·문제 수는 서버 진단 규칙(" + text(diagnosis.getRuleVersion())
                 + ")이 판정해 저장한 값이다. 다시 판정하거나 다른 상태를 제시하지 말 것.");
         if (found.isEmpty()) {
             notes.add("이번 진단에서 탐지된 문제가 없다. 문제를 지어내지 말 것.");
+        }
+        if (coverage.hasUnavailable()) {
+            // 이것을 넣지 않으면 모델은 "문제 0건"을 "이상 없음"으로 옮긴다. 실제로는 검사하지 못한
+            // 항목이 있다는 뜻일 수 있고, 그 차이를 사용자가 알아야 한다.
+            notes.add("문제 수는 '검사한 범위 안에서'의 수치다. 검사하지 못한 항목이 "
+                    + coverage.unavailableCount() + "개 있으므로, 문제가 전혀 없다거나 금융 상태가 건강하다고"
+                    + " 단정하지 말고 검사하지 못한 항목이 있다는 점을 반드시 함께 알려라.");
+        }
+        if (diagnosis.getOverallStatus() == null) {
+            notes.add("종합 상태가 저장되지 않은 것은 서버가 판정을 보류했다는 뜻이다."
+                    + " 이를 '양호'나 '건강'으로 바꿔 말하지 말 것.");
         }
         clusterSection(userId).ifPresentOrElse(sections::add,
                 () -> notes.add("저장된 소비패턴 군집 결과가 없다. 또래·평균과의 비교를 언급하지 말 것."));
@@ -188,6 +204,67 @@ public class CoachFactAssembler {
         }
 
         return new CoachFacts(CoachTopic.RECOMMENDATION_EXPLANATION, target.getTitle(), sections, notes);
+    }
+
+    /**
+     * 진단이 어디까지 검사했는지. 진단 스냅샷의 `coverage`를 그대로 옮긴다(서버 계산값).
+     *
+     * <p><b>왜 필요한가</b>: `issueCount = 0`은 "다 검사했는데 이상 없음"과 "검사를 못 함"을 구분하지
+     * 않는다. 현재 진단 규칙 12개 중 10개가 미구현·미연동으로 항상 `UNAVAILABLE`이고, 나머지 2개도
+     * 자료가 없으면 건너뛴다. 이 구간이 없으면 모델은 "문제 0건"을 "금융 상태가 건강하다"로 옮기게
+     * 되고, 그것은 서버가 하지 않은 판정이다(명세 21: AI 자체 판정 금지).
+     */
+    private Coverage coverage(Diagnosis diagnosis) {
+        JsonNode snapshot = diagnosis.getInputSnapshot();
+        JsonNode entries = snapshot == null ? null : snapshot.get("coverage");
+        if (entries == null || !entries.isArray() || entries.isEmpty()) {
+            return new Coverage(List.of(), List.of());
+        }
+        List<String> evaluated = new ArrayList<>();
+        List<String> unavailable = new ArrayList<>();
+        entries.forEach(entry -> {
+            String ruleKey = entry.path("ruleKey").asText(null);
+            if (ruleKey == null) {
+                return;
+            }
+            // NOT_APPLICABLE은 "해당 없음"이라 검사 누락이 아니다(예: 목표가 없는 사용자).
+            if ("EVALUATED".equals(entry.path("status").asText())) {
+                evaluated.add(ruleKey);
+            } else if ("UNAVAILABLE".equals(entry.path("status").asText())) {
+                unavailable.add(ruleKey);
+            }
+        });
+        return new Coverage(evaluated, unavailable);
+    }
+
+    /** @param evaluated 실제로 검사한 규칙 @param unavailable 자료·구현이 없어 검사하지 못한 규칙 */
+    private record Coverage(List<String> evaluated, List<String> unavailable) {
+
+        boolean hasUnavailable() {
+            return !unavailable.isEmpty();
+        }
+
+        int unavailableCount() {
+            return unavailable.size();
+        }
+
+        Optional<Section> section() {
+            if (evaluated.isEmpty() && unavailable.isEmpty()) {
+                return Optional.empty();
+            }
+            List<Fact> facts = new ArrayList<>();
+            facts.add(new Fact("검사한 항목 수", CoachFormat.count(evaluated.size())));
+            facts.add(new Fact("검사하지 못한 항목 수", CoachFormat.count(unavailable.size())));
+            if (!evaluated.isEmpty()) {
+                facts.add(new Fact("검사한 항목", String.join(", ", evaluated)));
+            }
+            if (!unavailable.isEmpty()) {
+                facts.add(new Fact("검사하지 못한 항목", String.join(", ",
+                        unavailable.size() <= COVERAGE_NAME_LIMIT ? unavailable
+                                : unavailable.subList(0, COVERAGE_NAME_LIMIT))));
+            }
+            return Optional.of(new Section("진단 검사 범위(서버 계산)", facts));
+        }
     }
 
     private List<Fact> effectFacts(Recommendation target) {
