@@ -1,5 +1,5 @@
-import { useRouter } from 'expo-router';
-import { SymbolView } from 'expo-symbols';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback } from 'react';
 import { Text, View } from 'react-native';
 
 import { AppHeader } from '@/components/appHeader/AppHeader';
@@ -7,7 +7,6 @@ import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/Refre
 import { ScreenState } from '@/components/screenState/ScreenState';
 import { routes } from '@/constants/routes';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
-import { colors } from '@/styles';
 
 import { EfficiencyScoreCard } from './components/EfficiencyScoreCard';
 import { FinancePatternCard } from './components/FinancePatternCard';
@@ -19,7 +18,11 @@ import { useReportData } from './hooks/useReportData';
 
 export function ReportScreen() {
   const router = useRouter();
-  const { error, isLoading, isRefreshing, refetch, report } = useReportData();
+  const { cancel, error, isLoading, isRefreshing, refetch, reload, report } = useReportData();
+  useFocusEffect(useCallback(() => {
+    void reload();
+    return cancel;
+  }, [cancel, reload]));
   const monthLabel = report?.monthLabel ?? '';
   const data = report;
 
@@ -37,18 +40,8 @@ export function ReportScreen() {
       <AppHeader
         onBackPress={handleBackPress}
         right={
-          // 월 선택은 리포트 API 연결 이후 동작을 연결한다.
           <View style={styles.monthSelector}>
             <Text style={styles.monthLabel}>{monthLabel || '최근 월'}</Text>
-            <SymbolView
-              name={{
-                android: 'keyboard_arrow_down',
-                ios: 'chevron.down',
-                web: 'keyboard_arrow_down',
-              }}
-              size={18}
-              tintColor={colors.textPrimary}
-            />
           </View>
         }
         showBackButton
