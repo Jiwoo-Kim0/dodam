@@ -9,6 +9,7 @@ import com.ssafy.dodam.domain.diagnosis.entity.Diagnosis;
 import com.ssafy.dodam.domain.diagnosis.entity.DiagnosisIssue;
 import com.ssafy.dodam.domain.diagnosis.entity.DiagnosisStatus;
 import com.ssafy.dodam.domain.diagnosis.entity.IssueSeverity;
+import com.ssafy.dodam.domain.diagnosis.repository.DiagnosisIssueRepository;
 import com.ssafy.dodam.domain.diagnosis.service.DiagnosisStore;
 import com.ssafy.dodam.domain.goal.entity.Goal;
 import com.ssafy.dodam.domain.goal.entity.GoalType;
@@ -58,6 +59,7 @@ class RecommendationStoreTest {
     @Autowired UserRepository users;
     @Autowired GoalRepository goals;
     @Autowired DiagnosisStore diagnosisStore;
+    @Autowired DiagnosisIssueRepository issues;
     @Autowired RecommendationInputReader reader;
     @Autowired RecommendationStore store;
     @Autowired RecommendationRepository recommendations;
@@ -253,6 +255,40 @@ class RecommendationStoreTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    /** 628: 후보의 sourceIssueId는 그대로 저장되고, 이 진단의 본인 문제가 아니면 첫 INSERT 전에 실패한다. */
+    @Test
+    void saveKeepsSourceIssueAndRejectsIssuesOutsideTheDiagnosis() {
+        Long diagnosisId = completedDiagnosis(owner, null, 2);
+        List<Long> issueIds = issues.findAllOwned(owner, diagnosisId).stream().map(DiagnosisIssue::getIssueId).toList();
+
+        List<Saved> saved = store.save(new SaveRequest(owner, diagnosisId, null, List.of(
+                new PrioritizedCandidate(candidateFor(issueIds.get(1), "CARD:1", "FEE"), 1),
+                new PrioritizedCandidate(candidate("CARD:2", "FEE"), 2))), NOW);
+        assertThat(saved.get(0).recommendation().getSourceIssueId()).isEqualTo(issueIds.get(1));
+        assertThat(saved.get(1).recommendation().getSourceIssueId()).isNull();
+        assertThat(recommendations.findById(saved.get(0).recommendation().getRecommendationId()).orElseThrow().getSourceIssueId())
+                .isEqualTo(issueIds.get(1));
+
+        // 같은 사용자의 다른 진단 문제 → 거부, 앞선 후보까지 저장되지 않는다
+        Long otherDiagnosis = completedDiagnosis(owner, null, 1);
+        Long foreignIssue = issues.findAllOwned(owner, otherDiagnosis).get(0).getIssueId();
+        assertThatThrownBy(() -> store.save(new SaveRequest(owner, diagnosisId, null, List.of(
+                new PrioritizedCandidate(candidate("CARD:3", "FEE"), 1),
+                new PrioritizedCandidate(candidateFor(foreignIssue, "CARD:4", "FEE"), 2))), NOW))
+                .isInstanceOf(IllegalStateException.class);
+        assertThat(recommendations.findAllByUserIdAndDiagnosisIdOrderByCreatedAtDescRecommendationIdDesc(owner, diagnosisId))
+                .hasSize(2);
+
+        // 타인 진단의 문제 → 소유권 조회에 걸리지 않아 같은 거부
+        Long othersDiagnosis = completedDiagnosis(other, null, 1);
+        Long othersIssue = issues.findAllOwned(other, othersDiagnosis).get(0).getIssueId();
+        assertThatThrownBy(() -> store.save(new SaveRequest(owner, diagnosisId, null, List.of(
+                new PrioritizedCandidate(candidateFor(othersIssue, "CARD:5", "FEE"), 1))), NOW))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> Recommendation.pending(owner, 1L, null, 0L, "CARD", "T", "t", "d", 1, null, "0".repeat(64), NOW))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     @Test
     void storeRejectsNonPositivePriority() {
         assertThatThrownBy(() -> new PrioritizedCandidate(candidate("CARD:1", "FEE"), 0))
@@ -307,15 +343,15 @@ class RecommendationStoreTest {
     void databaseUniqueKeyIsTheLastLineOfDefense() {
         Long diagnosisId = completedDiagnosis(owner, null, 1);
         String key = "a".repeat(64);
-        recommendations.save(Recommendation.pending(owner, diagnosisId, null, "CARD", "SWITCH_CARD", "t", "d", 1, null, key, NOW));
+        recommendations.save(Recommendation.pending(owner, diagnosisId, null, null, "CARD", "SWITCH_CARD", "t", "d", 1, null, key, NOW));
 
         assertThatThrownBy(() -> recommendations.saveAndFlush(
-                Recommendation.pending(owner, diagnosisId, null, "CARD", "SWITCH_CARD", "t", "d", 1, null, key, NOW)))
+                Recommendation.pending(owner, diagnosisId, null, null, "CARD", "SWITCH_CARD", "t", "d", 1, null, key, NOW)))
                 .isInstanceOf(DataIntegrityViolationException.class);
         // 다른 사용자는 같은 키를 가질 수 있다(UNIQUE는 user_id와 조합).
         Long othersDiagnosis = completedDiagnosis(other, null, 1);
         recommendations.saveAndFlush(
-                Recommendation.pending(other, othersDiagnosis, null, "CARD", "SWITCH_CARD", "t", "d", 1, null, key, NOW));
+                Recommendation.pending(other, othersDiagnosis, null, null, "CARD", "SWITCH_CARD", "t", "d", 1, null, key, NOW));
     }
 
     // ---- Entity validation ----
@@ -323,11 +359,11 @@ class RecommendationStoreTest {
     @Test
     void entityRejectsInvalidValuesBeforeReachingTheDatabase() {
         String key = "b".repeat(64);
-        assertThatThrownBy(() -> Recommendation.pending(owner, 1L, null, "CARD", "T", "t", "d", 0, null, key, NOW))
+        assertThatThrownBy(() -> Recommendation.pending(owner, 1L, null, null, "CARD", "T", "t", "d", 0, null, key, NOW))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> Recommendation.pending(owner, 1L, null, "CARD", "T", "t", "d", 1, null, "short", NOW))
+        assertThatThrownBy(() -> Recommendation.pending(owner, 1L, null, null, "CARD", "T", "t", "d", 1, null, "short", NOW))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> Recommendation.pending(owner, 1L, null, "", "T", "t", "d", 1, null, key, NOW))
+        assertThatThrownBy(() -> Recommendation.pending(owner, 1L, null, null, "", "T", "t", "d", 1, null, key, NOW))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new Recommendation.Effect(-1L, null, null, null, null, null, null, null))
                 .isInstanceOf(IllegalArgumentException.class);
@@ -358,6 +394,12 @@ class RecommendationStoreTest {
 
     private static RecommendationCandidate candidate(String key, String... reasonCodes) {
         return candidateOf("test-v1", key, "CARD", "SWITCH_CARD", reasonCodes);
+    }
+
+    private static RecommendationCandidate candidateFor(Long issueId, String key, String... reasonCodes) {
+        RecommendationCandidate c = candidate(key, reasonCodes);
+        return new RecommendationCandidate(c.generatorVersion(), c.candidateKey(), issueId, c.domain(), c.type(), c.title(),
+                c.description(), c.reasons(), c.effect());
     }
 
     private static RecommendationCandidate candidateOf(String version, String key, String domain, String type, String... reasonCodes) {

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Text, View } from 'react-native';
 import Svg, {
   Circle,
@@ -61,7 +62,15 @@ function createPointCoordinates(
   }));
 }
 
+function formatPointDate(label: string) {
+  const [month, day] = label.split('.');
+  return `${Number(month)}월 ${Number(day)}일 기준`;
+}
+
 export function GoalProgressChart({ goal }: GoalProgressChartProps) {
+  const [selectedPointLabel, setSelectedPointLabel] = useState<string | null>(
+    null,
+  );
   const title =
     goal.type === 'saving'
       ? '지금까지 이렇게 모았어요'
@@ -75,20 +84,21 @@ export function GoalProgressChart({ goal }: GoalProgressChartProps) {
   const linePath = points
     .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.actualY}`)
     .join(' ');
-  const lastPoint = points.at(-1);
-  const tooltipWidth = 88;
-  const tooltipHeight = 36;
-  const tooltipX = lastPoint
+  const selectedPoint =
+    points.find((point) => point.label === selectedPointLabel) ?? points.at(-1);
+  const tooltipWidth = 108;
+  const tooltipHeight = 40;
+  const tooltipX = selectedPoint
     ? Math.min(
         CHART_WIDTH - tooltipWidth - 4,
-        Math.max(4, lastPoint.x - tooltipWidth / 2),
+        Math.max(4, selectedPoint.x - tooltipWidth / 2),
       )
     : 0;
   const tooltipY = 8;
   const accessibilityLabel = `${title}. ${goal.history
     .map(
       (point) =>
-        `${point.label} 누적 금액 ${formatNumber(point.actualAmount)}원, 월별 금액 ${formatNumber(point.plannedAmount)}원`,
+        `${point.label} 실제 누적 금액 ${formatNumber(point.actualAmount)}원, 계획 누적 금액 ${formatNumber(point.plannedAmount)}원`,
     )
     .join(', ')}`;
 
@@ -169,7 +179,20 @@ export function GoalProgressChart({ goal }: GoalProgressChartProps) {
             cy={point.actualY}
             fill={lineColor}
             key={`point-${point.label}`}
-            r={3.5}
+            r={point.label === selectedPoint?.label ? 5 : 3.5}
+            stroke={colors.white}
+            strokeWidth={point.label === selectedPoint?.label ? 2 : 0}
+          />
+        ))}
+
+        {points.map((point) => (
+          <Circle
+            cx={point.x}
+            cy={point.actualY}
+            fill="transparent"
+            key={`touch-${point.label}`}
+            onPress={() => setSelectedPointLabel(point.label)}
+            r={14}
           />
         ))}
 
@@ -187,15 +210,15 @@ export function GoalProgressChart({ goal }: GoalProgressChartProps) {
           </SvgText>
         ))}
 
-        {lastPoint ? (
+        {selectedPoint ? (
           <>
             <Line
               stroke={lineColor}
               strokeWidth={1}
-              x1={lastPoint.x}
-              x2={lastPoint.x}
+              x1={selectedPoint.x}
+              x2={selectedPoint.x}
               y1={tooltipY + tooltipHeight}
-              y2={lastPoint.actualY - 5}
+              y2={selectedPoint.actualY - 6}
             />
             <Rect
               fill={colors.primary.lightGreen}
@@ -211,9 +234,9 @@ export function GoalProgressChart({ goal }: GoalProgressChartProps) {
               fontSize={8}
               textAnchor="middle"
               x={tooltipX + tooltipWidth / 2}
-              y={tooltipY + 13}
+              y={tooltipY + 14}
             >
-              현재까지
+              {selectedPoint.tooltipLabel ?? formatPointDate(selectedPoint.label)}
             </SvgText>
             <SvgText
               fill={lineColor}
@@ -221,9 +244,9 @@ export function GoalProgressChart({ goal }: GoalProgressChartProps) {
               fontSize={11}
               textAnchor="middle"
               x={tooltipX + tooltipWidth / 2}
-              y={tooltipY + 27}
+              y={tooltipY + 30}
             >
-              {`${formatNumber(lastPoint.actualAmount)}원`}
+              {`${formatNumber(selectedPoint.actualAmount)}원`}
             </SvgText>
           </>
         ) : null}
@@ -232,11 +255,11 @@ export function GoalProgressChart({ goal }: GoalProgressChartProps) {
       <View style={styles.legend}>
         <View style={styles.legendItem}>
           <View style={[styles.legendDot, { backgroundColor: lineColor }]} />
-          <Text style={styles.legendLabel}>누적 금액</Text>
+          <Text style={styles.legendLabel}>실제 금액</Text>
         </View>
         <View style={styles.legendItem}>
           <View style={[styles.legendBar, { backgroundColor: barColor }]} />
-          <Text style={styles.legendLabel}>월별 금액</Text>
+          <Text style={styles.legendLabel}>계획 금액</Text>
         </View>
       </View>
     </View>

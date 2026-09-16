@@ -19,6 +19,7 @@ export interface HomeGoal extends GoalBase {
 
 export interface GoalHistoryPoint {
   label: string;
+  tooltipLabel?: string;
   actualAmount: number;
   plannedAmount: number;
 }

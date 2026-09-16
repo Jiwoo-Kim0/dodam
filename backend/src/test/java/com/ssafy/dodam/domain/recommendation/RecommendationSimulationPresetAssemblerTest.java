@@ -184,7 +184,7 @@ class RecommendationSimulationPresetAssemblerTest {
     }
 
     private static Recommendation recommendation(long id, String domain, String type, Recommendation.Effect effect) {
-        Recommendation r = Recommendation.pending(7L, 11L, 3L, domain, type, "제목", "설명", 1, effect, KEY, NOW);
+        Recommendation r = Recommendation.pending(7L, 11L, 3L, null, domain, type, "제목", "설명", 1, effect, KEY, NOW);
         ReflectionTestUtils.setField(r, "recommendationId", id);
         return r;
     }
