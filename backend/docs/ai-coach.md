@@ -153,11 +153,12 @@
 app:
   ai:
     enabled: true
-    base-url: https://api.openai.com
+    base-url: https://gms.ssafy.io/gmsapi/api.openai.com   # SSAFY GMS 중계
     chat-path: /v1/chat/completions
-    model: gpt-4o-mini          # max_tokens 파라미터를 받는 모델이어야 한다(o-시리즈는 파라미터명이 다르다)
-    temperature: 0.2
+    model: gpt-5.4-mini
     max-tokens: 600
+    max-tokens-parameter: max_completion_tokens   # 4o 계열은 max_tokens
+    temperature: 0.2                              # 비우면 요청 본문에서 빠진다
     max-attempts: 2
     connect-timeout: PT3S
     read-timeout: PT12S
@@ -170,6 +171,71 @@ app:
   병합 중 compose의 `OPENAI_API_KEY` 전달 줄이 유실되면 배포 전에 잡힌다.
 - `infra/docker-compose.yml` backend `environment:`에 `OPENAI_API_KEY: ${OPENAI_API_KEY:-}`를 추가했다.
   키는 Day 5에 발급해 EC2 `.env`에 있었지만 컨테이너로 전달되지 않는 상태였다.
+
+### 8-1. 모델 선정과 교체
+
+코치가 하는 일은 "이미 계산된 사실 목록 → 2문단 400자 이내 한국어"다. 추론이 필요 없는 제한된
+생성 작업이고, 수치·판정은 애초에 모델을 거치지 않는다(§5). 그래서 작은 모델이면 충분하다.
+
+**`gpt-5.4-mini`를 고른 근거** (2026-09-16 GMS 중계로 같은 프롬프트 실측):
+
+| | gpt-4o-mini | **gpt-5.4-mini** |
+| --- | --- | --- |
+| 응답 시간 | 1.849s | **1.715s** |
+| `reasoning_tokens` | 0 | **0** — 추론형 지연 위험 없음 |
+| 도메인 해석 | ❌ 금융 진단 결과를 시스템 모니터링 지표로 오해<br>("시스템이 정상 작동", "관련 데이터가 균형") | ✅ 재무 맥락 유지<br>("지출과 수입 흐름을 꾸준히 확인하면") |
+| 신뢰도 표현 | 단정 | 유보적("일부 변동 가능성은 염두에") — `disclaimer`와 같은 방향 |
+| 사실에 없는 숫자 | 없음 | 없음 |
+
+더 빠르면서 문장이 정확했다. `reasoning_tokens`가 0이라 추론형 모델에서 우려한 타임아웃 위험도 없다.
+
+**`temperature`는 낮게 유지한다.** 재현성 때문만이 아니라, 출력이 흔들릴수록 없는 숫자를 만들 확률이
+올라가 §5의 가드에 걸리는 빈도(= 템플릿으로 내려가는 빈도)가 는다. `gpt-5.4-mini`가 이 값을 받는 것은
+실측으로 확인했다.
+
+**교체는 코드 변경이 아니라 설정 변경이다.** 요청 본문 구성이 모델 계열마다 다르기 때문에 세 가지를
+설정으로 뺐다.
+
+| 설정 | 언제 바꾸나 |
+| --- | --- |
+| `model` | 모델 이름 |
+| `max-tokens-parameter` | 상한 필드 이름이 계열마다 다르다(`max_tokens` / `max_completion_tokens`). 틀리면 공급자가 **400**으로 거부한다 |
+| `temperature` | 이 값을 받지 않는 모델이면 **비운다**(비우면 본문에서 빠진다) |
+
+**추론형 모델로 바꿀 때는 `read-timeout`도 함께 올린다.** 내부 사고에 시간을 쓰는 모델은 12초를
+넘기기 쉽고, 그러면 `AI_UNAVAILABLE`로 조용히 템플릿에 내려간다 — 화면은 정상으로 보이므로
+느려졌다는 사실 자체가 드러나지 않는다.
+
+### 환경별 키 주입 경로
+
+| 환경 | 경로 |
+| --- | --- |
+| 운영 | `infra/.env` → `docker-compose.yml` `environment:` → 컨테이너 환경변수 → `application-prod.yml` |
+| 로컬 | 셸·IDE 환경변수 → `application-local.yml`(`${OPENAI_API_KEY:}`, **선택**) |
+| 테스트 | 주입하지 않는다. `app.ai.enabled=false` |
+
+### 8-2. 우리는 OpenAI에 직접 붙지 않는다 (SSAFY GMS 중계)
+
+`OPENAI_API_KEY`는 **OpenAI가 아니라 SSAFY GMS가 발급한 중계 토큰**이다. 이름이 `OPENAI_API_KEY`라
+오해하기 쉬우므로 여기 명시해 둔다.
+
+| 항목 | 값 |
+| --- | --- |
+| 중계 주소 규칙 | `https://gms.ssafy.io/gmsapi/<원래 호스트>/<원래 경로>` |
+| `base-url` | `https://gms.ssafy.io/gmsapi/api.openai.com` |
+| 인증 헤더 | OpenAI와 동일 — `Authorization: Bearer <토큰>` |
+| 토큰 형식 | OpenAI 형식(`sk-`)이 **아니다**. 길이도 다르다 |
+
+> **같은 토큰을 `api.openai.com`에 직접 던지면 401이 난다. 이것은 정상이며 키 문제가 아니다.**
+> 2026-09-16에 이 401을 "키가 잘렸다"로 읽고 재발급까지 갈 뻔했다(day-10 13·14절).
+> 외부 API 실패를 볼 때는 "올바른 상대에게 말하고 있는가"를 응답 코드보다 먼저 확인해야 한다.
+
+**`backend/.env`는 운영 경로에 없다.** `backend/.dockerignore`가 `.env`를 제외하고 Dockerfile도
+복사하지 않는다. `backend/.env.example`은 로컬 실행 시 개발자가 직접 주입할 값의 체크리스트일 뿐이다
+(Spring Boot는 `.env`를 자동으로 읽지 않는다 — `backend/README.md`).
+
+로컬에서 키를 비워 두는 것이 기본값이다. 로컬 실행이 실수로 과금되지 않게 하기 위해서이며,
+그때 코치는 `source: "TEMPLATE"` + `degradedReason: "AI_DISABLED"`로 정상 동작한다.
 
 ## 9. 테스트
 
@@ -191,4 +257,4 @@ app:
 - **사용자별 호출 레이트 리밋이 없다.** nginx 레이트 리밋은 로그인 경로에만 걸려 있다.
 - 군집 구간은 `pattern_analysis`에 완료 행이 있어야 채워진다. 진단의 `clusterContext`는 아직 항상 null이다
   (`DiagnosisEvaluator`가 `CLUSTER: UNAVAILABLE/CLUSTER_NOT_CONNECTED`를 남긴다) — 545가 붙으면 그대로 실린다.
-- 모델을 o-시리즈로 바꾸려면 `max_tokens` → `max_completion_tokens` 파라미터명 변경이 필요하다.
+- (해소됨) 모델 교체는 설정으로 한다 — `max-tokens-parameter`와 `temperature` 비우기. §8-1 참고.

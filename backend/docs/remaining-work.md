@@ -24,11 +24,17 @@
 
 ### 모델 교체 시 파라미터명
 
-- [ ] o-시리즈 모델로 바꾸려면 `max_tokens` → `max_completion_tokens` 변경이 필요하다(`OpenAiCoachTextGenerator`). 현재 기본값 `gpt-4o-mini`는 `max_tokens`를 받는다.
+- [x] (2026-09-16) 설정으로 뺐다 — `max-tokens-parameter`(기본 `max_tokens`)와 `temperature`(비우면 본문에서 제외). 모델 교체가 코드 변경이 아니다. [ai-coach.md](ai-coach.md) §8-1.
+- [ ] 추론형 모델로 바꾼다면 `read-timeout`(현재 PT12S)도 함께 올린다. 넘기면 `AI_UNAVAILABLE`로 조용히 템플릿에 내려가 "느려졌다"는 사실이 드러나지 않는다.
 
 ### 명세서 진행상태
 
 - [ ] `docs/API명세서/21 AI Coach ....csv`가 아직 "시작 전"이다. Notion 내보내기 파일이라 레포에서 고치면 다음 내보내기에 덮인다 — Notion에서 갱신할 것.
+
+### FE 연동
+
+- [x] (2026-09-16) [ai-coach-fe-guide.md](ai-coach-fe-guide.md) 작성 — FE가 지금 바로 붙일 수 있다(응답 캐시·다음 배포·AI 연동 어느 것도 기다릴 필요 없음). 타입·api 모듈 예시는 FE 기존 컨벤션(`apiClient.post<T>`, `@/types/*.types.ts`)에 맞췄다.
+- [ ] 다음 배포 후 FE에 알린다 — 그 전까지는 `source`가 항상 `TEMPLATE`이라 AI 분기를 실동작으로 확인할 수 없다.
 
 ### Day 11 선공유 계약
 
@@ -52,11 +58,9 @@
 
 ### 저축 프리셋의 목표 지정
 
-- [ ] 추천이 겨냥한 `goalId`로 저축 시뮬레이션을 좁히려면 명세 17 `POST /simulations/saving` 본문에 `goalId?`를 추가해야 한다(`accountNo`와 동시 지정 400, 지문·저장 파라미터 포함, 타인 목표 404).
-- 근거: FE는 원문 계좌번호가 없어 `accountNo`를 보낼 수 없다. 현재 프리셋은 계좌 미지정으로 모든 모으기 목표에 비례 배분되며 `TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT`로 드러낸다. 목표가 하나면 결과가 같다.
-- 선행 조건: 루트 API 명세 변경은 사용자 요청이 필요하다. FE 146과 함께 결정한다.
-- 담당 근거: BE-B가 맡는다. 루트 명세 변경이라 FE 146(사용처) 의견을 확인한 뒤 결정하며, 결정 전에는 착수하지 않는다.
-- 완료 조건: `goalId` 지정 실행이 해당 목표만 바꾸고 프리셋 `request.goalId`가 채워진다.
+- [x] (619, 2026-09-16) 명세 17 `POST /simulations/saving` 본문에 `goalId?`를 추가했다(`accountNo`와 동시 지정 400, 타인·없는 목표 404, 본인 SPENDING·비ACTIVE 400, 지문·저장 파라미터 포함, 복합 SAVING 자식 동일). 저축 프리셋 `request.goalId`에 추천의 goalId가 실리고 가정 `TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT`는 goalId 없는 방어 경로에만 남는다. `goalId` 없는 지문은 이전과 같아 기존 재사용이 유지되며 계산 버전은 올리지 않았다. 계약은 simulation.md §4·§11.1, recommendation-api.md §5.1, 계획은 [simulation-619-plan.md](simulation-619-plan.md).
+- 남은 것: 루트 [명세 17](../../docs/API명세서/17%20Simulation%203cdbb6ea356480a38af4c6f56a5280f2.csv) `POST /simulations/saving` Body에 `goalId?`와 "accountNo와 동시 지정 불가"를 반영해야 한다(루트 문서는 사용자 요청 시 수정). FE 146에는 프리셋 `request.goalId`와 응답 `request.goalId` 키 추가를 전달한다.
+- 관련: 입출금 계좌 다중 할당(S15P21D105-626)은 별도 기획 확인 후 진행한다.
 
 ### 테스트 컨텍스트 캐시와 공유 H2
 
