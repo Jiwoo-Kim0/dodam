@@ -4,15 +4,17 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
+import java.time.LocalTime;
 
 /**
  * PUT /api/v1/transactions/{transactionId} — 수동 거래 수정. 입력된 필드만 바꾼다.
  *
  * <p>null(또는 생략)은 "변경 없음"이다. `merchantName`·`paymentMethod`·`memo`는 빈 문자열을 보내면 값을 지운다.
- * `categoryId`는 이 API로 지울 수 없다(다른 카테고리로 바꾸는 것만 가능).
+ * `categoryId`·`transactionTime`은 이 API로 지울 수 없다(다른 값으로 바꾸는 것만 가능).
  */
 public record UpdateManualTransactionRequest(
         LocalDate transactionDate,
+        LocalTime transactionTime,
         @Size(max = 30)
         String transactionType,
         @Positive(message = "금액은 1 이상이어야 합니다.")
@@ -28,7 +30,7 @@ public record UpdateManualTransactionRequest(
 ) {
 
     public boolean isEmpty() {
-        return transactionDate == null && transactionType == null && amount == null
+        return transactionDate == null && transactionTime == null && transactionType == null && amount == null
                 && merchantName == null && categoryId == null && paymentMethod == null && memo == null;
     }
 }
