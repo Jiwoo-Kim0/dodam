@@ -129,6 +129,23 @@
    읽고-쓰는 사이의 경쟁 조건을 막아야 한다.
 5. 하나의 쓰기 트랜잭션으로 처리한다.
 
+### 재전송 방지 `Idempotency-Key` (2026-09-16)
+
+두 쓰기 API는 `Idempotency-Key` 헤더(영문·숫자·`-`·`_` 1~128자, 위반 시 400 `INVALID_REQUEST`)를 받는다. 구현은
+`global/idempotency/IdempotencyKeyGuard`, 저장소는 Redis(키 `idem:<작업>:<userId>:<키>`, TTL `app.idempotency.ttl` 기본 24시간).
+
+| 상황 | 결과 |
+| --- | --- |
+| 헤더 없음 | 보호 없이 처리(하위 호환). FE 연동 시 항상 보낼 것 |
+| 같은 키·같은 본문(계좌번호+Body 지문 일치) 재전송 | 첫 응답을 그대로 재생, 처리는 한 번 |
+| 같은 키·다른 본문 | 422 `IDEMPOTENCY_KEY_REUSED` |
+| 첫 요청이 아직 처리 중 | 409 `IDEMPOTENT_REQUEST_IN_PROGRESS`(기다리지 않음) |
+| 첫 요청이 실패(400·404·409 등) | 예약을 지워 같은 키로 재시도 가능 |
+| Redis 장애 | **보호 없이 처리하고 WARN**. 코치 캐시와 같은 이유 — Redis 연결이 실제로 검증된 적이 없어 닫아 두면 상환 자체가 막힌다 |
+
+키는 사용자·작업별로 격리되고, 원문 계좌번호는 키·저장값에 넣지 않고 지문(SHA-256)에만 섞는다. 저장값은 지문 해시와 응답 JSON이다.
+`(user, account, amount)` 시간창 차단은 정상적인 연속 상환을 막아 채택하지 않았다.
+
 ### 출금계좌 결정
 
 `minus_account`에는 `card`/`loan`/`deposit_saving`과 달리 출금계좌 컬럼이 없어 저장된 기본값이
@@ -175,9 +192,7 @@
 
 ### 미충족 사항
 
-- **중복 요청 방지가 구현되지 않았다.** 행 잠금으로 동시 요청의 경쟁 조건만 막는다. 재전송 멱등성은
-  `Idempotency-Key`와 처리 결과 저장이 필요한데 그 계약이 정해지지 않았다. 명세의 "중복 요청 방지"를
-  충족하지 못한 상태다.
+- 중복 요청 방지는 2026-09-16 `Idempotency-Key`로 구현했다(위 절). 헤더를 생략한 요청은 여전히 행 잠금만으로 보호된다.
 - **거래내역(`transaction`)에 기록하지 않는다.** 거래 원장은 BE-A 소관이고, 명세의 유일한 거래 생성
   경로인 `POST /api/v1/transactions`조차 Body에 계좌 지정 필드가 없어 시스템 생성 거래의 규약이
   정의되어 있지 않다. 임의 규칙으로 남의 원장에 쓰지 않았다. **따라서 상환 직후 거래내역 조회에는
@@ -197,6 +212,8 @@
 | `NO_ACCRUED_INTEREST` | 400 | 미수이자가 0원인데 납부 시도 |
 | `INSUFFICIENT_ACCOUNT_BALANCE` | 409 | 출금계좌 잔액 부족 |
 | `WITHDRAWAL_ACCOUNT_REQUIRED` | 400 | 출금계좌를 특정할 수 없음 |
+| `IDEMPOTENCY_KEY_REUSED` | 422 | 같은 `Idempotency-Key`로 다른 본문 재전송 |
+| `IDEMPOTENT_REQUEST_IN_PROGRESS` | 409 | 같은 키의 첫 요청이 처리 중 |
 
 ## 스키마
 
