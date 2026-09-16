@@ -1,9 +1,9 @@
-import { RefreshControl, ScrollView, View } from 'react-native';
+import { View } from 'react-native';
 
 import { AppHeader } from '@/components/appHeader/AppHeader';
+import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import { ScreenState } from '@/components/screenState/ScreenState';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
-import { colors } from '@/styles';
 
 import { AssetOverviewCard } from './components/AssetOverviewCard';
 import { AssetAnalysisCard } from './components/AssetAnalysisCard';
@@ -50,18 +50,10 @@ export function AssetsScreen() {
     >
       <AppHeader showBackButton title="내 자산" />
 
-      <ScrollView
+      <RefreshableBouncyScrollView
         contentContainerStyle={styles.scrollContent}
-        refreshControl={
-          <RefreshControl
-            colors={[colors.primary.green]}
-            onRefresh={() => void refetch()}
-            refreshing={isRefreshing}
-            tintColor={colors.primary.green}
-          />
-        }
-        showsVerticalScrollIndicator={false}
-      >
+        onRefresh={() => void refetch()}
+        refreshing={isRefreshing}>
         <AssetOverviewCard overview={overview} />
 
         {analysis ? <AssetAnalysisCard analysis={analysis} /> : null}
@@ -71,7 +63,7 @@ export function AssetsScreen() {
             <AssetSection key={section.id} section={section} />
           ))}
         </View>
-      </ScrollView>
+      </RefreshableBouncyScrollView>
     </SafeAreaLayout>
   );
 }

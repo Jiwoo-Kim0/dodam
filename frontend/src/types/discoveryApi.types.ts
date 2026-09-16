@@ -20,6 +20,8 @@ export interface DiagnosisIssueApiResponse {
   severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
   title: string;
   description: string;
+  /** 규칙별 구조가 다른 진단 스냅샷. 소비 증가 카드에서 수치를 읽는다. */
+  currentValue?: Record<string, unknown> | null;
 }
 
 export interface RecommendationEffectApiResponse {

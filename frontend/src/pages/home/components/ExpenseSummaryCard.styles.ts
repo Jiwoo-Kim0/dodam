@@ -1,43 +1,48 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, fontFamily, fontSize, radius, spacing } from '@/styles';
+import { colors, componentSize, fontFamily, fontSize, radius, spacing } from '@/styles';
 
 export const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.white,
     borderRadius: radius.card,
+    justifyContent: 'center',
+    minHeight: 84,
     paddingHorizontal: spacing[4],
-    paddingVertical: spacing[3],
+    paddingVertical: spacing[2],
     position: 'relative',
     width: '100%',
   },
-  title: {
-    color: colors.textPrimary,
-    fontFamily: fontFamily.medium,
-    fontSize: fontSize.body1,
-    lineHeight: 20,
+  cardPressed: {
+    opacity: componentSize.bottomSheet.pressedOpacity,
   },
   amount: {
     color: colors.textPrimary,
     fontFamily: fontFamily.semiBold,
     fontSize: fontSize.title,
     letterSpacing: -0.6,
-    lineHeight: 28,
-    marginTop: spacing[1],
+    lineHeight: 30,
   },
   currencyUnit: {
     fontFamily: fontFamily.regular,
-    fontSize: fontSize.caption,
+    fontSize: fontSize.body2,
     letterSpacing: -0.2,
+  },
+  label: {
+    color: colors.textSecondary,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.caption,
+    lineHeight: 16,
+    marginTop: spacing[1],
   },
   loadingIndicator: {
     alignSelf: 'flex-start',
-    marginTop: spacing[2],
+    height: 30,
   },
   errorText: {
     color: colors.textSecondary,
     fontFamily: fontFamily.regular,
     fontSize: fontSize.body2,
-    marginTop: spacing[2],
+    lineHeight: 30,
   },
 });

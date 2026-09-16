@@ -63,13 +63,13 @@ export function DiscoveryInsightsScreen() {
           <View onLayout={handleSummaryCardLayout} style={styles.summaryCard}>
             <View style={styles.summaryHeaderRow}>
               <Text style={styles.summaryLabel}>지금 바꿀 수 있는 것</Text>
-              <Text style={styles.summaryCount}>{insights.length}건</Text>
+              <Text style={styles.summaryCount}>{insights.length}개</Text>
             </View>
 
             <Text style={styles.summaryHeadline}>
               {isLoading
                 ? '진단 결과를 확인하고 있어요'
-                : `진단에서 ${insights.length}건을 발견했어요`}
+                : `확인할 내용을 ${insights.length}개로 정리했어요`}
             </Text>
 
             <View style={styles.summaryPill}>
@@ -115,21 +115,29 @@ export function DiscoveryInsightsScreen() {
                 </Text>
               </Pressable>
             ) : null}
-            {diagnosis && !isLoading ? (
-              <View>
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={!cooldown.canRun}
-                  onPress={() => { void runAnalysis(true); }}
-                  style={[styles.summaryPill, !cooldown.canRun && styles.disabledButton]}>
-                  <Text style={styles.summaryPillValue}>새로 진단하기</Text>
-                </Pressable>
-                {cooldown.label ? <Text style={styles.cooldownLabel}>{cooldown.label}</Text> : null}
-              </View>
-            ) : null}
           </View>
         </View>
       </RefreshableBouncyScrollView>
+
+      {diagnosis && !isLoading ? (
+        <View style={styles.fixedFooter}>
+          {cooldown.label ? (
+            <Text style={styles.cooldownLabel}>{cooldown.label}</Text>
+          ) : null}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ disabled: !cooldown.canRun }}
+            disabled={!cooldown.canRun}
+            onPress={() => { void runAnalysis(true); }}
+            style={({ pressed }) => [
+              styles.diagnosisButton,
+              !cooldown.canRun && styles.disabledButton,
+              pressed && cooldown.canRun && styles.diagnosisButtonPressed,
+            ]}>
+            <Text style={styles.diagnosisButtonText}>새로 진단하기</Text>
+          </Pressable>
+        </View>
+      ) : null}
     </SafeAreaLayout>
   );
 }

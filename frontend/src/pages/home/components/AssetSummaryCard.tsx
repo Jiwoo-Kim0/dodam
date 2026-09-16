@@ -1,4 +1,4 @@
-import { ActivityIndicator, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
 import { colors } from '@/styles';
 import type { AssetOverview } from '@/types/asset.types';
@@ -28,10 +28,14 @@ export function AssetSummaryCard({
   overview,
 }: AssetSummaryCardProps) {
   return (
-    <View style={styles.card}>
+    <Pressable
+      accessibilityLabel="내 자산 자세히 보기"
+      accessibilityRole="button"
+      onPress={onDetailPress}
+      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+    >
       <View style={styles.content}>
         <View style={styles.copy}>
-          <Text style={styles.title}>내 자산</Text>
           {isLoading ? (
             <ActivityIndicator
               color={colors.primary.green}
@@ -94,11 +98,7 @@ export function AssetSummaryCard({
           </View>
         ) : null}
       </View>
-      <CardDetailButton
-        accessibilityLabel="내 자산 자세히 보기"
-        centerVertically
-        onPress={onDetailPress}
-      />
-    </View>
+      <CardDetailButton />
+    </Pressable>
   );
 }

@@ -23,9 +23,21 @@ type DiscoveryLandingProps = {
 };
 
 const diagnosisItems = [
-  ['정기구독을 모아봤어요', '구독을 확인하고\n사용하지 않는 구독료를 줄여봐요'],
-  ['이 대출, 더 낮은 금리로\n갈아탈 수 있어요', '연 126,000원을 아낄 수 있어요'],
-  ['지금 쓰는 카드, 혜택을\n잘 활용하고 있나요?', '연 60,000원을 더 받을 수 있어요'],
+  {
+    description: '구독을 확인하고\n사용하지 않는 구독료를 줄여봐요',
+    icon: require('@/assets/icons/category/subscription_icon.png'),
+    title: '정기구독을 모아봤어요',
+  },
+  {
+    description: '연 126,000원을 아낄 수 있어요',
+    icon: require('@/assets/icons/common/money.png'),
+    title: '이 대출, 더 낮은 금리로\n갈아탈 수 있어요',
+  },
+  {
+    description: '연 60,000원을 더 받을 수 있어요',
+    icon: require('@/assets/icons/common/card.png'),
+    title: '지금 쓰는 카드, 혜택을\n잘 활용하고 있나요?',
+  },
 ] as const;
 
 const priorityItems = [
@@ -132,8 +144,14 @@ export function DiscoveryLanding({ onBack, onComplete }: DiscoveryLandingProps) 
                 style={styles.diagnosisImage}
               />
               <View style={styles.cardList}>
-                {diagnosisItems.map(([title, description]) => (
+                {diagnosisItems.map(({ description, icon, title }) => (
                   <View key={title} style={styles.insightCard}>
+                    <Image
+                      accessibilityIgnoresInvertColors
+                      contentFit="contain"
+                      source={icon}
+                      style={styles.insightIcon}
+                    />
                     <View style={styles.insightCopy}>
                       <Text style={styles.insightTitle}>{title}</Text>
                       <Text style={styles.insightDescription}>{description}</Text>

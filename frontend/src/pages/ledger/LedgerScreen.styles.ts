@@ -2,7 +2,6 @@ import { StyleSheet } from 'react-native';
 
 import {
   colors,
-  componentSize,
   fontFamily,
   fontSize,
   radius,
@@ -128,7 +127,7 @@ export const styles = StyleSheet.create({
     lineHeight: 22,
   },
   expenseAmount: {
-    ...typography.display,
+    ...typography.headline,
     color: colors.textPrimary,
     marginTop: spacing[1],
   },
@@ -318,8 +317,8 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.ledger.softSurface,
   },
   transactionCategoryIcon: {
-    height: componentSize.touchTarget,
-    width: componentSize.touchTarget,
+    height: 36,
+    width: 36,
   },
   transactionCategoryIconCompact: {
     height: 36,
@@ -415,6 +414,19 @@ export const styles = StyleSheet.create({
     fontFamily: fontFamily.regular,
     fontSize: fontSize.body1,
     paddingVertical: spacing[2],
+  },
+  searchClearButton: {
+    alignItems: 'center',
+    borderRadius: radius.round,
+    height: 28,
+    justifyContent: 'center',
+    width: 28,
+  },
+  searchClearIcon: {
+    color: colors.textTertiary,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.subtitle,
+    lineHeight: 22,
   },
   hiddenTransactionsButton: {
     alignSelf: 'flex-end',
@@ -737,7 +749,7 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.white,
     borderRadius: radius.round,
     flexDirection: 'row',
-    marginBottom: spacing[5],
+    marginBottom: spacing[4],
     padding: spacing[1],
   },
   typeOption: {
@@ -745,7 +757,7 @@ export const styles = StyleSheet.create({
     borderRadius: radius.round,
     flex: 1,
     justifyContent: 'center',
-    minHeight: 52,
+    minHeight: 44,
   },
   typeSelectorPill: {
     backgroundColor: colors.primary.lightGreen,
@@ -758,47 +770,67 @@ export const styles = StyleSheet.create({
   typeOptionText: {
     color: colors.textPrimary,
     fontFamily: fontFamily.medium,
-    fontSize: fontSize.button,
+    fontSize: fontSize.buttonSmall,
   },
   formCard: {
     backgroundColor: colors.white,
     borderRadius: radius.card,
-    paddingHorizontal: spacing[5],
-    paddingVertical: spacing[4],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[2],
   },
   formRow: {
     alignItems: 'center',
     borderBottomColor: colors.divider,
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
-    minHeight: 70,
+    minHeight: 56,
+  },
+  amountFieldSection: {
+    borderBottomColor: colors.divider,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  formRowWithoutDivider: {
+    borderBottomWidth: 0,
+  },
+  formRowLast: {
+    borderBottomWidth: 0,
+  },
+  formValidationText: {
+    color: colors.ledger.expense,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.caption,
+    lineHeight: 16,
+    marginTop: -spacing[1],
+    paddingBottom: spacing[2],
+    paddingLeft: 80,
   },
   formLabel: {
     color: colors.textPrimary,
     fontFamily: fontFamily.medium,
-    fontSize: 17,
-    width: 96,
+    fontSize: fontSize.buttonSmall,
+    width: 80,
   },
   formValue: {
     color: colors.textPrimary,
     flex: 1,
     fontFamily: fontFamily.regular,
-    fontSize: 16,
+    fontSize: fontSize.body1,
+    paddingRight: spacing[1],
     textAlign: 'right',
   },
   amountInput: {
     color: colors.textPrimary,
     flex: 1,
     fontFamily: fontFamily.regular,
-    fontSize: 16,
-    paddingVertical: spacing[3],
+    fontSize: fontSize.body1,
+    paddingVertical: spacing[2],
     textAlign: 'right',
   },
   amountUnit: {
     color: colors.textPrimary,
     fontFamily: fontFamily.medium,
-    fontSize: 16,
-    marginLeft: spacing[2],
+    fontSize: fontSize.body1,
+    marginLeft: spacing[1],
   },
   saveButton: {
     alignItems: 'center',

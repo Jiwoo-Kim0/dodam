@@ -343,6 +343,7 @@ export function LedgerScreen() {
         onOpenCalendar={() => setView('calendar')}
         onOpenTransaction={openTransaction}
         onPreviousMonth={() => changeMonth(-1)}
+        onSelectMonth={selectMonth}
         previousDailyTotals={previousDailyTotals}
         onRefresh={() => void refetch()}
         refreshing={isRefreshing}

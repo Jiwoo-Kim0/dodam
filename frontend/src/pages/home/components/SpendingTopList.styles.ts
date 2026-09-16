@@ -1,17 +1,21 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, fontFamily, fontSize, radius, spacing } from '@/styles';
+import { colors, componentSize, fontFamily, fontSize, radius, spacing } from '@/styles';
 
 export const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.white,
     borderRadius: radius.card,
+    minHeight: 236,
     paddingHorizontal: spacing[4],
-    paddingVertical: spacing[3],
+    paddingVertical: spacing[4],
+  },
+  cardPressed: {
+    opacity: componentSize.bottomSheet.pressedOpacity,
   },
   title: {
     color: colors.textPrimary,
-    fontFamily: fontFamily.medium,
+    fontFamily: fontFamily.semiBold,
     fontSize: fontSize.body1,
     lineHeight: 20,
   },
@@ -19,10 +23,10 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing[2],
-    paddingVertical: spacing[2],
+    paddingVertical: spacing[3],
   },
   firstRow: {
-    marginTop: spacing[1],
+    marginTop: 0,
   },
   separatedRow: {
     borderTopColor: colors.divider,
@@ -49,7 +53,7 @@ export const styles = StyleSheet.create({
     color: colors.textPrimary,
     flex: 1,
     fontFamily: fontFamily.regular,
-    fontSize: fontSize.caption,
+    fontSize: fontSize.body2,
     lineHeight: 18,
   },
   categoryAmount: {
@@ -60,6 +64,7 @@ export const styles = StyleSheet.create({
   },
   amountGroup: {
     alignItems: 'flex-end',
+    gap: spacing[1],
   },
   changeGroup: {
     alignItems: 'center',
@@ -70,8 +75,8 @@ export const styles = StyleSheet.create({
   changeLabel: {
     color: colors.textSecondary,
     fontFamily: fontFamily.regular,
-    fontSize: fontSize.micro,
-    lineHeight: 14,
+    fontSize: fontSize.caption,
+    lineHeight: 16,
   },
   status: {
     marginVertical: spacing[4],

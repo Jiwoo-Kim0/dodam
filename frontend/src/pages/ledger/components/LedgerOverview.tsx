@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { AppHeader } from '@/components/appHeader/AppHeader';
@@ -18,6 +19,7 @@ import {
   TransactionRow,
 } from './LedgerShared';
 import { SpendingTrendSparkline } from './SpendingTrendSparkline';
+import { YearMonthPickerBottomSheet } from './YearMonthPickerBottomSheet';
 
 interface LedgerOverviewProps {
   year: number;
@@ -32,6 +34,7 @@ interface LedgerOverviewProps {
   onPreviousMonth: () => void;
   onNextMonth: () => void;
   onOpenCalendar: () => void;
+  onSelectMonth: (year: number, month: number) => void;
   onOpenTransaction: (transactionId: string) => void;
   onRefresh: () => void;
   refreshing: boolean;
@@ -76,10 +79,12 @@ export function LedgerOverview({
   onPreviousMonth,
   onNextMonth,
   onOpenCalendar,
+  onSelectMonth,
   onOpenTransaction,
   onRefresh,
   refreshing,
 }: LedgerOverviewProps) {
+  const [isMonthPickerVisible, setIsMonthPickerVisible] = useState(false);
   const categoryById = new Map(categories.map((category) => [category.id, category]));
   const visibleTransactions = transactions.filter((transaction) => !transaction.hidden);
   const recentTransactions = [...visibleTransactions]
@@ -128,6 +133,7 @@ export function LedgerOverview({
         <MonthSelector
           month={month}
           onNext={onNextMonth}
+          onPressLabel={() => setIsMonthPickerVisible(true)}
           onPrevious={onPreviousMonth}
           year={year}
         />
@@ -135,7 +141,7 @@ export function LedgerOverview({
         <View style={[styles.card, styles.expenseSummaryCard]}>
           <View style={styles.expenseSummaryContent}>
             <View style={styles.expenseSummaryCopy}>
-              <Text style={styles.cardEyebrow}>이번 달 쓴 돈</Text>
+              <Text style={styles.cardEyebrow}>{`${month}월 쓴 돈`}</Text>
               <Text adjustsFontSizeToFit numberOfLines={1} style={styles.expenseAmount}>
                 {formatNumber(summary.expense)}
                 <Text style={styles.expenseAmountUnit}>원</Text>
@@ -154,7 +160,7 @@ export function LedgerOverview({
         </View>
 
         <View style={[styles.card, styles.sectionCard]}>
-          <Text style={styles.categorySectionTitle}>이번 달 소비 TOP 3</Text>
+          <Text style={styles.categorySectionTitle}>{`${month}월 소비 TOP 3`}</Text>
           {categorySummaries.length > 0 ? (
             <View style={styles.categorySummaryList}>
               {categorySummaries.map((item) => (
@@ -184,14 +190,14 @@ export function LedgerOverview({
             </View>
           ) : (
             <View style={styles.sectionEmptyState}>
-              <Text style={styles.emptyStateText}>이번 달 소비 내역이 없어요.</Text>
+              <Text style={styles.emptyStateText}>{`${month}월 소비 내역이 없어요.`}</Text>
             </View>
           )}
         </View>
 
         <View style={[styles.card, styles.activityCard]}>
           <View style={styles.glanceSection}>
-            <Text style={styles.sectionTitle}>이번 달 한눈에</Text>
+            <Text style={styles.sectionTitle}>{`${month}월 한눈에`}</Text>
             <View style={styles.glanceStats}>
               <View style={styles.glanceStat}>
                 <Text style={styles.glanceLabel}>하루 평균</Text>
@@ -250,13 +256,24 @@ export function LedgerOverview({
                 ))
               ) : (
                 <View style={styles.sectionEmptyState}>
-                  <Text style={styles.emptyStateText}>이번 달 거래 내역이 없어요.</Text>
+                  <Text style={styles.emptyStateText}>{`${month}월 거래 내역이 없어요.`}</Text>
                 </View>
               )}
             </View>
           </View>
         </View>
       </RefreshableBouncyScrollView>
+
+      <YearMonthPickerBottomSheet
+        month={month}
+        onClose={() => setIsMonthPickerVisible(false)}
+        onConfirm={(nextYear, nextMonth) => {
+          setIsMonthPickerVisible(false);
+          onSelectMonth(nextYear, nextMonth);
+        }}
+        visible={isMonthPickerVisible}
+        year={year}
+      />
     </View>
   );
 }
