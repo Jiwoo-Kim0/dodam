@@ -103,7 +103,7 @@ export function DiscoveryHome({
               <Text style={styles.summaryText}>
                 {isLoading
                   ? '진단 결과를 확인하고 있어요'
-                  : `진단에서 ${insights.length}건 발견했어요`}
+                  : `지금 확인할 내용 ${insights.length}개`}
               </Text>
               <Text style={styles.summarySubtext}>
                 각 항목에서 추천과 예상 효과를 확인해 보세요

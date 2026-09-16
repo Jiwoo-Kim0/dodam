@@ -63,13 +63,13 @@ export function DiscoveryInsightsScreen() {
           <View onLayout={handleSummaryCardLayout} style={styles.summaryCard}>
             <View style={styles.summaryHeaderRow}>
               <Text style={styles.summaryLabel}>지금 바꿀 수 있는 것</Text>
-              <Text style={styles.summaryCount}>{insights.length}건</Text>
+              <Text style={styles.summaryCount}>{insights.length}개</Text>
             </View>
 
             <Text style={styles.summaryHeadline}>
               {isLoading
                 ? '진단 결과를 확인하고 있어요'
-                : `진단에서 ${insights.length}건을 발견했어요`}
+                : `확인할 내용을 ${insights.length}개로 정리했어요`}
             </Text>
 
             <View style={styles.summaryPill}>
