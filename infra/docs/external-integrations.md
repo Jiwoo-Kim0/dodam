@@ -70,8 +70,32 @@ API Key는 `.env`에 설정 완료.
 
 API Key는 `.env`에 설정 완료.
 
+**사용처**: API 21 AI Coach (S15P21D105-589, 2026-09-16부터). 구현 문서는
+[`backend/docs/ai-coach.md`](../../backend/docs/ai-coach.md).
+
+```yaml
+app:
+  ai:
+    api-key: ${OPENAI_API_KEY}   # application-prod.yml
+    model: gpt-4o-mini
+```
+
+```yaml
+# infra/docker-compose.yml (backend environment)
+OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+```
+
+> **2026-09-16 이전에는 키가 컨테이너에 전달되지 않았다.** `.env`에는 Day 5부터 있었지만
+> compose의 backend `environment:`에 줄이 없어 앱 입장에서는 없는 것과 같았다. 589에서 추가했다.
+
+`:-` 기본값을 둔 이유: 키가 비어도 백엔드는 정상 기동하고 코치만 템플릿 응답으로 내려간다
+(기획안 11-3의 대체 방법). 배포를 막을 사안이 아니다. 대신 `application-prod.yml`이
+`${OPENAI_API_KEY}`를 참조하므로 `check-env.sh` 3-1이 "compose의 전달 줄이 사라졌는지"는 계속 감시한다.
+
 > 비용 관리는 OpenAI 콘솔에서 사용량 알림을 설정할 것. 인프라 범위 밖이지만
 > 키가 유출되면 과금으로 직결되므로 `.env` 권한(600)과 백업 원칙을 지킬 것.
+> **2026-09-16부터 실제 호출이 나가기 시작했으므로 한도 설정이 더는 미룰 일이 아니다.**
+> 코치에는 아직 응답 캐시도 사용자별 레이트 리밋도 없다(`backend/docs/remaining-work.md` 589).
 
 ---
 
@@ -387,7 +411,8 @@ EAS가 keystore를 관리하므로 **인프라가 보관해야 할 서명 키는
 | 항목 | 상태 | 담당 |
 | --- | --- | --- |
 | SSAFY 금융망 API Key | ✅ 설정됨 | 백엔드 |
-| OpenAI API Key | ✅ 설정됨 | ? |
+| OpenAI API Key | ✅ 설정됨 + compose 전달 (2026-09-16, 589) | 인프라 |
+| OpenAI 사용량 한도·결제 알림 | ⬜ **미설정** — 2026-09-16부터 실제 호출 시작 | 사용자 |
 | Firebase 서비스 계정 키 | ✅ 발급·마운트 완료 (2026-09-10) | 인프라 |
 | Kakao 앱 생성 + 앱 ID(`1573091`) | ✅ `.env` 설정 완료 (2026-09-16) | 인프라 |
 | Kakao 네이티브 앱 키 | ✅ FE 전달 완료 | 인프라 |

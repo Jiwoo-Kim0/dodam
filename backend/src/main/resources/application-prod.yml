@@ -34,6 +34,12 @@ app:
     hash-key: ${DATA_HASH_KEY}
   ssafy-finance:
     api-key: ${SSAFY_FINANCE_API_KEY}
+  ai:
+    # OPENAI_API_KEY는 infra/.env에 있고 docker-compose.yml이 backend로 전달한다.
+    # 여기(-prod)에 두는 이유: check-env.sh의 앱↔compose 대조가 application-prod.yml만 읽으므로,
+    # 병합 중 compose의 전달 줄이 유실되면 배포 전에 잡힌다(소셜 로그인 2줄이 겪은 사고의 반대 경우).
+    # 값이 비어도 기동은 성공하고 코치만 템플릿 응답으로 내려간다.
+    api-key: ${OPENAI_API_KEY}
   pattern:
     # 군집 모델은 커밋된 Python 학습 아티팩트(classpath:ml/spending-kmeans-v1.json)만 쓴다. 아티팩트가 없으면 Java가 임의 학습하지 않고 RULE_ONLY(MODEL_NOT_AVAILABLE)로 전환한다.
     train-in-process: false
