@@ -8,7 +8,7 @@ import type {
   RecommendationApiResponse,
 } from '@/types/discoveryApi.types';
 
-import { toDiscoveryInsight, type DiscoveryInsight } from '../discoveryModel';
+import { toDiscoveryInsights, type DiscoveryInsight } from '../discoveryModel';
 import { diagnosisCooldown } from '../diagnosisCooldown';
 import { useDiagnosisCooldown } from './useDiagnosisCooldown';
 
@@ -67,8 +67,7 @@ export function useDiscoveryData() {
       // 순위는 연 절감액 내림차순이다. 서버 목록 순서(심각도·생성순)와 다르므로 여기서 다시 세운다.
       // 절감액을 산정하지 못한 문제는 뒤로 보낸다.
       setInsights(
-        issues
-          .map((issue) => toDiscoveryInsight(issue, recommendations, 0))
+        toDiscoveryInsights(issues, recommendations)
           .sort(
             (left, right) =>
               (right.annualSavingAmount ?? -1) - (left.annualSavingAmount ?? -1),
