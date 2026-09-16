@@ -88,6 +88,22 @@ export const styles = StyleSheet.create({
     paddingTop: spacing[5],
     paddingBottom: spacing[5],
   },
+  listState: {
+    alignItems: 'center',
+    gap: spacing[3],
+    justifyContent: 'center',
+    minHeight: 96,
+  },
+  listStateText: {
+    ...typography.body2,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  retryLabel: {
+    ...typography.body2,
+    color: colors.primary.green,
+    fontFamily: fontFamily.semiBold,
+  },
   goalCard: {
     minHeight: 92,
     flexDirection: 'row',
