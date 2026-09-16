@@ -2,20 +2,20 @@
 
 프론트엔드(`frontend/src/api/*`)가 호출하는 엔드포인트와 백엔드(`backend/.../controller/*`)가 실제로 제공하는 엔드포인트를 1:1로 대조한 결과다. 명세서가 아니라 **현재 코드 기준**이며, 두 영역이 어긋난 곳과 아직 연결되지 않은 곳을 한 번에 보기 위한 문서다.
 
-- 기준 커밋: `develop` @ `36be8a7` (2026-09-16, `origin/develop`과 동일).
-- 대조 범위: FE `src/api` 13개 모듈의 호출 84건, BE 컨트롤러 36개의 매핑 215건.
+- 기준 커밋: `develop` @ `684eb02` (2026-09-16, `origin/develop`과 동일). 2026-09-16 저녁 기준 **병합 대기 MR 8건**(§8)의 변경은 해당 행에 `(MR !nnn)`로 표시했다 — 병합 전에는 develop 코드와 다르다.
+- 대조 범위: FE `src/api` 13개 모듈의 호출 84건, BE 컨트롤러 36개의 매핑 215건(!152 병합 후 216건).
 - 판정 기준: 경로·HTTP 메서드·쿼리/바디 파라미터 이름·응답 DTO 필드명과 null 가능성·enum 값을 코드에서 직접 비교했다. 실제 요청을 보내 검증한 것은 아니다.
 
 ## 1. 요약
 
 | 구분 | 건수 |
 | --- | ---: |
-| BE 제공 엔드포인트 | 215 |
+| BE 제공 엔드포인트 | 215 (!152 병합 후 216) |
 | FE가 호출하는 엔드포인트 | 84 |
 | 그중 경로·메서드·파라미터·응답 필드가 모두 일치 | 84 |
 | 불일치(호출이 실패하거나 필드가 깨지는 경우) | 0 |
-| 참고 사항(동작에는 문제 없으나 FE 타입이 BE보다 좁거나 넓은 경우) | 5 (§4) |
-| BE에만 있고 FE가 아직 호출하지 않는 엔드포인트 | 131 (§5) |
+| 참고 사항(동작에는 문제 없으나 FE 타입이 BE보다 좁거나 넓은 경우) | 6 (§4) |
+| BE에만 있고 FE가 아직 호출하지 않는 엔드포인트 | 131 (!152 병합 후 132) (§5) |
 | FE에서 mock 데이터로 그리는 화면 | 업무 데이터 기준 0건, 표시용 상수 2건 (§6) |
 
 ## 2. 공통 계약 호환성
@@ -81,9 +81,9 @@ FE `financeErrorCodes` 7개(`FINANCE_CONNECTION_NOT_FOUND`, `FINANCE_ALREADY_CON
 | `getAccountSummary` | `GET /v1/accounts/summary` | `AccountAnalysisController.getSummary` | 없음 | `AccountSummaryResponse` 14필드 | 일치 |
 | `getAccountBalanceSummary` | `GET /v1/accounts/balance-summary` | `AccountAnalysisController.getBalanceSummary` | 없음 | `{totalCash, accountCount, accounts[]{accountId,bankName,accountNoMasked,accountName,status,balance,sharePercent}}` | 일치 |
 | `getInactiveAccounts` | `GET /v1/accounts/inactive` | `AccountAnalysisController.getInactiveAccounts` | FE는 기본값 사용 (BE `inactiveMonths?` 1~120, `maxBalance?`) | `{criteria{inactiveMonths,maxBalance,asOfDate}, count, totalBalance, accounts[]}` | 일치 |
-| `getCards` | `GET /v1/cards` | `CardQueryController.getCards` | FE는 필터 없이 호출 | `CardApiResponse[]` = `CardResponse` 10필드 + `withdrawalAccount{bankCode,bankName,accountName,accountNoMasked,accountType}` | 일치 |
+| `getCards` | `GET /v1/cards` | `CardQueryController.getCards` | FE는 필터 없이 호출 | `CardApiResponse[]` = `CardResponse` 10필드 + `withdrawalAccount{bankCode,bankName,accountName,accountNoMasked,accountType}`. MR !150 병합 후 `cardId` 추가 | 일치(참고 §4-6) |
 | `getCardPaymentSchedules` | `GET /v1/cards/payment-schedules` | `CardQueryController.getPaymentSchedules` | `startDate?`, `endDate?` (ISO date) | `{startDate,endDate,totalScheduledAmount,schedules[]{cardNoMasked,cardName,billingMonth,billingDate,scheduledAmount,status}}` | 일치 |
-| `getLoans` | `GET /v1/loans` | `LoanQueryController.getLoans` | FE는 필터 없이 호출 | `LoanApiResponse[]` = `LoanResponse` 13필드 | 일치 |
+| `getLoans` | `GET /v1/loans` | `LoanQueryController.getLoans` | FE는 필터 없이 호출 | `LoanApiResponse[]` = `LoanResponse` 13필드. MR !155 병합 후 `loanId` 추가 | 일치(참고 §4-6) |
 | `getLoanSummary` | `GET /v1/loans/summary` | `LoanQueryController.getSummary` | 없음 | `{loanCount,totalOriginalPrincipal,totalBalance,monthlyRepayment,weightedAverageRate,nextRepaymentDate,loanTypes[]{loanType,loanCount,balance}}` | 일치 |
 | `getDepositSavings` | `GET /v1/deposit-savings` | `DepositSavingQueryController.list` | `type? ∈ DEPOSIT,SAVINGS`, `status? ∈ ACTIVE,INACTIVE,CLOSED`, `page`, `size`(FE 기본 100) | `PageResponse<DepositSavingResponse>` 12필드 | 일치 |
 | `getDepositSavingSummary` | `GET /v1/deposit-savings/summary` | `DepositSavingQueryController.summary` | 없음 | `{totalCount,totalBalance,depositCount,depositBalance,savingsCount,savingsBalance,reason}` | 일치 |
@@ -143,7 +143,7 @@ FE `financeErrorCodes` 7개(`FINANCE_CONNECTION_NOT_FOUND`, `FINANCE_ALREADY_CON
 | FE 함수 | 요청 | BE 핸들러 | 파라미터 | 응답 | 상태 |
 | --- | --- | --- | --- | --- | --- |
 | `runSpendingSimulation` | `POST /v1/simulations/spending` | `SimulationController.spending` (200 재사용/201 신규) | `{category?, monthlyReduction, durationMonths?}` = `SpendingSimulationRequest` | `SimulationRunResponse{simulation, created}` | 일치 |
-| `runSavingSimulation` | `POST /v1/simulations/saving` | `SimulationController.saving` | `{accountNo?, monthlySavingAmount, durationMonths?}` ⊂ `SavingSimulationRequest` | `SimulationRunResponse` | 일치(참고 §4-1) |
+| `runSavingSimulation` | `POST /v1/simulations/saving` | `SimulationController.saving` | `{accountNo?, monthlySavingAmount, durationMonths?}` ⊂ `SavingSimulationRequest` | `SimulationRunResponse` | 일치(참고 §4-1). 루트 명세 17 반영은 MR !153 |
 | `getSimulations` | `GET /v1/simulations` | `SimulationController.list` | `type?`, `page`, `size` | `PageResponse<SimulationSummaryResponse>` 7필드 | 일치 |
 | `getSimulation` | `GET /v1/simulations/{id}` | `SimulationController.detail` | path | `SimulationResponse` (`request/before/after/comparison/cashflow`는 BE `JsonNode`, FE는 `backend/docs/simulation.md` §9 구조로 타입 정의) | 일치(참고 §4-2) |
 | `getSimulationComparison` | `GET /v1/simulations/{id}/comparison` | `SimulationController.comparison` | path | `{items[], assets[], debts[], costs[]}` 각 `{key,label,before,after,delta}` | 일치 |
@@ -158,7 +158,7 @@ FE `financeErrorCodes` 7개(`FINANCE_CONNECTION_NOT_FOUND`, `FINANCE_ALREADY_CON
 | `diagnosisApi.getIssue` | `GET /v1/diagnoses/{id}/issues/{issueId}` | `DiagnosisController.issue` | path | `DiagnosisIssueResponse` | 일치(참고 §4-5) |
 | `recommendationApi.generate` | `POST /v1/recommendations/generate` | `RecommendationController.generate` | `{diagnosisId}` ⊂ `GenerateRecommendationRequest{diagnosisId, goalId?}` | `RecommendationGenerationApiResponse{diagnosisId,created,reused}` ⊂ `RecommendationGenerationResponse{…, goalId, items[], skipped[]}` | 일치(참고 §4-5) |
 | `recommendationApi.getRecommendations` | `GET /v1/recommendations` | `RecommendationController.list` | `page`, `size`(FE 고정 100) | `PageResponse<RecommendationApiResponse>` | 일치(참고 §4-5) |
-| `recommendationApi.getRecommendation` | `GET /v1/recommendations/{id}` | `RecommendationController.detail` | path | `RecommendationApiResponse{recommendationId,diagnosisId,sourceIssueId,domain,type,title,description,priority,status,effect,simulation?}` ⊂ `RecommendationResponse`(+`goalId`, `createdAt`, `updatedAt`); `effect{available,monthlyCostSaving,annualCostSaving,interestSaving,advancedDays}` ⊂ `RecommendationEffectResponse` 11필드; `simulation` = `RecommendationSimulationPreset{available,type?,endpoint?,request?,unavailableReason?,assumptions[]}` | 일치(참고 §4-5) |
+| `recommendationApi.getRecommendation` | `GET /v1/recommendations/{id}` | `RecommendationController.detail` | path | `RecommendationApiResponse{recommendationId,diagnosisId,sourceIssueId,domain,type,title,description,priority,status,effect,simulation?}` ⊂ `RecommendationResponse`(+`goalId`, `createdAt`, `updatedAt`); `effect{available,monthlyCostSaving,annualCostSaving,interestSaving,advancedDays}` ⊂ `RecommendationEffectResponse` 11필드; `simulation` = `RecommendationSimulationPreset{available,type?,endpoint?,request?,unavailableReason?,assumptions[]}`. MR !155 병합 후 대환 프리셋 `request`에 `loanId`가 실리고 `ACCOUNT_NO_REQUIRED_BY_CLIENT`는 더 나오지 않음 | 일치(참고 §4-5·§4-6) |
 
 ### 3.10 AI 코치 (`coachApi`)
 
@@ -187,9 +187,11 @@ FE `financeErrorCodes` 7개(`FINANCE_CONNECTION_NOT_FOUND`, `FINANCE_ALREADY_CON
 4. **목표 연결 계좌 626 배분 필드**: BE `GoalAccountsResponse.Item`은 `allocatedToThisGoal`, `allocatedElsewhere`, `availableToAllocate`, `shortfallAmount`, `allocationStatus`를 추가로 내려준다. FE `GoalAccountApiResponse`는 `contributionAmount`까지만 선언돼 있어 배분 현황을 화면에 쓰려면 타입을 넓혀야 한다.
 5. **FE 타입이 BE 응답의 부분집합인 경우**: 진단(`DiagnosisResponse`의 `createdAt`, `ruleVersion`, `overallStatus`, `highSeverityCount`, `coverage`, `assumptions`), 진단 문제(`currentValue`, `benchmarkValue`, `evidence`, `detectionSource`, `modelVersion`, `clusterContext`, `detectedAt`), 추천(`goalId`, `createdAt`, `updatedAt`, `effect`의 `riskReduction`·`currentForecastDate`·`improvedForecastDate`·`contributionAmount`·`measuredAt`·`assumptions`), 추천 생성(`goalId`, `items[]`, `skipped[]`). FE가 쓰는 필드만 선언한 것이라 동작에는 영향 없다. `RecommendationSimulationApiResponse.unavailableReason`은 FE가 4개 값만 열거했지만 BE 상수는 7개(`REDUCTION_APPLIES_TO_TOTAL_SPENDING`, `TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT`, `ACCOUNT_NO_REQUIRED_BY_CLIENT`는 `assumptions`용)라 문자열로 넓혀 두는 편이 안전하다.
 
+6. **병합 대기 MR로 생기는 FE 타입 갭(§8)**: !150 `CardApiResponse.cardId`, !155 `LoanApiResponse.loanId`·`RecommendationSimulationRequestApiResponse.loanId`, !156 `RecommendationSummary`(FE 미호출)의 `discovery`, !151 적금 예상금액(FE 미호출)의 `tax`·`expectedNetInterest`와 `expectedAmount` 의미 변경(세전→세후), !152 `GET /installments/burden`(FE 미호출), !157 마이너스통장 쓰기 `Idempotency-Key` 헤더(FE 미호출). 모두 추가 필드·추가 헤더라 지금 FE 호출을 깨뜨리지 않는다. FE 타입에 `cardId`·`loanId`를 넣으면 리볼빙·대환 프리셋 실행 경로가 열린다.
+
 FE 타입 union과 BE enum은 다음을 모두 확인했고 값이 같다: `AccountType`, `AccountStatus`, `InstallmentStatus`, `FinanceConnectionStatus`, `FinanceSyncScope/Status`, `SimulationType/Status`, `GoalType/Status`, `RiskSeverity`, `IssueSeverity`, `RecommendationStatus`, `CoachTopic/Source/DegradedReason`, `EventDirection`, `UserRole`, `TransactionType`, `SpendingType`, `TransactionSourceType`(FE는 `SSAFY|MANUAL|SEED`, BE 동일).
 
-## 5. BE에만 있고 FE가 아직 호출하지 않는 엔드포인트 (131)
+## 5. BE에만 있고 FE가 아직 호출하지 않는 엔드포인트 (131, !152 병합 후 132)
 
 FE 화면 연동 시 그대로 쓸 수 있는 API다. 계약은 각 `backend/docs/*.md`를 따른다. 경로는 `/api/v1` 접두어를 생략했다.
 
@@ -205,7 +207,7 @@ FE 화면 연동 시 그대로 쓸 수 있는 API다. 계약은 각 `backend/doc
 | Deposit | `GET /deposits/{accountNo}`, `/{accountNo}/early-termination`, `/{accountNo}/maturity-forecast`, `/{accountNo}/rate-comparison` | `deposit-detail.md` |
 | Savings | `GET /savings/{accountNo}`, `/{accountNo}/payments`, `/{accountNo}/early-termination`, `/{accountNo}/maturity-forecast`, `/{accountNo}/rate-comparison`, `/payment-schedules`, `/monthly-amount`, `/cashflow-burden`, `/disposable-balance` | `savings.md` |
 | Deposit/Savings 통합 | `GET /deposit-savings/maturities`, `/rate` | `deposit-savings.md` |
-| Installment | `GET /installments/{installmentId}`, `/forecast` | `installment-query.md` |
+| Installment | `GET /installments/{installmentId}`, `/forecast`, `/burden`(MR !152) | `installment-query.md` |
 | Spending | `GET /spending/progress`, `/goal-comparison` | `spending-aggregation.md` |
 | Cashflow | `POST /cashflow/forecasts`; `GET /cashflow/forecasts/latest`, `/daily-balances`, `/available-today` | `cashflow*.md` |
 | Goal | `GET /goals/summary` | `goal.md` |
@@ -244,3 +246,20 @@ grep -rnE "apiClient\.(get|post|postWithStatus|put|patch|delete)<" frontend/src/
 ```
 
 응답 필드는 `frontend/src/types/*Api.types.ts`와 `backend/.../dto/response/*.java`를, enum은 `backend/.../entity/*.java`를 직접 비교한다.
+
+## 8. 병합 대기 MR (2026-09-16 저녁 기준)
+
+아래가 병합되면 §1·§3·§5의 `(MR !nnn)` 표기를 지우고 수치를 확정한다. 모두 `develop` `684eb02` 기준 브랜치이며 각각 전체 테스트를 통과했다.
+
+| MR | 내용 | FE에 미치는 영향 |
+| --- | --- | --- |
+| !150 | `GET /cards` 목록·상세에 `cardId` | `CardApiResponse`에 `cardId: number` 추가 권장 — `GET /installments?cardId=`·리볼빙 시뮬레이션 입력 |
+| !151 | 예·적금 이자소득세·중도해지이율 정책 통합 | 적금 `early-termination`·`maturity-forecast` 응답 변경(`tax`, `expectedNetInterest` 추가, `expectedAmount` 세후). FE 미호출 |
+| !152 | `GET /installments/burden` 신규 | 미호출. 응답 `{scheduledAmount, availableAmount, availableAmountBasis{…}, burdenRatePercent, unavailableReason}` |
+| !153 | 루트 명세 17 `goalId?`·8 `cardId`·18-1 범위 제외 | 문서 |
+| !154 | 545 군집 제외·532 보류 결정 기록 | 문서 |
+| !155 | 대환·추가상환 본문 `loanId?`, `GET /loans` `loanId`, 프리셋에 `loanId` | `LoanApiResponse.loanId`, `RecommendationSimulationRequestApiResponse.loanId` 타입 추가 권장 — 대환 프리셋을 그대로 POST 가능 |
+| !156 | `GET /recommendations/summary`에 `discovery{diagnosisId, issueCount, openRecommendationCount, expectedAnnualCostSaving, expectedGoalAdvanceDays, notes[]}` | 미호출. 발견 화면 통합 수치용, 형태 확인 필요 |
+| !157 | 마이너스통장 상환·이자납부 `Idempotency-Key` 헤더 | 미호출. 연동 시 헤더 항상 전송 |
+
+명세 미반영: `GET /loans` `loanId`(명세 10), `discovery`(명세 16), `GET /installments/burden` 응답(명세 9는 파라미터만 정의)은 FE 확인 후 반영한다.
