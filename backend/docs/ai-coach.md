@@ -153,7 +153,7 @@
 app:
   ai:
     enabled: true
-    base-url: https://api.openai.com
+    base-url: https://gms.ssafy.io/gmsapi/api.openai.com   # SSAFY GMS 중계
     chat-path: /v1/chat/completions
     model: gpt-4o-mini
     max-tokens: 600
@@ -199,9 +199,21 @@ app:
 | 로컬 | 셸·IDE 환경변수 → `application-local.yml`(`${OPENAI_API_KEY:}`, **선택**) |
 | 테스트 | 주입하지 않는다. `app.ai.enabled=false` |
 
-`base-url`·`chat-path`가 설정인 이유도 같다. OpenAI에 직접 붙지 않고 **중계 서버를 거치는 경우**
-(교육기관이 발급한 토큰 등) 호스트만 바꿔 끼우면 된다. 이때 키는 OpenAI 형식(`sk-`)이 아닐 수 있고,
-`api.openai.com`에 직접 던지면 401이 나는 것이 정상이다 — 그 401을 키가 무효하다는 근거로 읽으면 안 된다.
+### 8-2. 우리는 OpenAI에 직접 붙지 않는다 (SSAFY GMS 중계)
+
+`OPENAI_API_KEY`는 **OpenAI가 아니라 SSAFY GMS가 발급한 중계 토큰**이다. 이름이 `OPENAI_API_KEY`라
+오해하기 쉬우므로 여기 명시해 둔다.
+
+| 항목 | 값 |
+| --- | --- |
+| 중계 주소 규칙 | `https://gms.ssafy.io/gmsapi/<원래 호스트>/<원래 경로>` |
+| `base-url` | `https://gms.ssafy.io/gmsapi/api.openai.com` |
+| 인증 헤더 | OpenAI와 동일 — `Authorization: Bearer <토큰>` |
+| 토큰 형식 | OpenAI 형식(`sk-`)이 **아니다**. 길이도 다르다 |
+
+> **같은 토큰을 `api.openai.com`에 직접 던지면 401이 난다. 이것은 정상이며 키 문제가 아니다.**
+> 2026-09-16에 이 401을 "키가 잘렸다"로 읽고 재발급까지 갈 뻔했다(day-10 13·14절).
+> 외부 API 실패를 볼 때는 "올바른 상대에게 말하고 있는가"를 응답 코드보다 먼저 확인해야 한다.
 
 **`backend/.env`는 운영 경로에 없다.** `backend/.dockerignore`가 `.env`를 제외하고 Dockerfile도
 복사하지 않는다. `backend/.env.example`은 로컬 실행 시 개발자가 직접 주입할 값의 체크리스트일 뿐이다

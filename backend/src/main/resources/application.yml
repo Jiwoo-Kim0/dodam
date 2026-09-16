@@ -38,7 +38,11 @@ app:
     # API 21 AI 코치(backend/docs/ai-coach.md). 서버가 계산한 값을 문장으로 옮기는 용도로만 쓴다.
     # api-key가 비어 있으면 호출하지 않고 템플릿 응답으로 내려간다(기동은 정상) — 값은 프로필별로 준다.
     enabled: true
-    base-url: https://api.openai.com
+    # SSAFY GMS 중계. OpenAI에 직접 붙지 않는다 — OPENAI_API_KEY는 OpenAI가 아니라 GMS가 발급한
+    # 중계 토큰이고, 같은 값을 api.openai.com에 직접 던지면 401이다(정상이다. 키 문제가 아니다).
+    # 중계 경로 규칙: https://gms.ssafy.io/gmsapi/<원래 호스트>/<원래 경로>
+    # 인증 헤더는 OpenAI와 같은 `Authorization: Bearer <토큰>`을 그대로 쓴다.
+    base-url: https://gms.ssafy.io/gmsapi/api.openai.com
     chat-path: /v1/chat/completions
     # 모델 선정 근거: 코치가 하는 일은 "이미 계산된 사실 목록 → 2문단 400자 이내 한국어"다.
     # 추론이 필요 없는 제한된 생성 작업이라 작은 모델로 충분하고, 값이 싸고 응답이 빨라
