@@ -27,4 +27,11 @@ export const styles = StyleSheet.create({
     fontSize: fontSize.buttonSmall,
     lineHeight: 20,
   },
+  emptyMessage: {
+    color: colors.textTertiary,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.body2,
+    lineHeight: 19,
+    marginTop: spacing[3],
+  },
 });
