@@ -34,8 +34,8 @@ import org.springframework.stereotype.Component;
  *       {@code CATEGORY_SPENDING_INCREASE}의 evidence {@code categoryCode}, {@code monthlyReduction = effect.monthlyCostSaving}.</li>
  *   <li>LOAN/REFINANCE_LOAN(627) → {@code POST /simulations/loan/refinance}, {@code targetProductId}는 근거
  *       {@code REFINANCE_INTEREST_SAVING}의 evidence, {@code refinanceAmount = null}(잔액 전액). 절감액을 추정하지 못한 추천(대상 상품
- *       없음)은 {@code REFINANCE_TARGET_MISSING}. 명세 17 대환 본문은 {@code accountNo}만 받는데 FE는 마스킹 번호만 가지므로
- *       {@code accountNo = null}과 가정 {@code ACCOUNT_NO_REQUIRED_BY_CLIENT}를 함께 싣는다(619의 goalId처럼 loanId 본문 확장이 후속).</li>
+ *       없음)은 {@code REFINANCE_TARGET_MISSING}. 대출은 evidence의 {@code loanId}로 지정한다(2026-09-16 명세 17 본문 확장) —
+ *       FE는 마스킹 번호만 가져 {@code accountNo}를 만들 수 없기 때문이다. evidence에 {@code loanId}가 없으면 {@code SNAPSHOT_FIELD_MISSING}.</li>
  *   <li>CASHFLOW/SECURE_SHORTAGE_BUFFER → 대응 유형 없음.</li>
  * </ul>
  * {@code durationMonths}는 null로 두어 시뮬레이션 기본값을 따르고, {@code accountNo}는 원문 번호를 응답에 싣지 않는 정책상 항상 null이다.
@@ -122,9 +122,12 @@ public class RecommendationSimulationPresetAssembler {
             if (targetProductId == null || targetProductId <= 0) {
                 return RecommendationSimulationPreset.unavailable(RecommendationSimulationPreset.REFINANCE_TARGET_MISSING);
             }
+            Long loanId = longOf(evidence, HighInterestLoanGenerator.LOAN_ID_FIELD);
+            if (loanId == null || loanId <= 0) {
+                return RecommendationSimulationPreset.unavailable(RecommendationSimulationPreset.SNAPSHOT_FIELD_MISSING);
+            }
             return RecommendationSimulationPreset.of(SimulationType.LOAN_REFINANCE, LOAN_REFINANCE_ENDPOINT,
-                    new LoanRefinanceSimulationRequest(null, targetProductId, null),
-                    List.of(RecommendationSimulationPreset.ACCOUNT_NO_REQUIRED_BY_CLIENT));
+                    new LoanRefinanceSimulationRequest(null, loanId, targetProductId, null), List.of());
         }
         return RecommendationSimulationPreset.unavailable(RecommendationSimulationPreset.NO_MATCHING_SIMULATION_TYPE);
     }

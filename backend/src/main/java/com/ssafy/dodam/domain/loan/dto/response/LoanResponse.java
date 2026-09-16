@@ -8,6 +8,7 @@ import java.time.LocalDate;
  * 보유 대출 목록 항목. 계좌번호는 마스킹 값만 노출한다.
  */
 public record LoanResponse(
+        Long loanId,
         String accountNoMasked,
         String accountName,
         String institutionCode,
@@ -25,6 +26,7 @@ public record LoanResponse(
 
     public static LoanResponse from(Loan loan) {
         return new LoanResponse(
+                loan.getId(),
                 loan.getAccountNoMasked(),
                 loan.getAccountName(),
                 loan.getInstitutionCode(),

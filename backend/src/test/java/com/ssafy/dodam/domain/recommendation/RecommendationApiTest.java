@@ -476,8 +476,9 @@ class RecommendationApiTest {
         assertThat(refinance.at("/simulation/endpoint").asText()).isEqualTo("/api/v1/simulations/loan/refinance");
         assertThat(refinance.at("/simulation/request/targetProductId").asLong()).isEqualTo(productA);
         assertThat(refinance.at("/simulation/request/accountNo").isNull()).isTrue();
+        assertThat(refinance.at("/simulation/request/loanId").asLong()).isPositive();
         assertThat(refinance.at("/simulation/request/refinanceAmount").isNull()).isTrue();
-        assertThat(refinance.at("/simulation/assumptions/0").asText()).isEqualTo("ACCOUNT_NO_REQUIRED_BY_CLIENT");
+        assertThat(refinance.at("/simulation/assumptions").isEmpty()).isTrue();
         assertThat(generated).doesNotContain("9900000000011");
         long refinanceId = refinance.at("/recommendationId").asLong();
         mvc.perform(get("/api/v1/recommendations/{id}/reasons", refinanceId).with(user(fresh.toString())))

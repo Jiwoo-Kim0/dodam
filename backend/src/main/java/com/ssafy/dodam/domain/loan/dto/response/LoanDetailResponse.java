@@ -8,6 +8,7 @@ import java.time.LocalDate;
  * 대출 상세. 목록 항목에 기간과 상환 진행 정보를 더한다.
  */
 public record LoanDetailResponse(
+        Long loanId,
         String accountNoMasked,
         String accountName,
         String institutionCode,
@@ -30,6 +31,7 @@ public record LoanDetailResponse(
         long originalPrincipal = loan.getOriginalPrincipal() == null ? 0L : loan.getOriginalPrincipal();
         long balance = loan.getBalance() == null ? 0L : loan.getBalance();
         return new LoanDetailResponse(
+                loan.getId(),
                 loan.getAccountNoMasked(),
                 loan.getAccountName(),
                 loan.getInstitutionCode(),

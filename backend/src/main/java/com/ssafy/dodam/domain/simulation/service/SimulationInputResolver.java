@@ -7,6 +7,7 @@ import com.ssafy.dodam.domain.goal.entity.Goal;
 import com.ssafy.dodam.domain.goal.entity.GoalStatus;
 import com.ssafy.dodam.domain.goal.entity.GoalType;
 import com.ssafy.dodam.domain.goal.repository.GoalRepository;
+import com.ssafy.dodam.domain.loan.entity.Loan;
 import com.ssafy.dodam.domain.loan.repository.LoanRepository;
 import com.ssafy.dodam.domain.product.repository.FinancialProductRepository;
 import com.ssafy.dodam.domain.simulation.dto.CashAdvanceInput;
@@ -38,6 +39,7 @@ import com.ssafy.dodam.global.security.SensitiveNumberHasher;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -66,6 +68,7 @@ public class SimulationInputResolver {
     static final String CARD_NOT_FOUND_MESSAGE = "카드를 찾을 수 없습니다.";
     static final String GOAL_NOT_FOUND_MESSAGE = "목표를 찾을 수 없습니다.";
     static final String GOAL_AND_ACCOUNT_BOTH_MESSAGE = "goalId와 accountNo는 함께 지정할 수 없습니다.";
+    static final String LOAN_ACCOUNT_OR_ID_MESSAGE = "accountNo와 loanId 중 하나만 지정해야 합니다.";
     static final String GOAL_NOT_SAVING_MESSAGE = "모으기 목표만 지정할 수 있습니다.";
     static final String GOAL_NOT_ACTIVE_MESSAGE = "진행 중인 목표만 지정할 수 있습니다.";
     private final TransactionCategoryRepository categories;
@@ -140,11 +143,12 @@ public class SimulationInputResolver {
 
     /** {@code paymentDate}는 여기서 채우지 않는다. 기준일은 Runner가 한 번 얻고 {@code withBaseDate}로 채운다. */
     public LoanPrepaymentInput resolve(Long userId, LoanPrepaymentSimulationRequest request) {
-        return new LoanPrepaymentInput(ownedLoanId(userId, request.accountNo()), request.prepaymentAmount(), request.paymentDate());
+        return new LoanPrepaymentInput(ownedLoanId(userId, request.accountNo(), request.loanId()), request.prepaymentAmount(),
+                request.paymentDate());
     }
 
     public LoanRefinanceInput resolve(Long userId, LoanRefinanceSimulationRequest request) {
-        return new LoanRefinanceInput(ownedLoanId(userId, request.accountNo()), existingProductId(request.targetProductId()),
+        return new LoanRefinanceInput(ownedLoanId(userId, request.accountNo(), request.loanId()), existingProductId(request.targetProductId()),
                 request.refinanceAmount());
     }
 
@@ -197,10 +201,19 @@ public class SimulationInputResolver {
         return productId;
     }
 
-    private Long ownedLoanId(Long userId, String accountNo) {
-        return loans.findByUserIdAndAccountNoHash(userId, hasher.hash(accountNo.strip()))
-                .orElseThrow(() -> new ResourceNotFoundException(LOAN_NOT_FOUND_MESSAGE))
-                .getId();
+    /**
+     * 계좌번호 원문 또는 내부 {@code loanId} 중 정확히 하나로 본인 대출을 찾는다. 두 경로 모두 타인·미존재는 같은 404라
+     * 식별자 방식에 따라 존재 노출 정도가 달라지지 않는다.
+     */
+    private Long ownedLoanId(Long userId, String accountNo, Long loanId) {
+        boolean hasAccount = accountNo != null && !accountNo.isBlank();
+        if (hasAccount == (loanId != null)) {
+            throw new InvalidRequestException(LOAN_ACCOUNT_OR_ID_MESSAGE);
+        }
+        Optional<Loan> loan = hasAccount
+                ? loans.findByUserIdAndAccountNoHash(userId, hasher.hash(accountNo.strip()))
+                : loans.findByIdAndUserId(loanId, userId);
+        return loan.orElseThrow(() -> new ResourceNotFoundException(LOAN_NOT_FOUND_MESSAGE)).getId();
     }
 
     private static int orDefault(Integer durationMonths) {

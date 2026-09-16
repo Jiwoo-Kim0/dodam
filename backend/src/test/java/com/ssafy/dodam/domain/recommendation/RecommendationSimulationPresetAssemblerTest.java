@@ -172,8 +172,8 @@ class RecommendationSimulationPresetAssemblerTest {
         assertThat(preset.available()).isTrue();
         assertThat(preset.type()).isEqualTo(SimulationType.LOAN_REFINANCE);
         assertThat(preset.endpoint()).isEqualTo("/api/v1/simulations/loan/refinance");
-        assertThat(preset.request()).isEqualTo(new LoanRefinanceSimulationRequest(null, 40L, null));
-        assertThat(preset.assumptions()).containsExactly(RecommendationSimulationPreset.ACCOUNT_NO_REQUIRED_BY_CLIENT);
+        assertThat(preset.request()).isEqualTo(new LoanRefinanceSimulationRequest(null, 5L, 40L, null));
+        assertThat(preset.assumptions()).isEmpty();
 
         // 절감액을 추정하지 못한 추천은 대상 상품 근거가 없다
         given(reasons.findAllOwnedIn(7L, List.of(8L))).willReturn(List.of(
