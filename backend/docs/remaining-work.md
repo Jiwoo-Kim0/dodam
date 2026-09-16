@@ -629,6 +629,13 @@
 
 구현 계약: [transaction-query.md](transaction-query.md) "수동 거래 등록·수정·삭제"
 
+### 거래 시각 입력
+
+- [x] (2026-09-16) 등록·수정 Body에 `transactionTime?`(HH:mm / HH:mm:ss)을 추가했다. FE 현금거래 추가 화면이 "지출시간"으로 날짜·시각을 함께 고르는데 Body에 시각이 없어 수동 거래가 전부 시각 null로 저장되고, 같은 날 거래가 시간순으로 정렬되지 않았다. 시각을 생략하면 예전처럼 null이라 기존 호출은 그대로 동작한다.
+- [ ] API 명세서(Notion, 6 Transaction) 수동 거래 등록·수정 Body에 `transactionTime?`을 반영한다. 레포의 `docs/API명세서/6 Transaction Spending*.csv`는 Notion 내보내기라 직접 고치지 않았다.
+- [ ] FE 인계: (1) `ledgerMappers.ts`의 시각 변환이 `transactionTime.slice(0, 5)`를 null 확인 없이 호출해 시각 없는 거래(기존 수동 거래·시각 없는 금융망 거래)가 한 건이라도 있으면 목록 로드가 실패할 수 있다. (2) `ledgerApi.ts`에 등록·수정·삭제 호출이 없어 화면의 저장이 로컬 상태만 바꾼다. draft의 `transactionTime`을 Body에 함께 보내야 이 변경이 효과를 낸다.
+- 결정: 시각은 현재 시각과 비교하지 않는다(거래일만 "오늘 이후 불가"). 앱과 서버의 시계가 몇 분 어긋나면 방금 등록한 거래가 거절되기 때문이다. 시각을 지우는(null로 되돌리는) 경로는 두지 않았다. 필요해지면 FE와 빈 문자열 규약을 정한다.
+
 ### 계좌 연결 여부
 
 - [ ] 수동 거래는 계좌·카드에 연결되지 않는다(`account_id` null). 명세 Body에 계좌 필드가 없어서다. 그래서 계좌 거래내역(5)·계좌 잔액·`last_transaction_date`·현금흐름 예측에는 잡히지 않고, 전체 거래 목록(6)과 소비 집계에만 나타난다.

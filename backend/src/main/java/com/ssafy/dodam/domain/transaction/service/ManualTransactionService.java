@@ -24,6 +24,8 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>수동 거래는 계좌·카드에 연결되지 않은 사용자 입력 원장이다(`source_type = MANUAL`, `account_id`·`card_id`·`balance_after` null).
  * 명세 Body에 계좌 지정 필드가 없으므로 계좌 잔액·`last_transaction_date`는 건드리지 않는다.
+ * 거래 시각(`transactionTime`)은 선택이며 사용자가 준 값을 그대로 저장한다. 거래일만 "오늘 이후 불가"를 검증하고 시각은 현재 시각과
+ * 비교하지 않는다(앱과 서버의 시계 차이로 방금 등록한 거래가 거절되는 일을 막기 위해).
  * 금융망·seed 출처 거래는 수정·삭제할 수 없다(400 {@code TRANSACTION_NOT_MANUAL}). 그 거래의 메모·카테고리·숨김은 504 PATCH가 맡는다.
  */
 @Service
@@ -61,6 +63,7 @@ public class ManualTransactionService {
                 newId(),
                 userId,
                 transactionDate,
+                request.transactionTime(),
                 type,
                 request.amount(),
                 normalizeText(request.merchantName()),
@@ -88,7 +91,7 @@ public class ManualTransactionService {
                 ? null
                 : requireNotFuture(request.transactionDate(), now.toLocalDate());
         TransactionType type = request.transactionType() == null ? null : parseType(request.transactionType());
-        transaction.updateManualDetails(transactionDate, type, request.amount(), now);
+        transaction.updateManualDetails(transactionDate, request.transactionTime(), type, request.amount(), now);
 
         if (request.merchantName() != null) {
             transaction.changeMerchantName(normalizeText(request.merchantName()), now);

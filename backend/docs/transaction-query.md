@@ -111,15 +111,20 @@ SAVING, TRANSFER, INCOME, ETC).
 
 ## 수동 거래 등록·수정·삭제 (505)
 
-수동 거래는 계좌·카드에 연결되지 않은 사용자 입력 원장이다. `source_type = MANUAL`, `account_id`·`card_id`·`balance_after`·
-`transaction_time`은 null, `payment_method`는 사용자가 준 코드(CASH/CARD/ACCOUNT 등, 대문자 저장)다. 명세 Body에 계좌 지정 필드가
+수동 거래는 계좌·카드에 연결되지 않은 사용자 입력 원장이다. `source_type = MANUAL`, `account_id`·`card_id`·`balance_after`는 null,
+`payment_method`는 사용자가 준 코드(CASH/CARD/ACCOUNT 등, 대문자 저장)다. 명세 Body에 계좌 지정 필드가
 없으므로 계좌 잔액·`last_transaction_date`·현금흐름에는 영향을 주지 않는다(534가 남긴 "원장 쓰기 규약 없음" 문제를 그대로 따른 것).
+
+`transaction_time`은 선택 입력이다(2026-09-16 추가). FE 현금거래 추가 화면의 "지출시간"이 날짜와 시각을 함께 고르는데 Body에 시각이 없어
+수동 거래가 전부 시각 null로 저장되고, 목록 정렬(`transaction_date DESC, transaction_time DESC, transaction_id DESC`)에서 같은 날
+거래의 맨 뒤로 몰려 시간순 정렬이 되지 않았다. 시각을 생략하면 예전처럼 null이다.
 
 ### 등록 `POST /transactions` → 201
 
 | 필드 | 규칙 |
 | --- | --- |
 | `transactionDate` | 필수. 오늘 이후면 400 |
+| `transactionTime` | 선택. `HH:mm` 또는 `HH:mm:ss`. 파싱 불가(예: `25:00`)면 400 `INVALID_REQUEST`. 현재 시각과 비교하지 않는다(앱·서버 시계 차이로 방금 등록한 거래가 거절되지 않게). 응답은 `HH:mm:ss` |
 | `transactionType` | 필수. INCOME / EXPENSE / TRANSFER, 대소문자 무시 |
 | `amount` | 필수. 1 이상 |
 | `merchantName` | 선택. 255자 이하, 앞뒤 공백 제거, 빈 값은 null |
@@ -134,7 +139,8 @@ SAVING, TRANSFER, INCOME, ETC).
 
 - **MANUAL 거래만.** SSAFY·seed 거래는 400 `TRANSACTION_NOT_MANUAL`(그 거래의 메모·카테고리·숨김은 504 PATCH로).
 - 입력된 필드만 바꾼다. null(생략)은 변경 없음. 모든 필드가 비어 있으면 400 `NO_FIELDS_TO_UPDATE`.
-- `merchantName`·`paymentMethod`·`memo`는 빈 문자열을 보내면 값을 지운다. `categoryId`는 이 API로 지울 수 없다(다른 카테고리로 바꾸는 것만).
+- `merchantName`·`paymentMethod`·`memo`는 빈 문자열을 보내면 값을 지운다. `categoryId`·`transactionTime`은 이 API로 지울 수 없다(다른 값으로 바꾸는 것만).
+  시각이 없던 거래에 `transactionTime`만 보내 채울 수 있다.
 - 검증(미래 거래일, 알 수 없는 유형, 없는 카테고리 등)에 하나라도 걸리면 어떤 필드도 바뀌지 않는다.
 - 값이 전부 같으면 `updated_at`을 건드리지 않고 현재 상태를 200으로 돌려준다(중복 요청 방지, 504와 같은 규칙).
 
@@ -161,6 +167,7 @@ SAVING, TRANSFER, INCOME, ETC).
 - `TransactionMemoPolicyTest`: 메모 정규화·길이·금칙문자 규칙.
 - `ManualTransactionApiIntegrationTest`(505): 등록(전체·최소 필드, 카테고리 기본 소비유형), 검증 실패(필수값·금액·미래 거래일·유형·카테고리·결제수단·메모),
   부분 수정·빈 문자열로 지우기·중복 요청·빈 Body, SSAFY 거래 수정·삭제 거절, 타인 거래 404, 삭제 후 404.
+  거래 시각: `HH:mm`·`HH:mm:ss` 등록, `25:00` 400, 같은 날 목록이 시각 내림차순이고 시각 null이 맨 뒤, 시각만 수정, 같은 시각 재전송은 `updated_at` 유지.
 
 ## 남은 작업
 
