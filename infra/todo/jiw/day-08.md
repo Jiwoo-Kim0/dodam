@@ -765,6 +765,113 @@ $ docker inspect -f "{{.State.StartedAt}} {{.State.Health.Status}}" backend
 | 서버가 **401 `SOCIAL_TOKEN_INVALID`** | 토큰 만료·위조, 또는 다른 앱의 토큰(`KAKAO_APP_ID` 대조) |
 | 서버가 **503 `SOCIAL_PROVIDER_UNAVAILABLE`** | 카카오 API 장애·타임아웃 (네트워크는 20절에서 확인됨) |
 
+### 24. `ddl-auto` 임시 조치 제거 — `validate` 복귀 (16:1x)
+
+2026-09-08부터 compose에서 `SPRING_JPA_HIBERNATE_DDL_AUTO: none`으로 덮어쓰고 있던
+임시 조치를 제거했다. 이제 `application-prod.yml`의 `ddl-auto: validate`가 그대로 적용된다.
+
+**그냥 빼지 않고 3단계로 확인했다.** 이 설정이 어긋나면 백엔드가 기동 자체를 못 하고
+재시작 루프 → 외부 502가 된다(09-08에 실제로 겪었다).
+
+**1) 원인 해소 여부** — 임시 조치를 넣은 이유는 엔티티에 대응하는 Flyway 마이그레이션이
+없었기 때문이다. 현재는 들어와 있다.
+
+```
+운영 DB flyway_schema_history : 총 25건, 실패 0건, 최신 V35 (2026-09-16 15:20 적용)
+레포 db/migration             : 25개 (V1~V19, V30~V35)
+```
+
+**2) 운영 DB 대상 validate 드라이런** — 실행 중인 backend는 건드리지 않고 일회용 컨테이너로
+스키마 대조만 했다. `SPRING_FLYWAY_ENABLED=false`로 두어 **DB를 변경하지 않는다.**
+
+```bash
+docker compose run --rm --no-deps \
+  -e SPRING_JPA_HIBERNATE_DDL_AUTO=validate \
+  -e SPRING_FLYWAY_ENABLED=false \
+  backend
+```
+
+결과: `Schema-validation` / `SchemaManagementException` **0건**,
+`Started DodamApplication in 16.271 seconds` · `Tomcat started on port 8080` 정상 기동.
+(종료 코드 124는 `timeout`이 끊은 것으로, 앱이 계속 떠 있었다는 뜻이다)
+
+**3) compose 수정 후 정적 확인** — PyYAML 파싱 OK, `SPRING_JPA_HIBERNATE_DDL_AUTO` 잔존 없음.
+
+주석은 지우지 않고 **"해소됨"으로 바꿔 경위를 남겼다.** 같은 문제가 재발했을 때
+"예전에 왜 이걸 껐었는지"를 다시 파헤치지 않도록.
+
+> ⚠️ **적용 시점은 다음 배포다.** 지금부터 다음 배포 사이에 마이그레이션 없는 엔티티가
+> 들어오면 그 배포에서 기동 실패가 난다. 드라이런은 지금 시점의 스키마에 대한 것이다.
+
+#### 곁다리 확인 — `OPENAI_API_KEY`가 backend environment에 추가돼 있었다
+
+develop 병합으로 들어온 변경이다. check-env의 필수 변수가 15개 → 16개가 됐고,
+`.env`에 이미 설정돼 있어 11:33 배포가 정상 통과했다. 조치 불필요.
+
+### 25. cron 작업 실패 알림 경로 신설 (16:5x) — `cron-notify.sh`
+
+2026-09-15에 일일 백업이 실패했는데 `backup.log`에만 남고 아무도 몰랐던 문제를 닫는다.
+cron은 기본적으로 결과를 메일로 보내지만 **이 서버에는 MTA가 없어 그대로 버려진다.**
+`container-watch.sh`는 컨테이너만 보므로 cron 작업의 실패는 감지 대상이 아니었다.
+
+#### `infra/scripts/cron-notify.sh` (신규)
+
+cron 작업을 감싸는 래퍼다. `cron-notify.sh <작업이름> <명령...>` 형태로 쓴다.
+
+- 명령 출력을 **그대로 표준출력에 흘린다** → 기존 로그 리다이렉션이 달라지지 않는다
+- 종료 코드가 0이 아니면 Mattermost로 작업명·종료 코드·시작 시각·출력 끝 20줄 전송
+- 종료 코드를 그대로 반환한다
+- 성공하면 `~/.cron-heartbeat/<작업이름>`에 시각을 남긴다
+
+알림 전송은 `container-watch.sh`에서 이미 검증된 python3 urllib 패턴을 그대로 썼다.
+출력은 **인자가 아니라 파일에서 읽는다** — 길이 제한에 걸리고 프로세스 목록에도 남기 때문.
+
+#### `container-watch.sh` — heartbeat 확인 추가
+
+**실패 알림만으로는 부족하다.** cron 자체가 멈추거나 crontab에서 줄이 사라지면
+작업이 아예 실행되지 않고, 그러면 실패할 일도 없어서 알림도 없다.
+그래서 5분마다 도는 `container-watch.sh`에서 "마지막 성공이 얼마나 오래됐는지"를 같이 본다.
+
+```
+CRON_JOBS="backup:1560"   # 작업이름:허용지연(분). 매일 04:00이므로 26시간
+```
+
+알림 제목도 `컨테이너 이상 감지` → `인프라 이상 감지`로 넓혔다.
+
+#### 검증 (EC2에서 실제 실행, 알림은 전송하지 않음)
+
+| 테스트 | 결과 |
+| --- | --- |
+| 성공 케이스 | exit 0, heartbeat 파일 생성됨 |
+| 실패 케이스 (exit 7) | 출력 통과, `exit=7` 그대로 반환, webhook 미설정 시 정상 생략 |
+| `container-watch` heartbeat 없음 | `- cron \`backup\`: 성공 기록이 없음` 감지 |
+
+webhook을 비운 임시 `.env`로 돌려 **팀 채널에 테스트 알림이 가지 않게 했다.**
+실제 전송 경로는 아직 이 스크립트로 검증하지 않았다(같은 코드가 `container-watch.sh`에서
+운영 중이라 동작은 하지만, 한 번 실제로 쏴보는 것이 남아 있다).
+
+#### heartbeat 시드 (선반영)
+
+`container-watch.sh`가 배포되는 순간 heartbeat 파일이 없으면 5분마다 "성공 기록 없음"을
+알리게 된다. 그래서 **마지막 성공 백업 시각으로 미리 시드했다.**
+
+```
+/home/ubuntu/.cron-heartbeat/backup = 1789498804 (2026-09-16 04:00, 최신 덤프 mtime)
+```
+
+#### ⚠️ crontab 수정은 배포 후에 한다
+
+crontab이 가리킬 `cron-notify.sh`가 EC2에 아직 없다. 먼저 crontab을 바꾸면
+04:00에 "파일 없음"으로 **백업이 아예 돌지 않는다.** 순서는 배포 → crontab 수정이다.
+
+```
+# 배포 후 적용할 crontab
+0 4 * * * /home/ubuntu/app/infra/scripts/cron-notify.sh backup /home/ubuntu/app/infra/scripts/backup.sh >> /home/ubuntu/backups/backup.log 2>&1
+```
+
+`deploy.sh`가 `git reset --hard`로 맞추므로 신규 파일이 충돌할 일은 없다
+(EC2에는 `/tmp`에만 복사해 테스트했고 레포 경로에는 두지 않았다).
+
 ## 남은 것
 - [ ] 이 수정 develop 머지 후 첫 배포에서 `infra-backend:deployed` 태그 생성 확인
 - [ ] 롤백 경로 실제 검증 — 일부러 깨는 커밋으로 "코드+이미지가 함께 되돌아오는지" 확인
@@ -774,7 +881,9 @@ $ docker inspect -f "{{.State.StartedAt}} {{.State.Health.Status}}" backend
 - [ ] 배포 후 로그인 레이트 리밋이 실제로 걸리는지 확인 (연속 요청으로 429 유도)
 - [x] ~~`backup.sh` SIGPIPE 버그 수정~~ — 완주 표식 검증으로 교체, 11:53 백업 성공으로 공백 해소 (16절)
 - [x] ~~`*.sql.gz.partial` 보관 정리 대상 포함~~ — 16절에서 함께 수정
-- [ ] **cron 작업 실패를 알릴 경로가 없다** — 09-15 백업 실패가 `backup.log`에만 남고 아무도 몰랐다. `container-watch.sh`는 컨테이너만 본다
+- [x] ~~cron 작업 실패를 알릴 경로가 없다~~ — 25절, `cron-notify.sh` 신설 + `container-watch.sh` heartbeat 확인
+- [ ] **배포 후 crontab을 `cron-notify.sh` 경유로 수정** (25절 마지막 블록. 배포 전에 바꾸면 백업이 안 돈다)
+- [ ] `cron-notify.sh`의 실제 Mattermost 전송 1회 검증 (팀 채널에 테스트 알림이 가므로 사전 합의 필요)
 - [ ] 시연 비밀번호를 `backend/database/seeds/README.md`에 문서화 (**백엔드 담당자**)
 - [ ] `DODAM_DEMO_PASSWORD_SEED.sql`을 레포에 포함 (**백엔드 담당자**)
 - [ ] FE가 Expo 웹으로 붙을 계획이면 `CORS_ALLOWED_ORIGINS` 추가 (현재 `http://localhost:8081` 하나)
@@ -791,4 +900,5 @@ $ docker inspect -f "{{.State.StartedAt}} {{.State.Health.Status}}" backend
 - [x] ~~구글 동의 화면 **테스트 사용자** 등록~~ — 2026-09-16 완료(사용자 직접). 이후 합류하는 팀원은 그때마다 추가 필요
 - [x] ~~EC2 → `kapi.kakao.com` / `www.googleapis.com` 아웃바운드 연결성 확인~~ — 20절, 호스트·컨테이너 모두 도달 확인
 - [ ] 카카오·구글 콘솔 앱 등록 후 `.env`에 `KAKAO_APP_ID`·`GOOGLE_CLIENT_ID` 채우고 backend 재기동
-- [ ] `SPRING_JPA_HIBERNATE_DDL_AUTO: none` 제거하고 `validate` 복귀 — **선행 조건 충족됨**(V18·V19 적용 완료)
+- [x] ~~`SPRING_JPA_HIBERNATE_DDL_AUTO: none` 제거하고 `validate` 복귀~~ — 24절, 드라이런 통과 후 제거. **다음 배포에서 기동 확인 필요**
+- [ ] 다음 배포에서 backend가 `validate`로 정상 기동하는지 확인 (실패 시 즉시 롤백 대상)
