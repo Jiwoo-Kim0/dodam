@@ -51,6 +51,12 @@
 - [x] (2026-09-16) 설정으로 뺐다 — `max-tokens-parameter`(기본 `max_tokens`)와 `temperature`(비우면 본문에서 제외). 모델 교체가 코드 변경이 아니다. [ai-coach.md](ai-coach.md) §8-1.
 - [ ] 추론형 모델로 바꾼다면 `read-timeout`(현재 PT12S)도 함께 올린다. 넘기면 `AI_UNAVAILABLE`로 조용히 템플릿에 내려가 "느려졌다"는 사실이 드러나지 않는다.
 
+### 완료 진단 판별이 두 곳에 있다
+
+- [ ] "완료된 진단만 본다"(`filter(Diagnosis::isCompleted)`)가 `DiagnosisQueryService:70`과 `CoachFactAssembler:369` 두 곳에 있다. 지금은 같지만 진단 쪽 조건이 바뀌면(예: 취소 상태 추가) 코치는 따라가지 않는다 — 조용히 갈라지는 종류의 중복이다.
+- 해법 제안: `DiagnosisRepository`에 `findCompletedByDiagnosisIdAndUserId` 같은 메서드를 두고 양쪽이 공유한다. 조회 서비스를 호출하는 방식은 코치가 DTO 변환·페이징을 거치게 되고 도메인 결합이 생겨 택하지 않았다(코치가 리포지토리를 직접 쓰는 이유는 [ai-coach.md](ai-coach.md) §3-1).
+- 담당 근거: `DiagnosisRepository`는 진단 도메인 소유라 589에서 임의로 고치지 않았다.
+
 ### 명세서 진행상태
 
 - [ ] `docs/API명세서/21 AI Coach ....csv`가 아직 "시작 전"이다. Notion 내보내기 파일이라 레포에서 고치면 다음 내보내기에 덮인다 — Notion에서 갱신할 것.

@@ -68,6 +68,52 @@
 - 남의 리소스와 없는 리소스는 모두 **404 `RESOURCE_NOT_FOUND`**로 같다. 구분해 주면 ID를 훑어 남의 진단
   존재 여부를 셀 수 있다. 미완료 진단도 같은 이유로 404다(`DiagnosisQueryService`와 동일한 계약).
 
+### 3-1. 어디서 읽는가 — 리포지토리 직접 조회
+
+코치는 **다른 도메인 서비스도, 자기 서버 HTTP도 거치지 않는다.** `CoachFactAssembler`가 주입받는 것은
+리포지토리 5개뿐이고, 조회는 JPA/JPQL이다(생 SQL·`JdbcTemplate`·`nativeQuery` 없음).
+
+`DiagnosisQueryService` 같은 조회 서비스를 쓰지 않는 이유는 두 가지다.
+
+1. **소유권이 이미 쿼리 안에 있다.** `diagnosis_issue`·`recommendation_reason`에는 `user_id` 컬럼이
+   없어 리포지토리의 `@Query`가 상위 테이블을 조인해 `userId` 조건을 건다. 그 메서드를 쓰면 소유권
+   검증이 따라온다.
+2. **코치는 새로 계산하지 않는다.** 서비스가 제공하는 가공(페이징·DTO 변환·프리셋 조립)이 필요 없다.
+
+### 3-2. 무엇을 읽고, 무엇을 읽지 않는가
+
+**읽는 것** — 전부 다른 도메인이 이미 계산해 저장한 결과다.
+
+| 테이블 | 읽는 컬럼 | 쓰이는 topic |
+| --- | --- | --- |
+| `diagnosis` | `diagnosisId`, `goalId`, `issueCount`, `highSeverityCount`, `overallStatus`, `ruleVersion`, `completedAt`, `inputSnapshot`(→ `coverage`만) | 요약, 비효율 |
+| `diagnosis_issue` | `domain`, `type`, `severity`, `title`, `description`, `currentValue`, `benchmarkValue`, `evidence`, `clusterContext`, `detectionSource`, `modelVersion`, `detectedAt` | 요약(제목·심각도), 비효율(전부) |
+| `recommendation` | `domain`, `type`, `title`, `description`, `priority`, `status`, `createdAt`, 효과 8종 | 추천 |
+| `recommendation_reason` | `code`, `description`, `evidence` | 추천 |
+| `pattern_analysis` | `clusterLabel`, `modelVersion`, `sampleSize`, `confidence`, `clusterStats`(→ 이탈 상위 3개 특징) | 요약 |
+
+조회 메서드는 5개뿐이며 전부 `userId` 조건이 쿼리 안에 있다:
+`findByDiagnosisIdAndUserId` · `findFirstByUserIdAndCompletedAtIsNotNull…` ·
+`findAllOwned` · `findOwnedById` · `findByRecommendationIdAndUserId` · `findOwned`(reason) ·
+`findFirstByUserIdAndStatus…`(pattern).
+
+**읽지 않는 것 — 이것이 민감정보 방어의 1단이다(§6).**
+
+| 테이블 | |
+| --- | --- |
+| `user` | 이름·이메일을 **아예 읽지 않는다** |
+| `account`, `card`, `loan`, `transaction`, `subscription` | 원천 금융 데이터를 보지 않는다 |
+| `finance_connection`, `auth_session` | 읽지 않는다 |
+
+이름·주소처럼 형태가 없는 값은 정규식으로 잡을 수 없다. 그래서 **애초에 쿼리에 넣지 않는 것**으로
+처리했고, 덕분에 송신 직전 검사(§6-2)가 이메일·계좌번호처럼 형태가 분명한 것만 봐도 된다.
+
+**남은 구멍**: JSON 컬럼 4종(`currentValue`·`benchmarkValue`·`evidence`·`clusterContext`)은 스키마가
+고정돼 있지 않다. 진단 규칙이 늘면 키도 는다. 현재 `evidence`에 `targetId`·`forecastId` 같은 내부
+식별자가 들어 있는 것이 확인돼 있고 `CoachEvidenceReader`가 걸러내지만, 앞으로 어떤 규칙이 무슨 키를
+넣을지는 코치가 통제할 수 없다. 그래서 2단 검사를 둔다. 넣으면 안 될 값이 생기면 진단·추천 쪽에서
+막는 것이 맞다 — **코치는 마지막 방어선이지 유일한 방어선이면 안 된다.**
+
 ## 4. 프롬프트에 무엇이 들어가는가
 
 `CoachFacts` = `subject` + `sections[]{title, facts[]{label, value}}` + `notes[]`. **모든 `value`는 서버가 포맷한 문자열이다.**
@@ -135,8 +181,10 @@ FE 문구 정비 요청으로 정해진 계약이다. 화면에서 AI 문장이 
 
 ## 6. 민감정보 제외
 
-2단 방어다.
+3단 방어다. 가장 바깥이 "애초에 읽지 않는 것"이다.
 
+0. **쿼리 단계** — 사용자 이름·이메일과 원천 금융 데이터를 **읽지 않는다**(§3-2). 형태가 없어
+   정규식으로 못 잡는 값은 여기서 배제된다.
 1. **조립 단계** — `CoachEvidenceReader`가 스키마 미고정 JSON 컬럼(`currentValue`, `benchmarkValue`,
    `evidence`, `clusterContext`)에서 실을 값을 고른다. 이 컬럼들은 의도적으로 스키마를 고정하지 않았고
    (`DiagnosisIssue` 주석), 이미 `targetId`·`forecastId` 같은 내부 식별자가 들어 있다.
