@@ -155,9 +155,10 @@ app:
     enabled: true
     base-url: https://api.openai.com
     chat-path: /v1/chat/completions
-    model: gpt-4o-mini          # max_tokens 파라미터를 받는 모델이어야 한다(o-시리즈는 파라미터명이 다르다)
-    temperature: 0.2
+    model: gpt-4o-mini
     max-tokens: 600
+    max-tokens-parameter: max_tokens   # 계열에 따라 max_completion_tokens
+    temperature: 0.2                   # 비우면 요청 본문에서 빠진다
     max-attempts: 2
     connect-timeout: PT3S
     read-timeout: PT12S
@@ -171,6 +172,25 @@ app:
 - `infra/docker-compose.yml` backend `environment:`에 `OPENAI_API_KEY: ${OPENAI_API_KEY:-}`를 추가했다.
   키는 Day 5에 발급해 EC2 `.env`에 있었지만 컨테이너로 전달되지 않는 상태였다.
 
+### 8-1. 모델 선정과 교체
+
+**`gpt-4o-mini`를 기본으로 둔 이유**: 코치가 하는 일은 "이미 계산된 사실 목록 → 2문단 400자 이내
+한국어"다. 추론이 필요 없는 제한된 생성 작업이고, 수치·판정은 애초에 모델을 거치지 않는다(§5).
+작은 모델로 충분하고, 값이 싸며, `read-timeout`(12초) 안에 안정적으로 들어온다.
+
+**교체는 코드 변경이 아니라 설정 변경이다.** 요청 본문 구성이 모델 계열마다 다르기 때문에 세 가지를
+설정으로 뺐다.
+
+| 설정 | 언제 바꾸나 |
+| --- | --- |
+| `model` | 모델 이름 |
+| `max-tokens-parameter` | 상한 필드 이름이 계열마다 다르다(`max_tokens` / `max_completion_tokens`). 틀리면 공급자가 **400**으로 거부한다 |
+| `temperature` | 이 값을 받지 않는 모델이면 **비운다**(비우면 본문에서 빠진다) |
+
+**추론형 모델로 바꿀 때는 `read-timeout`도 함께 올린다.** 내부 사고에 시간을 쓰는 모델은 12초를
+넘기기 쉽고, 그러면 `AI_UNAVAILABLE`로 조용히 템플릿에 내려간다 — 화면은 정상으로 보이므로
+느려졌다는 사실 자체가 드러나지 않는다.
+
 ### 환경별 키 주입 경로
 
 | 환경 | 경로 |
@@ -178,6 +198,10 @@ app:
 | 운영 | `infra/.env` → `docker-compose.yml` `environment:` → 컨테이너 환경변수 → `application-prod.yml` |
 | 로컬 | 셸·IDE 환경변수 → `application-local.yml`(`${OPENAI_API_KEY:}`, **선택**) |
 | 테스트 | 주입하지 않는다. `app.ai.enabled=false` |
+
+`base-url`·`chat-path`가 설정인 이유도 같다. OpenAI에 직접 붙지 않고 **중계 서버를 거치는 경우**
+(교육기관이 발급한 토큰 등) 호스트만 바꿔 끼우면 된다. 이때 키는 OpenAI 형식(`sk-`)이 아닐 수 있고,
+`api.openai.com`에 직접 던지면 401이 나는 것이 정상이다 — 그 401을 키가 무효하다는 근거로 읽으면 안 된다.
 
 **`backend/.env`는 운영 경로에 없다.** `backend/.dockerignore`가 `.env`를 제외하고 Dockerfile도
 복사하지 않는다. `backend/.env.example`은 로컬 실행 시 개발자가 직접 주입할 값의 체크리스트일 뿐이다
@@ -206,4 +230,4 @@ app:
 - **사용자별 호출 레이트 리밋이 없다.** nginx 레이트 리밋은 로그인 경로에만 걸려 있다.
 - 군집 구간은 `pattern_analysis`에 완료 행이 있어야 채워진다. 진단의 `clusterContext`는 아직 항상 null이다
   (`DiagnosisEvaluator`가 `CLUSTER: UNAVAILABLE/CLUSTER_NOT_CONNECTED`를 남긴다) — 545가 붙으면 그대로 실린다.
-- 모델을 o-시리즈로 바꾸려면 `max_tokens` → `max_completion_tokens` 파라미터명 변경이 필요하다.
+- (해소됨) 모델 교체는 설정으로 한다 — `max-tokens-parameter`와 `temperature` 비우기. §8-1 참고.

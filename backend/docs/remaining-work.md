@@ -24,7 +24,8 @@
 
 ### 모델 교체 시 파라미터명
 
-- [ ] o-시리즈 모델로 바꾸려면 `max_tokens` → `max_completion_tokens` 변경이 필요하다(`OpenAiCoachTextGenerator`). 현재 기본값 `gpt-4o-mini`는 `max_tokens`를 받는다.
+- [x] (2026-09-16) 설정으로 뺐다 — `max-tokens-parameter`(기본 `max_tokens`)와 `temperature`(비우면 본문에서 제외). 모델 교체가 코드 변경이 아니다. [ai-coach.md](ai-coach.md) §8-1.
+- [ ] 추론형 모델로 바꾼다면 `read-timeout`(현재 PT12S)도 함께 올린다. 넘기면 `AI_UNAVAILABLE`로 조용히 템플릿에 내려가 "느려졌다"는 사실이 드러나지 않는다.
 
 ### 명세서 진행상태
 
