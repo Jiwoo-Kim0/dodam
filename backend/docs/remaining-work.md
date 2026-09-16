@@ -31,6 +31,11 @@
 
 - [ ] `docs/API명세서/21 AI Coach ....csv`가 아직 "시작 전"이다. Notion 내보내기 파일이라 레포에서 고치면 다음 내보내기에 덮인다 — Notion에서 갱신할 것.
 
+### FE 연동
+
+- [x] (2026-09-16) [ai-coach-fe-guide.md](ai-coach-fe-guide.md) 작성 — FE가 지금 바로 붙일 수 있다(응답 캐시·다음 배포·AI 연동 어느 것도 기다릴 필요 없음). 타입·api 모듈 예시는 FE 기존 컨벤션(`apiClient.post<T>`, `@/types/*.types.ts`)에 맞췄다.
+- [ ] 다음 배포 후 FE에 알린다 — 그 전까지는 `source`가 항상 `TEMPLATE`이라 AI 분기를 실동작으로 확인할 수 없다.
+
 ### Day 11 선공유 계약
 
 - [ ] [improvement-report-contract.md](improvement-report-contract.md)를 FE에 전달하고 필드를 합의받는다. 구현 전 선공유본이라 계산식 세부는 Day 11에 확정된다.
