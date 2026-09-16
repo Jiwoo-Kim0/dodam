@@ -6,7 +6,7 @@ export interface TransactionApiResponse {
   categoryCode: string | null;
   categoryName: string | null;
   transactionDate: string;
-  transactionTime: string;
+  transactionTime: string | null;
   transactionType: 'INCOME' | 'EXPENSE' | 'TRANSFER';
   amount: number;
   balanceAfter: number | null;
@@ -67,3 +67,15 @@ export interface CategorySpendingApiResponse {
     sharePercent: number;
   }[];
 }
+
+export interface CreateManualTransactionRequest {
+  transactionDate: string;
+  transactionType: 'INCOME' | 'EXPENSE';
+  amount: number;
+  merchantName?: string;
+  categoryId?: number;
+  paymentMethod?: string;
+  memo?: string;
+}
+
+export type UpdateManualTransactionRequest = Partial<CreateManualTransactionRequest>;

@@ -19,6 +19,7 @@ import { LedgerHeader } from './LedgerShared';
 interface TransactionFormProps {
   mode: 'create' | 'edit';
   draft: LedgerTransactionDraft;
+  isSubmitting?: boolean;
   onChange: (patch: Partial<LedgerTransactionDraft>) => void;
   onClose: () => void;
   onSave: () => void;
@@ -38,6 +39,7 @@ function getDigits(value: string) {
 export function TransactionForm({
   mode,
   draft,
+  isSubmitting = false,
   onChange,
   onClose,
   onSave,
@@ -78,7 +80,7 @@ export function TransactionForm({
   const confirmDelete = () => {
     if (!onDelete) return;
 
-    Alert.alert('거래 내역을 삭제할까요?', '삭제한 Mock 거래는 되돌릴 수 없어요.', [
+    Alert.alert('거래 내역을 삭제할까요?', '삭제한 거래는 되돌릴 수 없어요.', [
       { text: '취소', style: 'cancel' },
       { text: '삭제', style: 'destructive', onPress: onDelete },
     ]);
@@ -92,6 +94,7 @@ export function TransactionForm({
         onBackPress={onClose}
         onRightPress={mode === 'edit' ? confirmDelete : undefined}
         rightLabel={mode === 'edit' ? '삭제' : undefined}
+        rightDisabled={isSubmitting}
         title={mode === 'edit' ? '거래 내역 수정' : '현금거래 추가'}
       />
 
@@ -166,15 +169,17 @@ export function TransactionForm({
       <View style={styles.formFooter}>
         <Pressable
           accessibilityRole="button"
-          accessibilityState={{ disabled: !canSave }}
-          disabled={!canSave}
+          accessibilityState={{ disabled: !canSave || isSubmitting }}
+          disabled={!canSave || isSubmitting}
           onPress={onSave}
           style={({ pressed }) => [
             styles.saveButton,
-            !canSave && styles.saveButtonDisabled,
-            pressed && canSave && styles.saveButtonPressed,
+            (!canSave || isSubmitting) && styles.saveButtonDisabled,
+            pressed && canSave && !isSubmitting && styles.saveButtonPressed,
           ]}>
-          <Text style={styles.saveButtonLabel}>저장</Text>
+          <Text style={styles.saveButtonLabel}>
+            {isSubmitting ? '저장 중...' : '저장'}
+          </Text>
         </Pressable>
       </View>
 
