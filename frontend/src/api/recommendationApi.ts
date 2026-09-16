@@ -13,6 +13,9 @@ export const recommendationApi = {
     apiClient.post<RecommendationGenerationApiResponse>(`${PATH}/generate`, {
       body: { diagnosisId },
     }),
+  /** 알림 바로가기가 원천 추천 ID로 진단 문제를 찾을 때 쓴다. */
+  getRecommendation: (recommendationId: number) =>
+    apiClient.get<RecommendationApiResponse>(`${PATH}/${recommendationId}`),
   getRecommendations: (page = 0) =>
     apiClient.get<PageResponse<RecommendationApiResponse>>(PATH, {
       query: { page, size: 100 },

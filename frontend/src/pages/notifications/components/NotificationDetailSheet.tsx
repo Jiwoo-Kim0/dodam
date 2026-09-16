@@ -24,6 +24,7 @@ interface NotificationDetailSheetProps {
   errorMessage: string;
   isDeleting: boolean;
   isLoading: boolean;
+  isMoving: boolean;
   notification: NotificationApiResponse | null;
   visible: boolean;
   onClose: () => void;
@@ -36,6 +37,7 @@ export function NotificationDetailSheet({
   errorMessage,
   isDeleting,
   isLoading,
+  isMoving,
   notification,
   visible,
   onClose,
@@ -131,13 +133,18 @@ export function NotificationDetailSheet({
                 {hasNotificationDestination(notification) ? (
                   <Pressable
                     accessibilityRole="button"
-                    disabled={isDeleting}
+                    accessibilityState={{ disabled: isDeleting || isMoving }}
+                    disabled={isDeleting || isMoving}
                     onPress={onMoveToDestination}
                     style={({ pressed }) => [
                       styles.moveButton,
-                      pressed && styles.pressed,
+                      (pressed || isMoving) && styles.pressed,
                     ]}>
-                    <Text style={styles.moveLabel}>바로가기</Text>
+                    {isMoving ? (
+                      <ActivityIndicator color={colors.white} size="small" />
+                    ) : (
+                      <Text style={styles.moveLabel}>바로가기</Text>
+                    )}
                   </Pressable>
                 ) : null}
               </View>

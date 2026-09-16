@@ -2,11 +2,12 @@ import { useRouter } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
 
-import { isApiError, notificationApi } from '@/api';
+import { isApiError, notificationApi, recommendationApi } from '@/api';
 import { AppHeader } from '@/components/appHeader/AppHeader';
 import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import { routes } from '@/constants/routes';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
+import { issueRouteId } from '@/pages/discovery/discoveryModel';
 import { colors } from '@/styles';
 import type { NotificationApiResponse } from '@/types/notificationApi.types';
 
@@ -41,7 +42,9 @@ export function NotificationsScreen() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isMarkingAllRead, setIsMarkingAllRead] = useState(false);
   const [openNotificationId, setOpenNotificationId] = useState<number | null>(null);
+  const [isMoving, setIsMoving] = useState(false);
   const detailRequestIdRef = useRef(0);
+  const moveRequestIdRef = useRef(0);
 
   const handleBackPress = () => {
     if (router.canGoBack()) {
@@ -99,6 +102,7 @@ export function NotificationsScreen() {
 
   const closeDetail = () => {
     if (isDeleting) return;
+    moveRequestIdRef.current += 1;
     detailRequestIdRef.current += 1;
     setSelectedId(null);
     setDetail(null);
@@ -160,10 +164,45 @@ export function NotificationsScreen() {
     if (selectedId !== null) confirmDelete(selectedId);
   };
 
-  const moveToDestination = () => {
-    if (!detail) return;
+  /**
+   * 추천 알림의 sourceId는 추천 ID다(backend/docs/notification.md 원천 연결 규약).
+   * 발견 상세는 `진단ID-문제ID`로 열리므로 추천을 한 번 조회해 원천 문제를 찾는다.
+   * 문제를 특정할 수 없으면(628 이전 추천·여러 문제를 합친 추천·조회 실패) 발견 목록으로 보낸다.
+   */
+  const resolveRecommendationDestination = async (sourceId: string) => {
+    const recommendationId = Number(sourceId);
+    if (!Number.isSafeInteger(recommendationId) || recommendationId < 1) {
+      return routes.discoveryInsights;
+    }
+
+    try {
+      const recommendation = await recommendationApi.getRecommendation(recommendationId);
+      if (recommendation.sourceIssueId === null) return routes.discoveryInsights;
+
+      return routes.discoveryInsightDetail(
+        issueRouteId(recommendation.diagnosisId, recommendation.sourceIssueId),
+      );
+    } catch {
+      return routes.discoveryInsights;
+    }
+  };
+
+  const moveToDestination = async () => {
+    if (!detail || isMoving) return;
 
     const { sourceId, sourceType, type } = detail;
+
+    if (sourceType === 'RECOMMENDATION' && sourceId) {
+      const requestId = ++moveRequestIdRef.current;
+      setIsMoving(true);
+      const destination = await resolveRecommendationDestination(sourceId);
+      if (requestId !== moveRequestIdRef.current) return;
+      setIsMoving(false);
+      closeDetail();
+      router.push(destination);
+      return;
+    }
+
     closeDetail();
 
     if (type === 'DAILY_BRIEFING') {
@@ -176,10 +215,10 @@ export function NotificationsScreen() {
       sourceType === 'DIAGNOSIS' ||
       sourceType === 'RECOMMENDATION' ||
       sourceType === 'PATTERN_ANALYSIS' ||
-      sourceType === 'SIMULATION' ||
-      sourceType === 'SUBSCRIPTION'
+      sourceType === 'SIMULATION'
     ) {
-      router.push(routes.discovery);
+      // 발견 탭 첫 화면은 진단 소개 랜딩이라 알림 목적지로 쓸 수 없다. 실데이터 목록으로 보낸다.
+      router.push(routes.discoveryInsights);
     } else if (sourceType === 'CASHFLOW_FORECAST') {
       router.push(routes.report);
     } else {
@@ -285,10 +324,11 @@ export function NotificationsScreen() {
         errorMessage={detailError}
         isDeleting={isDeleting}
         isLoading={isDetailLoading}
+        isMoving={isMoving}
         notification={detail}
         onClose={closeDetail}
         onDelete={handleDelete}
-        onMoveToDestination={moveToDestination}
+        onMoveToDestination={() => void moveToDestination()}
         onRetry={() => {
           if (selectedId !== null) void loadDetail(selectedId);
         }}
