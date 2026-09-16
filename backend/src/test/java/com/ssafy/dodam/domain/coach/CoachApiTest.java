@@ -204,6 +204,34 @@ class CoachApiTest {
         assertThat(body).doesNotContain("targetId");
     }
 
+    @Test
+    void summaryDisclosesWhatTheDiagnosisCouldNotCheck() throws Exception {
+        // issueCount = 0은 "다 검사했는데 이상 없음"과 "검사를 못 함"을 구분하지 않는다.
+        // coverage를 싣지 않으면 모델은 0건을 "건강하다"로 옮기고, 그것은 서버가 하지 않은 판정이다.
+        Diagnosis partial = Diagnosis.start(owner, null, NOW.plusMinutes(1));
+        partial.complete(0, 0, null, "diagnosis-v1", node("""
+                {"coverage": [
+                  {"ruleKey": "GOAL", "status": "EVALUATED"},
+                  {"ruleKey": "CASHFLOW", "status": "UNAVAILABLE", "reason": "FORECAST_NOT_FOUND"},
+                  {"ruleKey": "CLUSTER", "status": "UNAVAILABLE", "reason": "CLUSTER_NOT_CONNECTED"}
+                ]}
+                """), NOW.plusMinutes(1));
+        long id = diagnoses.save(partial).getDiagnosisId();
+
+        String body = mvc.perform(post("/api/v1/coach/financial-summary").with(user(owner.toString()))
+                        .contentType(JSON).content("{\"diagnosisId\":" + id + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.facts.sections[2].title").value("진단 검사 범위(서버 계산)"))
+                .andExpect(jsonPath("$.data.facts.sections[2].facts[0].value").value("1건"))
+                .andExpect(jsonPath("$.data.facts.sections[2].facts[1].value").value("2건"))
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(body).contains("CASHFLOW, CLUSTER");
+        // 모델이 0건을 "이상 없음"으로 옮기지 못하도록 지시가 들어간다
+        assertThat(body).contains("검사하지 못한 항목이 2개 있으므로");
+        assertThat(body).contains("종합 상태가 저장되지 않은 것은 서버가 판정을 보류했다는 뜻이다");
+    }
+
     // ---------- 외부 호출 결과별 응답 ----------
 
     @Test
