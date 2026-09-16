@@ -72,6 +72,7 @@ export function ReportScreen() {
               <FinancePatternCard
                 characterImage={data.patternCharacterImage}
                 coachingMessage={data.patternCoachingMessage}
+                disclaimer={data.patternCoachingDisclaimer}
                 patterns={data.patterns}
               />
               <NextMonthForecastCard forecast={data.nextMonthForecast} />

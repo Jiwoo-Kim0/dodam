@@ -1,23 +1,23 @@
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
-import { type LayoutChangeEvent, Text, View } from 'react-native';
+import { type LayoutChangeEvent, Pressable, Text, View } from 'react-native';
 
 import { AppHeader } from '@/components/appHeader/AppHeader';
 import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import { routes } from '@/constants/routes';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
-import { DISCOVERY_INSIGHTS, DISCOVERY_SUMMARY } from '@/mocks/discovery';
 import { colors } from '@/styles';
-import { formatNumber } from '@/utils/currency';
 
 import { DiscoveryInsightsCard } from './components/DiscoveryInsightsCard';
 import { styles } from './DiscoveryInsightsScreen.styles';
+import { useDiscoveryData } from './hooks/useDiscoveryData';
 
 export function DiscoveryInsightsScreen() {
   const router = useRouter();
   const [summaryCardHeight, setSummaryCardHeight] = useState(0);
   const [gradientContainerHeight, setGradientContainerHeight] = useState(0);
+  const { diagnosis, insights, isLoading, error, cooldown, canRetryRecommendations, load, runAnalysis, retryRecommendationGeneration } = useDiscoveryData();
 
   const handleSummaryCardLayout = (event: LayoutChangeEvent) => {
     setSummaryCardHeight(event.nativeEvent.layout.height);
@@ -33,6 +33,8 @@ export function DiscoveryInsightsScreen() {
 
       <RefreshableBouncyScrollView
         contentContainerStyle={styles.scrollContent}
+        onRefresh={() => { void load(); }}
+        refreshing={isLoading}
         style={styles.scroll}>
         <View onLayout={handleGradientContainerLayout} style={styles.gradientContainer}>
           {summaryCardHeight > 0 && gradientContainerHeight > summaryCardHeight ? (
@@ -51,33 +53,49 @@ export function DiscoveryInsightsScreen() {
           <View onLayout={handleSummaryCardLayout} style={styles.summaryCard}>
             <View style={styles.summaryHeaderRow}>
               <Text style={styles.summaryLabel}>지금 바꿀 수 있는 것</Text>
-              <Text style={styles.summaryCount}>{DISCOVERY_INSIGHTS.length}건</Text>
+              <Text style={styles.summaryCount}>{insights.length}건</Text>
             </View>
 
             <Text style={styles.summaryHeadline}>
-              다 바꾸면 연{' '}
-              <Text style={styles.summaryAmountHighlight}>
-                {formatNumber(DISCOVERY_SUMMARY.totalAnnualSavingAmount)}원
-              </Text>
-              이{'\n'}내 쪽으로 와요
+              {isLoading ? '진단 결과를 확인하고 있어요' : `진단에서 ${insights.length}건을 발견했어요`}
             </Text>
 
             <View style={styles.summaryPill}>
-              <Text style={styles.summaryPillLabel}>다 바꾸면? 모으기 목표일 단축</Text>
-              <Text style={styles.summaryPillValue}>- {DISCOVERY_SUMMARY.goalAccelerationDays}일</Text>
+              <Text style={styles.summaryPillLabel}>추천별 예상 효과는 상세에서 확인할 수 있어요</Text>
             </View>
           </View>
 
           <View style={styles.listSection}>
-            <Text style={styles.sectionTitle}>발견한 내용 {DISCOVERY_INSIGHTS.length}개</Text>
+            <Text style={styles.sectionTitle}>발견한 내용 {insights.length}개</Text>
+            {error ? <Text style={styles.sectionTitle}>{error}</Text> : null}
 
-            {DISCOVERY_INSIGHTS.map((insight) => (
+            {insights.map((insight) => (
               <DiscoveryInsightsCard
                 insight={insight}
                 key={insight.id}
                 onPress={() => router.push(routes.discoveryInsightDetail(insight.id))}
               />
             ))}
+            {!isLoading && insights.length === 0 && !error ? (
+              <Text style={styles.sectionTitle}>현재 진단에서 발견된 항목이 없어요. 분석되지 않은 항목은 제외됩니다.</Text>
+            ) : null}
+            {(error || !diagnosis || canRetryRecommendations) && !isLoading ? (
+              <Pressable accessibilityRole="button" onPress={() => { void (canRetryRecommendations ? retryRecommendationGeneration() : error ? load() : runAnalysis()); }} style={styles.summaryPill}>
+                <Text style={styles.summaryPillValue}>{canRetryRecommendations ? '추천 생성 다시 시도' : error ? '다시 시도하기' : '진단 시작하기'}</Text>
+              </Pressable>
+            ) : null}
+            {diagnosis && !isLoading ? (
+              <View>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={!cooldown.canRun}
+                  onPress={() => { void runAnalysis(true); }}
+                  style={[styles.summaryPill, !cooldown.canRun && styles.disabledButton]}>
+                  <Text style={styles.summaryPillValue}>새로 진단하기</Text>
+                </Pressable>
+                {cooldown.label ? <Text style={styles.cooldownLabel}>{cooldown.label}</Text> : null}
+              </View>
+            ) : null}
           </View>
         </View>
       </RefreshableBouncyScrollView>

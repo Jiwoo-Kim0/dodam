@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { assetApi, cashflowApi, isApiError, ledgerApi, userApi } from '@/api';
+import {
+  assetApi,
+  cashflowApi,
+  coachApi,
+  isApiError,
+  ledgerApi,
+  userApi,
+} from '@/api';
 import type { CashflowRiskApiResponse } from '@/types/cashflowApi.types';
 import type { SavingRatioApiResponse } from '@/types/ledgerApi.types';
 import type { MonthlyReport, ReportFinancePattern } from '@/types/report.types';
@@ -70,6 +77,15 @@ async function loadOptionalResource<T>(request: Promise<T>): Promise<T | null> {
   }
 }
 
+async function loadCoachSummary() {
+  try {
+    return await coachApi.getFinancialSummary();
+  } catch {
+    // AI 설명 호출 실패가 다른 금융 API로 계산한 리포트 전체를 가리지 않게 한다.
+    return null;
+  }
+}
+
 async function fetchReport(): Promise<MonthlyReport> {
   const reportMonth = monthAt(-1);
   const previousMonth = monthAt(-2);
@@ -93,6 +109,7 @@ async function fetchReport(): Promise<MonthlyReport> {
     cashflowEvents,
     cashflowRisks,
     anomalies,
+    coachSummary,
   ] = await Promise.all([
     userApi.getMe(),
     ledgerApi.getMonthlySummary(reportMonth.yearMonth),
@@ -108,6 +125,7 @@ async function fetchReport(): Promise<MonthlyReport> {
     loadOptionalResource(cashflowApi.getEvents(nextPeriod)),
     loadOptionalResource(cashflowApi.getRisks()),
     ledgerApi.getSpendingAnomalies(anomalyStart.yearMonth, reportMonth.yearMonth),
+    loadCoachSummary(),
   ]);
 
   const risks = cashflowRisks?.risks ?? [];
@@ -202,9 +220,12 @@ async function fetchReport(): Promise<MonthlyReport> {
       ],
     },
     patterns,
-    patternCoachingMessage: anomaly
-      ? `${anomaly.name} 소비를 지난 기간 수준으로 줄이면 한 달에 약 ${formatCurrency(anomaly.increaseAmount)}을 아낄 수 있어요!`
-      : '지금의 소비 흐름을 유지하면서 저축률을 조금씩 높여보세요!',
+    patternCoachingMessage:
+      coachSummary?.message.trim() ||
+      (anomaly
+        ? `${anomaly.name} 소비를 지난 기간 수준으로 줄이면 한 달에 약 ${formatCurrency(anomaly.increaseAmount)}을 아낄 수 있어요!`
+        : '지금의 소비 흐름을 유지하면서 저축률을 조금씩 높여보세요!'),
+    patternCoachingDisclaimer: coachSummary?.disclaimer ?? null,
     patternCharacterImage: require('@/assets/characters/dori/dori_memo.png'),
     nextMonthForecast: {
       description: cashflowEvents

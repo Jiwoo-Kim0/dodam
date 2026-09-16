@@ -95,4 +95,13 @@ export const styles = StyleSheet.create({
     lineHeight: 14,
     minWidth: 0,
   },
+  disclaimer: {
+    color: colors.textTertiary,
+    fontFamily: fontFamily.regular,
+    fontSize: 9,
+    lineHeight: 13,
+    marginBottom: spacing[2],
+    marginTop: spacing[1],
+    textAlign: 'center',
+  },
 });

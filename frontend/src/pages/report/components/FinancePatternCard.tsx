@@ -13,6 +13,7 @@ type FinancePatternCardProps = {
   patterns: readonly ReportFinancePattern[];
   coachingMessage: string;
   characterImage: ImageSourcePropType;
+  disclaimer: string | null;
 };
 
 const statusLabels = {
@@ -23,6 +24,7 @@ const statusLabels = {
 export function FinancePatternCard({
   characterImage,
   coachingMessage,
+  disclaimer,
   patterns,
 }: FinancePatternCardProps) {
   return (
@@ -74,6 +76,7 @@ export function FinancePatternCard({
         />
         <Text style={styles.coachingMessage}>{coachingMessage}</Text>
       </View>
+      {disclaimer ? <Text style={styles.disclaimer}>{disclaimer}</Text> : null}
     </View>
   );
 }

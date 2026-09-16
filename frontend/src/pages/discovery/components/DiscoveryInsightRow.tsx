@@ -2,7 +2,7 @@ import { Image } from 'expo-image';
 import { SymbolView } from 'expo-symbols';
 import { Pressable, Text, View } from 'react-native';
 
-import type { DiscoveryInsight } from '@/mocks/discovery';
+import type { DiscoveryInsight } from '../discoveryModel';
 import { colors } from '@/styles';
 import { formatNumber } from '@/utils/currency';
 
@@ -55,11 +55,10 @@ export function DiscoveryInsightRow({ insight, isLast, onPress }: DiscoveryInsig
       <View style={styles.amountChevronRow}>
         <View style={styles.amountWrap}>
           <Text numberOfLines={1} style={styles.amount}>
-            <Text style={styles.amountUnit}>연 </Text>
-            {formatNumber(insight.annualSavingAmount)}원
+            {insight.annualSavingAmount === null ? '산정 전' : <><Text style={styles.amountUnit}>연 </Text>{formatNumber(insight.annualSavingAmount)}원</>}
           </Text>
           <Text numberOfLines={1} style={styles.amountLabel}>
-            절약 예상
+            {insight.annualSavingAmount === null ? '예상 효과' : '절약 예상'}
           </Text>
         </View>
 

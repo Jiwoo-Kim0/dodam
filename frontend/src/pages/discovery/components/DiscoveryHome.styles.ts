@@ -167,6 +167,15 @@ export const styles = StyleSheet.create({
   viewAllButtonPressed: {
     opacity: 0.8,
   },
+  disabledButton: {
+    opacity: 0.45,
+  },
+  cooldownLabel: {
+    ...typography.body2,
+    color: colors.textSecondary,
+    marginTop: spacing[2],
+    textAlign: 'center',
+  },
   viewAllButtonLabel: {
     ...typography.button,
     color: colors.white,

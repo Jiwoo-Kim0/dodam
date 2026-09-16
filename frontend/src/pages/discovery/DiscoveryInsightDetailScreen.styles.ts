@@ -66,6 +66,23 @@ export const styles = StyleSheet.create({
     color: colors.textPrimary,
     lineHeight: 21,
   },
+  coachContent: {
+    gap: spacing[2],
+    marginTop: spacing[3],
+  },
+  coachHighlight: {
+    ...typography.body2,
+    color: colors.textPrimary,
+  },
+  factSection: {
+    gap: spacing[1],
+    marginTop: spacing[2],
+  },
+  disclaimer: {
+    ...typography.caption,
+    color: colors.textTertiary,
+    marginTop: spacing[2],
+  },
   recommendationSection: {
     marginTop: spacing[6],
   },
@@ -100,6 +117,12 @@ export const styles = StyleSheet.create({
   },
   recommendationCopy: {
     flex: 1,
+  },
+  recommendationExplanation: {
+    backgroundColor: colors.primary.lightGreen,
+    borderRadius: radius.card,
+    marginTop: spacing[2],
+    padding: spacing[4],
   },
   recommendationTitle: {
     color: colors.textPrimary,
