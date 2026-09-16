@@ -98,14 +98,47 @@ export function formatNotificationDateTime(value: string): string {
   }).format(date);
 }
 
-export function hasNotificationDestination(
+/**
+ * 알림 1건이 이어지는 화면. 원천 규약은 backend/docs/notification.md를 따른다.
+ *
+ * 경로 상수를 여기서 참조하지 않고 종류만 돌려준다 — utils가 라우팅을 모르게 두고,
+ * 바로가기 버튼 노출 여부와 실제 이동이 같은 분기 하나를 쓰게 하려는 것이다.
+ * 둘이 갈라지면 버튼은 보이는데 눌러도 아무 일이 없는 상태가 된다.
+ */
+export type NotificationDestination =
+  | { kind: 'dailyBriefing' }
+  | { kind: 'report' }
+  | { kind: 'goalDetail'; goalId: string }
+  /** 추천 ID로 원천 진단 문제를 한 번 더 조회해야 상세 화면을 열 수 있다. */
+  | { kind: 'recommendation'; recommendationId: string }
+  | { kind: 'discoveryInsights' }
+  | { kind: 'assets' };
+
+export function getNotificationDestination(
   notification: NotificationApiResponse,
-): boolean {
-  if (notification.type === 'DAILY_BRIEFING' || notification.type === 'MONTHLY_REPORT') {
-    return true;
+): NotificationDestination | null {
+  const { sourceId, sourceType, type } = notification;
+
+  if (type === 'DAILY_BRIEFING') return { kind: 'dailyBriefing' };
+  if (type === 'MONTHLY_REPORT' || sourceType === 'REPORT') {
+    return { kind: 'report' };
   }
 
-  switch (notification.sourceType) {
+  switch (sourceType) {
+    case 'GOAL':
+      return sourceId ? { kind: 'goalDetail', goalId: sourceId } : null;
+    case 'RECOMMENDATION':
+      // 원천 ID가 없으면 특정할 대상이 없으므로 발견 목록까지만 안내한다.
+      return sourceId
+        ? { kind: 'recommendation', recommendationId: sourceId }
+        : { kind: 'discoveryInsights' };
+    case 'DIAGNOSIS':
+    case 'PATTERN_ANALYSIS':
+    case 'SIMULATION':
+      // 발견 탭 첫 화면은 진단 소개 랜딩이라 알림 목적지로 쓸 수 없다.
+      return { kind: 'discoveryInsights' };
+    case 'CASHFLOW_FORECAST':
+      return { kind: 'report' };
     case 'ACCOUNT':
     case 'MINUS_ACCOUNT':
     case 'CARD':
@@ -113,16 +146,14 @@ export function hasNotificationDestination(
     case 'LOAN':
     case 'DEPOSIT_SAVING':
     case 'SUBSCRIPTION':
-    case 'DIAGNOSIS':
-    case 'RECOMMENDATION':
-    case 'CASHFLOW_FORECAST':
-    case 'SIMULATION':
-    case 'PATTERN_ANALYSIS':
-    case 'REPORT':
-      return true;
-    case 'GOAL':
-      return notification.sourceId !== null;
+      return { kind: 'assets' };
     default:
-      return false;
+      return null;
   }
+}
+
+export function hasNotificationDestination(
+  notification: NotificationApiResponse,
+): boolean {
+  return getNotificationDestination(notification) !== null;
 }

@@ -10,6 +10,10 @@ import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import { issueRouteId } from '@/pages/discovery/discoveryModel';
 import { colors } from '@/styles';
 import type { NotificationApiResponse } from '@/types/notificationApi.types';
+import {
+  getNotificationDestination,
+  type NotificationDestination,
+} from '@/utils/notification';
 
 import { NotificationCard } from './components/NotificationCard';
 import { NotificationDetailSheet } from './components/NotificationDetailSheet';
@@ -172,14 +176,12 @@ export function NotificationsScreen() {
    * 발견 상세는 `진단ID-문제ID`로 열리므로 추천을 한 번 조회해 원천 문제를 찾는다.
    * 문제를 특정할 수 없으면(628 이전 추천·여러 문제를 합친 추천·조회 실패) 발견 목록으로 보낸다.
    */
-  const resolveRecommendationDestination = async (sourceId: string) => {
-    const recommendationId = Number(sourceId);
-    if (!Number.isSafeInteger(recommendationId) || recommendationId < 1) {
-      return routes.discoveryInsights;
-    }
+  const resolveRecommendationRoute = async (recommendationId: string) => {
+    const id = Number(recommendationId);
+    if (!Number.isSafeInteger(id) || id < 1) return routes.discoveryInsights;
 
     try {
-      const recommendation = await recommendationApi.getRecommendation(recommendationId);
+      const recommendation = await recommendationApi.getRecommendation(id);
       if (recommendation.sourceIssueId === null) return routes.discoveryInsights;
 
       return routes.discoveryInsightDetail(
@@ -190,43 +192,47 @@ export function NotificationsScreen() {
     }
   };
 
+  const pushDestination = (
+    destination: Exclude<NotificationDestination, { kind: 'recommendation' }>,
+  ) => {
+    switch (destination.kind) {
+      case 'dailyBriefing':
+        router.push(routes.dailyBriefing);
+        return;
+      case 'report':
+        router.push(routes.report);
+        return;
+      case 'goalDetail':
+        router.push(routes.goalDetail(destination.goalId));
+        return;
+      case 'discoveryInsights':
+        router.push(routes.discoveryInsights);
+        return;
+      case 'assets':
+      default:
+        router.push(routes.assets);
+    }
+  };
+
   const moveToDestination = async () => {
     if (!detail || isMoving) return;
 
-    const { sourceId, sourceType, type } = detail;
+    const destination = getNotificationDestination(detail);
+    if (!destination) return;
 
-    if (sourceType === 'RECOMMENDATION' && sourceId) {
+    if (destination.kind === 'recommendation') {
       const requestId = ++moveRequestIdRef.current;
       setIsMoving(true);
-      const destination = await resolveRecommendationDestination(sourceId);
+      const route = await resolveRecommendationRoute(destination.recommendationId);
       if (requestId !== moveRequestIdRef.current) return;
       setIsMoving(false);
       closeDetail();
-      router.push(destination);
+      router.push(route);
       return;
     }
 
     closeDetail();
-
-    if (type === 'DAILY_BRIEFING') {
-      router.push(routes.dailyBriefing);
-    } else if (type === 'MONTHLY_REPORT' || sourceType === 'REPORT') {
-      router.push(routes.report);
-    } else if (sourceType === 'GOAL' && sourceId) {
-      router.push(routes.goalDetail(sourceId));
-    } else if (
-      sourceType === 'DIAGNOSIS' ||
-      sourceType === 'RECOMMENDATION' ||
-      sourceType === 'PATTERN_ANALYSIS' ||
-      sourceType === 'SIMULATION'
-    ) {
-      // 발견 탭 첫 화면은 진단 소개 랜딩이라 알림 목적지로 쓸 수 없다. 실데이터 목록으로 보낸다.
-      router.push(routes.discoveryInsights);
-    } else if (sourceType === 'CASHFLOW_FORECAST') {
-      router.push(routes.report);
-    } else {
-      router.push(routes.assets);
-    }
+    pushDestination(destination);
   };
 
   const subtitle = unreadCount > 0 ? `읽지 않은 알림 ${unreadCount}개` : '새 알림이 없어요';
