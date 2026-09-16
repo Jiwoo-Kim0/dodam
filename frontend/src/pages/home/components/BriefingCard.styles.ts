@@ -1,6 +1,6 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, fontFamily, fontSize, radius, spacing } from '@/styles';
+import { colors, componentSize, fontFamily, fontSize, radius, spacing } from '@/styles';
 
 export const styles = StyleSheet.create({
   card: {
@@ -9,8 +9,11 @@ export const styles = StyleSheet.create({
     minHeight: 90,
     overflow: 'visible',
     paddingHorizontal: spacing[4],
-    paddingVertical: spacing[3],
+    paddingVertical: spacing[4],
     position: 'relative',
+  },
+  cardPressed: {
+    opacity: componentSize.bottomSheet.pressedOpacity,
   },
   characterImage: {
     bottom: -12,
@@ -23,7 +26,7 @@ export const styles = StyleSheet.create({
   },
   title: {
     color: colors.white,
-    fontFamily: fontFamily.medium,
+    fontFamily: fontFamily.semiBold,
     fontSize: fontSize.body1,
     lineHeight: 20,
   },
@@ -32,7 +35,7 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing[2],
     marginLeft: 64,
-    marginTop: spacing[2],
+    marginTop: spacing[3],
     paddingRight: spacing[8],
   },
   spendingSummary: {
@@ -41,8 +44,8 @@ export const styles = StyleSheet.create({
   label: {
     color: colors.white,
     fontFamily: fontFamily.regular,
-    fontSize: fontSize.micro,
-    lineHeight: 14,
+    fontSize: fontSize.caption,
+    lineHeight: 16,
   },
   amount: {
     color: colors.white,
@@ -68,8 +71,8 @@ export const styles = StyleSheet.create({
     color: colors.textPrimary,
     flex: 1,
     fontFamily: fontFamily.regular,
-    fontSize: fontSize.micro,
-    lineHeight: 15,
+    fontSize: fontSize.caption,
+    lineHeight: 16,
   },
   loadingIndicator: {
     flex: 1,

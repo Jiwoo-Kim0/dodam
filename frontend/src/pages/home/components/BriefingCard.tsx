@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { ActivityIndicator, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
 import { colors } from '@/styles';
 import type { HomeBriefing } from '../hooks/useHomeSummary';
@@ -22,7 +22,12 @@ export function BriefingCard({
   onDetailPress,
 }: BriefingCardProps) {
   return (
-    <View style={styles.card}>
+    <Pressable
+      accessibilityLabel="도담 브리핑 자세히 보기"
+      accessibilityRole="button"
+      onPress={onDetailPress}
+      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+    >
       <Image
         contentFit="contain"
         source={require('@/assets/characters/tori/tori_daily_briefing.png')}
@@ -31,9 +36,6 @@ export function BriefingCard({
 
       <Text style={styles.title}>오늘의 도담 브리핑</Text>
       <CardDetailButton
-        accessibilityLabel="도담 브리핑 자세히 보기"
-        centerVertically
-        onPress={onDetailPress}
         tintColor={colors.white}
       />
 
@@ -65,6 +67,6 @@ export function BriefingCard({
           </Text>
         )}
       </View>
-    </View>
+    </Pressable>
   );
 }

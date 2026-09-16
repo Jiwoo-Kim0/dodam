@@ -32,7 +32,7 @@ export const styles = StyleSheet.create({
     top: 0,
   },
   greeting: {
-    marginTop: spacing[2],
+    marginTop: spacing[3],
   },
   greetingText: {
     fontFamily: fontFamily.medium,
@@ -49,10 +49,10 @@ export const styles = StyleSheet.create({
     color: colors.textPrimary,
     letterSpacing: -0.8,
     lineHeight: 32,
-    marginTop: spacing[1],
+    marginTop: spacing[2],
   },
   body: {
-    gap: spacing[3],
+    gap: spacing[4],
     paddingHorizontal: semanticSpacing.screenMargin,
     paddingTop: spacing[4],
   },

@@ -1,4 +1,4 @@
-import { ActivityIndicator, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, Text } from 'react-native';
 
 import { colors } from '@/styles';
 import { formatNumber } from '@/utils/currency';
@@ -22,8 +22,12 @@ export function ExpenseSummaryCard({
   onDetailPress,
 }: ExpenseSummaryCardProps) {
   return (
-    <View style={styles.card}>
-      <Text style={styles.title}>{`${monthLabel} 지출`}</Text>
+    <Pressable
+      accessibilityLabel="이번 달 지출 자세히 보기"
+      accessibilityRole="button"
+      onPress={onDetailPress}
+      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+    >
       {isLoading ? (
         <ActivityIndicator
           color={colors.primary.green}
@@ -45,7 +49,8 @@ export function ExpenseSummaryCard({
           {hasError ? '지출을 불러오지 못했어요' : '지출 내역이 없어요'}
         </Text>
       )}
-      <CardDetailButton accessibilityLabel="이번 달 지출 자세히 보기" onPress={onDetailPress} />
-    </View>
+      <Text style={styles.label}>{`${monthLabel} 지출`}</Text>
+      <CardDetailButton />
+    </Pressable>
   );
 }

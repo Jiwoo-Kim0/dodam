@@ -5,7 +5,7 @@ import { colors, fontFamily, fontSize, radius, semanticSpacing, spacing } from '
 export const styles = StyleSheet.create({
   container: {
     marginHorizontal: -semanticSpacing.screenMargin,
-    marginTop: spacing[4],
+    marginTop: spacing[5],
   },
   page: {
     paddingRight: spacing[2],
