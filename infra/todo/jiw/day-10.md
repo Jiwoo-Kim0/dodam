@@ -210,8 +210,9 @@ sudo 없이 되고 레포를 오염시키지 않는다. §9의 98건 사건은 �
 - [ ] **사용자별 코치 호출 레이트 리밋이 없다.** nginx 레이트 리밋은 로그인 경로에만 걸려 있다.
       외부 과금이 걸린 유일한 엔드포인트라 우선순위가 낮지 않다
 - [ ] OpenAI 사용량 한도·결제 알림 설정 (Day 7부터 넘어온 **사용자 액션**). 이제 실제로 호출이 나간다
-- [ ] 배포 후 `.env`의 `OPENAI_API_KEY`가 컨테이너에 실제로 주입되는지 확인
-      (`docker compose exec backend printenv OPENAI_API_KEY`)
+- [x] ~~배포 후 `OPENAI_API_KEY` 컨테이너 주입 확인~~ — 13절, `AI_DISABLED`가 아닌 `AI_UNAVAILABLE`로 확인됨
+- [ ] **OpenAI 키 재발급** — 현재 값 47자로 잘린 것으로 보이며 직접 호출도 401 (13절). **사용자 액션**
+- [ ] `check-env.sh`에 CRLF 검사와 키 형식(접두사·최소 길이) 검사 추가 (13절 사각지대 2개)
 - [ ] 배포 후 코치 3종 스모크 — 키가 있는 상태에서 `source: "AI"`가 나오는지, 키를 비우면
       `TEMPLATE` + `AI_DISABLED`로 내려가는지
 - [ ] 진단의 `clusterContext`는 아직 항상 null이다(`DiagnosisEvaluator`가
@@ -251,3 +252,56 @@ infra/.env → docker-compose.yml environment: → 컨테이너 환경변수 →
 `application-local.yml`은 `app.security.number-hash-key: ${NUMBER_HASH_KEY}`를 기본값 없이 참조하므로,
 목록만 보고 로컬을 띄우면 **기동 실패**한다. 계좌·카드번호 HMAC 키라 한번 정하면 고정해야 하는
 값이기도 하다(compose 주석). 494/보안 설정 담당 영역이라 임의로 고치지 않고 남겨 둔다.
+
+### 13. 배포 후 스모크 — 키 주입은 성공, OpenAI가 401로 거부
+
+시연 계정 U0001로 진단(`diagnosisId=2`) 후 `POST /api/v1/coach/financial-summary` 호출.
+
+**동작한 것**
+
+- `facts`의 군집 구간이 **운영 데이터로 채워졌다** — 라벨 `균형형`, 표본 1,000건, 신뢰도 74.3%,
+  특징 3종의 내 값/기준 범위(WITHIN). 명세 21의 "군집 라벨·기준 범위는 서버 계산값만 전달"이
+  실데이터로 확인됐다.
+- 템플릿 경로 정상. 응답 200, `highlights`·`disclaimer` 모두 정상.
+- `종합 상태: 미기록` — §7에서 넣은 `text()` null 가드가 동작했다. 없었으면 프롬프트와 화면에
+  `null`이라는 단어가 그대로 실렸을 것이다.
+
+**동작하지 않은 것**
+
+```
+WARN c.s.d.domain.coach.service.CoachService :
+  Coach generation failed, falling back to template:
+  topic=FINANCIAL_SUMMARY reason=OpenAI rejected the request with status 401
+```
+
+`AI_DISABLED`가 아니라 `AI_UNAVAILABLE`이라는 점이 중요하다 — **키는 컨테이너에 주입됐다**(8절의
+compose 전달 줄이 동작했다). 호출도 정상적으로 나갔고, OpenAI가 키를 거부했다.
+
+**원인 추적**
+
+| 가설 | 검증 | 결과 |
+| --- | --- | --- |
+| `.env` CRLF (MobaXterm/Windows 편집 시 값 끝에 `\r`) | `tr -d '\r\n' \| xargs` 전후 길이·응답 코드 비교 | **기각** — 길이 47로 동일, 둘 다 401 |
+| 값을 따옴표로 감쌈 | 같은 비교(`xargs`가 따옴표를 벗긴다) | **기각** — 길이 변화 없음 |
+| 크레딧·한도 소진 | 응답 코드 | **기각** — 429가 아니라 401 |
+| 앱 코드 문제 | EC2에서 앱과 무관하게 `curl https://api.openai.com/v1/models` | **기각** — 직접 호출도 401 |
+| **키 값 자체가 무효** | 길이 47자 | **유력** |
+
+**47자는 정상적인 OpenAI 키 길이가 아니다.** 구형 `sk-` 키는 51자, 프로젝트 키(`sk-proj-`)는
+160자 이상이다. Day 5 기록에도 "47자"로 적혀 있었으니 **처음부터 잘린 값이 들어갔을 가능성**이 크다.
+그동안 아무도 실제로 호출하지 않아 드러나지 않았을 뿐이다(Day 7의 연결성 확인은 인증 없이 던져
+401을 받는 테스트라, 잘린 키도 같은 401을 낸다 — 구분이 안 됐다).
+
+→ 조치는 **콘솔에서 재발급**. `.env` 교체 후 앱과 무관하게 `curl .../v1/models`로 200을 먼저 확인하고
+`docker compose up -d --no-deps --force-recreate backend`로 backend만 재기동하면 된다(재배포 불필요).
+
+**얻은 것**: 실패가 조용히 묻히지 않았다. 외부 API가 죽어도 200 + `degradedReason`으로 내려가도록
+설계했기 때문에 시연 화면은 그대로 뜨고, 원인은 `degradedReason` 한 필드와 로그 한 줄로 좁혀졌다.
+
+#### `check-env.sh`의 사각지대 2개
+
+1. **CRLF를 잡지 못한다.** 인라인 주석(`VAR=value # 주석`)은 잡지만, MobaXterm으로 편집해 값 끝에
+   `\r`이 붙는 경우는 통과시킨다. 이번엔 원인이 아니었지만 다음엔 원인일 수 있다.
+2. **값의 형식을 보지 않는다.** "비어 있지 않은가"만 검사하므로 잘린 키는 통과한다.
+   키 형식이 정해진 변수(`OPENAI_API_KEY`는 `sk-` 접두사, `DATA_*_KEY`는 Base64 32바이트)는
+   최소 길이·접두사 검사를 넣을 수 있다.
