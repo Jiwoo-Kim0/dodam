@@ -723,6 +723,12 @@
 
 구현 계약: [goal.md](goal.md) "연결계좌"
 
+### Body를 계좌 ID로 변경
+
+- [x] (2026-09-16) `PUT /goals/{goalId}/accounts` Body를 `accountNos[]`(계좌번호 원문)에서 `accountIds[]`(계좌 응답의 `accountId`)로 바꿨다. FE 요청: 계좌 목록·연결계좌 조회가 `accountId`와 마스킹 번호만 주고 원문은 응답에 없어 `accountNos`를 만들 수 없었다. 서비스는 계좌를 찾은 뒤부터 이미 ID로 동작하므로 조회 한 줄(`findByIdAndUserId`)만 바뀌었고 유형·상태·다른 목표 연결 검증, 이력, 응답은 그대로다. 이 API를 호출하던 클라이언트는 없었다(FE는 로컬 상태만 관리).
+- [ ] API 명세서(Notion, 12 Goal) "목표 연결계좌 변경" Body를 `accountIds[]`로 반영한다. 레포의 `docs/API명세서/12 Goal*.csv`는 Notion 내보내기라 직접 고치지 않았다.
+- [ ] 아래 "기여 금액" 항목의 Body 확장안도 `[{accountId, contributionAmount?}]`로 읽는다.
+
 ### 계좌 잔액 변경 시 모인 금액 재계산
 
 - [x] 510에서 처리했다: progress·required-saving·forecast·risk가 조회 시점에 연결 계좌 잔액 합으로 다시 계산하고 `goal.current_amount`도 갱신한다. 목록·요약(508)은 저장값을 그대로 쓰므로 계산 API를 한 번 부른 뒤에 맞아진다.
@@ -730,7 +736,7 @@
 
 ### 기여 금액(contribution_amount)
 
-- [ ] 명세 Body가 `accountNos[]`만 받아 계좌별 기여 금액을 지정할 수 없다. 급여통장처럼 잔액 일부만 목표에 쓰는 경우를 위해 ERD가 둔 컬럼이다. FE에 입력 UI가 생기면 Body를 `[{accountNo, contributionAmount?}]`로 바꾸고 모인 금액 계산에 반영한다.
+- [ ] 명세 Body가 `accountIds[]`만 받아 계좌별 기여 금액을 지정할 수 없다. 급여통장처럼 잔액 일부만 목표에 쓰는 경우를 위해 ERD가 둔 컬럼이다. FE에 입력 UI가 생기면 Body를 `[{accountId, contributionAmount?}]`로 바꾸고 모인 금액 계산에 반영한다.
 
 ### MySQL 검증
 
@@ -908,7 +914,7 @@
   - u0001 목표 1: `currentAmount` 29,160,000 = 연결 계좌(주거래 19,160,000 + KB 정기예금 10,000,000) 잔액 합, 목표 16,100,000 → 진행률 100%, `paceStatus = ACHIEVED`, 필요 월 저축액 0, 예상 달성일 = 기준일, 위험 NONE. 이력 7건(GOAL_CREATED + 월말 AMOUNT_UPDATED 6, 2026-03~08 선형 증가). 줄이기 전용 API 호출 시 400, 타인 목표 404.
   - u0002 목표 2: 1,800,000 / 32,000,000 → 5.6%, 기대 진행률 45.5%, `BEHIND`, 위험 HIGH(`PACE_INSUFFICIENT`, `BEHIND_SCHEDULE`), 필요 월 저축액 3,775,000. 목표 3(줄이기 1,800,000): 9월 소비 0(거래 seed가 8월까지라 정상), `previousMonthSpending` 4,247,800 = 8월 EXPENSE·비 NON_SPENDING 합과 일치, 위험 LOW. 요약: 모으기 목표 합 32,000,000 / 1,800,000, 월 예산 합 1,800,000.
 - 쓰기 경로(MySQL CHECK·복합 외래키 살아 있는 상태): 모으기 생성 201 → 이름·목표 금액 수정 200 → PAUSED 200 → PAUSED→ACHIEVED 409 `GOAL_STATUS_TRANSITION_NOT_ALLOWED` → 모으기에 월 예산 400 → 이력에 GOAL_CREATED·GOAL_UPDATED·STATUS_CHANGED 기록 → 연결 계좌 0건·진행률·위험(`NO_LINKED_ACCOUNTS`) 200 → 삭제 200(soft, GOAL_DELETED 이력) → 조회 404. 줄이기 생성(예산 0은 400 `VALIDATION_ERROR`) → 소비 진행률 200 → 삭제 200. seed 목표 6,000건은 그대로다.
-- [ ] `PUT /goals/{goalId}/accounts`는 호출하지 못했다. Body가 계좌번호 원문(`accountNos`)을 받아 서버가 해시로 찾는데, seed 계좌의 해시는 검증용 더미라 원문이 없다. 애플리케이션 코덱으로 만든 fixture(491 계약)로 seed를 적재한 환경에서 다시 확인한다. H2 통합 테스트(`GoalAccountApiIntegrationTest`)로는 통과했다.
+- [ ] `PUT /goals/{goalId}/accounts`는 당시 호출하지 못했다. Body가 계좌번호 원문(`accountNos`)을 받아 서버가 해시로 찾는데, seed 계좌의 해시는 검증용 더미라 원문이 없었다. 2026-09-16에 Body를 `accountIds`로 바꿔(509 절) 이 제약은 사라졌다. seed 환경에서 계좌 ID로 한 번 호출해 MySQL 검증을 마무리한다. H2 통합 테스트(`GoalAccountApiIntegrationTest`)는 통과했다.
 - 참고: 계산 API(progress·required-saving·forecast·risk)는 금액이 바뀌지 않으면 `AMOUNT_UPDATED` 이력을 남기지 않아 seed 목표의 이력은 7건 그대로였다. 목표 1은 모인 금액이 목표를 넘었는데 상태는 ACTIVE로 남는다(508 절 "모인 금액 도달 시 상태" 미결 항목과 같음).
 - 검증 중 확인한 도구 문제: Windows Git Bash의 `curl -d '한글'`은 본문을 UTF-8이 아닌 코드페이지로 보내 서버가 400 `INVALID_REQUEST`(본문 해석 실패)를 돌려준다. 앱 문제가 아니며 `--data-binary @utf8파일`로 보내면 정상이다. 시연·수동 테스트 시 주의.
 ## 544·545 진행 현황 (2026-09-13)
