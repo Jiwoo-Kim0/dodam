@@ -27,7 +27,7 @@ import org.springframework.stereotype.Component;
 @Component
 @Order(40)
 public class CategorySpendingIncreaseGenerator implements RecommendationCandidateGenerator {
-    public static final String VERSION = "627.1";
+    public static final String VERSION = "627.2";
     public static final String DOMAIN = "SPENDING";
     public static final String TYPE = "REDUCE_CATEGORY_SPENDING";
     public static final String REASON_INCREASE = "CATEGORY_SPENDING_INCREASE";
@@ -78,13 +78,11 @@ public class CategorySpendingIncreaseGenerator implements RecommendationCandidat
         }
         Recommendation.Effect effect = new Recommendation.Effect(increase, increase * MONTHS_PER_YEAR, null, null, null, null, null, null);
         return Outcome.of(new RecommendationCandidate(VERSION, TYPE + ":" + categoryId, issue.issueId(), DOMAIN, TYPE,
-                label + " 소비 월 " + GeneratorSupport.won(increase) + " 줄이기",
-                "최근 " + label + " 월평균 소비가 " + GeneratorSupport.won(monthlyAverage) + "으로 이전 평균 "
-                        + GeneratorSupport.won(previousAverage) + "보다 " + GeneratorSupport.won(increase) + " 늘었습니다. 이전 수준으로 되돌리면 월 "
-                        + GeneratorSupport.won(increase) + "을 아낄 수 있습니다.",
+                label + " 지출 줄여보기",
+                "이전 수준으로 되돌리면 월 " + GeneratorSupport.won(increase) + "을 아낄 수 있어요.",
                 List.of(new RecommendationCandidate.Reason(REASON_INCREASE,
                         "이전 " + label + " 월평균 " + GeneratorSupport.won(previousAverage) + " 대비 " + GeneratorSupport.won(increase)
-                                + " 증가했습니다.", evidence)),
+                                + " 증가했어요.", evidence)),
                 effect));
     }
 }

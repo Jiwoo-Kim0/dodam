@@ -77,7 +77,11 @@ class SpendingIncreaseRuleTest {
         assertThat(issue.getDomain()).isEqualTo("SPENDING");
         assertThat(issue.getType()).isEqualTo("CATEGORY_SPENDING_INCREASE");
         assertThat(issue.getTitle()).isEqualTo("FOOD명 소비가 3개월째 늘고 있어요");
-        assertThat(issue.getDescription()).contains("140,000원").contains("100,000원").contains("40.0%(40,000원)");
+        // 설명은 화면 한 줄에 들어가야 해서 비율 하나만 남겼다(S15P21D105-604).
+        assertThat(issue.getDescription()).isEqualTo("최근 3개월 평균보다 40.0% 높아요.");
+        // 줄인 것은 표시 문구뿐이고 수치는 JSON에 그대로 남는다 — 화면이 필요하면 여기서 읽는다
+        assertThat(issue.getCurrentValue().get("monthlyAverage").asLong()).isEqualTo(140_000L);
+        assertThat(issue.getCurrentValue().get("increaseAmount").asLong()).isEqualTo(40_000L);
         assertThat(issue.getCurrentValue().get("categoryCode").asText()).isEqualTo("FOOD");
         assertThat(issue.getCurrentValue().get("consecutiveMonths").asInt()).isEqualTo(3);
         assertThat(issue.getBenchmarkValue().get("previousMonthlyAverage").asLong()).isEqualTo(100_000L);

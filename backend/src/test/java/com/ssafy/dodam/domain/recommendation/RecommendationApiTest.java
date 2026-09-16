@@ -467,7 +467,7 @@ class RecommendationApiTest {
                 .andReturn().getResponse().getContentAsString();
         JsonNode refinance = json.readTree(generated).at("/data/items/0/recommendation");
         assertThat(refinance.at("/domain").asText()).isEqualTo("LOAN");
-        assertThat(refinance.at("/title").asText()).isEqualTo("'신용대출' A 신용대출(으)로 대환 검토하기");
+        assertThat(refinance.at("/title").asText()).isEqualTo("'신용대출' 대환 알아보기");
         assertThat(refinance.at("/effect/interestSaving").asLong()).isEqualTo(18_000L);
         assertThat(refinance.at("/effect/monthlyCostSaving").asLong()).isEqualTo(6_000L);
         assertThat(refinance.at("/effect/annualCostSaving").asLong()).isEqualTo(18_000L);
@@ -489,7 +489,7 @@ class RecommendationApiTest {
                 .andExpect(jsonPath("$.data[1].evidence.feesIncluded").value(false));
 
         JsonNode comparison = json.readTree(generated).at("/data/items/1/recommendation");
-        assertThat(comparison.at("/title").asText()).isEqualTo("'신용대출' 대환 조건 비교하기");
+        assertThat(comparison.at("/title").asText()).isEqualTo("'신용대출' 대환 조건 비교해보기");
         // 628: 같은 LOAN/HIGH_INTEREST_RATE 문제 2건이 각자의 issueId로 구분된다
         String loanIssues = mvc.perform(get("/api/v1/diagnoses/{id}/issues?domain=LOAN", diagnosisId).with(user(fresh.toString())))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
@@ -511,7 +511,7 @@ class RecommendationApiTest {
 
         JsonNode spending = json.readTree(generated).at("/data/items/2/recommendation");
         assertThat(spending.at("/domain").asText()).isEqualTo("SPENDING");
-        assertThat(spending.at("/title").asText()).isEqualTo("식비 소비 월 40,000원 줄이기");
+        assertThat(spending.at("/title").asText()).isEqualTo("식비 지출 줄여보기");
         assertThat(spending.at("/effect/monthlyCostSaving").asLong()).isEqualTo(40_000L);
         assertThat(spending.at("/effect/annualCostSaving").asLong()).isEqualTo(480_000L);
         assertThat(spending.at("/simulation/type").asText()).isEqualTo("SPENDING");

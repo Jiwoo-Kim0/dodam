@@ -212,7 +212,7 @@ class DiagnosisApiTest {
         String body = mvc.perform(post("/api/v1/diagnoses").with(user(owner.toString())).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"forceRefresh\":true}"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.data.diagnosis.ruleVersion").value("v4-spending-loan-rules"))
+                .andExpect(jsonPath("$.data.diagnosis.ruleVersion").value("v5-copy-tone"))
                 .andExpect(jsonPath("$.data.diagnosis.issueCount").value(3))
                 .andExpect(jsonPath("$.data.diagnosis.overallStatus").value("RISK"))
                 .andExpect(jsonPath("$.data.diagnosis.coverage[?(@.ruleKey == 'CATEGORY_SPENDING_INCREASE')].status").value("EVALUATED"))

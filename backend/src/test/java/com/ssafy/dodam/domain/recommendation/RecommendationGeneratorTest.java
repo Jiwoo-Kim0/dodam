@@ -140,7 +140,9 @@ class RecommendationGeneratorTest {
         assertThat(candidate.candidateKey()).isEqualTo("SECURE_SHORTAGE_BUFFER:55");
         assertThat(candidate.effect().riskReduction()).isEqualTo("BALANCE_SHORTAGE_AVOIDED");
         assertThat(candidate.effect().monthlyCostSaving()).isNull();
-        assertThat(candidate.title()).contains("120,000원");
+        // 제목은 할 행동, 금액은 설명·효과 필드가 보여준다(S15P21D105-604)
+        assertThat(candidate.title()).isEqualTo("출금 전 잔액 채워두기");
+        assertThat(candidate.description()).contains("120,000원").endsWith("좋겠어요.");
         assertThat(candidate.reasons().get(0).evidence().path("shortageAmount").asLong()).isEqualTo(120_000L);
         ObjectNode broken = json.createObjectNode().put("riskId", 55L).put("riskDate", "not-a-date");
         assertThat(cashflow.generate(input(), issue(16L, "CASHFLOW", "BALANCE_SHORTAGE", IssueSeverity.HIGH, broken, evidence))
@@ -196,7 +198,8 @@ class RecommendationGeneratorTest {
         assertThat(candidate.sourceIssueId()).isEqualTo(21L);
         assertThat(candidate.effect().monthlyCostSaving()).isEqualTo(40_000L);
         assertThat(candidate.effect().annualCostSaving()).isEqualTo(480_000L);
-        assertThat(candidate.title()).isEqualTo("식비 소비 월 40,000원 줄이기");
+        assertThat(candidate.title()).isEqualTo("식비 지출 줄여보기");
+        assertThat(candidate.description()).isEqualTo("이전 수준으로 되돌리면 월 40,000원을 아낄 수 있어요.");
         assertThat(candidate.reasons()).hasSize(1);
         assertThat(candidate.reasons().get(0).code()).isEqualTo("CATEGORY_SPENDING_INCREASE");
         assertThat(candidate.reasons().get(0).evidence().path("categoryCode").asText()).isEqualTo("FOOD");
@@ -237,8 +240,11 @@ class RecommendationGeneratorTest {
         assertThat(candidate.effect().monthlyCostSaving()).isEqualTo(6_000L);
         // 잔여 3회 → 연간은 ×12가 아니라 ×3
         assertThat(candidate.effect().annualCostSaving()).isEqualTo(18_000L);
-        assertThat(candidate.title()).isEqualTo("'신용대출' A 신용대출(으)로 대환 검토하기");
-        assertThat(candidate.description()).contains("연 12%").contains("7%").contains("5%p").contains("18,000원");
+        assertThat(candidate.title()).isEqualTo("'신용대출' 대환 알아보기");
+        // 설명은 한 문장 + 효과 금액만 남겼다(S15P21D105-604). 금리 비교는 화면의 진단 문제 설명과
+        // 아래 근거가 이미 보여주므로, 카드에서 반복하면 같은 숫자가 한 화면에 세 번 나온다.
+        assertThat(candidate.description()).isEqualTo("대환하면 만기까지 이자 18,000원을 아낄 수 있어요(수수료 제외).");
+        assertThat(candidate.reasons().get(0).description()).contains("연 12%").contains("7%").contains("5%p");
         assertThat(candidate.reasons()).extracting(RecommendationCandidate.Reason::code)
                 .containsExactly("LOAN_RATE_ABOVE_MARKET", "REFINANCE_INTEREST_SAVING");
         assertThat(candidate.reasons().get(1).evidence().path("targetProductId").asLong()).isEqualTo(40L);
@@ -252,7 +258,7 @@ class RecommendationGeneratorTest {
         RecommendationCandidate candidate = outcome.candidates().get(0);
         assertThat(candidate.candidateKey()).isEqualTo("REFINANCE_LOAN:5");
         assertThat(candidate.effect()).isEqualTo(Recommendation.Effect.NONE);
-        assertThat(candidate.title()).isEqualTo("'신용대출' 대환 조건 비교하기");
+        assertThat(candidate.title()).isEqualTo("'신용대출' 대환 조건 비교해보기");
         assertThat(candidate.reasons()).extracting(RecommendationCandidate.Reason::code)
                 .containsExactly("LOAN_RATE_ABOVE_MARKET", "REFINANCE_ESTIMATE_UNAVAILABLE");
         assertThat(candidate.reasons().get(1).evidence().path("reason").asText()).isEqualTo("NO_ELIGIBLE_PRODUCT");

@@ -29,7 +29,7 @@ import org.springframework.stereotype.Component;
 @Component
 @Order(50)
 public class HighInterestLoanGenerator implements RecommendationCandidateGenerator {
-    public static final String VERSION = "627.1";
+    public static final String VERSION = "627.2";
     public static final String DOMAIN = "LOAN";
     public static final String TYPE = "REFINANCE_LOAN";
     public static final String REASON_ABOVE_MARKET = "LOAN_RATE_ABOVE_MARKET";
@@ -73,7 +73,7 @@ public class HighInterestLoanGenerator implements RecommendationCandidateGenerat
                 .put("comparisonGroup", GeneratorSupport.textOf(current, "comparisonGroup"));
         reasons.add(new RecommendationCandidate.Reason(REASON_ABOVE_MARKET,
                 "연 " + plain(interestRate) + "%로 같은 조건 상품의 공시 최저금리 중앙값 " + plain(referenceRate) + "%보다 "
-                        + plain(difference) + "%p 높습니다.", market));
+                        + plain(difference) + "%p 높아요.", market));
 
         JsonNode refinance = current.get("refinance");
         Long saving = GeneratorSupport.longOf(refinance, "interestSaving");
@@ -85,11 +85,10 @@ public class HighInterestLoanGenerator implements RecommendationCandidateGenerat
             ObjectNode evidence = json.createObjectNode();
             evidence.put("loanId", loanId).put("reason", GeneratorSupport.textOf(refinance, "unavailableReason"));
             reasons.add(new RecommendationCandidate.Reason(REASON_ESTIMATE_UNAVAILABLE,
-                    "잔여 기간·상환방식에 맞는 대환 상품이 없어 절감액을 추정하지 못했습니다.", evidence));
+                    "잔여 기간·상환방식에 맞는 대환 상품이 없어 절감액은 추정하지 못했어요.", evidence));
             return Outcome.of(new RecommendationCandidate(VERSION, TYPE + ":" + loanId, issue.issueId(), DOMAIN, TYPE,
-                    label + " 대환 조건 비교하기",
-                    label + " 금리는 연 " + plain(interestRate) + "%로 비교상품 공시금리 " + plain(referenceRate) + "%보다 "
-                            + plain(difference) + "%p 높습니다. 잔여 기간·상환방식에 맞는 대환 상품을 비교해 보세요.",
+                    label + " 대환 조건 비교해보기",
+                    "지금 금리가 비슷한 조건의 상품보다 " + plain(difference) + "%p 높아요. 대환 조건을 한번 비교해 보세요.",
                     reasons, Recommendation.Effect.NONE));
         }
         long monthly = saving / installments;
@@ -104,13 +103,11 @@ public class HighInterestLoanGenerator implements RecommendationCandidateGenerat
                 .put("interestSaving", saving).put("feesIncluded", false);
         reasons.add(new RecommendationCandidate.Reason(REASON_INTEREST_SAVING,
                 "공시 최저 연 " + plain(appliedRate) + "% 상품으로 대환하면 만기까지 이자 " + GeneratorSupport.won(saving)
-                        + "을 아낄 수 있습니다(중도상환수수료·부대비용 제외).", evidence));
+                        + "을 아낄 수 있어요(중도상환수수료·부대비용 제외).", evidence));
         Recommendation.Effect effect = new Recommendation.Effect(monthly, annual, saving, null, null, null, null, null);
         return Outcome.of(new RecommendationCandidate(VERSION, TYPE + ":" + loanId, issue.issueId(), DOMAIN, TYPE,
-                label + " " + (productName == null ? "더 낮은 금리 상품" : productName) + "(으)로 대환 검토하기",
-                label + " 금리는 연 " + plain(interestRate) + "%로 비교상품 공시금리 " + plain(referenceRate) + "%보다 "
-                        + plain(difference) + "%p 높습니다. 공시 최저 연 " + plain(appliedRate) + "% 상품으로 대환하면 만기까지 이자 "
-                        + GeneratorSupport.won(saving) + "을 아낄 수 있습니다(중도상환수수료·부대비용 제외).",
+                label + " 대환 알아보기",
+                "대환하면 만기까지 이자 " + GeneratorSupport.won(saving) + "을 아낄 수 있어요(수수료 제외).",
                 reasons, effect));
     }
 

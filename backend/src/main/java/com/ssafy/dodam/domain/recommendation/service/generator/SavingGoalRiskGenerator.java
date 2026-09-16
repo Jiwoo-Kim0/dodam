@@ -28,7 +28,7 @@ import org.springframework.stereotype.Component;
 @Component
 @Order(10)
 public class SavingGoalRiskGenerator implements RecommendationCandidateGenerator {
-    public static final String VERSION = "548.1";
+    public static final String VERSION = "604.1";
     public static final String DOMAIN = "SAVING";
     public static final String TYPE = "INCREASE_MONTHLY_SAVING";
     public static final String REASON_SHORTFALL = "GOAL_SAVING_SHORTFALL";
@@ -80,7 +80,7 @@ public class SavingGoalRiskGenerator implements RecommendationCandidateGenerator
                 shortfallEvidence));
         if (target == null || current == null) {
             reasons.add(new RecommendationCandidate.Reason(REASON_FIELD_MISSING,
-                    "진단 스냅샷에 목표 금액·모인 금액이 없어 예상 달성일 변화를 계산하지 못했습니다.", null));
+                    "목표 금액·모인 금액 자료가 없어 예상 달성일 변화는 계산하지 못했어요.", null));
         } else {
             long remaining = Math.max(0L, target - current);
             if (remaining == 0) {
@@ -93,19 +93,18 @@ public class SavingGoalRiskGenerator implements RecommendationCandidateGenerator
                     .put("currentForecastDate", currentDate == null ? null : currentDate.toString())
                     .put("improvedForecastDate", improvedDate.toString());
             reasons.add(new RecommendationCandidate.Reason(REASON_FORECAST_DELAY,
-                    currentDate == null ? "현재 저축 속도로는 목표를 달성할 수 없습니다. 월 " + GeneratorSupport.won(required)
-                            + "씩 저축하면 " + improvedDate + "에 달성할 수 있습니다."
-                            : "현재 속도로는 " + currentDate + ", 월 " + GeneratorSupport.won(required) + "씩 저축하면 " + improvedDate
-                            + "에 달성할 수 있습니다.", delay));
+                    currentDate == null ? "지금 저축 속도로는 목표에 닿기 어려워요. 월 " + GeneratorSupport.won(required)
+                            + "씩 저축하면 " + improvedDate + "에 달성할 수 있어요."
+                            : "지금 속도로는 " + currentDate + ", 월 " + GeneratorSupport.won(required) + "씩 저축하면 " + improvedDate
+                            + "에 달성할 수 있어요.", delay));
         }
 
         String label = goalName == null ? "목표" : "'" + goalName + "'";
         Recommendation.Effect effect = new Recommendation.Effect(null, null, null, null, currentDate, improvedDate,
                 GeneratorSupport.advancedDays(currentDate, improvedDate), shortfall);
         return Outcome.of(new RecommendationCandidate(VERSION, TYPE + ":" + goalId, issue.issueId(), DOMAIN, TYPE,
-                "월 저축 " + GeneratorSupport.won(shortfall) + " 늘리기",
-                label + " 달성에 월 " + GeneratorSupport.won(required) + "이 필요하지만 현재 평균 저축은 월 "
-                        + GeneratorSupport.won(average) + "입니다. 월 " + GeneratorSupport.won(shortfall) + "을 더 저축해 보세요.",
+                "저축 조금씩 늘려보기",
+                "월 " + GeneratorSupport.won(shortfall) + "을 더 저축하면 " + label + " 달성에 다가갈 수 있어요.",
                 reasons, effect));
     }
 }

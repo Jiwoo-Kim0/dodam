@@ -131,9 +131,11 @@ public class SpendingIncreaseRule {
         String title = item.consecutiveMonths() >= 2
                 ? item.categoryName() + " 소비가 " + item.consecutiveMonths() + "개월째 늘고 있어요"
                 : item.categoryName() + " 소비가 늘었어요";
-        String description = "최근 " + result.recentPeriod().months() + "개월 월평균 " + won(item.monthlyAverage()) + "으로 이전 "
-                + result.baselinePeriod().months() + "개월 평균 " + won(item.previousMonthlyAverage()) + "보다 "
-                + item.increaseRatePercent() + "%(" + won(item.increaseAmount()) + ") 높아요.";
+        // 화면 한 줄에 들어가야 한다(FE 문구 정비, S15P21D105-604). 금액 두 개와 비율을 모두 넣으면
+        // 두 줄로 넘어가고, 같은 수치가 추천 카드에서 다시 반복된다. 상세 수치는 currentValue·
+        // benchmarkValue JSON에 그대로 남아 있으므로 잃는 정보는 없다.
+        String description = "최근 " + result.recentPeriod().months() + "개월 평균보다 "
+                + item.increaseRatePercent() + "% 높아요.";
         return DiagnosisIssue.ofRule(diagnosis.getDiagnosisId(), DOMAIN, TYPE, item.severity(), title, description,
                 current, benchmark, evidence, diagnosis.getCreatedAt());
     }

@@ -11,7 +11,7 @@ package com.ssafy.dodam.domain.diagnosis.service;
  */
 public final class DiagnosisRuleVersion {
 
-    public static final String CURRENT = "v4-spending-loan-rules";
+    public static final String CURRENT = "v5-copy-tone";
 
     private DiagnosisRuleVersion() {
     }
