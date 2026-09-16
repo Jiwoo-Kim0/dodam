@@ -274,6 +274,26 @@ class SimulationCardCombinedApiTest {
     }
 
     @Test
+    void combinedSavingGoalIdChangesOnlySelectedGoal() throws Exception {
+        jdbc.update("""
+                INSERT INTO `transaction` (transaction_id, user_id, transaction_date, transaction_type, amount,
+                    payment_method, spending_type, summary, hidden, source_type, created_at)
+                VALUES (?, ?, ?, 'EXPENSE', 30000, 'CARD', 'VARIABLE', 'test', FALSE, 'SEED', ?)
+                """, UUID.randomUUID().toString(), owner, NOW.toLocalDate().minusMonths(1), NOW);
+        Goal second = goals.save(Goal.create(owner, "여행", GoalType.SAVING, NOW.minusMonths(1)));
+        savingGoals.save(SavingGoal.create(second.getId(), 1_200_000L, NOW.toLocalDate().plusYears(1)));
+        String request = "{\"scenarios\":["
+                + "{\"type\":\"SAVING\",\"parameters\":{\"goalId\":" + second.getId() + ",\"monthlySavingAmount\":100000,\"durationMonths\":3}},"
+                + "{\"type\":\"SPENDING\",\"parameters\":{\"monthlyReduction\":1000,\"durationMonths\":3}}]}";
+        run(owner, "/combined", request)
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.simulation.after.goals[0].monthlySaving").value(333_333))
+                .andExpect(jsonPath("$.data.simulation.after.goals[1].monthlySaving").value(100_000));
+        run(owner, "/combined", request.replace("\"goalId\":" + second.getId(), "\"goalId\":" + second.getId() + ".5"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void combinedStoresChildScenarioRowsAndNeverEchoesAccountNumbers() throws Exception {
         // 저축 변경(계좌번호 지정) + 할부 + 대환(계좌번호 지정): 자식 3건, 저장 파라미터에는 내부 id만
         String request = "{\"scenarios\":["
@@ -413,6 +433,11 @@ class SimulationCardCombinedApiTest {
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
         run(owner, "/combined", "{\"scenarios\":[" + installment + ",{\"type\":\"LOAN_PREPAYMENT\",\"parameters\":{\"accountNo\":\"" + OTHER_LOAN_NO + "\",\"prepaymentAmount\":1}}]}")
                 .andExpect(status().isNotFound());
+        // 619: SAVING 자식의 goalId도 단독 실행과 같은 검증 — 타인 목표 404, accountNo와 동시 지정 400
+        run(other, "/combined", "{\"scenarios\":[" + installment + ",{\"type\":\"SAVING\",\"parameters\":{\"goalId\":" + goalId + ",\"monthlySavingAmount\":1}}]}")
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+        run(owner, "/combined", "{\"scenarios\":[" + installment + ",{\"type\":\"SAVING\",\"parameters\":{\"goalId\":" + goalId + ",\"accountNo\":\"" + GOAL_ACCOUNT_NO + "\",\"monthlySavingAmount\":1}}]}")
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
         // 자식 계산 오류(거래가 없어 평균 지출 0 → 감소액 초과)는 전체 실패이며 부모·자식 어느 행도 남지 않는다
         run(owner, "/combined", "{\"scenarios\":[" + installment + ",{\"type\":\"SPENDING\",\"parameters\":{\"monthlyReduction\":1}}]}")
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("SIMULATION_REDUCTION_EXCEEDS_SPENDING"));

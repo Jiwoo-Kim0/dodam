@@ -11,7 +11,7 @@ import jakarta.persistence.Table;
  *
  * <p>`account`는 ID·유형 컬럼만 들고 연관관계를 걸지 않는다(계좌 도메인 소유 테이블). 복합 외래키는 V8 DDL이 보장한다.
  *
- * <p>`contribution_amount`(계좌 잔액 중 목표에 기여하는 금액)는 명세 12 Body(`accountNos[]`)에 대응 필드가 없어 null로 두고
+ * <p>`contribution_amount`(계좌 잔액 중 목표에 기여하는 금액)는 명세 12 Body(`accountIds[]`)에 대응 필드가 없어 null로 두고
  * 잔액 전체를 기여로 본다.
  */
 @Entity

@@ -76,9 +76,9 @@ class RecommendationSimulationPresetAssemblerTest {
         assertThat(preset.available()).isTrue();
         assertThat(preset.type()).isEqualTo(SimulationType.SAVING);
         assertThat(preset.endpoint()).isEqualTo("/api/v1/simulations/saving");
-        // 변경 후 절대값 R이지 contributionAmount(R − A)가 아니다. accountNo는 항상 null
-        assertThat(preset.request()).isEqualTo(new SavingSimulationRequest(null, 500_000L, null));
-        assertThat(preset.assumptions()).containsExactly(RecommendationSimulationPreset.TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT);
+        // 변경 후 절대값 R이지 contributionAmount(R − A)가 아니다. accountNo는 항상 null, 대상 목표는 추천의 goalId(619)
+        assertThat(preset.request()).isEqualTo(new SavingSimulationRequest(null, 3L, 500_000L, null));
+        assertThat(preset.assumptions()).isEmpty();
     }
 
     @Test
@@ -127,7 +127,7 @@ class RecommendationSimulationPresetAssemblerTest {
         verify(reasons, times(1)).findAllOwnedIn(7L, List.of(2L, 5L));
         assertThat(presets).hasSize(3);
         assertThat(presets.get(1L).type()).isEqualTo(SimulationType.SPENDING);
-        assertThat(presets.get(2L).request()).isEqualTo(new SavingSimulationRequest(null, 400_000L, null));
+        assertThat(presets.get(2L).request()).isEqualTo(new SavingSimulationRequest(null, 3L, 400_000L, null));
         assertThat(presets.get(5L).unavailableReason()).isEqualTo(RecommendationSimulationPreset.SNAPSHOT_FIELD_MISSING);
     }
 

@@ -1,9 +1,10 @@
 import { useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import { ActivityIndicator, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { AppHeader } from '@/components/appHeader/AppHeader';
 import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
+import { ScreenState } from '@/components/screenState/ScreenState';
 import { routes } from '@/constants/routes';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import { colors } from '@/styles';
@@ -59,10 +60,7 @@ export function ReportScreen() {
         onRefresh={() => void refetch()}
         refreshing={isRefreshing}>
         {isLoading ? (
-          <View style={styles.stateContainer}>
-            <ActivityIndicator color={colors.primary.green} size="large" />
-            <Text style={styles.stateText}>리포트를 불러오고 있어요</Text>
-          </View>
+          <ScreenState description="리포트를 불러오고 있어요" isLoading />
         ) : data ? (
           <>
             <Text style={styles.screenDescription}>
@@ -82,12 +80,15 @@ export function ReportScreen() {
             </View>
           </>
         ) : (
-          <View style={styles.stateContainer}>
-            <Text style={styles.stateTitle}>리포트를 표시할 수 없어요</Text>
-            <Text style={styles.stateText}>
-              {error ? '금융 데이터를 다시 불러와 주세요.' : '완료된 월의 금융 데이터가 없어요.'}
-            </Text>
-          </View>
+          <ScreenState
+            description={
+              error
+                ? '금융 데이터를 다시 불러와 주세요.'
+                : '완료된 월의 금융 데이터가 없어요.'
+            }
+            onRetry={error ? () => void refetch() : undefined}
+            title="리포트를 표시할 수 없어요"
+          />
         )}
       </RefreshableBouncyScrollView>
     </SafeAreaLayout>

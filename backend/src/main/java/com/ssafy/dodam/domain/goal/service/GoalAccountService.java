@@ -16,7 +16,6 @@ import com.ssafy.dodam.global.exception.BusinessException;
 import com.ssafy.dodam.global.exception.ErrorCode;
 import com.ssafy.dodam.global.exception.InvalidRequestException;
 import com.ssafy.dodam.global.exception.ResourceNotFoundException;
-import com.ssafy.dodam.global.security.SensitiveNumberHasher;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -54,7 +53,6 @@ public class GoalAccountService {
     private final GoalAccountRepository goalAccountRepository;
     private final SavingGoalRepository savingGoalRepository;
     private final AccountRepository accountRepository;
-    private final SensitiveNumberHasher sensitiveNumberHasher;
     private final GoalHistoryRecorder goalHistoryRecorder;
     private final GoalClock goalClock;
 
@@ -63,7 +61,6 @@ public class GoalAccountService {
             GoalAccountRepository goalAccountRepository,
             SavingGoalRepository savingGoalRepository,
             AccountRepository accountRepository,
-            SensitiveNumberHasher sensitiveNumberHasher,
             GoalHistoryRecorder goalHistoryRecorder,
             GoalClock goalClock
     ) {
@@ -71,7 +68,6 @@ public class GoalAccountService {
         this.goalAccountRepository = goalAccountRepository;
         this.savingGoalRepository = savingGoalRepository;
         this.accountRepository = accountRepository;
-        this.sensitiveNumberHasher = sensitiveNumberHasher;
         this.goalHistoryRecorder = goalHistoryRecorder;
         this.goalClock = goalClock;
     }
@@ -89,8 +85,10 @@ public class GoalAccountService {
     /**
      * 연결 계좌를 요청 목록으로 통째로 바꾼다. 빈 배열은 모두 해제다.
      * 검증(소유권·유형·상태·다른 목표 연결)을 모두 끝낸 뒤 반영하므로 부분 반영은 없다.
+     *
+     * @param accountIds 계좌 응답의 `accountId` 목록. 타인 계좌·없는 계좌는 구분하지 않고 404다(존재 여부를 드러내지 않기 위해)
      */
-    public GoalAccountsResponse replaceAccounts(Long userId, Long goalId, List<String> accountNos) {
+    public GoalAccountsResponse replaceAccounts(Long userId, Long goalId, List<Long> accountIds) {
         Goal goal = findOwned(userId, goalId);
         if (goal.getType() != GoalType.SAVING) {
             throw new InvalidRequestException(SPENDING_GOAL_MESSAGE);
@@ -101,9 +99,9 @@ public class GoalAccountService {
 
         // 요청 계좌 확인: 순서 유지, 중복 제거
         Map<Long, Account> requested = new LinkedHashMap<>();
-        for (String accountNo : new LinkedHashSet<>(accountNos)) {
+        for (Long accountId : new LinkedHashSet<>(accountIds)) {
             Account account = accountRepository
-                    .findByUserIdAndAccountNoHash(userId, sensitiveNumberHasher.hash(accountNo))
+                    .findByIdAndUserId(accountId, userId)
                     .orElseThrow(() -> new ResourceNotFoundException(ACCOUNT_NOT_FOUND_MESSAGE));
             if (!LINKABLE_TYPES.contains(account.getAccountType())) {
                 throw new InvalidRequestException(ACCOUNT_TYPE_MESSAGE);

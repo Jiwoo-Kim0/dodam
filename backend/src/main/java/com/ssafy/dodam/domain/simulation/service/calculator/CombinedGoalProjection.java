@@ -134,8 +134,9 @@ final class CombinedGoalProjection {
         if (bothPresent) {
             assumptions.add(SimulationAssumptions.SAVING_AMOUNT_IS_FINAL_TARGET);
         }
-        if (saving != null && saving.accountId() != null && !SavingChangeCalculator.isLinked(baseline, saving)) {
-            assumptions.add(SavingChangeCalculator.ACCOUNT_NOT_LINKED_TO_GOAL);
+        String targetMiss = saving == null ? null : SavingChangeCalculator.targetMissAssumption(baseline, saving);
+        if (targetMiss != null) {
+            assumptions.add(targetMiss);
         }
         if (baseline.savingGoals().stream().filter(goal -> goal.remaining() > 0).count() > 1) {
             assumptions.add(SimulationScenarios.SPLIT_BY_REMAINING);

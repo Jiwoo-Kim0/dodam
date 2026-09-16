@@ -1,0 +1,112 @@
+package com.ssafy.dodam.domain.coach.service;
+
+import com.ssafy.dodam.domain.coach.dto.CoachFacts;
+import com.ssafy.dodam.domain.coach.dto.response.CoachDegradedReason;
+import com.ssafy.dodam.domain.coach.dto.response.CoachMessageResponse;
+import com.ssafy.dodam.domain.coach.dto.response.CoachSource;
+import java.util.List;
+import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+/**
+ * API 21 3종의 공통 흐름. 세 엔드포인트의 차이는 {@link CoachFactAssembler}가 무엇을 모으는지뿐이고,
+ * 그 뒤 검사·호출·대체는 전부 같은 경로를 탄다.
+ *
+ * <pre>
+ *   사실 조립(소유권 검증 포함)
+ *     → 프롬프트 생성
+ *     → 민감정보 검사   ─ 걸리면 호출하지 않고 템플릿
+ *     → 외부 AI 호출    ─ 실패하면 템플릿
+ *     → 숫자 검증       ─ 지어낸 숫자가 있으면 템플릿
+ *     → 응답(수치·판정은 어느 경로든 서버 계산값)
+ * </pre>
+ *
+ * <p><b>실패해도 200이다.</b> 코치 문장은 진단·추천 데이터의 표현 계층이지 데이터 자체가 아니다.
+ * 외부 API가 죽었다고 502를 돌려주면 FE는 화면을 못 그리는데, 정작 보여줄 수치는 전부 서버에 있다.
+ * 그래서 실패를 상태 코드가 아니라 {@code source}/{@code degradedReason} 필드로 알린다. 인증·소유권
+ * 실패(401/404)는 이와 무관하게 그대로 예외로 올린다 — 그쪽은 데이터가 없는 것이 맞다.
+ */
+@Service
+public class CoachService {
+
+    private static final Logger log = LoggerFactory.getLogger(CoachService.class);
+
+    private final CoachFactAssembler assembler;
+    private final CoachPromptFactory prompts;
+    private final CoachTextGenerator generator;
+    private final CoachTemplateWriter template;
+    private final CoachNumberGuard numbers;
+    private final CoachSensitiveDataGuard sensitive;
+    private final CoachClock clock;
+
+    public CoachService(CoachFactAssembler assembler, CoachPromptFactory prompts, CoachTextGenerator generator,
+            CoachTemplateWriter template, CoachNumberGuard numbers, CoachSensitiveDataGuard sensitive, CoachClock clock) {
+        this.assembler = assembler;
+        this.prompts = prompts;
+        this.generator = generator;
+        this.template = template;
+        this.numbers = numbers;
+        this.sensitive = sensitive;
+        this.clock = clock;
+    }
+
+    public CoachMessageResponse financialSummary(Long userId, Long diagnosisId) {
+        return explain(assembler.financialSummary(userId, diagnosisId));
+    }
+
+    public CoachMessageResponse inefficiency(Long userId, Long diagnosisId, Long issueId) {
+        return explain(assembler.inefficiency(userId, diagnosisId, issueId));
+    }
+
+    public CoachMessageResponse recommendation(Long userId, Long recommendationId) {
+        return explain(assembler.recommendation(userId, recommendationId));
+    }
+
+    private CoachMessageResponse explain(CoachFacts facts) {
+        if (!generator.isAvailable()) {
+            return respond(facts, CoachSource.TEMPLATE, CoachDegradedReason.AI_DISABLED, null, template.write(facts));
+        }
+
+        String systemPrompt = prompts.system(facts.topic());
+        String userPrompt = prompts.user(facts);
+
+        List<String> violations = sensitive.scan(userPrompt);
+        if (!violations.isEmpty()) {
+            // 조립기가 거르지 못한 값이 있다는 뜻이므로 회귀로 보고 ERROR로 남긴다. 프롬프트 본문은 남기지 않는다.
+            log.error("Coach prompt blocked before the external call: topic={} violations={}", facts.topic(), violations);
+            return respond(facts, CoachSource.TEMPLATE, CoachDegradedReason.SENSITIVE_DATA_BLOCKED, null, template.write(facts));
+        }
+
+        String generated;
+        try {
+            generated = generator.generate(systemPrompt, userPrompt);
+        } catch (CoachGenerationException exception) {
+            log.warn("Coach generation failed, falling back to template: topic={} reason={}",
+                    facts.topic(), exception.getMessage());
+            return respond(facts, CoachSource.TEMPLATE, CoachDegradedReason.AI_UNAVAILABLE, null, template.write(facts));
+        }
+
+        if (generated == null || generated.isBlank()) {
+            log.warn("Coach generation returned an empty body: topic={}", facts.topic());
+            return respond(facts, CoachSource.TEMPLATE, CoachDegradedReason.AI_EMPTY_RESPONSE, null, template.write(facts));
+        }
+
+        Optional<String> unverified = numbers.findUnverifiedNumber(generated, facts);
+        if (unverified.isPresent()) {
+            // 모델이 지어낸 숫자. 어떤 토큰이 걸렸는지만 남긴다 — 프롬프트·응답 전문을 로그에 흘리지 않는다.
+            log.warn("Coach answer contains a number that was not provided: topic={} token={}",
+                    facts.topic(), unverified.get());
+            return respond(facts, CoachSource.TEMPLATE, CoachDegradedReason.AI_UNVERIFIED_NUMBER, null, template.write(facts));
+        }
+
+        return respond(facts, CoachSource.AI, null, generator.modelName(), generated.trim());
+    }
+
+    private CoachMessageResponse respond(CoachFacts facts, CoachSource source, CoachDegradedReason reason,
+            String model, String message) {
+        return new CoachMessageResponse(facts.topic(), source, reason, model, clock.now(), facts.subject(),
+                message, template.highlights(facts), facts, CoachMessageResponse.DISCLAIMER);
+    }
+}

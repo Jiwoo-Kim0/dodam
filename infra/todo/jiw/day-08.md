@@ -548,6 +548,223 @@ exit=0
 `container-watch.sh`는 컨테이너를 보지 cron 작업을 보지 않는다.
 이번에도 09-15 04:00에 ERROR가 찍혔지만 하루 가까이 아무도 몰랐다.
 
+## 2026-09-16
+
+### 17. 소셜 로그인 — compose 변수 누락 수정 및 `.env.example` 정리
+
+**배경**: 카카오 로그인 연동에 무엇이 필요한지 확인하던 중, 백엔드가 2026-09-15에
+소셜 로그인을 이미 구현해둔 것을 발견했다(`backend/docs/auth-social.md`, S15P21D105-611).
+엔드포인트는 `POST /api/v1/auth/social/{provider}`, 카카오는 `/v2/user/me` 검증 방식이다.
+인프라 문서(`external-integrations.md` 4절)가 예상했던 흐름과 같지만 **엔드포인트 경로와
+환경변수 이름이 다르다**(`/auth/oauth/` → `/auth/social/`, `KAKAO_APP_KEY` → `KAKAO_APP_ID`).
+
+#### 발견 1 — compose가 소셜 변수를 backend에 전달하지 않고 있었다
+
+`application.yml`이 참조하는데 `docker-compose.yml`에 없었다.
+
+```
+app.social.kakao.app-id     : ${KAKAO_APP_ID:}      ← application.yml
+app.social.google.client-ids: ${GOOGLE_CLIENT_ID:}  ← application.yml
+docker-compose.yml backend environment → 두 변수 모두 없음
+```
+
+**왜 위험한가**: 기본값이 빈 문자열이라 **백엔드는 정상 기동한다.** 카카오는 "우리 앱 토큰인지"
+검사만 생략되고 로그인은 되지만, **구글 로그인만 런타임에 503**(`SOCIAL_PROVIDER_UNAVAILABLE`)로
+떨어진다. 09-08 `JWT_SECRET` 유실과 같은 유형인데, 그때는 기동 실패로 즉시 드러난 반면
+이번엔 겉보기 정상이라 더 늦게 발견된다.
+
+**왜 `check-env.sh`가 못 잡는가**: 3-1 앱↔compose 대조가 `application-prod.yml`만 읽는데
+소셜 설정은 `application.yml`에 있다. 검사 사각지대다.
+
+**조치** — `infra/docker-compose.yml` backend `environment`에 2줄 추가.
+
+```yaml
+KAKAO_APP_ID: ${KAKAO_APP_ID:-}
+GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+```
+
+`:-` 기본값을 붙인 이유는 **콘솔 앱이 아직 없어 값이 비어 있기 때문**이다. 기본값 없이
+`${KAKAO_APP_ID}`로 쓰면 `check-env.sh` 3)번이 필수 변수로 뽑아 **빈 값 → 배포 실패**가 된다.
+(확인: 추가 후에도 필수 변수 목록 15개 그대로, 두 변수 미포함)
+
+누락 경위를 주석으로 함께 남겼다 — 특히 "check-env가 잡지 못하므로 병합 중 유실 주의".
+
+#### 발견 2 — `.env.example`에 쓰지 않는 secret 항목이 남아 있었다
+
+`KAKAO_CLIENT_ID` / `KAKAO_CLIENT_SECRET` / `GOOGLE_CLIENT_SECRET` 3줄.
+`auth-social.md`가 "이 흐름에서 쓰지 않는다"고 명시한 값들이다.
+실제로 이 줄들 때문에 "카카오 콘솔의 Client Secret을 넣어야 하냐"는 혼동이 발생했다.
+
+**조치** — 3줄 제거. 제거 이유와 "서버 리다이렉트 방식으로 바꾸면 그때 다시 추가"를 주석으로 남겼다.
+`KAKAO_APP_ID`·`GOOGLE_CLIENT_ID`에는 발급 위치와 **비었을 때의 증상**을 적었다.
+
+#### 검증
+
+docker가 이 WSL 배포판에 붙어 있지 않아 `docker compose config`를 쓸 수 없었다.
+PyYAML로 파싱해 backend environment 18개 키와 두 변수의 값 형태를 확인했다.
+**EC2에서 실제 배포로는 아직 검증하지 않았다.**
+
+#### 확정된 값 (문서 갱신 필요)
+
+| 항목 | 값 |
+| --- | --- |
+| 엔드포인트 | `POST /api/v1/auth/social/{provider}` (`kakao` \| `google`) |
+| 카카오 검증 | access token → `GET https://kapi.kakao.com/v2/user/me` |
+| 구글 검증 | ID token → JWK 서명 + `iss`/`aud` |
+| 서버 필요 값 | `KAKAO_APP_ID`(선택), `GOOGLE_CLIENT_ID`(구글 쓰려면 필수) |
+| FE 필요 값 | 카카오 **네이티브 앱 키** (서버와 무관, APK에 박힘) |
+| 아웃바운드 | `kapi.kakao.com`, `www.googleapis.com` HTTPS 필요 — **미확인** |
+
+### 18. `GOOGLE_CLIENT_ID` EC2 `.env` 적용 (10:53) — 운영 파일 쓰기
+
+구글 OAuth 클라이언트 2개(Android·웹)가 생성되어 값을 받았다. 두 ID 모두 같은 프로젝트 번호
+`184017850372` 계열이고, 백엔드가 `aud ∩ client-ids`로 보므로 **쉼표로 둘 다** 넣었다.
+
+```bash
+cp -p .env .env.bak.20260916-google-client-id   # 백업 먼저
+# GOOGLE_CLIENT_ID= → 두 클라이언트 ID를 쉼표로
+bash infra/scripts/check-env.sh                 # → 통과 (필수 변수 15개)
+```
+
+**아직 백엔드에 전달되지 않는다.** EC2에 배포된 `docker-compose.yml`에는 소셜 변수 2줄이 없다
+(17절 수정이 아직 push·머지되지 않았다). `.env`에 값만 들어간 상태이고,
+**배포가 한 번 돌아야 컨테이너가 이 값을 받는다.**
+
+#### 함께 발견한 것 — `.env`에 이미 카카오 값이 들어와 있었다 (10:12 수정됨)
+
+```
+KAKAO_CLIENT_ID=9d60...(32자리 hex)   ← 아무 코드도 읽지 않는 변수
+KAKAO_CLIENT_SECRET=                   ← 〃
+KAKAO_APP_ID=1573091                   ← 백엔드가 읽는 값. 정상
+GOOGLE_CLIENT_SECRET=                  ← 아무 코드도 읽지 않는 변수
+```
+
+카카오 콘솔 앱은 이미 생성된 것으로 보인다(앱 ID `1573091`). `KAKAO_CLIENT_ID`의 32자리 값은
+**카카오 앱 키 형식**인데, 이 이름의 변수를 읽는 코드가 없어 아무 효과가 없다.
+그 값이 네이티브 앱 키라면 FE가 `app.json`에 넣어야 할 값이다 — 확인 필요.
+
+`.env.example`에서는 17절에 미사용 3줄을 제거했지만, **운영 `.env`의 해당 줄은 지우지 않았다**
+(값이 들어 있어 임의 삭제하지 않음). 정리 여부는 사용자 확인 후.
+
+### 19. 운영 `.env` 미사용 소셜 항목 제거 (11:00)
+
+18절에서 발견한 `KAKAO_CLIENT_ID`의 32자리 값은 **카카오 REST API 키**로 확인됐다(사용자 확인).
+우리 흐름에서 서버가 카카오에 하는 호출은 `GET /v2/user/me`에 사용자 access token을 Bearer로
+싣는 것뿐이라 앱 키를 실을 자리가 없다. 3줄을 제거했다.
+
+```bash
+cp -p .env .env.bak.20260916-remove-unused-social
+# KAKAO_CLIENT_ID / KAKAO_CLIENT_SECRET / GOOGLE_CLIENT_SECRET 제거
+chmod 600 .env
+bash scripts/check-env.sh   # → 통과 (필수 변수 15개)
+```
+
+제거 후 운영 `.env`의 소셜 항목은 백엔드가 실제로 읽는 2개만 남았다.
+
+```
+KAKAO_APP_ID=1573091
+GOOGLE_CLIENT_ID=<Android>,<웹>   (184017850372- 계열 2개)
+```
+
+이로써 `.env.example`(17절 커밋)과 운영 `.env`의 구성이 일치한다.
+
+**카카오 네이티브 앱 키는 아직 받지 않았다.** 서버와 무관하고 FE가 `app.json`에 넣을 값이다.
+
+### 20. 카카오·구글 아웃바운드 연결성 확인 (11:0x) — 조회만
+
+`auth-social.md`가 요구하는 두 호스트로 EC2 호스트와 backend 컨테이너 양쪽에서 확인했다.
+금융망·OpenAI 때(7절 계열)와 같은 절차다.
+
+| 대상 | EC2 호스트 | backend 컨테이너 |
+| --- | --- | --- |
+| `https://kapi.kakao.com/v2/user/me` | HTTP 401 (0.06s) | HTTP 401 (0.05s) |
+| `https://www.googleapis.com/oauth2/v3/certs` | HTTP 200 (0.08s) | HTTP 200 (0.08s) |
+
+**네트워크 차단 없음.** 카카오의 401은 토큰 없이 호출했으므로 정상이다(요청이 카카오까지
+도달해 인증 단계에서 거절된 것). 구글 JWK는 인증이 필요 없어 200이다.
+
+→ 아웃바운드 화이트리스트 등록이나 방화벽 작업은 필요 없다. 소셜 로그인이 실패한다면
+네트워크가 아니라 설정(클라이언트 ID·키 해시·동의항목) 쪽을 봐야 한다.
+
+### 21. 카카오 이메일 동의항목 사용 불가 — 확인 및 결정 (11:2x)
+
+동의항목 화면에서 `카카오계정(이메일)`이 **"권한 없음"**이고, 신청 버튼에
+**"이 앱은 비즈 앱이 아닙니다. 비즈 앱으로 전환 후 신청 자격을 확인할 수 있습니다"**로 막혔다.
+
+**비즈니스 인증 ON ≠ 비즈 앱이다.** 인증이 켜져 있어도 앱 유형이 비즈 앱이 아니면
+신청 자격 확인까지 가지 못한다. 비즈 앱 전환에는 카카오톡 채널 연결과
+사업자 정보 등록(사업자등록번호)이 필요한데, 교육 프로젝트라 쓸 수 있는 사업자 정보가 없다.
+
+**결정: 카카오는 이메일 없이 간다.** 로그인 기능 자체는 영향받지 않는다.
+
+- 카카오 로그인·토큰 발급·서버 검증·사용자 식별(닉네임) → 전부 정상
+- 카카오 가입자는 **기본값으로** 대체 이메일 `kakao.{해시20자}@social.dodam.invalid`
+- 기존 이메일 회원과 자동 연결 안 됨, 가입 시 금융망 등록 시도 안 함(`finance_connection` FAILED)
+- 구글은 제약 없음 — 실제 이메일 수집됨
+
+백엔드가 이 경로를 정상 경로로 구현해 두었다(`auth-social.md` 통합 테스트 1번 케이스)
+→ **코드 변경 없음.** 시연에서 이메일 연결이 필요한 시나리오는 구글 로그인으로.
+
+#### `external-integrations.md` 4절 갱신 (함께 처리)
+
+결정을 남기면서 남은 것에 있던 4절 갱신도 같이 했다. 구식 표기가 새 내용 옆에 남아 있으면
+오히려 오해를 키우기 때문이다.
+
+| 갱신 | 이전 → 이후 |
+| --- | --- |
+| 엔드포인트 | `/api/v1/auth/oauth/{provider}` → `/api/v1/auth/social/{provider}` |
+| 카카오 검증 | "access token 또는 OIDC" → **access token 확정**, OIDC 미채택 |
+| 환경변수 | `KAKAO_APP_KEY`(앱 키) → `KAKAO_APP_ID`(숫자 앱 ID) |
+| 〃 | `GOOGLE_OAUTH_CLIENT_ID` → `GOOGLE_CLIENT_ID` |
+| 이메일 동의항목 | "닉네임/이메일 등" → **사용 불가** 절 신규 |
+| 발급 현황 | "미발급 2건" → 실제 상태(앱 ID·클라이언트 설정 완료, FE 구현 대기) |
+| 연결성 | 20절 실측 결과 추가 |
+
+### 22. 배포 반영 확인 — 소셜 변수가 컨테이너에 실제로 들어갔다 (11:3x)
+
+17절 수정이 develop에 머지되어 배포됐다. **겉보기 정상으로 넘어가지 않도록 컨테이너 안에서
+직접 확인했다** (compose에 줄이 있는 것과 컨테이너가 값을 받은 것은 별개다).
+
+```
+$ docker exec backend env | grep -E "KAKAO_APP_ID|GOOGLE_CLIENT_ID"
+KAKAO_APP_ID=1573091
+GOOGLE_CLIENT_ID=184017850372-1nhf...,184017850372-npns...
+$ docker inspect -f "{{.State.StartedAt}} {{.State.Health.Status}}" backend
+2026-09-16T02:33:49Z healthy
+```
+
+→ **구글 로그인 503(`SOCIAL_PROVIDER_UNAVAILABLE`) 조건이 해소됐다.** 서버 쪽 준비 완료.
+이제 실패한다면 네트워크(20절 확인됨)도 설정 주입(이 절)도 아니고, 콘솔 등록이나 FE 구현이다.
+
+두 구글 클라이언트의 정체도 확정됐다 — `...1nhf...`가 **웹**, `...npns...`가 **Android**.
+`.env`에는 둘 다 쉼표로 넣어 두었으므로 어느 쪽으로 발급된 토큰이든 `aud` 검증을 통과한다.
+
+### 23. 카카오 콘솔 설정 완료 (사용자 직접)
+
+| 항목 | 설정값 |
+| --- | --- |
+| 플랫폼 → Android | 패키지명 `com.ssafy.d105.dodam` + 키 해시 등록 |
+| 카카오 로그인 사용 | **ON** |
+| OpenID Connect | **OFF** (우리는 access token 검증 방식이므로 정상) |
+| 동의항목 — 닉네임 | **필수 동의** (선택 동의로 켰다가 같은 날 필수로 전환) |
+| 동의항목 — 이메일 | 사용 불가 (21절) |
+
+**이로써 콘솔·서버 쪽 준비가 모두 끝났다. 남은 것은 FE 구현뿐이다.**
+
+**닉네임을 필수 동의로 전환한 이유**: 이메일을 받을 수 없는 상태(21절)에서 닉네임까지 비면
+카카오 가입자가 `도담 회원` + 대체 이메일로만 식별되어 시연에서 구분이 안 된다.
+필수 동의는 거부 시 로그인 자체가 불가해지지만, 이름 없이 가입되는 쪽이 더 나쁘다고 판단했다.
+→ 회원 이름이 `도담 회원`으로 들어가는 경우는 이제 발생하지 않는다.
+
+#### FE가 실패를 보고할 때의 1차 분류
+
+| 증상 | 원인 |
+| --- | --- |
+| 로그인 화면은 뜨는데 **앱으로 복귀 못 함** | AndroidManifest의 `kakao{네이티브앱키}://oauth` intent-filter 누락 |
+| 카카오가 **로그인 자체를 거부** | 키 해시 불일치 (그 사람 빌드의 SHA-1이 콘솔에 없음) |
+| 서버가 **401 `SOCIAL_TOKEN_INVALID`** | 토큰 만료·위조, 또는 다른 앱의 토큰(`KAKAO_APP_ID` 대조) |
+| 서버가 **503 `SOCIAL_PROVIDER_UNAVAILABLE`** | 카카오 API 장애·타임아웃 (네트워크는 20절에서 확인됨) |
+
 ## 남은 것
 - [ ] 이 수정 develop 머지 후 첫 배포에서 `infra-backend:deployed` 태그 생성 확인
 - [ ] 롤백 경로 실제 검증 — 일부러 깨는 커밋으로 "코드+이미지가 함께 되돌아오는지" 확인
@@ -564,4 +781,14 @@ exit=0
 - [x] ~~develop 빌드 실패(#75·#76)~~ — #77(10:31)·#78(10:39) SUCCESS로 복구됨
 - [x] ~~V18·V19 미적용~~ — #78 배포 기동 시 V18·V19·V31 적용, 현재 v31
 - [ ] 시드 데이터 적재 — 1번(금융상품)은 선행 조건 충족, 즉시 가능 (**백엔드 담당자 진행**)
+- [x] ~~17절 커밋 push·develop 머지·배포~~ — 22절에서 컨테이너 환경변수 주입까지 확인
+- [x] ~~`KAKAO_CLIENT_ID` 값 정체 확인~~ — REST API 키였다(불필요, 19절에서 제거)
+- [ ] **카카오 네이티브 앱 키 확보 후 FE 전달** — 앱 설정 → 앱 키. 서버·`.env`와 무관
+- [x] ~~운영 `.env`의 미사용 3줄 정리~~ — 19절에서 제거, check-env 통과
+- [ ] `check-env.sh` 3-1 대조에 `application.yml`도 포함 (17절 발견 1의 사각지대)
+- [x] ~~`external-integrations.md` 4절 갱신~~ — 21절에서 처리
+- [x] ~~카카오 콘솔 설정(Android 플랫폼·로그인 ON·닉네임 동의)~~ — 23절, 사용자 직접 완료
+- [x] ~~구글 동의 화면 **테스트 사용자** 등록~~ — 2026-09-16 완료(사용자 직접). 이후 합류하는 팀원은 그때마다 추가 필요
+- [x] ~~EC2 → `kapi.kakao.com` / `www.googleapis.com` 아웃바운드 연결성 확인~~ — 20절, 호스트·컨테이너 모두 도달 확인
+- [ ] 카카오·구글 콘솔 앱 등록 후 `.env`에 `KAKAO_APP_ID`·`GOOGLE_CLIENT_ID` 채우고 backend 재기동
 - [ ] `SPRING_JPA_HIBERNATE_DDL_AUTO: none` 제거하고 `validate` 복귀 — **선행 조건 충족됨**(V18·V19 적용 완료)
