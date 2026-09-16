@@ -117,6 +117,11 @@ export function HomeScreen() {
 
     if (user?.financeConnectionStatus === 'CONNECTED') {
       buttons.push({ text: '금융 연결 해제', onPress: confirmDisconnect });
+    } else if (user) {
+      buttons.push({
+        text: '금융 정보 연결',
+        onPress: () => router.push(routes.financeConnection),
+      });
     }
 
     buttons.push({

@@ -12,6 +12,23 @@ interface KakaoNativeError {
   message?: string;
 }
 
+let kakaoSdkInitialization: Promise<void> | null = null;
+
+async function initializeKakaoSdk() {
+  if (!kakaoSdkInitialization) {
+    kakaoSdkInitialization = import('@react-native-kakao/core')
+      .then(({ initializeKakaoSDK }) =>
+        initializeKakaoSDK(KAKAO_NATIVE_APP_KEY),
+      )
+      .catch((error: unknown) => {
+        kakaoSdkInitialization = null;
+        throw error;
+      });
+  }
+
+  return kakaoSdkInitialization;
+}
+
 function getKakaoNativeError(error: unknown): KakaoNativeError | null {
   if (!error || typeof error !== 'object') return null;
 
@@ -48,6 +65,7 @@ export function useKakaoLogin() {
     try {
       // A development/production build contains this native module. Delaying
       // the import keeps Expo Go usable for UI work when the module is absent.
+      await initializeKakaoSdk();
       const { login: loginWithKakaoSdk } = await import(
         '@react-native-kakao/user'
       );
