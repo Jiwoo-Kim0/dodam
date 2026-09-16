@@ -67,6 +67,12 @@ public enum ErrorCode {
     NO_ACCRUED_INTEREST(HttpStatus.BAD_REQUEST, "납부할 미수이자가 없습니다."),
     INSUFFICIENT_ACCOUNT_BALANCE(HttpStatus.CONFLICT, "출금계좌 잔액이 부족합니다."),
     WITHDRAWAL_ACCOUNT_REQUIRED(HttpStatus.BAD_REQUEST, "출금계좌를 지정해 주세요."),
+    /**
+     * 멱등 키({@code Idempotency-Key}) 재전송 처리(S15P21D105-534). 같은 키·같은 본문은 저장된 응답을 재생하고,
+     * 같은 키·다른 본문은 거부하며, 첫 요청이 아직 처리 중이면 잠시 뒤 재시도하게 한다.
+     */
+    IDEMPOTENCY_KEY_REUSED(HttpStatus.UNPROCESSABLE_ENTITY, "같은 Idempotency-Key로 다른 요청을 보낼 수 없습니다."),
+    IDEMPOTENT_REQUEST_IN_PROGRESS(HttpStatus.CONFLICT, "같은 요청이 아직 처리 중입니다. 잠시 후 다시 시도해 주세요."),
 
     // ---------- Transaction (S15P21D105-505) ----------
     /**

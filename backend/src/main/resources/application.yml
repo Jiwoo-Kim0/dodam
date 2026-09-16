@@ -69,6 +69,10 @@ app:
     cache-enabled: true
     cache-ttl: PT1H
 
+  idempotency:
+    # 쓰기 API 재전송 방지(backend/docs/minus-account.md "재전송 방지"). Idempotency-Key 처리 결과를 Redis에 두는 기간이다.
+    ttl: PT24H
+
   pattern:
     # API 3 패턴 분석 정책값. 명세·기획안에 수치가 없는 항목의 서비스 기본안(backend/docs/pattern.md).
     lookback-months: 6          # 분석 기간(완료된 달 기준)

@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.ssafy.dodam.global.security.SensitiveNumberHasher;
 import java.time.LocalDate;
+import java.util.List;
 import java.time.ZoneId;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -333,6 +334,27 @@ class MinusAccountApiIntegrationTest {
         // ERD 계산 기준: balance = -used_amount
         assertThat(balance(101L)).isEqualTo(-3000000L);
         assertThat(balance(105L)).isEqualTo(4500000L);
+    }
+
+    @Test
+    @WithMockUser(username = "1")
+    void 멱등키는_형식을_검증하고_저장소가_없으면_보호_없이_처리한다() throws Exception {
+        // 테스트 컨텍스트에는 Redis가 없다. 저장소 장애는 열어 두는 정책이라 헤더가 있어도 정상 처리된다(재생 검증은 IdempotencyKeyGuardTest).
+        mockMvc.perform(post(BASE + "/" + IN_USE_NO + "/repayments")
+                        .header("Idempotency-Key", "repay-2026-09-16-001")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":500000,\"repayAccountNo\":\"" + WITHDRAWAL_NO + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.repaidAmount").value(500000));
+        for (String bad : List.of("", "has space", "한글키", "x".repeat(129))) {
+            mockMvc.perform(post(BASE + "/" + IN_USE_NO + "/repayments")
+                            .header("Idempotency-Key", bad)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"amount\":1,\"repayAccountNo\":\"" + WITHDRAWAL_NO + "\"}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        }
+        assertThat(usedAmount(101L)).isEqualTo(3000000L);
     }
 
     @Test
