@@ -17,7 +17,17 @@ export function DiscoveryInsightsScreen() {
   const router = useRouter();
   const [summaryCardHeight, setSummaryCardHeight] = useState(0);
   const [gradientContainerHeight, setGradientContainerHeight] = useState(0);
-  const { diagnosis, insights, isLoading, error, cooldown, canRetryRecommendations, load, runAnalysis, retryRecommendationGeneration } = useDiscoveryData();
+  const {
+    canRetryRecommendations,
+    cooldown,
+    diagnosis,
+    error,
+    insights,
+    isLoading,
+    load,
+    retryRecommendationGeneration,
+    runAnalysis,
+  } = useDiscoveryData();
 
   const handleSummaryCardLayout = (event: LayoutChangeEvent) => {
     setSummaryCardHeight(event.nativeEvent.layout.height);
@@ -57,11 +67,15 @@ export function DiscoveryInsightsScreen() {
             </View>
 
             <Text style={styles.summaryHeadline}>
-              {isLoading ? '진단 결과를 확인하고 있어요' : `진단에서 ${insights.length}건을 발견했어요`}
+              {isLoading
+                ? '진단 결과를 확인하고 있어요'
+                : `진단에서 ${insights.length}건을 발견했어요`}
             </Text>
 
             <View style={styles.summaryPill}>
-              <Text style={styles.summaryPillLabel}>추천별 예상 효과는 상세에서 확인할 수 있어요</Text>
+              <Text style={styles.summaryPillLabel}>
+                추천별 예상 효과는 상세에서 확인할 수 있어요
+              </Text>
             </View>
           </View>
 
@@ -77,11 +91,28 @@ export function DiscoveryInsightsScreen() {
               />
             ))}
             {!isLoading && insights.length === 0 && !error ? (
-              <Text style={styles.sectionTitle}>현재 진단에서 발견된 항목이 없어요. 분석되지 않은 항목은 제외됩니다.</Text>
+              <Text style={styles.sectionTitle}>
+                현재 진단에서 발견된 항목이 없어요. 분석되지 않은 항목은 제외됩니다.
+              </Text>
             ) : null}
             {(error || !diagnosis || canRetryRecommendations) && !isLoading ? (
-              <Pressable accessibilityRole="button" onPress={() => { void (canRetryRecommendations ? retryRecommendationGeneration() : error ? load() : runAnalysis()); }} style={styles.summaryPill}>
-                <Text style={styles.summaryPillValue}>{canRetryRecommendations ? '추천 생성 다시 시도' : error ? '다시 시도하기' : '진단 시작하기'}</Text>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  void (canRetryRecommendations
+                    ? retryRecommendationGeneration()
+                    : error
+                      ? load()
+                      : runAnalysis());
+                }}
+                style={styles.summaryPill}>
+                <Text style={styles.summaryPillValue}>
+                  {canRetryRecommendations
+                    ? '추천 생성 다시 시도'
+                    : error
+                      ? '다시 시도하기'
+                      : '진단 시작하기'}
+                </Text>
               </Pressable>
             ) : null}
             {diagnosis && !isLoading ? (

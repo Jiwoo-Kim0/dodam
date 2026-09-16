@@ -31,7 +31,20 @@ type DiscoveryHomeProps = {
 
 const GRADIENT_TOP_OFFSET = 190;
 
-export function DiscoveryHome({ diagnosis, insights, isLoading, error, cooldown, canRetryRecommendations, load, runAnalysis, retryRecommendationGeneration, onBack, onInsightPress, onViewAll }: DiscoveryHomeProps) {
+export function DiscoveryHome({
+  canRetryRecommendations,
+  cooldown,
+  diagnosis,
+  error,
+  insights,
+  isLoading,
+  load,
+  onBack,
+  onInsightPress,
+  onViewAll,
+  retryRecommendationGeneration,
+  runAnalysis,
+}: DiscoveryHomeProps) {
   const [gradientContainerHeight, setGradientContainerHeight] = useState(0);
 
   const handleGradientContainerLayout = (event: LayoutChangeEvent) => {
@@ -88,7 +101,9 @@ export function DiscoveryHome({ diagnosis, insights, isLoading, error, cooldown,
                 style={styles.summaryIcon}
               />
               <Text style={styles.summaryText}>
-                {isLoading ? '진단 결과를 확인하고 있어요' : `진단에서 ${insights.length}건 발견했어요`}
+                {isLoading
+                  ? '진단 결과를 확인하고 있어요'
+                  : `진단에서 ${insights.length}건 발견했어요`}
               </Text>
               <Text style={styles.summarySubtext}>
                 각 항목에서 추천과 예상 효과를 확인해 보세요
@@ -122,17 +137,38 @@ export function DiscoveryHome({ diagnosis, insights, isLoading, error, cooldown,
                   onPress={() => onInsightPress(insight.id)}
                 />
               ))}
-              {!isLoading && insights.length === 0 && !error ? <Text style={styles.footnote}>현재 진단에서 발견된 항목이 없어요. 분석되지 않은 항목은 제외됩니다.</Text> : null}
+              {!isLoading && insights.length === 0 && !error ? (
+                <Text style={styles.footnote}>
+                  현재 진단에서 발견된 항목이 없어요. 분석되지 않은 항목은 제외됩니다.
+                </Text>
+              ) : null}
             </View>
 
             <Text style={styles.footnote}>
-              {diagnosis ? `분석 시점: ${new Date(diagnosis.completedAt).toLocaleDateString('ko-KR')}` : '아직 완료된 진단이 없어요.'}
+              {diagnosis
+                ? `분석 시점: ${new Date(diagnosis.completedAt).toLocaleDateString('ko-KR')}`
+                : '아직 완료된 진단이 없어요.'}
             </Text>
           </View>
 
           {(error || !diagnosis || canRetryRecommendations) && !isLoading ? (
-            <Pressable accessibilityRole="button" onPress={() => { void (canRetryRecommendations ? retryRecommendationGeneration() : error ? load() : runAnalysis()); }} style={styles.viewAllButton}>
-              <Text style={styles.viewAllButtonLabel}>{canRetryRecommendations ? '추천 생성 다시 시도' : error ? '다시 시도하기' : '진단 시작하기'}</Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                void (canRetryRecommendations
+                  ? retryRecommendationGeneration()
+                  : error
+                    ? load()
+                    : runAnalysis());
+              }}
+              style={styles.viewAllButton}>
+              <Text style={styles.viewAllButtonLabel}>
+                {canRetryRecommendations
+                  ? '추천 생성 다시 시도'
+                  : error
+                    ? '다시 시도하기'
+                    : '진단 시작하기'}
+              </Text>
             </Pressable>
           ) : null}
 

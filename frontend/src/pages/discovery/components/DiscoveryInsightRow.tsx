@@ -55,7 +55,14 @@ export function DiscoveryInsightRow({ insight, isLast, onPress }: DiscoveryInsig
       <View style={styles.amountChevronRow}>
         <View style={styles.amountWrap}>
           <Text numberOfLines={1} style={styles.amount}>
-            {insight.annualSavingAmount === null ? '산정 전' : <><Text style={styles.amountUnit}>연 </Text>{formatNumber(insight.annualSavingAmount)}원</>}
+            {insight.annualSavingAmount === null ? (
+              '산정 전'
+            ) : (
+              <>
+                <Text style={styles.amountUnit}>연 </Text>
+                {formatNumber(insight.annualSavingAmount)}원
+              </>
+            )}
           </Text>
           <Text numberOfLines={1} style={styles.amountLabel}>
             {insight.annualSavingAmount === null ? '예상 효과' : '절약 예상'}
