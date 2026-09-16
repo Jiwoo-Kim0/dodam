@@ -615,6 +615,61 @@ PyYAML로 파싱해 backend environment 18개 키와 두 변수의 값 형태를
 | FE 필요 값 | 카카오 **네이티브 앱 키** (서버와 무관, APK에 박힘) |
 | 아웃바운드 | `kapi.kakao.com`, `www.googleapis.com` HTTPS 필요 — **미확인** |
 
+### 18. `GOOGLE_CLIENT_ID` EC2 `.env` 적용 (10:53) — 운영 파일 쓰기
+
+구글 OAuth 클라이언트 2개(Android·웹)가 생성되어 값을 받았다. 두 ID 모두 같은 프로젝트 번호
+`184017850372` 계열이고, 백엔드가 `aud ∩ client-ids`로 보므로 **쉼표로 둘 다** 넣었다.
+
+```bash
+cp -p .env .env.bak.20260916-google-client-id   # 백업 먼저
+# GOOGLE_CLIENT_ID= → 두 클라이언트 ID를 쉼표로
+bash infra/scripts/check-env.sh                 # → 통과 (필수 변수 15개)
+```
+
+**아직 백엔드에 전달되지 않는다.** EC2에 배포된 `docker-compose.yml`에는 소셜 변수 2줄이 없다
+(17절 수정이 아직 push·머지되지 않았다). `.env`에 값만 들어간 상태이고,
+**배포가 한 번 돌아야 컨테이너가 이 값을 받는다.**
+
+#### 함께 발견한 것 — `.env`에 이미 카카오 값이 들어와 있었다 (10:12 수정됨)
+
+```
+KAKAO_CLIENT_ID=9d60...(32자리 hex)   ← 아무 코드도 읽지 않는 변수
+KAKAO_CLIENT_SECRET=                   ← 〃
+KAKAO_APP_ID=1573091                   ← 백엔드가 읽는 값. 정상
+GOOGLE_CLIENT_SECRET=                  ← 아무 코드도 읽지 않는 변수
+```
+
+카카오 콘솔 앱은 이미 생성된 것으로 보인다(앱 ID `1573091`). `KAKAO_CLIENT_ID`의 32자리 값은
+**카카오 앱 키 형식**인데, 이 이름의 변수를 읽는 코드가 없어 아무 효과가 없다.
+그 값이 네이티브 앱 키라면 FE가 `app.json`에 넣어야 할 값이다 — 확인 필요.
+
+`.env.example`에서는 17절에 미사용 3줄을 제거했지만, **운영 `.env`의 해당 줄은 지우지 않았다**
+(값이 들어 있어 임의 삭제하지 않음). 정리 여부는 사용자 확인 후.
+
+### 19. 운영 `.env` 미사용 소셜 항목 제거 (11:00)
+
+18절에서 발견한 `KAKAO_CLIENT_ID`의 32자리 값은 **카카오 REST API 키**로 확인됐다(사용자 확인).
+우리 흐름에서 서버가 카카오에 하는 호출은 `GET /v2/user/me`에 사용자 access token을 Bearer로
+싣는 것뿐이라 앱 키를 실을 자리가 없다. 3줄을 제거했다.
+
+```bash
+cp -p .env .env.bak.20260916-remove-unused-social
+# KAKAO_CLIENT_ID / KAKAO_CLIENT_SECRET / GOOGLE_CLIENT_SECRET 제거
+chmod 600 .env
+bash scripts/check-env.sh   # → 통과 (필수 변수 15개)
+```
+
+제거 후 운영 `.env`의 소셜 항목은 백엔드가 실제로 읽는 2개만 남았다.
+
+```
+KAKAO_APP_ID=1573091
+GOOGLE_CLIENT_ID=<Android>,<웹>   (184017850372- 계열 2개)
+```
+
+이로써 `.env.example`(17절 커밋)과 운영 `.env`의 구성이 일치한다.
+
+**카카오 네이티브 앱 키는 아직 받지 않았다.** 서버와 무관하고 FE가 `app.json`에 넣을 값이다.
+
 ## 남은 것
 - [ ] 이 수정 develop 머지 후 첫 배포에서 `infra-backend:deployed` 태그 생성 확인
 - [ ] 롤백 경로 실제 검증 — 일부러 깨는 커밋으로 "코드+이미지가 함께 되돌아오는지" 확인
@@ -631,6 +686,10 @@ PyYAML로 파싱해 backend environment 18개 키와 두 변수의 값 형태를
 - [x] ~~develop 빌드 실패(#75·#76)~~ — #77(10:31)·#78(10:39) SUCCESS로 복구됨
 - [x] ~~V18·V19 미적용~~ — #78 배포 기동 시 V18·V19·V31 적용, 현재 v31
 - [ ] 시드 데이터 적재 — 1번(금융상품)은 선행 조건 충족, 즉시 가능 (**백엔드 담당자 진행**)
+- [ ] **17절 커밋 push·develop 머지·배포** — 이게 돌아야 `GOOGLE_CLIENT_ID`가 컨테이너에 전달된다
+- [x] ~~`KAKAO_CLIENT_ID` 값 정체 확인~~ — REST API 키였다(불필요, 19절에서 제거)
+- [ ] **카카오 네이티브 앱 키 확보 후 FE 전달** — 앱 설정 → 앱 키. 서버·`.env`와 무관
+- [x] ~~운영 `.env`의 미사용 3줄 정리~~ — 19절에서 제거, check-env 통과
 - [ ] `check-env.sh` 3-1 대조에 `application.yml`도 포함 (17절 발견 1의 사각지대)
 - [ ] `external-integrations.md` 4절을 확정된 엔드포인트·변수명으로 갱신 (`/auth/social/`, `KAKAO_APP_ID`)
 - [ ] EC2 → `kapi.kakao.com` / `www.googleapis.com` 아웃바운드 연결성 확인 (금융망·OpenAI 때와 같은 절차)
