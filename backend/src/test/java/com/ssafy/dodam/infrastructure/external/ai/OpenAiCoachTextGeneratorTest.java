@@ -32,8 +32,14 @@ class OpenAiCoachTextGeneratorTest {
     private OpenAiCoachTextGenerator client(String apiKey, int maxAttempts) {
         RestClient.Builder builder = RestClient.builder();
         server = MockRestServiceServer.bindTo(builder).build();
+        return client(apiKey, maxAttempts, 0.2, null);
+    }
+
+    private OpenAiCoachTextGenerator client(String apiKey, int maxAttempts, Double temperature, String maxTokensParameter) {
+        RestClient.Builder builder = RestClient.builder();
+        server = MockRestServiceServer.bindTo(builder).build();
         AiCoachProperties properties = new AiCoachProperties(
-                true, apiKey, null, null, null, null, null, maxAttempts, null, null);
+                true, apiKey, null, null, null, temperature, null, maxTokensParameter, maxAttempts, null, null);
         return new OpenAiCoachTextGenerator(properties, new ObjectMapper(), builder);
     }
 
@@ -107,6 +113,36 @@ class OpenAiCoachTextGeneratorTest {
 
         assertThat(client.isAvailable()).isFalse();
         assertThatThrownBy(() -> client.generate("규칙", "사실")).isInstanceOf(CoachGenerationException.class);
+    }
+
+    /**
+     * 모델 교체가 코드 변경이 되면 안 된다. 상한 필드 이름과 temperature 포함 여부를 설정으로 받는다
+     * — 계열이 다른 모델은 {@code max_tokens}를 거부하거나 temperature를 받지 않는다.
+     */
+    @Test
+    void adaptsRequestBodyToTheConfiguredModelFamily() {
+        OpenAiCoachTextGenerator client = client("sk-test", 1, null, "max_completion_tokens");
+        server.expect(requestTo(URL))
+                .andExpect(jsonPath("$.max_completion_tokens").value(600))
+                .andExpect(jsonPath("$.max_tokens").doesNotExist())
+                // temperature를 비우면 본문에서 아예 빠진다
+                .andExpect(jsonPath("$.temperature").doesNotExist())
+                .andRespond(withSuccess("{\"choices\":[{\"message\":{\"content\":\"ok\"}}]}", MediaType.APPLICATION_JSON));
+
+        assertThat(client.generate("규칙", "사실")).isEqualTo("ok");
+        server.verify();
+    }
+
+    @Test
+    void sendsTemperatureAndMaxTokensByDefault() {
+        OpenAiCoachTextGenerator client = client("sk-test", 1);
+        server.expect(requestTo(URL))
+                .andExpect(jsonPath("$.temperature").value(0.2))
+                .andExpect(jsonPath("$.max_tokens").value(600))
+                .andRespond(withSuccess("{\"choices\":[{\"message\":{\"content\":\"ok\"}}]}", MediaType.APPLICATION_JSON));
+
+        assertThat(client.generate("규칙", "사실")).isEqualTo("ok");
+        server.verify();
     }
 
     @Test

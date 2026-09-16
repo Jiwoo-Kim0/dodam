@@ -6,6 +6,7 @@ import com.ssafy.dodam.domain.coach.service.CoachGenerationException;
 import com.ssafy.dodam.domain.coach.service.CoachTextGenerator;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -80,13 +81,17 @@ public class OpenAiCoachTextGenerator implements CoachTextGenerator {
         if (!properties.isConfigured()) {
             throw new CoachGenerationException("AI coach is not configured");
         }
-        Map<String, Object> body = Map.of(
-                "model", properties.model(),
-                "temperature", properties.temperature(),
-                "max_tokens", properties.maxTokens(),
-                "messages", List.of(
-                        Map.of("role", "system", "content", systemPrompt),
-                        Map.of("role", "user", "content", userPrompt)));
+        // 필드 구성을 설정에서 받는다. 상한 필드 이름이 모델 계열마다 다르고(max_tokens /
+        // max_completion_tokens), temperature를 받지 않는 모델도 있어 모델 교체가 코드 변경이 되면 안 된다.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", properties.model());
+        body.put(properties.maxTokensParameter(), properties.maxTokens());
+        if (properties.temperature() != null) {
+            body.put("temperature", properties.temperature());
+        }
+        body.put("messages", List.of(
+                Map.of("role", "system", "content", systemPrompt),
+                Map.of("role", "user", "content", userPrompt)));
 
         CoachGenerationException last = null;
         for (int attempt = 1; attempt <= properties.maxAttempts(); attempt++) {
