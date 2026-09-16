@@ -115,21 +115,29 @@ export function DiscoveryInsightsScreen() {
                 </Text>
               </Pressable>
             ) : null}
-            {diagnosis && !isLoading ? (
-              <View>
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={!cooldown.canRun}
-                  onPress={() => { void runAnalysis(true); }}
-                  style={[styles.summaryPill, !cooldown.canRun && styles.disabledButton]}>
-                  <Text style={styles.summaryPillValue}>새로 진단하기</Text>
-                </Pressable>
-                {cooldown.label ? <Text style={styles.cooldownLabel}>{cooldown.label}</Text> : null}
-              </View>
-            ) : null}
           </View>
         </View>
       </RefreshableBouncyScrollView>
+
+      {diagnosis && !isLoading ? (
+        <View style={styles.fixedFooter}>
+          {cooldown.label ? (
+            <Text style={styles.cooldownLabel}>{cooldown.label}</Text>
+          ) : null}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ disabled: !cooldown.canRun }}
+            disabled={!cooldown.canRun}
+            onPress={() => { void runAnalysis(true); }}
+            style={({ pressed }) => [
+              styles.diagnosisButton,
+              !cooldown.canRun && styles.disabledButton,
+              pressed && cooldown.canRun && styles.diagnosisButtonPressed,
+            ]}>
+            <Text style={styles.diagnosisButtonText}>새로 진단하기</Text>
+          </Pressable>
+        </View>
+      ) : null}
     </SafeAreaLayout>
   );
 }

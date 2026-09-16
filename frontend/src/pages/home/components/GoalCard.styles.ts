@@ -44,8 +44,8 @@ export const styles = StyleSheet.create({
   dueDate: {
     color: colors.textSecondary,
     fontFamily: fontFamily.regular,
-    fontSize: fontSize.micro,
-    lineHeight: 14,
+    fontSize: fontSize.caption,
+    lineHeight: 16,
   },
   statusRow: {
     alignItems: 'center',
@@ -114,9 +114,9 @@ export const styles = StyleSheet.create({
   progressPercent: {
     color: colors.textSecondary,
     fontFamily: fontFamily.regular,
-    fontSize: fontSize.micro,
-    lineHeight: 14,
-    width: 26,
+    fontSize: fontSize.caption,
+    lineHeight: 16,
+    width: 32,
   },
   insightBanner: {
     alignItems: 'center',
@@ -136,8 +136,8 @@ export const styles = StyleSheet.create({
     color: colors.textPrimary,
     flex: 1,
     fontFamily: fontFamily.regular,
-    fontSize: fontSize.micro,
-    lineHeight: 14,
+    fontSize: fontSize.caption,
+    lineHeight: 16,
   },
   chevron: {
     color: colors.textPrimary,

@@ -1,3 +1,4 @@
+import { SymbolView } from 'expo-symbols';
 import { useEffect, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Pressable, Text, TextInput, View } from 'react-native';
 import Animated, {
@@ -45,10 +46,16 @@ export function TransactionForm({
   onSave,
   onDelete,
 }: TransactionFormProps) {
+  const [hasTouchedAmount, setHasTouchedAmount] = useState(false);
   const [isDatePickerVisible, setIsDatePickerVisible] = useState(false);
   const [isTimePickerVisible, setIsTimePickerVisible] = useState(false);
   const [selectorWidth, setSelectorWidth] = useState(0);
   const canSave = Number(draft.amountText) > 0;
+  const amountError = hasTouchedAmount && !canSave
+    ? draft.amountText
+      ? '금액은 1원 이상 입력해 주세요.'
+      : '금액을 입력해 주세요.'
+    : null;
   const typeLabel = draft.transactionType === 'income' ? '수입' : '지출';
 
   const pillProgress = useSharedValue(draft.transactionType === 'income' ? 1 : 0);
@@ -95,7 +102,7 @@ export function TransactionForm({
         onRightPress={mode === 'edit' ? confirmDelete : undefined}
         rightLabel={mode === 'edit' ? '삭제' : undefined}
         rightDisabled={isSubmitting}
-        title={mode === 'edit' ? '거래 내역 수정' : '현금거래 추가'}
+        title={mode === 'edit' ? '거래 내역 수정' : '거래 추가'}
       />
 
       <BouncyScrollView contentContainerStyle={styles.formScrollContent}>
@@ -121,18 +128,27 @@ export function TransactionForm({
         </View>
 
         <View style={styles.formCard}>
-          <View style={styles.formRow}>
-            <Text style={styles.formLabel}>금액</Text>
-            <TextInput
-              accessibilityLabel="거래 금액"
-              keyboardType="number-pad"
-              onChangeText={(value) => onChange({ amountText: getDigits(value) })}
-              placeholder="금액을 입력하세요"
-              placeholderTextColor={colors.textTertiary}
-              style={styles.amountInput}
-              value={draft.amountText ? formatNumber(Number(draft.amountText)) : ''}
-            />
-            <Text style={styles.amountUnit}>원</Text>
+          <View style={styles.amountFieldSection}>
+            <View style={[styles.formRow, styles.formRowWithoutDivider]}>
+              <Text style={styles.formLabel}>금액</Text>
+              <TextInput
+                accessibilityHint={amountError ?? undefined}
+                accessibilityLabel="거래 금액"
+                keyboardType="number-pad"
+                onBlur={() => setHasTouchedAmount(true)}
+                onChangeText={(value) => onChange({ amountText: getDigits(value) })}
+                placeholder="금액을 입력하세요"
+                placeholderTextColor={colors.textTertiary}
+                style={styles.amountInput}
+                value={draft.amountText ? formatNumber(Number(draft.amountText)) : ''}
+              />
+              <Text style={styles.amountUnit}>원</Text>
+            </View>
+            {amountError ? (
+              <Text accessibilityLiveRegion="polite" style={styles.formValidationText}>
+                {amountError}
+              </Text>
+            ) : null}
           </View>
 
           <Pressable
@@ -140,15 +156,19 @@ export function TransactionForm({
             onPress={() => setIsDatePickerVisible(true)}
             style={({ pressed }) => [styles.formRow, pressed && styles.rowPressed]}>
             <Animated.Text style={[styles.formLabel, labelAnimatedStyle]}>
-              {typeLabel}시간
+              {typeLabel} 시간
             </Animated.Text>
             <Text style={styles.formValue}>
               {formatFormDateTime(draft.transactionDate, draft.transactionTime)}
             </Text>
-            <Text style={styles.rowChevron}>›</Text>
+            <SymbolView
+              name={{ android: 'chevron_right', ios: 'chevron.right', web: 'chevron_right' }}
+              size={18}
+              tintColor={colors.textSecondary}
+            />
           </Pressable>
 
-          <View style={styles.formRow}>
+          <View style={[styles.formRow, styles.formRowLast]}>
             <Animated.Text style={[styles.formLabel, labelAnimatedStyle]}>
               {typeLabel}처
             </Animated.Text>

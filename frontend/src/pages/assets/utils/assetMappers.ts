@@ -5,8 +5,6 @@ import type {
   CardPaymentSchedulesApiResponse,
   DepositSavingApiResponse,
   DepositSavingSummaryApiResponse,
-  InstallmentApiResponse,
-  InstallmentScheduleApiResponse,
   LoanApiResponse,
   LoanSummaryApiResponse,
 } from '@/types/assetApi.types';
@@ -168,25 +166,6 @@ function mapCard(
   };
 }
 
-function mapInstallment(installment: InstallmentApiResponse): AssetItem {
-  const paymentDate = installment.nextPaymentDate
-    ? `${formatMonthDay(installment.nextPaymentDate)} 결제 예정`
-    : null;
-
-  return {
-    id: `installment-${installment.installmentId}`,
-    institutionId: 'installment',
-    productName: installment.merchantName,
-    description: [
-      `${installment.remainingMonths}개월 남음`,
-      paymentDate,
-    ]
-      .filter(Boolean)
-      .join(' · '),
-    amount: installment.monthlyAmount,
-  };
-}
-
 interface MapAssetSectionsParams {
   accounts: readonly AccountApiResponse[];
   accountSummary: AccountSummaryApiResponse;
@@ -196,8 +175,6 @@ interface MapAssetSectionsParams {
   loanSummary: LoanSummaryApiResponse;
   cards: readonly CardApiResponse[];
   cardPaymentSchedules: CardPaymentSchedulesApiResponse;
-  installments: readonly InstallmentApiResponse[];
-  installmentSchedule: InstallmentScheduleApiResponse;
 }
 
 export function mapAssetSections({
@@ -209,8 +186,6 @@ export function mapAssetSections({
   loanSummary,
   cards,
   cardPaymentSchedules,
-  installments,
-  installmentSchedule,
 }: MapAssetSectionsParams): readonly AssetSection[] {
   return [
     {
@@ -241,18 +216,6 @@ export function mapAssetSections({
       items: cards.map((card) =>
         mapCard(card, cardPaymentSchedules),
       ),
-    },
-    {
-      id: 'installment',
-      title: '할부',
-      summaryPrefix: '이번 달 납부 예정',
-      summaryAmount:
-        installmentSchedule.months.find(
-          ({ yearMonth }) => yearMonth === installmentSchedule.startMonth,
-        )?.scheduledAmount ?? 0,
-      items: installments
-        .filter(({ status }) => status === 'ACTIVE' || status === 'OVERDUE')
-        .map(mapInstallment),
     },
   ];
 }

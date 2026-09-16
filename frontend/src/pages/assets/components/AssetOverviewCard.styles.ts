@@ -20,7 +20,7 @@ export const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   totalAmount: {
-    ...typography.display,
+    ...typography.headline,
     color: colors.textPrimary,
   },
   currencyUnit: {

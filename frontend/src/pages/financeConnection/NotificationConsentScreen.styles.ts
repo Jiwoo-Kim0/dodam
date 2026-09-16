@@ -14,9 +14,9 @@ export const styles = StyleSheet.create({
     borderRadius: radius.default,
     backgroundColor: colors.background,
   },
-  iconSpace: {
-    width: 40,
-    height: 40,
+  benefitIcon: {
+    width: 44,
+    height: 44,
     marginRight: spacing[3],
   },
   benefitText: {
