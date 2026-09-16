@@ -1,7 +1,7 @@
 ﻿진행상태,담당자,API명,Method,Endpoint,인증 여부,데이터/연동,Parameter,제한사항
-시작 전,,금융상품 전체 동기화,POST,/api/v1/admin/products/sync,O,금융상품한눈에 → DB,Body: force?,관리자 권한 필수; 외부 API 장애 시 기존 정상 데이터 유지; 동시 Sync 방지
-시작 전,,정기예금 동기화,POST,/api/v1/admin/products/sync/deposits,O,금융상품한눈에 → DB,Body: force?,관리자 권한 필수; 외부 API 장애 시 기존 정상 데이터 유지; 동시 Sync 방지
-시작 전,,적금 동기화,POST,/api/v1/admin/products/sync/savings,O,금융상품한눈에 → DB,Body: force?,관리자 권한 필수; 외부 API 장애 시 기존 정상 데이터 유지; 동시 Sync 방지
-시작 전,,대출 동기화,POST,/api/v1/admin/products/sync/loans,O,금융상품한눈에 → DB,Body: force?,관리자 권한 필수; 외부 API 장애 시 기존 정상 데이터 유지; 동시 Sync 방지
-시작 전,,동기화 상태 조회,GET,/api/v1/admin/products/sync/status,O,자체,Query: syncType?,관리자 권한 필수
-시작 전,,동기화 이력 조회,GET,/api/v1/admin/products/sync/history,O,자체,"Query: syncType?, result?, page?, size?","관리자 권한 필수; page ≥ 0, size 1~100"
+범위 제외,,금융상품 전체 동기화,POST,/api/v1/admin/products/sync,O,금융상품한눈에 → DB,Body: force?,관리자 권한 필수; [2026-09-16 범위 제외] 시연은 seed 스냅샷(2026-09-03·198개 상품)으로 진행하고 금감원 갱신은 하지 않음. FinLife는 카드 상품 미제공; 외부 API 장애 시 기존 정상 데이터 유지; 동시 Sync 방지
+범위 제외,,정기예금 동기화,POST,/api/v1/admin/products/sync/deposits,O,금융상품한눈에 → DB,Body: force?,관리자 권한 필수; [2026-09-16 범위 제외] 시연은 seed 스냅샷(2026-09-03·198개 상품)으로 진행하고 금감원 갱신은 하지 않음. FinLife는 카드 상품 미제공; 외부 API 장애 시 기존 정상 데이터 유지; 동시 Sync 방지
+범위 제외,,적금 동기화,POST,/api/v1/admin/products/sync/savings,O,금융상품한눈에 → DB,Body: force?,관리자 권한 필수; [2026-09-16 범위 제외] 시연은 seed 스냅샷(2026-09-03·198개 상품)으로 진행하고 금감원 갱신은 하지 않음. FinLife는 카드 상품 미제공; 외부 API 장애 시 기존 정상 데이터 유지; 동시 Sync 방지
+범위 제외,,대출 동기화,POST,/api/v1/admin/products/sync/loans,O,금융상품한눈에 → DB,Body: force?,관리자 권한 필수; [2026-09-16 범위 제외] 시연은 seed 스냅샷(2026-09-03·198개 상품)으로 진행하고 금감원 갱신은 하지 않음. FinLife는 카드 상품 미제공; 외부 API 장애 시 기존 정상 데이터 유지; 동시 Sync 방지
+범위 제외,,동기화 상태 조회,GET,/api/v1/admin/products/sync/status,O,자체,Query: syncType?,관리자 권한 필수; [2026-09-16 범위 제외] 시연은 seed 스냅샷(2026-09-03·198개 상품)으로 진행하고 금감원 갱신은 하지 않음. FinLife는 카드 상품 미제공
+범위 제외,,동기화 이력 조회,GET,/api/v1/admin/products/sync/history,O,자체,"Query: syncType?, result?, page?, size?","관리자 권한 필수; [2026-09-16 범위 제외] 시연은 seed 스냅샷(2026-09-03·198개 상품)으로 진행하고 금감원 갱신은 하지 않음. FinLife는 카드 상품 미제공; page ≥ 0, size 1~100"
