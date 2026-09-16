@@ -20,7 +20,7 @@ export interface AssetAnalysis {
   inactiveMonths: number;
 }
 
-export type AssetSectionId = 'checking' | 'saving' | 'loan' | 'card' | 'installment';
+export type AssetSectionId = 'checking' | 'saving' | 'loan' | 'card';
 
 export interface AssetItem {
   id: string;
