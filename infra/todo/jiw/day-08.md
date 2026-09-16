@@ -670,6 +670,22 @@ GOOGLE_CLIENT_ID=<Android>,<웹>   (184017850372- 계열 2개)
 
 **카카오 네이티브 앱 키는 아직 받지 않았다.** 서버와 무관하고 FE가 `app.json`에 넣을 값이다.
 
+### 20. 카카오·구글 아웃바운드 연결성 확인 (11:0x) — 조회만
+
+`auth-social.md`가 요구하는 두 호스트로 EC2 호스트와 backend 컨테이너 양쪽에서 확인했다.
+금융망·OpenAI 때(7절 계열)와 같은 절차다.
+
+| 대상 | EC2 호스트 | backend 컨테이너 |
+| --- | --- | --- |
+| `https://kapi.kakao.com/v2/user/me` | HTTP 401 (0.06s) | HTTP 401 (0.05s) |
+| `https://www.googleapis.com/oauth2/v3/certs` | HTTP 200 (0.08s) | HTTP 200 (0.08s) |
+
+**네트워크 차단 없음.** 카카오의 401은 토큰 없이 호출했으므로 정상이다(요청이 카카오까지
+도달해 인증 단계에서 거절된 것). 구글 JWK는 인증이 필요 없어 200이다.
+
+→ 아웃바운드 화이트리스트 등록이나 방화벽 작업은 필요 없다. 소셜 로그인이 실패한다면
+네트워크가 아니라 설정(클라이언트 ID·키 해시·동의항목) 쪽을 봐야 한다.
+
 ## 남은 것
 - [ ] 이 수정 develop 머지 후 첫 배포에서 `infra-backend:deployed` 태그 생성 확인
 - [ ] 롤백 경로 실제 검증 — 일부러 깨는 커밋으로 "코드+이미지가 함께 되돌아오는지" 확인
@@ -692,6 +708,6 @@ GOOGLE_CLIENT_ID=<Android>,<웹>   (184017850372- 계열 2개)
 - [x] ~~운영 `.env`의 미사용 3줄 정리~~ — 19절에서 제거, check-env 통과
 - [ ] `check-env.sh` 3-1 대조에 `application.yml`도 포함 (17절 발견 1의 사각지대)
 - [ ] `external-integrations.md` 4절을 확정된 엔드포인트·변수명으로 갱신 (`/auth/social/`, `KAKAO_APP_ID`)
-- [ ] EC2 → `kapi.kakao.com` / `www.googleapis.com` 아웃바운드 연결성 확인 (금융망·OpenAI 때와 같은 절차)
+- [x] ~~EC2 → `kapi.kakao.com` / `www.googleapis.com` 아웃바운드 연결성 확인~~ — 20절, 호스트·컨테이너 모두 도달 확인
 - [ ] 카카오·구글 콘솔 앱 등록 후 `.env`에 `KAKAO_APP_ID`·`GOOGLE_CLIENT_ID` 채우고 backend 재기동
 - [ ] `SPRING_JPA_HIBERNATE_DDL_AUTO: none` 제거하고 `validate` 복귀 — **선행 조건 충족됨**(V18·V19 적용 완료)
