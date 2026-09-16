@@ -1,8 +1,10 @@
 import { Image } from 'expo-image';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, TextInput, View } from 'react-native';
 
 import { colors } from '@/styles';
+import type { RecommendationSimulationApiResponse } from '@/types/discoveryApi.types';
+import type { BasicSimulationType } from '@/types/simulationApi.types';
 import { formatNumber } from '@/utils/currency';
 
 import { useBasicSimulation } from '../hooks/useBasicSimulation';
@@ -11,33 +13,73 @@ import { SimulationHistorySection } from './SimulationHistorySection';
 
 const DURATION_OPTIONS = [6, 12, 24] as const;
 
-type SupportedSimulationConfig = {
-  type: 'SPENDING' | 'SAVING';
+/**
+ * 프리셋을 화면이 쓸 수 있는 형태로 옮긴다.
+ * 실행 가능한 유형은 SPENDING·SAVING 둘뿐이라 나머지는 null이며 안내 카드가 대신 뜬다.
+ */
+type RunnableSimulation = {
+  type: BasicSimulationType;
   amountLabel: string;
   category?: string;
+  goalId?: number;
+  initialAmount: number | null;
 };
 
-const SIMULATION_CONFIG_BY_INSIGHT: Readonly<
-  Record<string, SupportedSimulationConfig>
-> = {
-  'delivery-dining': {
-    type: 'SPENDING',
-    amountLabel: '매달 줄일 금액',
-    category: 'FOOD',
-  },
-  'unused-subscription': {
-    type: 'SPENDING',
-    amountLabel: '매달 줄일 금액',
-    category: 'SUBSCRIPTION',
-  },
-  'idle-funds': {
-    type: 'SAVING',
-    amountLabel: '변경할 월 저축액',
-  },
-};
+function toRunnable(
+  preset: RecommendationSimulationApiResponse | null | undefined,
+): RunnableSimulation | null {
+  if (!preset?.available || !preset.request) return null;
+
+  if (preset.type === 'SPENDING') {
+    return {
+      type: 'SPENDING',
+      amountLabel: '매달 줄일 금액',
+      category: preset.request.category ?? undefined,
+      initialAmount: preset.request.monthlyReduction ?? null,
+    };
+  }
+
+  if (preset.type === 'SAVING') {
+    return {
+      type: 'SAVING',
+      amountLabel: '변경할 월 저축액',
+      goalId: preset.request.goalId ?? undefined,
+      initialAmount: preset.request.monthlySavingAmount ?? null,
+    };
+  }
+
+  return null;
+}
+
+/** 실행 폼을 띄울 수 없는 이유를 사용자 말로 옮긴다. */
+function unavailableMessage(
+  preset: RecommendationSimulationApiResponse | null | undefined,
+) {
+  if (!preset) {
+    return '이 발견에는 아직 연결된 추천이 없어 시뮬레이션을 준비하지 못했어요.';
+  }
+
+  if (preset.available) {
+    // 실행 가능하다고 왔지만 FE가 아직 붙이지 않은 유형이다(대출 갈아타기 등).
+    return '이 추천에 맞는 시뮬레이션 화면은 아직 준비 중이에요.';
+  }
+
+  switch (preset.unavailableReason) {
+    case 'EFFECT_AMOUNT_MISSING':
+      return '예상 절감액이 계산되지 않아 시뮬레이션을 준비하지 못했어요.';
+    case 'SNAPSHOT_FIELD_MISSING':
+      return '계산에 필요한 값이 빠져 있어 시뮬레이션을 준비하지 못했어요.';
+    case 'REFINANCE_TARGET_MISSING':
+      return '비교할 대출 상품을 찾지 못해 시뮬레이션을 준비하지 못했어요.';
+    case 'NO_MATCHING_SIMULATION_TYPE':
+    default:
+      return '이 추천은 아직 시뮬레이션으로 확인할 수 없어요.';
+  }
+}
 
 interface BasicSimulationSectionProps {
-  insightId: string;
+  /** 우선 추천의 587 프리셋. 없거나 실행 불가면 안내 카드가 뜬다. */
+  preset: RecommendationSimulationApiResponse | null;
 }
 
 function formatSignedAmount(value: number | null | undefined) {
@@ -62,9 +104,14 @@ function getDurationMonths(request: unknown, fallbackDurationMonths: number) {
   return typeof durationMonths === 'number' ? durationMonths : fallbackDurationMonths;
 }
 
-export function BasicSimulationSection({ insightId }: BasicSimulationSectionProps) {
-  const config = SIMULATION_CONFIG_BY_INSIGHT[insightId];
-  const [amountText, setAmountText] = useState('');
+export function BasicSimulationSection({ preset }: BasicSimulationSectionProps) {
+  // loadHistory 이펙트의 의존성이라 렌더마다 새 객체를 만들면 무한 루프가 된다.
+  const config = useMemo(() => toRunnable(preset), [preset]);
+  const [amountText, setAmountText] = useState(() => {
+    const initial = toRunnable(preset)?.initialAmount;
+    // 프리셋이 제안한 금액을 그대로 채워 두고 사용자가 고칠 수 있게 한다.
+    return initial ? formatNumber(initial) : '';
+  });
   const [durationMonths, setDurationMonths] = useState(12);
   const {
     simulation,
@@ -90,11 +137,8 @@ export function BasicSimulationSection({ insightId }: BasicSimulationSectionProp
     return (
       <View style={styles.section}>
         <View style={styles.card}>
-          <Text style={styles.title}>시뮬레이션 연동 준비 중이에요</Text>
-          <Text style={styles.description}>
-            저축·예적금 상품·대출·리볼빙·현금서비스·보험 유형은 백엔드 API가
-            준비되는 순서대로 연결할 예정이에요.
-          </Text>
+          <Text style={styles.title}>바꿔보기는 아직이에요</Text>
+          <Text style={styles.description}>{unavailableMessage(preset)}</Text>
           <View style={styles.pendingBadge}>
             <Text style={styles.pendingBadgeText}>후속 유형 연동 대기</Text>
           </View>
@@ -132,7 +176,7 @@ export function BasicSimulationSection({ insightId }: BasicSimulationSectionProp
 
     void run({
       type: config.type,
-      request: { monthlySavingAmount: amount, durationMonths },
+      request: { goalId: config.goalId, monthlySavingAmount: amount, durationMonths },
     });
   };
 

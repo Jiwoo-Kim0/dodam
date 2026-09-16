@@ -11,6 +11,7 @@ import type { CoachMessageResponse } from '@/types/coachApi.types';
 import type { DiagnosisIssueApiResponse, RecommendationApiResponse } from '@/types/discoveryApi.types';
 import { formatNumber } from '@/utils/currency';
 
+import { BasicSimulationSection } from './components/BasicSimulationSection';
 import { discoveryDomainLabel, parseIssueRouteId, recommendationsForIssue } from './discoveryModel';
 import { styles } from './DiscoveryInsightDetailScreen.styles';
 import { loadAllPages } from './hooks/useDiscoveryData';
@@ -134,6 +135,13 @@ export function DiscoveryInsightDetailScreen({ insightId }: DiscoveryInsightDeta
                 ))}
               </View>
             </View>
+
+            {recommendations.length > 0 ? (
+              <BasicSimulationSection
+                key={recommendations[0].recommendationId}
+                preset={recommendations[0].simulation ?? null}
+              />
+            ) : null}
           </>
         ) : (
           <View style={styles.emptyState}>
