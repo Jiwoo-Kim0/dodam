@@ -34,3 +34,8 @@ app:
     hash-key: ${DATA_HASH_KEY}
   ssafy-finance:
     api-key: ${SSAFY_FINANCE_API_KEY}
+  ai:
+    # API 21 AI 코치. 로컬에서는 **선택**이다 — 비우면 외부 호출 없이 템플릿 응답으로 내려간다
+    # (backend/docs/ai-coach.md §7). 로컬 실행이 실수로 과금되지 않게 하는 것이 기본값이다.
+    # AI 경로를 직접 확인하려면 OPENAI_API_KEY를 셸·IDE에 넣고 실행한다.
+    api-key: ${OPENAI_API_KEY:}

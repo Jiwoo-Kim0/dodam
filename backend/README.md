@@ -82,6 +82,7 @@ local 또는 prod Profile 실행 전 다음 값을 설정해야 합니다.
 | DATA_ENCRYPTION_KEY | 민감 컬럼(`*_encrypted`) AES-256-GCM 키. Base64 32바이트 (`openssl rand -base64 32`). **잃으면 복구 불가** |
 | DATA_HASH_KEY | 조회용 해시(`*_hash`) HMAC-SHA-256 키. Base64 32바이트 |
 | SSAFY_FINANCE_API_KEY | SSAFY 금융망 앱 관리자 API Key. 금융망 사용자 생성·조회, 신용등급 조회 등 모든 금융망 호출에 사용 |
+| OPENAI_API_KEY | **선택.** API 21 AI 코치용. 비우면 외부 호출 없이 템플릿 응답으로 동작하므로 로컬 실행에는 없어도 된다 ([ai-coach.md](docs/ai-coach.md)) |
 
 .env.example에는 키만 제공하며 Spring Boot가 .env 파일을 자동으로 읽지는 않습니다. 실행 환경이나 IDE에서 환경변수를 주입하세요.
 

@@ -220,3 +220,34 @@ sudo 없이 되고 레포를 오염시키지 않는다. §9의 98건 사건은 �
 - [ ] `docs/API명세서/21 AI Coach ....csv`의 진행상태가 아직 "시작 전"이다 (Notion 내보내기 파일이라
       레포에서 고치면 다음 내보내기에 덮인다 — **Notion에서 갱신할 것**)
 - [ ] Day 11 계약서(`backend/docs/improvement-report-contract.md`)를 FE에 전달하고 필드 합의받기
+
+### 12. `backend/.env`에도 키가 필요한가 — 아니다 (경로 정리)
+
+사용자 질문: "OPENAI_API_KEY는 infra/.env 말고도 backend/.env 안에도 들어가 있어야 하나?"
+
+**아니다.** 운영 경로에 `backend/.env`는 존재하지 않는다.
+
+```
+infra/.env → docker-compose.yml environment: → 컨테이너 환경변수 → application-prod.yml ${OPENAI_API_KEY}
+```
+
+- `backend/.dockerignore:3`이 `.env`를 제외하고 Dockerfile도 복사하지 않는다.
+- `backend/.env.example`은 **로컬 실행용 체크리스트**다. Spring Boot는 `.env`를 자동으로 읽지 않으며
+  (`backend/README.md`) 개발자가 셸·IDE에 직접 주입한다.
+
+다만 질문 덕분에 구멍이 하나 드러났다. `api-key`를 `application-prod.yml`에만 넣어서
+**로컬에서는 코치가 항상 TEMPLATE로만 내려간다.** 기본값으로는 맞다(로컬 실행이 실수로
+과금되지 않는다). 문제는 그 이유가 아무 데도 적혀 있지 않아 다음 사람이 "왜 AI 응답이 안 나오지"로
+시간을 쓴다는 것. 경로를 열되 기본값은 유지하는 쪽으로 정리했다.
+
+- `application-local.yml` — `api-key: ${OPENAI_API_KEY:}` (**선택**, 비면 템플릿)
+- `backend/.env.example` — `OPENAI_API_KEY=` + "선택" 주석
+- `backend/README.md` 환경변수 표 — 한 줄 추가
+- `backend/docs/ai-coach.md` §8 — 환경별 주입 경로 표 추가
+
+#### 함께 발견한 것 (589 범위 밖, 손대지 않음)
+
+`backend/.env.example`과 `README.md` 환경변수 표에 **`NUMBER_HASH_KEY`가 빠져 있다.**
+`application-local.yml`은 `app.security.number-hash-key: ${NUMBER_HASH_KEY}`를 기본값 없이 참조하므로,
+목록만 보고 로컬을 띄우면 **기동 실패**한다. 계좌·카드번호 HMAC 키라 한번 정하면 고정해야 하는
+값이기도 하다(compose 주석). 494/보안 설정 담당 영역이라 임의로 고치지 않고 남겨 둔다.

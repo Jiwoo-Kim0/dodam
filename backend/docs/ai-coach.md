@@ -171,6 +171,21 @@ app:
 - `infra/docker-compose.yml` backend `environment:`에 `OPENAI_API_KEY: ${OPENAI_API_KEY:-}`를 추가했다.
   키는 Day 5에 발급해 EC2 `.env`에 있었지만 컨테이너로 전달되지 않는 상태였다.
 
+### 환경별 키 주입 경로
+
+| 환경 | 경로 |
+| --- | --- |
+| 운영 | `infra/.env` → `docker-compose.yml` `environment:` → 컨테이너 환경변수 → `application-prod.yml` |
+| 로컬 | 셸·IDE 환경변수 → `application-local.yml`(`${OPENAI_API_KEY:}`, **선택**) |
+| 테스트 | 주입하지 않는다. `app.ai.enabled=false` |
+
+**`backend/.env`는 운영 경로에 없다.** `backend/.dockerignore`가 `.env`를 제외하고 Dockerfile도
+복사하지 않는다. `backend/.env.example`은 로컬 실행 시 개발자가 직접 주입할 값의 체크리스트일 뿐이다
+(Spring Boot는 `.env`를 자동으로 읽지 않는다 — `backend/README.md`).
+
+로컬에서 키를 비워 두는 것이 기본값이다. 로컬 실행이 실수로 과금되지 않게 하기 위해서이며,
+그때 코치는 `source: "TEMPLATE"` + `degradedReason: "AI_DISABLED"`로 정상 동작한다.
+
 ## 9. 테스트
 
 | 파일 | 검증 |
