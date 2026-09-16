@@ -27,6 +27,13 @@ public class FutureYearMonthPeriodPolicy {
         return validate(currentMonth, currentMonth.plusMonths(months - 1L), currentMonth);
     }
 
+    /** 단일 월. 생략하면 현재 월이고, 지정하면 현재 월부터 {@link #MAX_MONTHS}개월 안이어야 한다. */
+    public YearMonth resolveMonth(String value, YearMonth currentMonth) {
+        YearMonth month = value == null ? currentMonth : parse(value);
+        validate(currentMonth, month, currentMonth);
+        return month;
+    }
+
     private YearMonthPeriod validate(YearMonth start, YearMonth end, YearMonth currentMonth) {
         if (start.getYear() < 1 || end.getYear() > 9999
                 || start.isBefore(currentMonth) || start.isAfter(end)
