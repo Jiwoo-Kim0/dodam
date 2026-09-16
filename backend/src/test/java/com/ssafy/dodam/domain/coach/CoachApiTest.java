@@ -92,7 +92,7 @@ class CoachApiTest {
         issues.save(DiagnosisIssue.ofRule(diagnosisId, "DEBT", "LOW_RISK", IssueSeverity.LOW,
                 "대출 부담은 낮습니다", "대출 상환 비중이 기준 이하입니다.", null, null, null, NOW));
 
-        Recommendation recommendation = Recommendation.pending(owner, diagnosisId, null, "SPENDING", "CANCEL_SUBSCRIPTION",
+        Recommendation recommendation = Recommendation.pending(owner, diagnosisId, null, null, "SPENDING", "CANCEL_SUBSCRIPTION",
                 "쓰지 않는 구독을 정리하세요", "최근 3개월 사용 기록이 없는 구독이 있습니다.", 1,
                 new Recommendation.Effect(12_000L, null, null, null, null, null, null, null), KEY, NOW);
         recommendationId = recommendations.save(recommendation).getRecommendationId();

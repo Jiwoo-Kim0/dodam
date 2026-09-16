@@ -116,8 +116,7 @@ class RecommendationRepositoryTest {
 
     private Recommendation save(Long userId, String domain, LocalDateTime createdAt) {
         String key = String.format("%064x", KEY_SEQUENCE.incrementAndGet());
-        return recommendations.save(Recommendation.pending(
-                userId, 1L, null, domain, "TYPE", "제목", "설명", 1, null, key, createdAt));
+        return recommendations.save(Recommendation.pending(userId, 1L, null, null, domain, "TYPE", "제목", "설명", 1, null, key, createdAt));
     }
 
     private static Long nextUserId() {

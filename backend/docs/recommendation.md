@@ -1,6 +1,6 @@
-# Recommendation 저장 기반 (S15P21D105-547)
+# Recommendation 저장 기반 (S15P21D105-547 · 628)
 
-작성일: 2026-09-13. API 16 Recommendation의 저장 구조·입력 경계·후보 생성 골격이다.
+작성일: 2026-09-13, 갱신 2026-09-16(628 `source_issue_id`). API 16 Recommendation의 저장 구조·입력 경계·후보 생성 골격이다.
 HTTP API는 없다. 생성·조회 API(548)와 상태 변경·이력 API(549)가 이 위에서 구현한다.
 계획과 결정 배경은 [recommendation-foundation-plan.md](recommendation-foundation-plan.md)에 있다.
 
@@ -28,9 +28,11 @@ V18~V29 BE-B 예비 구간의 첫 번호이며 V30이 먼저 적용된 DB에는 
 
 | 테이블 | 핵심 제약 |
 | --- | --- |
-| `recommendation` | `(user_id, recommendation_id)` UNIQUE(후속 `improvement_action` FK 대상), `(user_id, generation_key)` UNIQUE, `(user_id, diagnosis_id)`→`diagnosis`·`(user_id, goal_id)`→`goal` 복합 FK, CHECK: status 5종·priority > 0·금액 4종 ≥ 0 |
+| `recommendation` | `(user_id, recommendation_id)` UNIQUE(후속 `improvement_action` FK 대상), `(user_id, generation_key)` UNIQUE, `(user_id, diagnosis_id)`→`diagnosis`·`(user_id, goal_id)`→`goal` 복합 FK, CHECK: status 5종·priority > 0·금액 4종 ≥ 0. **628 `V36`**: `source_issue_id BIGINT NULL` + `(user_id, source_issue_id)` 인덱스 + `diagnosis_issue(issue_id)` 단일 FK |
 | `recommendation_reason` | `(recommendation_id, code)` UNIQUE, `evidence` JSON |
 | `recommendation_history` | CHECK status 5종, `(recommendation_id, changed_at)` 인덱스 |
+
+`source_issue_id`(628)는 후보의 근거가 된 진단 문제다. 628 이전 행과 여러 문제를 합친 후보는 NULL이며 기존 행은 채우지 않는다(재생성은 같은 `generation_key`로 기존 행을 돌려주므로 값이 생기지 않는다). `diagnosis_issue`에 `(diagnosis_id, issue_id)` UNIQUE가 없어 진단 일치를 복합 FK로 걸 수 없고, 소유권·진단 일치는 Store가 저장 전에 검증한다(§6). 완료 진단의 문제 행은 삭제되지 않으므로(미완료 정리만 삭제) 단일 FK로 충분하다.
 
 엔티티에도 같은 UNIQUE를 `@Table(uniqueConstraints)`로 선언했다. H2 테스트는 Flyway 없이 엔티티로 스키마를
 만들기 때문에, 선언이 없으면 중복 방지가 테스트에서 검증되지 않는다. CHECK는 H2에 없으므로 엔티티 생성자가
@@ -101,13 +103,14 @@ domain/recommendation/
 ## 6. 저장 (`RecommendationStore.save(SaveRequest, now)`)
 
 한 트랜잭션: 요청 자체 검증 → 사용자 행 잠금(`RecommendationUserLock`, PESSIMISTIC_WRITE) → 진단 소유·완료
-재확인 → 목표 존재·일치 재확인 → 후보별로 키 조회 → 없으면 추천+근거+PENDING 이력 INSERT.
+재확인 → 목표 존재·일치 재확인 → 후보 `sourceIssueId`의 진단 일치 재확인(628) → 후보별로 키 조회 → 없으면 추천(+`source_issue_id`)+근거+PENDING 이력 INSERT.
 
 | 상황 | 결과 |
 | --- | --- |
 | 같은 키가 이미 있음 | 새 행 없이 기존 추천 반환(`Saved.created=false`). 기존 상태·근거·이력 불변 |
 | 같은 키인데 domain/type이 다름 | `IllegalStateException` (생성기 키 구성 결함, 덮어쓰지 않음) |
 | 요청 안 후보 키 중복 / 한 후보 안 근거 코드 중복 | `IllegalArgumentException`, INSERT 전에 실패 |
+| 후보 `sourceIssueId`가 이 진단의 본인 문제가 아님 (628) | `IllegalStateException`, INSERT 전에 실패. 후보는 Reader가 소유권 조회로 읽은 문제에서만 나오므로 어긋나면 생성기 결함. 잠금 아래에서 `findAllOwned`로 문제 목록을 다시 읽어 대조하며, 문제 id가 있는 후보가 없으면 조회하지 않는다 |
 | priority ≤ 0 | `IllegalArgumentException` (`PrioritizedCandidate` 생성 시) |
 | 타인·없는 진단, 없는 사용자, 타인·삭제 목표 | `ResourceNotFoundException` |
 | 미완료 진단, goalId ≠ 진단 goalId (목표 연계 진단에 null 포함) | `BusinessException(INVALID_REQUEST)` |
@@ -163,3 +166,8 @@ V11이 먼저 적용된 뒤 V6이 out-of-order로 들어가 영향이 없지만,
 - [x] 549: 전이표·같은 상태 재요청 409·`Recommendation.changeStatus` + `RecommendationHistory.of` (recommendation-api.md §6).
 - [x] 546의 `forecast` 키는 읽지 않기로 했다. 생성기가 스냅샷의 금액 필드로 현재·개선 달성일을 같은 식으로 계산한다.
 - 진단 삭제·목표 삭제 이후 기존 추천의 표시 정책은 정하지 않았다(저장 당시 근거는 보존).
+
+## 10. 628 검증 (2026-09-16)
+
+- H2: `RecommendationStoreTest` +1(후보 `sourceIssueId` 저장·null 허용, 같은 사용자의 다른 진단 문제·타인 진단 문제 → `IllegalStateException`과 전체 롤백, `pending(sourceIssueId ≤ 0)` 거부), 기존 `Recommendation.pending` 호출부 시그니처 갱신.
+- MySQL 8.0 (`dodam-626-mysql` 컨테이너, DB `dodam_547_test`에 V1~V17 수동 적용 + baseline 17): `RecommendationMySqlIntegrationTest` 3건 통과, Flyway가 V18~V36 적용, `ddl-auto=validate` 통과. 존재하지 않는 `source_issue_id` INSERT는 `fk_recommendation_source_issue`로 거부됨을 mysql 클라이언트로 확인.

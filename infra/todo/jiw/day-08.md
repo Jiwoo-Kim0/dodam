@@ -846,9 +846,19 @@ CRON_JOBS="backup:1560"   # 작업이름:허용지연(분). 매일 04:00이므�
 | 실패 케이스 (exit 7) | 출력 통과, `exit=7` 그대로 반환, webhook 미설정 시 정상 생략 |
 | `container-watch` heartbeat 없음 | `- cron \`backup\`: 성공 기록이 없음` 감지 |
 
-webhook을 비운 임시 `.env`로 돌려 **팀 채널에 테스트 알림이 가지 않게 했다.**
-실제 전송 경로는 아직 이 스크립트로 검증하지 않았다(같은 코드가 `container-watch.sh`에서
-운영 중이라 동작은 하지만, 한 번 실제로 쏴보는 것이 남아 있다).
+위 3건은 webhook을 비운 임시 `.env`로 돌려 **팀 채널에 알림이 가지 않게** 했다.
+
+**실제 전송 1회 검증 (사용자 승인 후 실행)** — 운영 `.env`의 webhook으로 작업명
+`알림경로-점검`, 본문에 "실제 장애 아님"을 명시해 1건 전송했다.
+
+```
+[cron-notify] '알림경로-점검' 실패 (종료 코드 1) — 알림 전송 시도
+[cron-notify] 알림 전송 완료
+  최종 exit=1
+```
+
+→ **전송 경로 동작 확인.** 종료 코드도 그대로 반환된다.
+테스트에 쓴 `/tmp` 사본과 임시 파일은 정리했다. `~/.cron-heartbeat/backup`(시드)만 남아 있다.
 
 #### heartbeat 시드 (선반영)
 
@@ -883,7 +893,7 @@ crontab이 가리킬 `cron-notify.sh`가 EC2에 아직 없다. 먼저 crontab을
 - [x] ~~`*.sql.gz.partial` 보관 정리 대상 포함~~ — 16절에서 함께 수정
 - [x] ~~cron 작업 실패를 알릴 경로가 없다~~ — 25절, `cron-notify.sh` 신설 + `container-watch.sh` heartbeat 확인
 - [ ] **배포 후 crontab을 `cron-notify.sh` 경유로 수정** (25절 마지막 블록. 배포 전에 바꾸면 백업이 안 돈다)
-- [ ] `cron-notify.sh`의 실제 Mattermost 전송 1회 검증 (팀 채널에 테스트 알림이 가므로 사전 합의 필요)
+- [x] ~~`cron-notify.sh`의 실제 Mattermost 전송 1회 검증~~ — 25절, 전송 확인 완료
 - [ ] 시연 비밀번호를 `backend/database/seeds/README.md`에 문서화 (**백엔드 담당자**)
 - [ ] `DODAM_DEMO_PASSWORD_SEED.sql`을 레포에 포함 (**백엔드 담당자**)
 - [ ] FE가 Expo 웹으로 붙을 계획이면 `CORS_ALLOWED_ORIGINS` 추가 (현재 `http://localhost:8081` 하나)

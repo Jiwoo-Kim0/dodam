@@ -1,12 +1,19 @@
 import { Image } from 'expo-image';
-import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { HOME_GOALS } from '@/mocks/home';
 import { colors } from '@/styles';
 import { formatCurrency } from '@/utils/currency';
 import { calculateProgressPercent } from '@/utils/goal';
 
+import { useOtherGoals } from '../hooks/useOtherGoals';
 import { styles } from './OtherGoalsBottomSheet.styles';
 
 interface OtherGoalsBottomSheetProps {
@@ -24,6 +31,8 @@ export function OtherGoalsBottomSheet({
   onCreateGoal,
   onSelectGoal,
 }: OtherGoalsBottomSheetProps) {
+  const { error, goals, isLoading, refetch } = useOtherGoals(visible);
+
   return (
     <Modal
       animationType="slide"
@@ -74,7 +83,27 @@ export function OtherGoalsBottomSheet({
             contentContainerStyle={styles.goalList}
             showsVerticalScrollIndicator={false}
           >
-            {HOME_GOALS.map((goal) => {
+            {isLoading ? (
+              <View style={styles.listState}>
+                <ActivityIndicator color={colors.primary.green} />
+                <Text style={styles.listStateText}>목표를 불러오고 있어요.</Text>
+              </View>
+            ) : error ? (
+              <View style={styles.listState}>
+                <Text style={styles.listStateText}>
+                  목표 목록을 불러오지 못했어요.
+                </Text>
+                <Pressable accessibilityRole="button" onPress={() => void refetch()}>
+                  <Text style={styles.retryLabel}>다시 시도</Text>
+                </Pressable>
+              </View>
+            ) : goals.length === 0 ? (
+              <View style={styles.listState}>
+                <Text style={styles.listStateText}>진행 중인 목표가 없어요.</Text>
+              </View>
+            ) : null}
+
+            {goals.map((goal) => {
               const isCurrent = goal.id === currentGoalId;
               const progressPercent = calculateProgressPercent(
                 goal.currentAmount,
