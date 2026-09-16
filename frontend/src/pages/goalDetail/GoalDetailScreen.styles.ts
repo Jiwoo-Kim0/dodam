@@ -53,6 +53,16 @@ export const styles = StyleSheet.create({
     ...typography.buttonSmall,
     color: colors.primary.green,
   },
+  headerDeleteButton: {
+    minHeight: componentSize.touchTarget,
+    minWidth: componentSize.touchTarget,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerDeleteLabel: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
   actionPressed: {
     opacity: componentSize.bottomSheet.pressedOpacity,
   },
@@ -135,6 +145,11 @@ export const styles = StyleSheet.create({
   notFoundTitle: {
     ...typography.title,
     color: colors.textPrimary,
+  },
+  notFoundDescription: {
+    ...typography.body1,
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
   notFoundAction: {
     ...typography.body1,

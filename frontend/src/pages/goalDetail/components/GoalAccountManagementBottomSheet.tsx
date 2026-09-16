@@ -2,11 +2,13 @@ import { Modal, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GoalAccountSelectionList } from '@/components/goalAccountSelectionList/GoalAccountSelectionList';
-import { MOCK_GOAL_ACCOUNTS } from '@/mocks/goalAccounts';
+import type { AccountApiResponse } from '@/types/assetApi.types';
 
 import { styles } from './GoalAccountManagementBottomSheet.styles';
 
 interface GoalAccountManagementBottomSheetProps {
+  accounts: readonly AccountApiResponse[];
+  isSubmitting: boolean;
   selectedAccountIds: readonly string[];
   visible: boolean;
   onClose: () => void;
@@ -15,14 +17,14 @@ interface GoalAccountManagementBottomSheetProps {
 }
 
 export function GoalAccountManagementBottomSheet({
+  accounts,
+  isSubmitting,
   selectedAccountIds,
   visible,
   onClose,
   onComplete,
   onToggle,
 }: GoalAccountManagementBottomSheetProps) {
-  const isCompleteDisabled = selectedAccountIds.length === 0;
-
   return (
     <Modal
       animationType="slide"
@@ -60,7 +62,7 @@ export function GoalAccountManagementBottomSheet({
 
           <View style={styles.accountSelection}>
             <GoalAccountSelectionList
-              accounts={MOCK_GOAL_ACCOUNTS}
+              accounts={accounts}
               onToggle={onToggle}
               selectedAccountIds={selectedAccountIds}
             />
@@ -68,16 +70,18 @@ export function GoalAccountManagementBottomSheet({
 
           <Pressable
             accessibilityRole="button"
-            accessibilityState={{ disabled: isCompleteDisabled }}
-            disabled={isCompleteDisabled}
+            accessibilityState={{ disabled: isSubmitting }}
+            disabled={isSubmitting}
             onPress={onComplete}
             style={({ pressed }) => [
               styles.completeButton,
-              isCompleteDisabled && styles.disabledButton,
-              pressed && !isCompleteDisabled && styles.pressedButton,
+              isSubmitting && styles.disabledButton,
+              pressed && !isSubmitting && styles.pressedButton,
             ]}
           >
-            <Text style={styles.completeButtonLabel}>완료</Text>
+            <Text style={styles.completeButtonLabel}>
+              {isSubmitting ? '저장 중...' : '완료'}
+            </Text>
           </Pressable>
         </SafeAreaView>
       </View>

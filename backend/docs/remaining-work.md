@@ -2,7 +2,7 @@
 
 마지막 갱신: 2026-09-16
 
-백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 587, 589, 611, 627이다.
+백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 587, 589, 611, 627, 628이다.
 
 ## S15P21D105-627 — 발견 화면 진단 규칙 확장 (소비 증가·고금리 대출)
 
@@ -10,7 +10,7 @@
 
 ### FE 요청 중 범위 밖으로 남긴 항목
 
-- [ ] **추천 응답 `sourceIssueId`**: FE가 문제별 추천을 연결하려면 필요하다. `RecommendationCandidate.sourceIssueId`는 있으나 `recommendation` 테이블에 컬럼이 없어 저장되지 않는다. Flyway 컬럼 추가 + `Recommendation.pending` 시그니처 + 응답 DTO 확장이 필요하며, 대안인 `GET /diagnoses/{id}/issues/{issueId}/recommendations`는 저장 컬럼 없이는 만들 수 없다.
+- [x] (S15P21D105-628, 2026-09-16) 추천 응답 `sourceIssueId` — `V36` 컬럼·Store 검증·응답 5곳. [recommendation-api.md](recommendation-api.md) §4, [recommendation.md](recommendation.md) §2·§6·§10. 남은 것: 루트 명세 16에 응답 필드 반영(사용자 요청 시), FE에 "628 이전 추천은 null" 전달.
 - [ ] **발견 요약 통합 수치**(문제 수·전체 개선 시 연 절감액·목표 단축일): 현재 `GET /recommendations/summary`는 사용자 전체 PENDING·ACCEPTED 추천을 단순 합산한다. 같은 문제의 대안 추천 중복 제거와 Combined Simulation 기반 목표 단축일 계산이 필요하다. 계산 불가는 0이 아니라 null + 사유로 준다.
 - 미사용 구독(사용 기록 없음)·유휴자금(비상금·생활비 보존 기준 미정)은 2026-09-16 FE와 합의해 하지 않기로 했다. 다시 하려면 "정기결제 점검" 표현 또는 사용 기록 데이터 추가가 선행돼야 한다.
 
@@ -1131,5 +1131,5 @@ API 명세 1 Auth에 없는 확장이다. 시연 범위 포함 여부는 FE 연�
 - [x] 시연 계정 비밀번호 설정 절차를 정했다(2026-09-15). `database/seeds/DODAM_DEMO_PASSWORD_SEED.sql`(10번)이 U0001~U0004에만 BCrypt 해시를 넣고, 비밀번호는 `seeds/README.md` "시연 계정 로그인" 절에 있다. 나머지 seed 사용자는 NULL 유지.
 - [x] 서버 스모크 스크립트 `scripts/be-a-server-smoke.sh`를 만들었다(2026-09-15). 공개 API만 사용해 로그인 → 계좌·거래·소비·목표·정기결제·패턴·알림 순으로 호출하고 상태 코드를 표로 남긴다. 비밀번호 미적용 상태의 서버에서 로그인 401을 받아 실패 메시지로 멈추는 경로까지 확인했다.
 - [x] 서버 DB에 10번 seed를 적용(2026-09-15, 담당자 실행)한 뒤 U0001로 스모크 15개 호출 전부 기대 상태 코드, U0002~U0004 로그인·계좌 요약 200. 결과 표는 notification.md "서버 스모크 (2026-09-15)".
-- [ ] U0002~U0004는 서버 DB에 패턴 분석 이력이 없다. 시연 전 `DEMO_EMAIL=seed.kmeans.u000N@dodam.invalid ... --analyze`로 한 번씩 실행하거나 앱에서 분석을 호출한다.
+- [x] U0002~U0004 패턴 분석 이력을 서버에 만들었다(2026-09-15 14:52, 스모크 `--analyze`, analysisId 2·3·4 COMPLETED/HYBRID, 스모크 15호출 전부 정상). 시연 계정 4명 모두 `GET /patterns/me`가 200이다. 재분석이 필요하면 같은 명령을 다시 실행한다(같은 달이면 200 cached).
 - [x] Goal·Subscription·Account·Transaction·Auth의 MySQL 검증은 위 서버 스모크(seed 적재된 서버 DB, prod 프로필)로 대신했다(2026-09-15). Finance Data·User는 스모크 대상 8개 API 밖이라 H2 회귀만 있다.

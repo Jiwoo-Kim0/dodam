@@ -490,6 +490,16 @@ class RecommendationApiTest {
 
         JsonNode comparison = json.readTree(generated).at("/data/items/1/recommendation");
         assertThat(comparison.at("/title").asText()).isEqualTo("'신용대출' 대환 조건 비교해보기");
+        // 628: 같은 LOAN/HIGH_INTEREST_RATE 문제 2건이 각자의 issueId로 구분된다
+        String loanIssues = mvc.perform(get("/api/v1/diagnoses/{id}/issues?domain=LOAN", diagnosisId).with(user(fresh.toString())))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        java.util.Map<Long, Long> issueByLoan = new java.util.HashMap<>();
+        for (JsonNode issue : json.readTree(loanIssues).at("/data/content")) {
+            issueByLoan.put(issue.at("/currentValue/loanId").asLong(), issue.at("/issueId").asLong());
+        }
+        assertThat(refinance.at("/sourceIssueId").asLong()).isEqualTo(issueByLoan.get(loanId));
+        assertThat(comparison.at("/sourceIssueId").asLong()).isEqualTo(issueByLoan.get(overdue));
+        assertThat(refinance.at("/sourceIssueId").asLong()).isNotEqualTo(comparison.at("/sourceIssueId").asLong());
         assertThat(comparison.at("/effect/interestSaving").isNull()).isTrue();
         assertThat(comparison.at("/simulation/available").asBoolean()).isFalse();
         assertThat(comparison.at("/simulation/unavailableReason").asText()).isEqualTo("REFINANCE_TARGET_MISSING");
@@ -529,6 +539,39 @@ class RecommendationApiTest {
                 .andExpect(jsonPath("$.data.simulation.type").value("SPENDING"))
                 .andExpect(jsonPath("$.data.simulation.before.monthlySpending").value(140_000))
                 .andExpect(jsonPath("$.data.simulation.after.monthlySpending").value(100_000));
+    }
+
+    /** 628: 생성·목록·priorities·상세·상태변경 응답 모두 같은 sourceIssueId를 싣고, 그 값은 진단 문제 id와 같다. */
+    @Test
+    void sourceIssueIdLinksRecommendationToItsDiagnosisIssueInEveryResponse() throws Exception {
+        long diagnosisId = diagnose(owner, goalId);
+        String issues = mvc.perform(get("/api/v1/diagnoses/{id}/issues", diagnosisId).with(user(owner.toString())))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1))
+                .andReturn().getResponse().getContentAsString();
+        long issueId = json.readTree(issues).at("/data/content/0/issueId").asLong();
+
+        String generated = mvc.perform(post("/api/v1/recommendations/generate").with(user(owner.toString())).contentType(JSON)
+                        .content("{\"diagnosisId\":" + diagnosisId + "}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.items[0].recommendation.diagnosisId").value(diagnosisId))
+                .andExpect(jsonPath("$.data.items[0].recommendation.sourceIssueId").value(issueId))
+                .andReturn().getResponse().getContentAsString();
+        long id = json.readTree(generated).at("/data/items/0/recommendation/recommendationId").asLong();
+
+        mvc.perform(get("/api/v1/recommendations").with(user(owner.toString())))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.content[0].sourceIssueId").value(issueId));
+        mvc.perform(get("/api/v1/recommendations/priorities").with(user(owner.toString())))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.recommendations[0].sourceIssueId").value(issueId));
+        mvc.perform(get("/api/v1/recommendations/{id}", id).with(user(owner.toString())))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.sourceIssueId").value(issueId))
+                .andExpect(jsonPath("$.data.diagnosisId").value(diagnosisId));
+        mvc.perform(post("/api/v1/recommendations/{id}/defer", id).with(user(owner.toString())))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.sourceIssueId").value(issueId))
+                .andExpect(jsonPath("$.data.status").value("DEFERRED"));
+        // 재요청은 기존 행을 돌려주며 값이 유지된다
+        mvc.perform(post("/api/v1/recommendations/generate").with(user(owner.toString())).contentType(JSON)
+                        .content("{\"diagnosisId\":" + diagnosisId + "}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.items[0].recommendation.sourceIssueId").value(issueId));
     }
 
     private void expense(LocalDate date, long amount) {

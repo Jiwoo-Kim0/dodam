@@ -1,6 +1,8 @@
 package com.ssafy.dodam.domain.recommendation.service;
 
 import com.ssafy.dodam.domain.diagnosis.entity.Diagnosis;
+import com.ssafy.dodam.domain.diagnosis.entity.DiagnosisIssue;
+import com.ssafy.dodam.domain.diagnosis.repository.DiagnosisIssueRepository;
 import com.ssafy.dodam.domain.diagnosis.repository.DiagnosisRepository;
 import com.ssafy.dodam.domain.goal.repository.GoalRepository;
 import com.ssafy.dodam.domain.recommendation.dto.RecommendationCandidate;
@@ -21,6 +23,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,12 +43,17 @@ import org.springframework.transaction.annotation.Transactional;
  * 트랜잭션에서 조회를 이어가지 않는다.
  *
  * <p>모든 검증은 첫 INSERT 전에 끝낸다. 후보 하나의 근거 코드가 중복이면 앞선 후보까지 롤백된다.
+ *
+ * <p><b>sourceIssueId(628)</b>: 후보가 가리키는 진단 문제는 저장 대상 진단의 본인 문제여야 한다. 후보는
+ * {@link RecommendationInputReader}가 소유권 조회로 읽은 문제에서만 만들어지므로 어긋나면 생성기 결함이며, 잠금 아래에서
+ * 문제 목록을 다시 읽어 첫 INSERT 전에 실패시킨다. 타인·다른 진단의 문제 id가 저장되는 경로를 남기지 않기 위해서다.
  */
 @Service
 public class RecommendationStore {
 
     private final RecommendationUserLock users;
     private final DiagnosisRepository diagnoses;
+    private final DiagnosisIssueRepository issues;
     private final GoalRepository goals;
     private final RecommendationRepository recommendations;
     private final RecommendationReasonRepository reasons;
@@ -54,6 +62,7 @@ public class RecommendationStore {
     public RecommendationStore(
             RecommendationUserLock users,
             DiagnosisRepository diagnoses,
+            DiagnosisIssueRepository issues,
             GoalRepository goals,
             RecommendationRepository recommendations,
             RecommendationReasonRepository reasons,
@@ -61,6 +70,7 @@ public class RecommendationStore {
     ) {
         this.users = users;
         this.diagnoses = diagnoses;
+        this.issues = issues;
         this.goals = goals;
         this.recommendations = recommendations;
         this.reasons = reasons;
@@ -103,6 +113,7 @@ public class RecommendationStore {
         lock(request.userId());
         Diagnosis diagnosis = requireCompletedOwnedDiagnosis(request.userId(), request.diagnosisId());
         requireGoalConsistent(request.userId(), diagnosis, request.goalId());
+        requireSourceIssuesBelongToDiagnosis(request);
 
         List<Saved> result = new ArrayList<>(request.candidates().size());
         for (PrioritizedCandidate prioritized : request.candidates()) {
@@ -125,7 +136,7 @@ public class RecommendationStore {
     private Recommendation insert(SaveRequest request, PrioritizedCandidate prioritized, String key, LocalDateTime now) {
         RecommendationCandidate candidate = prioritized.candidate();
         Recommendation saved = recommendations.save(Recommendation.pending(
-                request.userId(), request.diagnosisId(), request.goalId(),
+                request.userId(), request.diagnosisId(), request.goalId(), candidate.sourceIssueId(),
                 candidate.domain(), candidate.type(), candidate.title(), candidate.description(),
                 prioritized.priority(), candidate.effect(), key, now));
         Long id = saved.getRecommendationId();
@@ -177,6 +188,25 @@ public class RecommendationStore {
         }
         if (!Objects.equals(goalId, diagnosis.getGoalId())) {
             throw new BusinessException(ErrorCode.RECOMMENDATION_GOAL_MISMATCH);
+        }
+    }
+
+    // 문제 id가 있는 후보가 하나라도 있을 때만 조회한다. 소유권 조건이 포함된 조회라 타인 문제는 여기 나오지 않는다.
+    private void requireSourceIssuesBelongToDiagnosis(SaveRequest request) {
+        Set<Long> referenced = request.candidates().stream()
+                .map(p -> p.candidate().sourceIssueId())
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (referenced.isEmpty()) {
+            return;
+        }
+        Set<Long> owned = issues.findAllOwned(request.userId(), request.diagnosisId()).stream()
+                .map(DiagnosisIssue::getIssueId)
+                .collect(Collectors.toSet());
+        for (Long issueId : referenced) {
+            if (!owned.contains(issueId)) {
+                throw new IllegalStateException("후보의 sourceIssueId가 이 진단의 문제가 아닙니다: " + issueId);
+            }
         }
     }
 
