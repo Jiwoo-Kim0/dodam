@@ -3,7 +3,7 @@ import { Pressable, Text, View } from 'react-native';
 
 import type { DiscoveryInsight } from '../discoveryModel';
 import { colors } from '@/styles';
-import { formatNumber } from '@/utils/currency';
+import { formatRoundedAmount } from '@/utils/currency';
 
 import { styles } from './DiscoveryInsightsCard.styles';
 
@@ -45,7 +45,7 @@ export function DiscoveryInsightsCard({ insight, onPress }: DiscoveryInsightsCar
           <Text style={styles.amountValue}>
             {insight.annualSavingAmount === null
               ? '산정 전'
-              : formatNumber(insight.annualSavingAmount)}
+              : formatRoundedAmount(insight.annualSavingAmount)}
           </Text>
           {insight.annualSavingAmount !== null ? <Text style={styles.amountUnit}> 원/연</Text> : null}
           <SymbolView
