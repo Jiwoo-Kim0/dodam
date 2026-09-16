@@ -83,21 +83,21 @@
   "available": true,
   "type": "SAVING",
   "endpoint": "/api/v1/simulations/saving",
-  "request": { "accountNo": null, "monthlySavingAmount": 1000000, "durationMonths": null },
-  "assumptions": ["TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT"]
+  "request": { "accountNo": null, "goalId": 101, "monthlySavingAmount": 1000000, "durationMonths": null },
+  "assumptions": []
 }
 ```
 
 | 추천 domain/type | type · endpoint | request | 값의 출처 | assumptions |
 | --- | --- | --- | --- | --- |
 | SPENDING / REDUCE_SPENDING | SPENDING · `/api/v1/simulations/spending` | `{category: null, monthlyReduction, durationMonths: null}` | `effect.monthlyCostSaving`. 진단 SPENDING_GOAL_RISK가 목표 예산 전체 기준이라 카테고리 미지정 | `REDUCTION_APPLIES_TO_TOTAL_SPENDING` |
-| SAVING / INCREASE_MONTHLY_SAVING | SAVING · `/api/v1/simulations/saving` | `{accountNo: null, monthlySavingAmount: R, durationMonths: null}` | 근거 `GOAL_SAVING_SHORTFALL` evidence의 `requiredMonthlySaving`(R). 시뮬레이션은 변경 후 절대값을 받으므로 `contributionAmount`(R − A)가 아니라 R을 준다 | `TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT` |
+| SAVING / INCREASE_MONTHLY_SAVING | SAVING · `/api/v1/simulations/saving` | `{accountNo: null, goalId, monthlySavingAmount: R, durationMonths: null}` | `goalId`는 추천의 `goalId`(619). R은 근거 `GOAL_SAVING_SHORTFALL` evidence의 `requiredMonthlySaving`. 시뮬레이션은 변경 후 절대값을 받으므로 `contributionAmount`(R − A)가 아니라 R을 준다 | 없음. 추천에 `goalId`가 없을 때만 `TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT` |
 | CASHFLOW / SECURE_SHORTAGE_BUFFER, 그 외 | `available=false` | 없음 | — | `unavailableReason=NO_MATCHING_SIMULATION_TYPE` |
 
 - `available=false`면 `type`·`endpoint`·`request` 키가 없고 `unavailableReason`이 있다. 사유: `NO_MATCHING_SIMULATION_TYPE`(대응 유형 없음), `EFFECT_AMOUNT_MISSING`(소비 추천의 월 절감액 없음·0), `SNAPSHOT_FIELD_MISSING`(저축 추천 근거에 R 없음). `assumptions`는 항상 배열(없으면 `[]`).
-- `accountNo`는 항상 null이다. 원문 계좌번호를 응답에 싣지 않고 FE도 마스킹 값만 가진다. 따라서 저축 프리셋은 모든 모으기 목표에 남은 금액 비례 배분되며(simulation.md §4), 추천이 겨냥한 `goalId`로 좁히려면 명세 17 본문 확장(`goalId?`)이 필요하다 — 보류(simulation-587-plan.md §3.2).
+- `accountNo`는 항상 null이다. 원문 계좌번호를 응답에 싣지 않고 FE도 마스킹 값만 가진다. 대상 목표는 619(2026-09-16)부터 `goalId`로 넘긴다 — 명세 17 `POST /simulations/saving` 본문 확장(simulation.md §4). SAVING 추천은 생성기가 진단 evidence `targetId`를 `Recommendation.goalId`에 채워야만 만들어지므로 과거 추천에도 `goalId`가 있다. FE는 `request`를 그대로 POST하면 되고, 그 사이 목표가 PAUSED·삭제됐으면 실행이 400/404다(프리셋은 재계산하지 않는다).
 - `durationMonths: null`은 시뮬레이션 기본값(12개월)을 뜻한다. 추천 상태(REJECTED 등)와 무관하게 제공하며 실행 여부는 FE가 정한다.
-- 일관성: 진단 기준일 = 실행일이고 목표가 하나면 `effect.improvedForecastDate` = 프리셋 실행의 `goalImpacts[0].afterForecastDate`다(simulation.md §11.1).
+- 일관성: 진단 기준일 = 실행일이면 `effect.improvedForecastDate` = 프리셋 실행의 대상 `goalId`에 해당하는 `goalImpacts[].afterForecastDate`다. 목표가 여러 개여도 대상 목표만 변경한다(simulation.md §11.1).
 
 ## 6. 상태 변경·이력 (549)
 
@@ -137,6 +137,11 @@ H2 (`.\gradlew.bat test --tests 'com.ssafy.dodam.domain.recommendation.*'`, 2026
 
 - `RecommendationSimulationPresetAssemblerTest` 6: 소비 프리셋(카테고리 없음·근거 미조회), 절감액 없음 `EFFECT_AMOUNT_MISSING`, 저축 프리셋이 근거의 R을 읽음(R − A 아님·accountNo null), R 없음 `SNAPSHOT_FIELD_MISSING`, CASHFLOW·미지원 유형 `NO_MATCHING_SIMULATION_TYPE`, 목록 조립 시 SAVING 추천만 골라 근거 1회 조회.
 - `RecommendationApiTest` +1: 실제 진단·생성으로 만든 저축 추천의 프리셋이 생성·상세·목록·priorities·상태변경 응답에 같은 값(R = 1,000,000)으로 실리고, 타인 404, 프리셋 본문 그대로 `POST /simulations/saving` 201 → `goalImpacts[0].afterForecastDate`가 추천 `improvedForecastDate`(2026-10-13)와 같음, 응답에 `requestHash`·`accountId` 원문 없음, 같은 날 재실행 200 재사용.
+
+619 (2026-09-16, 같은 명령 59건 통과. 건수 변화 없이 기존 사례를 `goalId` 계약으로 바꿨다):
+
+- `RecommendationSimulationPresetAssemblerTest`: 저축 프리셋 `request.goalId` = 추천 goalId(단건·목록 일괄), `assumptions=[]`.
+- `RecommendationApiTest`: 생성·상세·목록·priorities·상태변경 응답의 프리셋에 `goalId`가 실리고, 목표 2개에서 프리셋 그대로 실행한 결과가 대상 목표만 바꿔 `afterForecastDate` = `effect.improvedForecastDate`, 비대상 목표 불변·`SPLIT_BY_REMAINING` 없음.
 
 MySQL: 스키마 변경 없음. 547 `RecommendationMySqlIntegrationTest` 3건은 `RECOMMENDATION_MYSQL_TEST_URL` 설정 시만 실행된다.
 

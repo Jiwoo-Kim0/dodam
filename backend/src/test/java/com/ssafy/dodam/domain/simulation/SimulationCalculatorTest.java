@@ -11,6 +11,7 @@ import com.ssafy.dodam.domain.simulation.service.calculator.SavingChangeCalculat
 import com.ssafy.dodam.domain.simulation.service.calculator.SpendingReductionCalculator;
 import com.ssafy.dodam.global.exception.BusinessException;
 import com.ssafy.dodam.global.exception.ErrorCode;
+import com.ssafy.dodam.global.exception.InvalidRequestException;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -93,6 +94,29 @@ class SimulationCalculatorTest {
         SimulationResult unlinked = saving.calculate(baseline(null), new SavingChangeInput(99L, 250_000L, 3));
         assertThat(unlinked.assumptions()).contains("ACCOUNT_NOT_LINKED_TO_GOAL");
         assertThat(unlinked.after().goals()).extracting(SimulationResult.GoalForecast::monthlySaving).containsExactly(166_666L, 83_334L);
+    }
+
+    @Test
+    void savingChangeWithGoalIdTargetsOnlyThatGoalEvenWithoutLinkedAccount() {
+        // 목표 B는 연결 계좌가 없어 accountNo로는 고를 수 없다 — goalId만이 닿는 경로(619)
+        SimulationResult result = saving.calculate(baseline(null), new SavingChangeInput(null, 2L, 250_000L, 3));
+        assertThat(result.after().goals()).extracting(SimulationResult.GoalForecast::monthlySaving).containsExactly(100_000L, 250_000L);
+        assertThat(result.after().monthlySaving()).isEqualTo(350_000L);
+        assertThat(result.assumptions()).doesNotContain("SPLIT_BY_REMAINING", "ACCOUNT_NOT_LINKED_TO_GOAL", "TARGET_GOAL_NOT_IN_BASELINE");
+        assertThat(result.goalImpacts()).extracting(SimulationResult.GoalImpact::goalId).containsExactly(1L, 2L);
+        assertThat(result.goalImpacts().get(0).after()).isEqualTo(result.goalImpacts().get(0).before()); // A는 그대로
+
+        assertThatThrownBy(() -> saving.calculate(baseline(null), new SavingChangeInput(null, 99L, 250_000L, 3)))
+                .isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
+    void savingChangeFingerprintIsUnchangedWithoutGoalId() {
+        // goalId가 없는 지문은 619 이전 형식 그대로여야 배포 전 같은 날 저장 건이 재사용된다
+        assertThat(new SavingChangeInput(11L, 250_000L, 3).fingerprint()).isEqualTo("11|250000|3");
+        assertThat(new SavingChangeInput(null, 250_000L, 3).fingerprint()).isEqualTo("|250000|3");
+        assertThat(new SavingChangeInput(null, 2L, 250_000L, 3).fingerprint()).isEqualTo("|250000|3|g=2");
+        assertThatThrownBy(() -> new SavingChangeInput(11L, 2L, 250_000L, 3)).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

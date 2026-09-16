@@ -13,6 +13,7 @@ import com.ssafy.dodam.domain.simulation.entity.SimulationType;
 import com.ssafy.dodam.domain.simulation.service.SimulationCalculator;
 import com.ssafy.dodam.global.exception.BusinessException;
 import com.ssafy.dodam.global.exception.ErrorCode;
+import com.ssafy.dodam.global.exception.InvalidRequestException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -23,8 +24,8 @@ import org.springframework.stereotype.Component;
  * 저축액 변경(POST /simulations/saving). {@code monthlySavingAmount}는 변경 후 월 저축액(절대값)이며 현재 속도보다 작아도 된다 —
  * 저축을 줄이면 달성이 늦어지는 것도 보여준다.
  *
- * <p>계좌를 지정했고 그 계좌가 어떤 모으기 목표에 연결돼 있으면 그 목표만 새 금액을 받고 나머지는 기존 속도를 유지한다.
- * 지정하지 않았거나 연결된 목표가 없으면 모든 모으기 목표에 남은 금액 비례로 배분한다.
+ * <p>목표를 지정했거나(619 {@code goalId}), 계좌를 지정했고 그 계좌가 어떤 모으기 목표에 연결돼 있으면 그 목표만 새 금액을 받고
+ * 나머지는 기존 속도를 유지한다. 목표 미지정 시 기존 배분 규칙을 유지하며, 지정한 목표가 기준선에 없으면 거부한다.
  * 소득이 등록돼 있으면 새 월 저축액이 소득을 넘을 수 없다. 이자는 계산하지 않는다({@code INTEREST_NOT_APPLIED}).
  */
 @Component
@@ -48,8 +49,9 @@ public class SavingChangeCalculator implements SimulationCalculator<SavingChange
         }
         List<String> assumptions = new ArrayList<>(List.of(SimulationScenarios.INTEREST_NOT_APPLIED));
         Predicate<SimulationBaseline.SavingGoal> eligible = eligibleGoals(baseline, input);
-        if (input.accountId() != null && !isLinked(baseline, input)) {
-            assumptions.add(ACCOUNT_NOT_LINKED_TO_GOAL);
+        String targetMiss = targetMissAssumption(baseline, input);
+        if (targetMiss != null) {
+            assumptions.add(targetMiss);
         }
         long currentSaving = baseline.averageMonthlySaving();
         Map<Long, Long> beforePaces = SimulationScenarios.currentPaces(baseline);
@@ -80,15 +82,39 @@ public class SavingChangeCalculator implements SimulationCalculator<SavingChange
         return new ScenarioComputation(result, ScenarioLedger.noCost(baseline.baseDate().plusMonths(input.durationMonths())));
     }
 
-    /** 지정 계좌가 어떤 모으기 목표에 연결돼 있는지. 복합 목표 투영도 같은 대상 선택 규칙을 쓴다. */
-    static boolean isLinked(SimulationBaseline baseline, SavingChangeInput input) {
-        return input.accountId() != null
-                && baseline.savingGoals().stream().anyMatch(g -> g.linkedAccountIds().contains(input.accountId()));
+    /** 지정한 대상(목표 id 또는 계좌가 연결된 목표)이 기준선의 모으기 목표에 있는지. 복합 목표 투영도 같은 대상 선택 규칙을 쓴다. */
+    static boolean isTargeted(SimulationBaseline baseline, SavingChangeInput input) {
+        return baseline.savingGoals().stream().anyMatch(targetMatcher(input));
     }
 
-    /** 새 저축액을 받을 목표. 계좌가 연결된 목표가 있으면 그 목표만, 아니면 모든 모으기 목표. */
+    /** 명시한 목표는 반드시 기준선에 있어야 한다. 목표 미지정일 때만 기존 계좌·전체 배분 규칙을 쓴다. */
     static Predicate<SimulationBaseline.SavingGoal> eligibleGoals(SimulationBaseline baseline, SavingChangeInput input) {
-        return isLinked(baseline, input) ? g -> g.linkedAccountIds().contains(input.accountId()) : g -> true;
+        if (input.goalId() != null && !isTargeted(baseline, input)) {
+            // 검증 이후 상태 변경이나 상세 행 누락이 있어도 다른 목표로 적용 범위를 넓히지 않는다.
+            throw new InvalidRequestException("지정한 목표의 저축 시뮬레이션 기준 정보를 찾을 수 없습니다.");
+        }
+        return isTargeted(baseline, input) ? targetMatcher(input) : g -> true;
+    }
+
+    /** 지정 계좌에 연결된 목표가 없어 전체 배분할 때 남길 가정 코드. */
+    static String targetMissAssumption(SimulationBaseline baseline, SavingChangeInput input) {
+        if (input.goalId() == null && input.accountId() == null) {
+            return null;
+        }
+        if (isTargeted(baseline, input)) {
+            return null;
+        }
+        return input.accountId() != null ? ACCOUNT_NOT_LINKED_TO_GOAL : null;
+    }
+
+    private static Predicate<SimulationBaseline.SavingGoal> targetMatcher(SavingChangeInput input) {
+        if (input.goalId() != null) {
+            return g -> input.goalId().equals(g.goalId());
+        }
+        if (input.accountId() != null) {
+            return g -> g.linkedAccountIds().contains(input.accountId());
+        }
+        return g -> false;
     }
 
     private static String summary(long delta, Snapshot before, Snapshot after) {

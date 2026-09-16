@@ -17,7 +17,8 @@ import java.util.List;
  *                          {@code EFFECT_AMOUNT_MISSING}: 소비 추천에 월 절감액이 없음.
  *                          {@code SNAPSHOT_FIELD_MISSING}: 저축 추천 근거에 목표 필요 저축액이 없음
  * @param assumptions       프리셋 값에 적용된 가정. {@code REDUCTION_APPLIES_TO_TOTAL_SPENDING}: 카테고리를 지정하지 않아 전체 소비 기준.
- *                          {@code TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT}: 계좌 미지정이라 저축액이 모든 모으기 목표에 남은 금액 비례로 배분됨
+ *                          {@code TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT}: 추천에 goalId가 없어 저축액이 모든 모으기 목표에 남은 금액 비례로
+ *                          배분됨. 619부터 저축 프리셋은 {@code request.goalId}로 대상 목표를 넘기므로 정상 자료에서는 나오지 않는다
  */
 public record RecommendationSimulationPreset(
         boolean available,

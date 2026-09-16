@@ -30,6 +30,8 @@ import org.springframework.stereotype.Component;
  *   <li>CASHFLOW/SECURE_SHORTAGE_BUFFER → 대응 유형 없음.</li>
  * </ul>
  * {@code durationMonths}는 null로 두어 시뮬레이션 기본값을 따르고, {@code accountNo}는 원문 번호를 응답에 싣지 않는 정책상 항상 null이다.
+ * 저축 프리셋의 대상 목표는 {@code goalId}(619)로 넘긴다 — SAVING 추천은 생성기가 진단 evidence의 targetId를 {@code Recommendation.goalId}에
+ * 채워야만 만들어지므로 과거 추천에도 항상 있다. 없으면 방어적으로 전체 배분 가정({@code TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT})을 남긴다.
  */
 @Component
 public class RecommendationSimulationPresetAssembler {
@@ -81,8 +83,10 @@ public class RecommendationSimulationPresetAssembler {
                 return RecommendationSimulationPreset.unavailable(RecommendationSimulationPreset.SNAPSHOT_FIELD_MISSING);
             }
             return RecommendationSimulationPreset.of(SimulationType.SAVING, SAVING_ENDPOINT,
-                    new SavingSimulationRequest(null, requiredMonthlySaving, null),
-                    List.of(RecommendationSimulationPreset.TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT));
+                    new SavingSimulationRequest(null, r.getGoalId(), requiredMonthlySaving, null),
+                    r.getGoalId() == null
+                            ? List.of(RecommendationSimulationPreset.TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT)
+                            : List.of());
         }
         return RecommendationSimulationPreset.unavailable(RecommendationSimulationPreset.NO_MATCHING_SIMULATION_TYPE);
     }

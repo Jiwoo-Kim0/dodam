@@ -93,17 +93,22 @@ Body `{ category?, monthlyReduction, durationMonths? }`
 
 ### `POST /api/v1/simulations/saving` — 저축액 변경
 
-Body `{ accountNo?, monthlySavingAmount, durationMonths? }`. `monthlySavingAmount`는 **변경 후 월 저축액(절대값)**, 0 이상.
+Body `{ accountNo?, goalId?, monthlySavingAmount, durationMonths? }`. `monthlySavingAmount`는 **변경 후 월 저축액(절대값)**, 0 이상.
+`goalId`(619, 2026-09-16)는 새 저축액을 받을 모으기 목표를 직접 지정한다 — 추천 프리셋이 원문 계좌번호 없이 겨냥한 목표를 넘기는 경로다(§11.1). 명세 17 본문 확장이므로 루트 명세 반영은 별도 요청이 필요하다.
 
 | 검증 | 결과 |
 | --- | --- |
-| `monthlySavingAmount` 없음·음수, `accountNo` 형식(`[0-9-]{8,32}`) 위반 | 400 |
+| `monthlySavingAmount` 없음·음수, `accountNo` 형식(`[0-9-]{8,32}`) 위반, `goalId` 0·음수·소수점 | 400 |
+| `accountNo`와 `goalId` 동시 지정 | 400 `INVALID_REQUEST` |
 | `accountNo`가 본인 계좌가 아님(없음·타인) | 404 `RESOURCE_NOT_FOUND` |
+| `goalId`가 본인 목표가 아님(없음·타인·삭제) | 404 `RESOURCE_NOT_FOUND` — 진단의 `goalId` 지정과 같은 조회 |
+| `goalId`가 본인 목표지만 SPENDING이거나 ACTIVE가 아님(PAUSED·ACHIEVED·CANCELED) | 400 `INVALID_REQUEST`. 기준선이 ACTIVE 모으기 목표만 읽으므로 효과를 계산할 수 없고, 조용히 전체 배분으로 바꾸지 않는다. 소유권 확인 뒤라 존재를 흘리지 않는다 |
 | 소득이 등록돼 있고 `monthlySavingAmount` > 소득 | 400 `SIMULATION_SAVING_EXCEEDS_INCOME`. 소득 미등록이면 상한 없음(`INCOME_UNKNOWN`) |
 
 계산(`SavingChangeCalculator`):
 
-- 대상 목표: 계좌를 지정했고 그 계좌가 모으기 목표에 연결돼 있으면 그 목표만(다른 목표는 기존 속도 유지). 아니면 모든 모으기 목표에 남은 금액 비례 배분. 계좌를 지정했지만 연결된 목표가 없으면 `ACCOUNT_NOT_LINKED_TO_GOAL` 가정을 남기고 전체 배분.
+- 대상 목표: `goalId`를 지정했으면 그 목표만. 계좌를 지정했고 그 계좌가 모으기 목표에 연결돼 있으면 그 목표만(다른 목표는 기존 속도 유지). 아니면 모든 모으기 목표에 남은 금액 비례 배분. 계좌를 지정했지만 연결된 목표가 없으면 `ACCOUNT_NOT_LINKED_TO_GOAL`, `goalId`가 기준선에 없으면(`saving_goal` 행 누락 같은 자료 불일치) 400 `INVALID_REQUEST`로 거부하며 다른 목표에 배분하지 않는다. 복합의 SAVING 자식도 같은 규칙(`CombinedGoalProjection`).
+- 지문: `accountId|amount|duration`에 `goalId`가 있을 때만 `|g=<goalId>`를 덧붙인다. `goalId` 없는 요청의 지문은 619 이전과 같아 배포 전 같은 날 저장 건이 그대로 재사용된다. `goalId` 지정 건과 미지정 건은 목표가 하나뿐이어도 별개로 저장한다. 계산식은 바뀌지 않아 `SimulationCalculationVersion`은 그대로다. 저장 파라미터·응답 `request`에 `goalId` 키가 추가된다(이전 저장 건에는 없음).
 - `after.monthlySaving` = 대상 목표 배분액 + 비대상 목표 기존 속도(목표가 없으면 입력값). 월 가용자금 `−(after − before)`. 저축을 줄이면 달성일이 늦어지는 것도 그대로 보여준다. 0원이면 달성 불가(null).
 - 이자는 계산하지 않는다(`INTEREST_NOT_APPLIED`). `assets`: `durationMonths`개월 누적 저축액 전후.
 
@@ -178,6 +183,14 @@ H2 (`.\gradlew.bat test --tests 'com.ssafy.dodam.domain.simulation.*'`, 2026-09-
 586 보완(2026-09-15): `CombinedSimulationCalculatorTest`에 자식 비례 배분의 산술 범위 초과와 부모 현금 유입 합계 범위 초과 회귀 테스트 2건을 추가했다. 해당 클래스 8건이 통과했으며 두 경로 모두 `SIMULATION_AMOUNT_OUT_OF_RANGE`를 반환한다.
 
 MySQL 통합 검증은 587에서 수행했다(§11.3).
+
+619 (2026-09-16, 인수 검토에서 복합 목표 선택·소수점 거부·삭제 목표·기준선 누락 검증을 추가. 계획은 [simulation-619-plan.md](simulation-619-plan.md)):
+
+- `SimulationCalculatorTest` +2: `goalId`가 연결 계좌 없는 목표 B만 바꾸고 A는 기존 속도 유지·`SPLIT_BY_REMAINING` 없음, 기준선에 없는 goalId는 `INVALID_REQUEST`로 거부; `goalId` 없는 지문이 619 이전 문자열(`11|250000|3`)과 동일·있으면 `|g=2` 접미사·동시 지정 예외.
+- `SimulationApiTest` +2: `goalId` 201·`request.goalId` 저장·대상 목표만 변경(`after.monthlySaving` 433,333 = 333,333 + 100,000)·같은 날 재사용·미지정 실행은 별개 저장; 타인·없는·삭제 목표 404, `accountNo` 동시 지정·0·음수·소수점·SPENDING·PAUSED·상세 누락 400, 실패 시 저장 0건.
+- `SimulationCardCombinedApiTest` +1: 복합 SAVING 자식의 대상 목표만 속도 변경·소수점 ID 거부. 기존 메서드에는 타인 goalId 404·동시 지정 400 사례 추가.
+- `RecommendationSimulationPresetAssemblerTest`·`RecommendationApiTest`: 프리셋 `request.goalId` = 추천 goalId, `assumptions=[]`; 목표 2개에서 프리셋 실행의 대상 목표 `afterForecastDate` = `effect.improvedForecastDate`, 비대상 목표 불변.
+- MySQL 전용 SQL 변경이 없어 `SimulationMySqlIntegrationTest`는 재실행하지 않았다.
 
 ### 616 시연 seed 실측 (2026-09-16, 시연 서버 MySQL)
 
@@ -472,12 +485,12 @@ DDL·새 엔드포인트 없음. 계약은 [recommendation-api.md](recommendatio
 | 추천 domain/type | `simulation.type` · `endpoint` | `request` |
 | --- | --- | --- |
 | SPENDING/REDUCE_SPENDING | SPENDING · `POST /api/v1/simulations/spending` | `{category: null, monthlyReduction: effect.monthlyCostSaving, durationMonths: null}` |
-| SAVING/INCREASE_MONTHLY_SAVING | SAVING · `POST /api/v1/simulations/saving` | `{accountNo: null, monthlySavingAmount: R, durationMonths: null}` — R은 근거 `GOAL_SAVING_SHORTFALL` evidence의 `requiredMonthlySaving`(변경 후 절대값이며 `contributionAmount = R − A`가 아니다) |
+| SAVING/INCREASE_MONTHLY_SAVING | SAVING · `POST /api/v1/simulations/saving` | `{accountNo: null, goalId: 추천.goalId, monthlySavingAmount: R, durationMonths: null}` — R은 근거 `GOAL_SAVING_SHORTFALL` evidence의 `requiredMonthlySaving`(변경 후 절대값이며 `contributionAmount = R − A`가 아니다) |
 | CASHFLOW/SECURE_SHORTAGE_BUFFER | `available=false`, `NO_MATCHING_SIMULATION_TYPE` | — |
 
 - FE는 `request`를 그대로(또는 사용자가 고쳐서) `endpoint`에 POST한다. 응답·저장은 기존 계약 그대로이며 시뮬레이션은 추천 id를 저장하지 않는다(재사용 지문과 충돌하므로 결과 추적은 Improvement/Report 이슈의 계약을 따른다).
-- 계좌 미지정 저축은 모든 모으기 목표에 남은 금액 비례 배분된다(`TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT`). 특정 목표만 겨냥하려면 명세 17 `saving` 본문에 `goalId?`를 더해야 하며 이는 루트 명세 변경이라 보류했다(simulation-587-plan.md §3.2).
-- **일관성**: 진단 기준일 = 시뮬레이션 기준일이고 목표가 하나면 추천 `effect.improvedForecastDate`와 프리셋 실행의 `goalImpacts[0].afterForecastDate`가 같다(같은 `base + ceil(remaining / R)` 식). 기준일이 다르면 그 차이만큼 달라진다 — 추천은 진단 스냅샷 `asOf`, 시뮬레이션은 실행일 기준이다. `RecommendationApiTest.savingRecommendationCarriesPresetEverywhereAndPresetRunMatchesRecommendedForecast`가 고정한다.
+- 저축 프리셋은 619(2026-09-16)부터 `request.goalId`로 추천이 겨냥한 목표를 넘긴다(§4 `goalId`). SAVING 추천은 생성기가 진단 evidence `targetId`를 `Recommendation.goalId`에 채워야만 만들어지므로 과거 추천에도 있다. `goalId`가 없을 때만 전체 비례 배분 가정 `TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT`가 남는다(정상 자료에서는 나오지 않음). 추천이 겨냥한 목표가 그 사이 PAUSED·삭제됐으면 프리셋은 그대로 내고 실행 시 400/404다 — 프리셋은 재계산이 아니다.
+- **일관성**: 진단 기준일 = 시뮬레이션 기준일이면 추천 `effect.improvedForecastDate`와 프리셋 실행의 `goalImpacts[추천 goalId].afterForecastDate`가 같다(같은 `base + ceil(remaining / R)` 식). 목표가 여럿이어도 `goalId`가 대상을 좁히므로 성립한다(619 전에는 목표 1개에서만). 기준일이 다르면 그 차이만큼 달라진다 — 추천은 진단 스냅샷 `asOf`, 시뮬레이션은 실행일 기준이다. `RecommendationApiTest.savingRecommendationCarriesPresetEverywhereAndPresetRunMatchesRecommendedForecast`가 목표 2개로 고정한다.
   소비 추천 `effect.monthlyCostSaving` = 프리셋 실행의 `after.monthlyAvailableFunds − before.monthlyAvailableFunds` = `before.monthlySpending − after.monthlySpending`는 618에서 `RecommendationApiTest.spendingRecommendationEffectEqualsPresetRunAvailableFundsGain`으로 고정했다(2026-09-16). fixture: 예산 1,000,000·이번 달 지출 1,300,000(진단 `spent`, `projected = 1,300,000 × 30 / 13 = 3,000,000` → `over` 2,000,000)·직전 3개월 각 2,400,000(시뮬레이션 기준선 평균)·소득 3,000,000 → 가용자금 600,000 → 2,600,000. **진단은 이번 달, 시뮬레이션 기준선은 직전 3개월을 읽으므로** 등식은 `over ≤ 평균 지출`이고 소득이 있을 때만 성립한다. 초과분이 평균 지출을 넘으면 프리셋 실행이 400 `SIMULATION_REDUCTION_EXCEEDS_SPENDING`이며 이는 587 프리셋 설계의 알려진 제한이다(FE 146은 사용자가 값을 고쳐 실행). 저축과 달리 날짜 식이 아니라 진단 기준일과 실행일이 달라도 금액은 같다.
 
 ### 11.2 통합 회귀 (`SimulationIntegrationApiTest` 3건, H2)
