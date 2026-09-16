@@ -882,6 +882,57 @@ crontab이 가리킬 `cron-notify.sh`가 EC2에 아직 없다. 먼저 crontab을
 `deploy.sh`가 `git reset --hard`로 맞추므로 신규 파일이 충돌할 일은 없다
 (EC2에는 `/tmp`에만 복사해 테스트했고 레포 경로에는 두지 않았다).
 
+### 26. 배포 후 확인 및 crontab 적용 (17:0x~17:17)
+
+#### `validate` 복귀 — 정상 기동 확인 (24절 후속)
+
+가장 위험했던 변경이다. 기동 실패하면 재시작 루프 → 외부 502가 된다.
+
+```
+배포 커밋   : e98127c [S15P21D105-475] [Infra] fix: ddl-auto 임시 조치 제거하고 validate 복귀
+backend     : running / healthy / restarts=0 (17:05:00 기동)
+컨테이너 환경변수 SPRING_JPA_HIBERNATE_DDL_AUTO : 0개 (제거 확인)
+schema-validation 오류                          : 0건
+Started DodamApplication in 19.965 seconds
+```
+
+→ **스키마 안전망 복구 완료.** 이제 엔티티와 DB가 어긋나면 기동 단계에서 잡힌다.
+
+#### crontab을 `cron-notify.sh` 경유로 변경
+
+스크립트가 배포된 것을 확인한 뒤 바꿨다(순서를 지켰다 — 먼저 바꿨으면 04:00에
+"파일 없음"으로 백업이 아예 돌지 않았을 것이다).
+
+```bash
+crontab -l > /home/ubuntu/crontab.bak.20260916   # 백업 먼저
+```
+
+```
+# 변경 후
+0 4 * * * /home/ubuntu/app/infra/scripts/cron-notify.sh backup \
+          /home/ubuntu/app/infra/scripts/backup.sh >> /home/ubuntu/backups/backup.log 2>&1
+*/5 * * * * /home/ubuntu/app/infra/scripts/container-watch.sh >> ... (변경 없음)
+```
+
+`container-watch.sh`는 경로가 그대로라 crontab 수정 없이 heartbeat 확인 기능이 바로 붙었다.
+
+#### 래퍼 경유 백업 1회 실전 실행 — 전 구간 확인
+
+04:00까지 기다리지 않고 실제로 한 번 돌렸다.
+
+| 확인 | 결과 |
+| --- | --- |
+| 래퍼 종료 코드 | `exit=0` |
+| 덤프 생성 | `dodam-20260916-171728.sql.gz` (8.6MB) |
+| heartbeat 갱신 | `1789546651` = 2026-09-16 17:17:31 |
+| `container-watch.sh` 재실행 | `exit=0` — 오알림 없음 |
+
+→ **실패 알림(25절 전송 확인) + 성공 heartbeat + heartbeat 감시**가 모두 연결됐다.
+09-15처럼 백업이 조용히 실패하는 일은 이제 두 경로 중 하나에 걸린다.
+
+> `container-watch.sh` 자체는 래퍼로 감싸지 않았다. 이 스크립트가 0이 아닌 코드로 끝나는
+> 경우는 webhook 미설정·전송 실패뿐인데, 그 상황에서는 래퍼의 알림도 나가지 못한다.
+
 ## 남은 것
 - [ ] 이 수정 develop 머지 후 첫 배포에서 `infra-backend:deployed` 태그 생성 확인
 - [ ] 롤백 경로 실제 검증 — 일부러 깨는 커밋으로 "코드+이미지가 함께 되돌아오는지" 확인
@@ -892,7 +943,7 @@ crontab이 가리킬 `cron-notify.sh`가 EC2에 아직 없다. 먼저 crontab을
 - [x] ~~`backup.sh` SIGPIPE 버그 수정~~ — 완주 표식 검증으로 교체, 11:53 백업 성공으로 공백 해소 (16절)
 - [x] ~~`*.sql.gz.partial` 보관 정리 대상 포함~~ — 16절에서 함께 수정
 - [x] ~~cron 작업 실패를 알릴 경로가 없다~~ — 25절, `cron-notify.sh` 신설 + `container-watch.sh` heartbeat 확인
-- [ ] **배포 후 crontab을 `cron-notify.sh` 경유로 수정** (25절 마지막 블록. 배포 전에 바꾸면 백업이 안 돈다)
+- [x] ~~배포 후 crontab을 `cron-notify.sh` 경유로 수정~~ — 26절, 실전 1회 실행까지 확인
 - [x] ~~`cron-notify.sh`의 실제 Mattermost 전송 1회 검증~~ — 25절, 전송 확인 완료
 - [ ] 시연 비밀번호를 `backend/database/seeds/README.md`에 문서화 (**백엔드 담당자**)
 - [ ] `DODAM_DEMO_PASSWORD_SEED.sql`을 레포에 포함 (**백엔드 담당자**)
@@ -911,4 +962,4 @@ crontab이 가리킬 `cron-notify.sh`가 EC2에 아직 없다. 먼저 crontab을
 - [x] ~~EC2 → `kapi.kakao.com` / `www.googleapis.com` 아웃바운드 연결성 확인~~ — 20절, 호스트·컨테이너 모두 도달 확인
 - [ ] 카카오·구글 콘솔 앱 등록 후 `.env`에 `KAKAO_APP_ID`·`GOOGLE_CLIENT_ID` 채우고 backend 재기동
 - [x] ~~`SPRING_JPA_HIBERNATE_DDL_AUTO: none` 제거하고 `validate` 복귀~~ — 24절, 드라이런 통과 후 제거. **다음 배포에서 기동 확인 필요**
-- [ ] 다음 배포에서 backend가 `validate`로 정상 기동하는지 확인 (실패 시 즉시 롤백 대상)
+- [x] ~~다음 배포에서 backend가 `validate`로 정상 기동하는지 확인~~ — 26절, healthy·restarts=0·오류 0건
