@@ -933,11 +933,94 @@ crontab -l > /home/ubuntu/crontab.bak.20260916   # 백업 먼저
 > `container-watch.sh` 자체는 래퍼로 감싸지 않았다. 이 스크립트가 0이 아닌 코드로 끝나는
 > 경우는 webhook 미설정·전송 실패뿐인데, 그 상황에서는 래퍼의 알림도 나가지 못한다.
 
+### 27. `docker-gc.sh` 운영 적용 (17:20~17:22) — 27GB 회수, cron 등록
+
+#### 실행 전 상태 — 생각보다 급했다
+
+```
+디스크      : 80G / 309G (26%)      ← 09-14 실측 14%
+빌드 캐시   : 404개 65.55GB          ← 09-14 실측 30.2GB (이틀 만에 2배)
+이미지      : 89개 22.57GB
+중지 컨테이너: hello-world 3개
+```
+
+`certbot`이 running 상태임을 먼저 확인했다. exited였다면 `container prune`에 걸려
+`container-watch.sh`가 "컨테이너가 존재하지 않음"으로 오알림을 냈을 것이다.
+
+#### 실행 결과
+
+| 항목 | 이전 → 이후 |
+| --- | --- |
+| 디스크 사용률 | 26% → **18%** (여유 230GB → 257GB) |
+| 이미지 | 89개 22.57GB → 20개 6.28GB |
+| 중지 컨테이너 | 3개 → 0개 |
+| 회수량 | 이미지 9.31GB + 캐시 19.28GB ≈ **27GB** |
+
+보존 확인 — 롤백 지점이 살아 있다. 그리고 **태그 상태가 정상으로 돌아왔다.**
+
+```
+infra-backend:latest   4655d73f78af   ← deployed와 동일 (현재 서비스 중)
+infra-backend:deployed 4655d73f78af
+infra-backend:rollback 3230657bda3c   ← 직전 이미지 (다름 = 정상)
+```
+
+오늘 낮에 관찰했던 "rollback이 실행 중 이미지와 같다"는 이상은 **그 시점이 빌드만 되고
+배포는 안 된 중간 상태였기 때문**이다. 배포가 끝난 지금은 의도대로 latest=deployed(현재),
+rollback=직전이다. 서비스 컨테이너 11개 모두 정상, backend healthy/restarts=0.
+
+#### ⚠️ 발견 — 빌드 캐시 상한(`--max-used-space`)이 듣지 않는다
+
+정리 후에도 빌드 캐시가 **46.27GB** 남았다. 상한은 10GB인데 안 줄었다.
+
+```
+$ docker builder prune -f --max-used-space 10GB   # 한 번 더
+Total: 0B                                          # 아무것도 더 안 지운다
+$ docker builder du
+Private:     10.73GB
+Reclaimable: 46.27GB
+Total:       46.27GB
+```
+
+BuildKit이 상한과 비교하는 값은 **`Private`(10.73GB)**이라 이미 상한 부근이고,
+`Reclaimable` 46.27GB는 대상이 되지 않는다. **상한만으로는 캐시가 계속 자란다.**
+(`docker system df`는 같은 값을 RECLAIMABLE 10.73GB로 반대로 표시해 더 헷갈린다)
+
+**조치 — `docker-gc.sh`를 2단계로 수정**
+
+```bash
+CACHE_MAX_AGE="${CACHE_MAX_AGE:-168h}"   # 신규
+docker builder prune -f --filter "until=$CACHE_MAX_AGE"   # 1) 오래된 것 버림
+docker builder prune -f --max-used-space "$MAX_CACHE"     # 2) 상한은 백스톱
+docker builder du                                         # 3) 현황 로그
+```
+
+7일보다 오래된 캐시만 버리므로 **최근 캐시는 남아 다음 빌드가 느려지지 않는다.**
+이 수정은 **아직 배포되지 않았고, 새 방식으로 돌려보지도 않았다** — 다음 배포 후
+1회 수동 실행으로 회수량을 확인할 것.
+
+#### cron 등록
+
+```
+0 5 * * 0 .../cron-notify.sh docker-gc .../docker-gc.sh >> ~/backups/docker-gc.log 2>&1
+```
+
+주 1회 일요일 05:00. 백업(04:00)과 겹치지 않는다. **래퍼를 거치므로 실패하면 알림이 온다**
+— 25절을 먼저 한 이유가 이것이다. `container-watch.sh`의 `CRON_JOBS`에도
+`docker-gc:11520`(8일)을 추가했고, 방금 수동 실행이 성공했으므로 heartbeat를 시드했다.
+
+```
+backup    = 2026-09-16 17:17
+docker-gc = 2026-09-16 17:22
+```
+
+기존 crontab은 `crontab.bak.20260916-gc`로 백업했다.
+
 ## 남은 것
-- [ ] 이 수정 develop 머지 후 첫 배포에서 `infra-backend:deployed` 태그 생성 확인
+- [x] ~~첫 배포에서 `infra-backend:deployed` 태그 생성 확인~~ — 27절, latest=deployed·rollback=직전 정상
 - [ ] 롤백 경로 실제 검증 — 일부러 깨는 커밋으로 "코드+이미지가 함께 되돌아오는지" 확인
-      (지금까지 검증된 것은 코드 롤백까지다)
-- [ ] `docker-gc.sh` EC2 1회 수동 실행 + cron 등록 (스크립트 커밋 완료, **운영 미적용** — 위 수정이 배포된 뒤에 실행)
+      (지금까지 검증된 것은 코드 롤백까지다. 태그 상태는 27절에서 정상 확인)
+- [x] ~~`docker-gc.sh` EC2 1회 수동 실행 + cron 등록~~ — 27절, 27GB 회수 후 일요일 05:00 등록
+- [ ] 배포 후 `docker-gc.sh` 새 방식(`until=168h`) 1회 수동 실행해 회수량 확인 — **미검증**
 - [ ] 위 커밋 push 및 develop 머지 (머지 시 nginx reload로 레이트 리밋 수정도 함께 반영)
 - [ ] 배포 후 로그인 레이트 리밋이 실제로 걸리는지 확인 (연속 요청으로 429 유도)
 - [x] ~~`backup.sh` SIGPIPE 버그 수정~~ — 완주 표식 검증으로 교체, 11:53 백업 성공으로 공백 해소 (16절)

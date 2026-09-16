@@ -29,7 +29,8 @@ RESTART_THRESHOLD="${RESTART_THRESHOLD:-3}"
 # cron heartbeat — `cron-notify.sh`가 작업 성공 시 남긴다.
 # 형식: 작업이름:허용지연(분). backup은 매일 04:00이므로 26시간(1560분)을 허용치로 둔다.
 HEARTBEAT_DIR="${HEARTBEAT_DIR:-/home/ubuntu/.cron-heartbeat}"
-CRON_JOBS="${CRON_JOBS:-backup:1560}"
+# backup: 매일 04:00 → 26시간(1560분) / docker-gc: 매주 일 05:00 → 8일(11520분)
+CRON_JOBS="${CRON_JOBS:-backup:1560 docker-gc:11520}"
 
 problems=""
 
