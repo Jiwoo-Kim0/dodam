@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 import { notificationApi } from '@/api';
 import type { NotificationApiResponse } from '@/types/notificationApi.types';
@@ -7,7 +7,7 @@ const PAGE_SIZE = 20;
 
 export function useNotifications() {
   const [notifications, setNotifications] = useState<NotificationApiResponse[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadCount, setUnreadCount] = useState<number | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -43,6 +43,7 @@ export function useNotifications() {
     async (refreshing = false) => {
       const requestId = ++requestIdRef.current;
       setError(null);
+      setIsLoadingMore(false);
       if (refreshing) {
         setIsRefreshing(true);
       } else {
@@ -64,14 +65,20 @@ export function useNotifications() {
           }
         } catch {
           // 서버 집계를 둘 다 얻지 못했다. 첫 페이지가 마지막 페이지일 때만 목록으로 셀 수 있다.
-          // 뒤에 페이지가 더 있으면 실제보다 적게 나오므로 직전 값을 그대로 둔다.
-          if (requestId === requestIdRef.current && page.last) {
-            setUnreadCount(page.content.filter((item) => !item.isRead).length);
+          // 뒤에 페이지가 더 있으면 실제보다 적게 나오므로 '알 수 없음'으로 둔다.
+          if (requestId === requestIdRef.current) {
+            setUnreadCount(page.last
+              ? page.content.filter((item) => !item.isRead).length
+              : null);
           }
         }
       } catch (loadError) {
         if (requestId === requestIdRef.current) {
           setError(loadError);
+          setNotifications([]);
+          setUnreadCount(null);
+          setHasMore(false);
+          serverOffsetRef.current = 0;
         }
       } finally {
         if (requestId === requestIdRef.current) {
@@ -83,18 +90,10 @@ export function useNotifications() {
     [loadUnreadCount],
   );
 
-  useEffect(() => {
-    const loadTimeout = setTimeout(() => void loadFirstPage(), 0);
-
-    return () => {
-      clearTimeout(loadTimeout);
-      requestIdRef.current += 1;
-    };
-  }, [loadFirstPage]);
-
   const loadMore = useCallback(async () => {
     if (!hasMore || isLoadingMore || isLoading || isRefreshing) return;
 
+    const requestId = requestIdRef.current;
     const offset = serverOffsetRef.current;
     const requestedPage = Math.floor(offset / PAGE_SIZE);
     setIsLoadingMore(true);
@@ -103,6 +102,7 @@ export function useNotifications() {
         page: requestedPage,
         size: PAGE_SIZE,
       });
+      if (requestId !== requestIdRef.current || offset !== serverOffsetRef.current) return;
       // 삭제로 offset이 페이지 경계에 걸치면 이미 읽은 앞부분이 다시 온다. 그만큼 잘라낸다.
       const fresh = page.content.slice(offset - requestedPage * PAGE_SIZE);
       setNotifications((current) => {
@@ -115,9 +115,11 @@ export function useNotifications() {
       serverOffsetRef.current = requestedPage * PAGE_SIZE + page.content.length;
       setHasMore(!page.last);
     } catch (loadError) {
-      setError(loadError);
+      if (requestId === requestIdRef.current && offset === serverOffsetRef.current) {
+        setError(loadError);
+      }
     } finally {
-      setIsLoadingMore(false);
+      if (requestId === requestIdRef.current) setIsLoadingMore(false);
     }
   }, [hasMore, isLoading, isLoadingMore, isRefreshing]);
 
@@ -132,7 +134,7 @@ export function useNotifications() {
         (item) => item.notificationId === updated.notificationId,
       );
       if (previous && !previous.isRead && updated.isRead) {
-        setUnreadCount((count) => Math.max(0, count - 1));
+        setUnreadCount((count) => count === null ? null : Math.max(0, count - 1));
       }
       setNotifications((current) =>
         current.map((item) =>
@@ -173,7 +175,7 @@ export function useNotifications() {
       );
       serverOffsetRef.current = Math.max(0, serverOffsetRef.current - 1);
       if (deleted && !deleted.isRead) {
-        setUnreadCount((count) => Math.max(0, count - 1));
+        setUnreadCount((count) => count === null ? null : Math.max(0, count - 1));
       }
     },
     [notifications],
@@ -190,7 +192,12 @@ export function useNotifications() {
     markAllRead,
     markRead,
     notifications,
-    refetch: () => loadFirstPage(true),
+    reload: useCallback(() => loadFirstPage(), [loadFirstPage]),
+    refetch: useCallback(() => loadFirstPage(true), [loadFirstPage]),
+    cancel: useCallback(() => {
+      requestIdRef.current += 1;
+      setIsLoadingMore(false);
+    }, []),
     unreadCount,
   };
 }

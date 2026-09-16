@@ -1,4 +1,4 @@
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
 
@@ -28,6 +28,7 @@ export function NotificationsScreen() {
   const router = useRouter();
   const {
     applyNotification,
+    cancel,
     deleteNotification,
     error,
     isLoading,
@@ -38,6 +39,7 @@ export function NotificationsScreen() {
     markRead,
     notifications,
     refetch,
+    reload,
     unreadCount,
   } = useNotifications();
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -50,6 +52,11 @@ export function NotificationsScreen() {
   const [isMoving, setIsMoving] = useState(false);
   const detailRequestIdRef = useRef(0);
   const moveRequestIdRef = useRef(0);
+
+  useFocusEffect(useCallback(() => {
+    void reload();
+    return cancel;
+  }, [cancel, reload]));
 
   const handleBackPress = () => {
     if (router.canGoBack()) {
@@ -235,7 +242,9 @@ export function NotificationsScreen() {
     pushDestination(destination);
   };
 
-  const subtitle = unreadCount > 0 ? `읽지 않은 알림 ${unreadCount}개` : '새 알림이 없어요';
+  const subtitle = unreadCount === null
+    ? '미확인 알림 수를 확인할 수 없어요'
+    : unreadCount > 0 ? `읽지 않은 알림 ${unreadCount}개` : '새 알림이 없어요';
 
   return (
     <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
