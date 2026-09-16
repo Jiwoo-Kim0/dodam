@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { SymbolView } from 'expo-symbols';
-import { Pressable, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import { colors, componentSize } from '@/styles';
 
@@ -10,12 +10,14 @@ interface HomeHeaderProps {
   onLogoPress: () => void;
   onMenuPress: () => void;
   onNotificationPress: () => void;
+  unreadNotificationCount: number | null;
 }
 
 export function HomeHeader({
   onLogoPress,
   onMenuPress,
   onNotificationPress,
+  unreadNotificationCount,
 }: HomeHeaderProps) {
   return (
     <View style={styles.container}>
@@ -43,6 +45,13 @@ export function HomeHeader({
             size={componentSize.icon.small + 4}
             tintColor={colors.textPrimary}
           />
+          {unreadNotificationCount !== null && unreadNotificationCount > 0 ? (
+            <View style={styles.notificationBadge}>
+              <Text style={styles.notificationBadgeLabel}>
+                {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+              </Text>
+            </View>
+          ) : null}
         </Pressable>
 
         <Pressable

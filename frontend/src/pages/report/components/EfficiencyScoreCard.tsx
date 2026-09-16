@@ -10,16 +10,10 @@ type EfficiencyScoreCardProps = {
   efficiencyScore: ReportEfficiencyScore;
 };
 
-function formatDifference(difference: number): string {
-  return difference > 0 ? `+${difference}` : `${difference}`;
-}
-
 export function EfficiencyScoreCard({ efficiencyScore }: EfficiencyScoreCardProps) {
   const {
     composition,
     maxScore,
-    percentile,
-    previousMonthDifference,
     score,
     summary,
   } = efficiencyScore;
@@ -27,7 +21,7 @@ export function EfficiencyScoreCard({ efficiencyScore }: EfficiencyScoreCardProp
   return (
     <View style={[screenStyles.card, styles.scoreCard]}>
       <View style={styles.scoreContent}>
-        <Text style={screenStyles.cardTitle}>금융 효율 점수</Text>
+        <Text style={screenStyles.cardTitle}>참고 금융 효율 점수</Text>
 
         <View style={styles.scoreRow}>
           <Text style={styles.score}>{score}</Text>
@@ -35,15 +29,10 @@ export function EfficiencyScoreCard({ efficiencyScore }: EfficiencyScoreCardProp
           <Text style={styles.maxScore}>{maxScore}</Text>
         </View>
 
-        <View style={styles.differenceBadge}>
-          <Text style={styles.differenceLabel}>지난달 대비</Text>
-          <Text style={styles.differenceValue}>{formatDifference(previousMonthDifference)}</Text>
-        </View>
-
         <Text style={styles.summary}>{summary}</Text>
       </View>
 
-      <EfficiencyScoreDonut composition={composition} percentile={percentile} />
+      <EfficiencyScoreDonut composition={composition} score={score} />
     </View>
   );
 }

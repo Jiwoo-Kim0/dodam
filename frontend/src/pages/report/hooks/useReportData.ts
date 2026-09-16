@@ -1,11 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
-import { assetApi, cashflowApi, isApiError, ledgerApi, userApi } from '@/api';
+import {
+  assetApi,
+  cashflowApi,
+  coachApi,
+  isApiError,
+  ledgerApi,
+  userApi,
+} from '@/api';
 import type { CashflowRiskApiResponse } from '@/types/cashflowApi.types';
 import type { SavingRatioApiResponse } from '@/types/ledgerApi.types';
 import type { MonthlyReport, ReportFinancePattern } from '@/types/report.types';
 import { formatCurrency } from '@/utils/currency';
-import { toDateKey } from '@/utils/date';
 
 function monthAt(offset: number) {
   const today = new Date();
@@ -15,13 +21,6 @@ function monthAt(offset: number) {
     date,
     label: `${month}월`,
     yearMonth: `${date.getFullYear()}-${String(month).padStart(2, '0')}`,
-  };
-}
-
-function monthPeriod(date: Date) {
-  return {
-    startDate: toDateKey(new Date(date.getFullYear(), date.getMonth(), 1)),
-    endDate: toDateKey(new Date(date.getFullYear(), date.getMonth() + 1, 0)),
   };
 }
 
@@ -70,12 +69,19 @@ async function loadOptionalResource<T>(request: Promise<T>): Promise<T | null> {
   }
 }
 
+async function loadCoachSummary() {
+  try {
+    return await coachApi.getFinancialSummary();
+  } catch {
+    // AI 설명 호출 실패가 다른 금융 API로 계산한 리포트 전체를 가리지 않게 한다.
+    return null;
+  }
+}
+
 async function fetchReport(): Promise<MonthlyReport> {
   const reportMonth = monthAt(-1);
   const previousMonth = monthAt(-2);
   const trendStart = monthAt(-6);
-  const nextMonth = monthAt(0);
-  const nextPeriod = monthPeriod(nextMonth.date);
   const anomalyStart = monthAt(-3);
 
   const [
@@ -90,9 +96,9 @@ async function fetchReport(): Promise<MonthlyReport> {
     currentPayments,
     previousPayments,
     loans,
-    cashflowEvents,
     cashflowRisks,
     anomalies,
+    coachSummary,
   ] = await Promise.all([
     userApi.getMe(),
     ledgerApi.getMonthlySummary(reportMonth.yearMonth),
@@ -105,20 +111,15 @@ async function fetchReport(): Promise<MonthlyReport> {
     ledgerApi.getPaymentMethodSpending(reportMonth.yearMonth),
     ledgerApi.getPaymentMethodSpending(previousMonth.yearMonth),
     assetApi.getLoanSummary(),
-    loadOptionalResource(cashflowApi.getEvents(nextPeriod)),
     loadOptionalResource(cashflowApi.getRisks()),
     ledgerApi.getSpendingAnomalies(anomalyStart.yearMonth, reportMonth.yearMonth),
+    loadCoachSummary(),
   ]);
 
   const risks = cashflowRisks?.risks ?? [];
   const score = efficiencyScore(
     currentRatio,
     currentFixed.shareOfSpendingPercent,
-    risks,
-  );
-  const previousScore = efficiencyScore(
-    previousRatio,
-    previousFixed.shareOfSpendingPercent,
     risks,
   );
   const anomaly = anomalies?.anomalies[0];
@@ -191,8 +192,6 @@ async function fetchReport(): Promise<MonthlyReport> {
     efficiencyScore: {
       score,
       maxScore: 100,
-      previousMonthDifference: score - previousScore,
-      percentile: clamp(100 - score, 1, 99),
       summary: score >= 70
         ? '저축과 지출 흐름을 안정적으로 관리하고 있어요'
         : '고정지출과 저축 흐름을 한 번 더 살펴보세요',
@@ -202,14 +201,15 @@ async function fetchReport(): Promise<MonthlyReport> {
       ],
     },
     patterns,
-    patternCoachingMessage: anomaly
-      ? `${anomaly.name} 소비를 지난 기간 수준으로 줄이면 한 달에 약 ${formatCurrency(anomaly.increaseAmount)}을 아낄 수 있어요!`
-      : '지금의 소비 흐름을 유지하면서 저축률을 조금씩 높여보세요!',
+    patternCoachingMessage:
+      coachSummary?.message.trim() ||
+      (anomaly
+        ? `${anomaly.name} 소비를 지난 기간 수준으로 줄이면 한 달에 약 ${formatCurrency(anomaly.increaseAmount)}을 아낄 수 있어요!`
+        : '지금의 소비 흐름을 유지하면서 저축률을 조금씩 높여보세요!'),
+    patternCoachingDisclaimer: coachSummary?.disclaimer ?? null,
     patternCharacterImage: require('@/assets/characters/dori/dori_memo.png'),
     nextMonthForecast: {
-      description: cashflowEvents
-        ? '최근 소비 흐름과 다음 달 예정 금융일정을 기준으로 계산했어요'
-        : '최근 소비 흐름을 기준으로 계산했어요',
+      description: '지난달 고정·변동지출이 그대로 이어진다고 가정한 참고치예요',
       expectedExpense,
       differenceFromThisMonth: expectedExpense - currentSummary.totalSpending,
       breakdown: [
@@ -268,6 +268,7 @@ export function useReportData() {
     } catch (loadError) {
       if (requestId === requestIdRef.current) {
         setError(loadError instanceof Error ? loadError : new Error('리포트를 불러오지 못했어요.'));
+        setReport(null);
       }
     } finally {
       if (requestId === requestIdRef.current) {
@@ -277,19 +278,13 @@ export function useReportData() {
     }
   }, []);
 
-  useEffect(() => {
-    const timeout = setTimeout(() => void load(), 0);
-    return () => {
-      clearTimeout(timeout);
-      requestIdRef.current += 1;
-    };
-  }, [load]);
-
   return {
     report,
     error,
     isLoading,
     isRefreshing,
     refetch: useCallback(() => load(true), [load]),
+    reload: useCallback(() => load(), [load]),
+    cancel: useCallback(() => { requestIdRef.current += 1; }, []),
   };
 }

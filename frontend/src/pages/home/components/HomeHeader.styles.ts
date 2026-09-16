@@ -1,6 +1,13 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, componentSize, semanticSpacing } from '@/styles';
+import {
+  colors,
+  componentSize,
+  fontFamily,
+  fontSize,
+  radius,
+  semanticSpacing,
+} from '@/styles';
 
 export const HOME_HEADER_HEIGHT = 56;
 /** dodam_logo_image.png의 원본 가로/세로 비율이다. */
@@ -33,5 +40,25 @@ export const styles = StyleSheet.create({
   },
   actionButtonPressed: {
     opacity: 0.5,
+  },
+  notificationBadge: {
+    alignItems: 'center',
+    backgroundColor: colors.primary.orange,
+    borderColor: colors.white,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 16,
+    minWidth: 16,
+    paddingHorizontal: 3,
+    position: 'absolute',
+    right: 1,
+    top: 4,
+  },
+  notificationBadgeLabel: {
+    color: colors.white,
+    fontFamily: fontFamily.semiBold,
+    fontSize: fontSize.tiny,
+    lineHeight: 10,
   },
 });

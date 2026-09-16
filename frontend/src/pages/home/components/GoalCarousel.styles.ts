@@ -34,10 +34,19 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.primary.green,
     width: 16,
   },
+  addGoalLabel: {
+    color: colors.primary.green,
+    fontFamily: fontFamily.semiBold,
+    fontSize: fontSize.body1,
+  },
+  addGoalPressed: {
+    opacity: 0.6,
+  },
   status: {
     alignItems: 'center',
     backgroundColor: colors.white,
     borderRadius: radius.card,
+    gap: spacing[3],
     justifyContent: 'center',
     marginHorizontal: 0,
     minHeight: 190,

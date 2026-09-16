@@ -9,7 +9,7 @@ import { CHART_SIZE, STROKE_WIDTH, styles } from './EfficiencyScoreDonut.styles'
 
 type EfficiencyScoreDonutProps = {
   composition: readonly ReportScoreSegment[];
-  percentile: number;
+  score: number;
 };
 
 const RADIUS = (CHART_SIZE - STROKE_WIDTH) / 2;
@@ -44,12 +44,12 @@ function createSegments(composition: readonly ReportScoreSegment[]) {
     .filter((segment) => segment !== null);
 }
 
-export function EfficiencyScoreDonut({ composition, percentile }: EfficiencyScoreDonutProps) {
+export function EfficiencyScoreDonut({ composition, score }: EfficiencyScoreDonutProps) {
   const segments = useMemo(() => createSegments(composition), [composition]);
 
   return (
     <View
-      accessibilityLabel={`금융 효율 점수 상위 ${percentile}%`}
+      accessibilityLabel={`참고 금융 효율 점수 ${score}점`}
       accessible
       style={styles.chartFrame}>
       <Svg
@@ -74,8 +74,8 @@ export function EfficiencyScoreDonut({ composition, percentile }: EfficiencyScor
       </Svg>
 
       <View pointerEvents="none" style={styles.center}>
-        <Text style={styles.centerLabel}>상위</Text>
-        <Text style={styles.centerValue}>{percentile}%</Text>
+        <Text style={styles.centerLabel}>내 점수</Text>
+        <Text style={styles.centerValue}>{score}점</Text>
       </View>
     </View>
   );

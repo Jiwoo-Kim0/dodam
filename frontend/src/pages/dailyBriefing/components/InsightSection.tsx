@@ -1,20 +1,22 @@
 import { Image } from 'expo-image';
 import { Text, View } from 'react-native';
 
-import type { DailyBriefingInsight } from '@/mocks/dailyBriefing';
-
+import type { DailyBriefingInsight } from '../dailyBriefing.types';
 import { styles as screenStyles } from '../DailyBriefingScreen.styles';
 import { styles } from './InsightSection.styles';
 
 type InsightSectionProps = {
   insights: readonly DailyBriefingInsight[];
+  message?: string | null;
 };
 
-export function InsightSection({ insights }: InsightSectionProps) {
+export function InsightSection({ insights, message }: InsightSectionProps) {
   return (
     <View style={[screenStyles.card, styles.insightSection]}>
       <Text style={screenStyles.sectionTitle}>도담이 짚어 봤어요</Text>
-      <View style={styles.insightRow}>
+      {insights.length === 0 ? (
+        <Text style={screenStyles.emptyMessage}>{message ?? '비교할 소비 기록이 없어요.'}</Text>
+      ) : <View style={styles.insightRow}>
         {insights.map((insight) => (
           <View key={insight.id} style={styles.insightCard}>
             <View style={styles.insightTag}>
@@ -37,7 +39,7 @@ export function InsightSection({ insights }: InsightSectionProps) {
             </View>
           </View>
         ))}
-      </View>
+      </View>}
     </View>
   );
 }

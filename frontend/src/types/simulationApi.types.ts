@@ -29,6 +29,11 @@ export interface SpendingSimulationRequest {
 export interface SavingSimulationRequest {
   /** 원문 계좌번호는 요청에만 사용되고 응답이나 로그에는 남지 않는다. */
   accountNo?: string;
+  /**
+   * 새 저축액을 받을 모으기 목표. 추천 프리셋이 원문 계좌번호 없이 목표를 겨냥하는 경로다(619).
+   * `accountNo`와 함께 보내면 400이다.
+   */
+  goalId?: number;
   /** 변경 후 월 저축액의 절대값이며 0원도 허용한다. */
   monthlySavingAmount: number;
   /** 생략하면 백엔드 기본값인 12개월을 사용한다. */

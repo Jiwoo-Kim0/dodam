@@ -13,9 +13,6 @@ export interface ReportScoreSegment {
 export interface ReportEfficiencyScore {
   score: number;
   maxScore: number;
-  previousMonthDifference: number;
-  /** 상위 N% 표기에 사용한다. */
-  percentile: number;
   summary: string;
   composition: readonly ReportScoreSegment[];
 }
@@ -77,6 +74,7 @@ export interface MonthlyReport {
   efficiencyScore: ReportEfficiencyScore;
   patterns: readonly ReportFinancePattern[];
   patternCoachingMessage: string;
+  patternCoachingDisclaimer: string | null;
   patternCharacterImage: ImageSourcePropType;
   nextMonthForecast: ReportNextMonthForecast;
   keyMetrics: readonly ReportKeyMetric[];
