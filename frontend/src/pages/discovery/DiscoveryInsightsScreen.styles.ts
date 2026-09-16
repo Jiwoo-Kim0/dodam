@@ -86,10 +86,31 @@ export const styles = StyleSheet.create({
     opacity: 0.45,
   },
   cooldownLabel: {
-    ...typography.body2,
-    color: colors.textSecondary,
-    marginTop: spacing[2],
+    ...typography.caption,
+    color: colors.textTertiary,
+    marginBottom: spacing[2],
     textAlign: 'center',
+  },
+  fixedFooter: {
+    backgroundColor: colors.home.goalGradientEnd,
+    paddingBottom: spacing[4],
+    paddingHorizontal: semanticSpacing.screenMargin,
+    paddingTop: spacing[2],
+  },
+  diagnosisButton: {
+    alignItems: 'center',
+    backgroundColor: colors.primary.lightGreen,
+    borderRadius: radius.default,
+    justifyContent: 'center',
+    minHeight: 44,
+  },
+  diagnosisButtonPressed: {
+    opacity: 0.7,
+  },
+  diagnosisButtonText: {
+    color: colors.primary.green,
+    fontFamily: fontFamily.medium,
+    fontSize: fontSize.body2,
   },
   listSection: {
     gap: spacing[2],
