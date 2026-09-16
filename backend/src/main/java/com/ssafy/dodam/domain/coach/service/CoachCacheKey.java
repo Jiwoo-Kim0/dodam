@@ -20,6 +20,11 @@ import org.springframework.stereotype.Component;
  * 타당하다. id를 넣으면 키만 갈라질 뿐 내용은 같은 항목이 중복 저장된다. 반대로 같은 id라도 facts가
  * 바뀌면 이미 다른 키다.
  *
+ * <p><b>프롬프트 버전을 넣는 이유</b>: facts 해시만으로는 프롬프트 변경을 잡지 못한다. 문구 규칙을
+ * 고쳐도 저장 데이터는 그대로라 키가 같고, 옛 문장이 TTL 내내 계속 나간다. 진단 ruleVersion을 올려
+ * 연쇄로 갈아엎는 방법도 있지만 문구 한 줄 고치자고 전 사용자의 진단을 다시 실행할 수는 없다.
+ * {@link CoachPromptFactory#VERSION}을 올리면 그 순간부터 새로 생성된다.
+ *
  * <p><b>{@code userId}를 넣는 이유</b>: facts에는 회원의 재무 수치가 들어 있다. 해시가 우연히 겹치거나
  * 두 사용자의 facts가 완전히 같은 경우에도 서로의 문장이 섞이지 않게 한다. 비용은 키 한 조각이다.
  */
@@ -46,7 +51,7 @@ public class CoachCacheKey {
             byte[] serialized = json.writeValueAsBytes(facts);
             byte[] digest = MessageDigest.getInstance("SHA-256").digest(serialized);
             String hash = HexFormat.of().formatHex(digest).substring(0, HASH_LENGTH);
-            return "coach:" + userId + ":" + facts.topic() + ":" + hash;
+            return "coach:" + CoachPromptFactory.VERSION + ":" + userId + ":" + facts.topic() + ":" + hash;
         } catch (NoSuchAlgorithmException | RuntimeException exception) {
             // 캐시 키를 못 만드는 것은 기능 실패가 아니다. 캐시 없이 정상 경로로 간다.
             log.warn("Coach cache key could not be built: {}", exception.getMessage());

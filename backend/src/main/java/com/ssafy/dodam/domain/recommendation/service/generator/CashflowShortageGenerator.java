@@ -23,7 +23,7 @@ import org.springframework.stereotype.Component;
 @Component
 @Order(30)
 public class CashflowShortageGenerator implements RecommendationCandidateGenerator {
-    public static final String VERSION = "548.1";
+    public static final String VERSION = "604.1";
     public static final String DOMAIN = "CASHFLOW";
     public static final String TYPE = "SECURE_SHORTAGE_BUFFER";
     public static final String RISK_REDUCTION = "BALANCE_SHORTAGE_AVOIDED";
@@ -59,8 +59,8 @@ public class CashflowShortageGenerator implements RecommendationCandidateGenerat
                 .put("riskDate", riskDate.toString()).put("expectedBalance", expectedBalance).put("shortageAmount", shortage);
         Recommendation.Effect effect = new Recommendation.Effect(null, null, null, RISK_REDUCTION, null, null, null, null);
         return Outcome.of(new RecommendationCandidate(VERSION, TYPE + ":" + riskId, issue.issueId(), DOMAIN, TYPE,
-                riskDate + " 전까지 " + GeneratorSupport.won(shortage) + " 확보하기",
-                riskDate + "에 예정 출금으로 잔액이 " + GeneratorSupport.won(shortage) + " 부족할 것으로 예상됩니다. 그 전에 입출금 계좌로 자금을 옮기거나 지출을 조정해 두세요.",
+                "출금 전 잔액 채워두기",
+                riskDate + "에 잔액이 " + GeneratorSupport.won(shortage) + " 부족할 것 같아요. 그 전에 자금을 옮겨 두면 좋겠어요.",
                 List.of(new RecommendationCandidate.Reason(REASON_SHORTAGE,
                         riskDate + " 예상 잔액 " + GeneratorSupport.won(expectedBalance) + ".", evidence)),
                 effect));

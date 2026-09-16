@@ -65,23 +65,50 @@ done
 #   잃어버리면 "요구하는 변수가 없다"고 판단해 통과시켜 버린다.
 #   결국 백엔드만 기동에 실패하고(`app.auth.jwt.secret must be at least 32 bytes`)
 #   원인 파악에 시간이 걸렸다.
-#   그래서 "앱이 뭘 필요로 하는가"를 별도 출처(application-prod.yml)에서 읽어 대조한다.
-APP_CONFIG="${APP_CONFIG:-$APP_DIR/backend/src/main/resources/application-prod.yml}"
-if [ -f "$APP_CONFIG" ]; then
-    APP_VARS="$(grep -oE '\$\{[A-Z_][A-Z0-9_]*\}' "$APP_CONFIG" | tr -d '${}' | sort -u || true)"
-    for var in $APP_VARS; do
-        # compose가 "값을 어떻게 만드는지"는 상관없다 (리터럴이든 ${...} 조합이든).
-        # 중요한 것은 그 이름의 환경변수 키를 backend에 전달하고 있는지다.
-        #   예) DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE}?...  ← 키는 DB_URL
-        #       REDIS_HOST: redis                                      ← 리터럴이지만 키는 존재
-        if ! grep -qE "^[[:space:]]+${var}:" "$COMPOSE_FILE" \
-           && ! grep -qE "^[[:space:]]+- ${var}=" "$COMPOSE_FILE"; then
-            err "$var 를 application-prod.yml이 요구하는데 docker-compose.yml이 전달하지 않는다 (병합 중 유실 의심)"
-        fi
+#   그래서 "앱이 뭘 필요로 하는가"를 별도 출처(앱 설정 yml)에서 읽어 대조한다.
+#
+# 대조 범위를 넓힌 이유 (2026-09-16):
+#   소셜 로그인 설정이 application-prod.yml이 아니라 **application.yml**에 들어왔는데,
+#   이 검사가 -prod만 읽어서 compose 누락을 잡지 못했다. 게다가 그 변수들은
+#   `${KAKAO_APP_ID:}`처럼 **기본값이 있어** 백엔드가 정상 기동해버린다.
+#   결과적으로 겉보기에는 멀쩡하고 구글 로그인만 런타임 503으로 실패했다.
+#   → 두 파일을 모두 읽고, 기본값 유무에 따라 심각도를 나눈다.
+#       ${VAR}     기본값 없음 → 기동 실패로 직결되므로 ERROR
+#       ${VAR:...} 기본값 있음 → 기동은 하지만 기능이 조용히 죽으므로 WARN
+#   application-local.yml은 로컬 개발 전용이라 대조하지 않는다.
+APP_CONFIGS="${APP_CONFIGS:-$APP_DIR/backend/src/main/resources/application.yml $APP_DIR/backend/src/main/resources/application-prod.yml}"
+
+# compose가 그 이름의 환경변수 키를 backend에 전달하는지.
+# "값을 어떻게 만드는지"는 상관없다 (리터럴이든 ${...} 조합이든).
+#   예) DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE}?...  ← 키는 DB_URL
+#       REDIS_HOST: redis                                      ← 리터럴이지만 키는 존재
+compose_passes() {
+    grep -qE "^[[:space:]]+${1}:" "$COMPOSE_FILE" \
+        || grep -qE "^[[:space:]]+- ${1}=" "$COMPOSE_FILE"
+}
+
+CHECKED_ANY=0
+for cfg in $APP_CONFIGS; do
+    if [ ! -f "$cfg" ]; then
+        warn "$cfg 를 찾을 수 없어 이 파일의 대조를 건너뜀"
+        continue
+    fi
+    CHECKED_ANY=1
+    cfg_name="$(basename "$cfg")"
+
+    # 기본값이 없는 참조 — 비면 앱이 기동하지 못한다
+    for var in $(grep -oE '\$\{[A-Z_][A-Z0-9_]*\}' "$cfg" | tr -d '${}' | sort -u); do
+        compose_passes "$var" \
+            || err "$var 를 $cfg_name 이 요구하는데 docker-compose.yml이 전달하지 않는다 (병합 중 유실 의심)"
     done
-else
-    warn "application-prod.yml을 찾을 수 없어 앱↔compose 대조를 건너뜀 ($APP_CONFIG)"
-fi
+
+    # 기본값이 있는 참조 — 앱은 기동하므로 배포를 막지는 않는다. 다만 기능이 조용히 죽는다
+    for var in $(grep -oE '\$\{[A-Z_][A-Z0-9_]*:' "$cfg" | tr -d '${:' | sort -u); do
+        compose_passes "$var" \
+            || warn "$var 를 $cfg_name 이 참조하는데 docker-compose.yml이 전달하지 않는다 — 기본값으로 기동하므로 겉보기 정상이지만 해당 기능이 동작하지 않을 수 있다"
+    done
+done
+[ "$CHECKED_ANY" = 1 ] || warn "앱 설정 파일을 하나도 찾지 못해 앱↔compose 대조를 건너뜀"
 
 # 4) 암호화 키 형식 (AES-256 = 디코드 시 32바이트)
 for var in DATA_ENCRYPTION_KEY DATA_HASH_KEY; do

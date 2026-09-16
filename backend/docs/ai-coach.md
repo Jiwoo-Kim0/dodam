@@ -68,6 +68,52 @@
 - 남의 리소스와 없는 리소스는 모두 **404 `RESOURCE_NOT_FOUND`**로 같다. 구분해 주면 ID를 훑어 남의 진단
   존재 여부를 셀 수 있다. 미완료 진단도 같은 이유로 404다(`DiagnosisQueryService`와 동일한 계약).
 
+### 3-1. 어디서 읽는가 — 리포지토리 직접 조회
+
+코치는 **다른 도메인 서비스도, 자기 서버 HTTP도 거치지 않는다.** `CoachFactAssembler`가 주입받는 것은
+리포지토리 5개뿐이고, 조회는 JPA/JPQL이다(생 SQL·`JdbcTemplate`·`nativeQuery` 없음).
+
+`DiagnosisQueryService` 같은 조회 서비스를 쓰지 않는 이유는 두 가지다.
+
+1. **소유권이 이미 쿼리 안에 있다.** `diagnosis_issue`·`recommendation_reason`에는 `user_id` 컬럼이
+   없어 리포지토리의 `@Query`가 상위 테이블을 조인해 `userId` 조건을 건다. 그 메서드를 쓰면 소유권
+   검증이 따라온다.
+2. **코치는 새로 계산하지 않는다.** 서비스가 제공하는 가공(페이징·DTO 변환·프리셋 조립)이 필요 없다.
+
+### 3-2. 무엇을 읽고, 무엇을 읽지 않는가
+
+**읽는 것** — 전부 다른 도메인이 이미 계산해 저장한 결과다.
+
+| 테이블 | 읽는 컬럼 | 쓰이는 topic |
+| --- | --- | --- |
+| `diagnosis` | `diagnosisId`, `goalId`, `issueCount`, `highSeverityCount`, `overallStatus`, `ruleVersion`, `completedAt`, `inputSnapshot`(→ `coverage`만) | 요약, 비효율 |
+| `diagnosis_issue` | `domain`, `type`, `severity`, `title`, `description`, `currentValue`, `benchmarkValue`, `evidence`, `clusterContext`, `detectionSource`, `modelVersion`, `detectedAt` | 요약(제목·심각도), 비효율(전부) |
+| `recommendation` | `domain`, `type`, `title`, `description`, `priority`, `status`, `createdAt`, 효과 8종 | 추천 |
+| `recommendation_reason` | `code`, `description`, `evidence` | 추천 |
+| `pattern_analysis` | `clusterLabel`, `modelVersion`, `sampleSize`, `confidence`, `clusterStats`(→ 이탈 상위 3개 특징) | 요약 |
+
+조회 메서드는 5개뿐이며 전부 `userId` 조건이 쿼리 안에 있다:
+`findByDiagnosisIdAndUserId` · `findFirstByUserIdAndCompletedAtIsNotNull…` ·
+`findAllOwned` · `findOwnedById` · `findByRecommendationIdAndUserId` · `findOwned`(reason) ·
+`findFirstByUserIdAndStatus…`(pattern).
+
+**읽지 않는 것 — 이것이 민감정보 방어의 1단이다(§6).**
+
+| 테이블 | |
+| --- | --- |
+| `user` | 이름·이메일을 **아예 읽지 않는다** |
+| `account`, `card`, `loan`, `transaction`, `subscription` | 원천 금융 데이터를 보지 않는다 |
+| `finance_connection`, `auth_session` | 읽지 않는다 |
+
+이름·주소처럼 형태가 없는 값은 정규식으로 잡을 수 없다. 그래서 **애초에 쿼리에 넣지 않는 것**으로
+처리했고, 덕분에 송신 직전 검사(§6-2)가 이메일·계좌번호처럼 형태가 분명한 것만 봐도 된다.
+
+**남은 구멍**: JSON 컬럼 4종(`currentValue`·`benchmarkValue`·`evidence`·`clusterContext`)은 스키마가
+고정돼 있지 않다. 진단 규칙이 늘면 키도 는다. 현재 `evidence`에 `targetId`·`forecastId` 같은 내부
+식별자가 들어 있는 것이 확인돼 있고 `CoachEvidenceReader`가 걸러내지만, 앞으로 어떤 규칙이 무슨 키를
+넣을지는 코치가 통제할 수 없다. 그래서 2단 검사를 둔다. 넣으면 안 될 값이 생기면 진단·추천 쪽에서
+막는 것이 맞다 — **코치는 마지막 방어선이지 유일한 방어선이면 안 된다.**
+
 ## 4. 프롬프트에 무엇이 들어가는가
 
 `CoachFacts` = `subject` + `sections[]{title, facts[]{label, value}}` + `notes[]`. **모든 `value`는 서버가 포맷한 문자열이다.**
@@ -101,6 +147,23 @@
 동시에 서버가 쓴 문자열이 곧 §5의 허용 숫자 목록이 된다. 정수에 항상 천단위 구분 기호를 넣는 것도 의도적이다 —
 구분 기호 없는 긴 숫자열은 §6의 계좌번호 규칙과 형태가 같아, 정상 금액이 민감정보로 걸려 버린다.
 
+### 문장의 역할과 길이는 topic마다 다르다 (S15P21D105-604)
+
+FE 문구 정비 요청으로 정해진 계약이다. 화면에서 AI 문장이 놓이는 자리가 topic마다 다르기 때문이다.
+
+| topic | 자리 | 형식 | 역할 |
+| --- | --- | --- | --- |
+| FINANCIAL_SUMMARY | 요약 화면 | 두 문장·150자 이내 | 지금 상태를 한 번 짚는다. **확인하지 못한 항목을 반드시 알린다** |
+| INEFFICIENCY_EXPLANATION | 발견 상세의 **조언 자리** | 한 문단·두 문장·80자 이내 | 현재 상태를 설명하지 않는다. "그래서 무엇을 해보면 좋은지"만 |
+| RECOMMENDATION_EXPLANATION | 개선안의 **조언 자리** | 〃 | 개선안 내용·효과 금액을 다시 적지 않는다. 시작하는 방법을 |
+
+**왜 상태 설명을 빼는가**: 화면은 진단·추천 API의 수치를 이미 그리고 있다. 같은 금액을 AI 문장이
+다시 쓰면 한 화면에서 같은 숫자가 서너 번 반복된다(정비 전 실측: 한 화면에 같은 금액이 4회).
+요약만 예외인 것은 상태를 짚는 것이 그 화면의 역할이고, 검사 범위 고지(§4)가 80자에 담기지 않아서다.
+
+전 topic 공통으로 **'-어요' 종결**과 **내부 용어 금지**(`서버`·`판정`·`기준 값`·영문 코드)를 건다.
+사용자는 앱이 어떻게 계산하는지 모르고 알 필요도 없다.
+
 ## 5. AI 자체 계산·판정 금지 (`CoachNumberGuard`)
 
 프롬프트의 "계산하지 마라"는 지켜지는 편이지만 **보장이 아니다**. 월 절감액 12,000원에서 모델이 "연 144,000원"을
@@ -118,8 +181,10 @@
 
 ## 6. 민감정보 제외
 
-2단 방어다.
+3단 방어다. 가장 바깥이 "애초에 읽지 않는 것"이다.
 
+0. **쿼리 단계** — 사용자 이름·이메일과 원천 금융 데이터를 **읽지 않는다**(§3-2). 형태가 없어
+   정규식으로 못 잡는 값은 여기서 배제된다.
 1. **조립 단계** — `CoachEvidenceReader`가 스키마 미고정 JSON 컬럼(`currentValue`, `benchmarkValue`,
    `evidence`, `clusterContext`)에서 실을 값을 고른다. 이 컬럼들은 의도적으로 스키마를 고정하지 않았고
    (`DiagnosisIssue` 주석), 이미 `targetId`·`forecastId` 같은 내부 식별자가 들어 있다.
@@ -188,7 +253,7 @@ app:
 
 ### 8-1. 모델 선정과 교체
 
-코치가 하는 일은 "이미 계산된 사실 목록 → 2문단 400자 이내 한국어"다. 추론이 필요 없는 제한된
+코치가 하는 일은 "이미 계산된 사실 목록 → 한두 문장의 한국어 카피"다. 추론이 필요 없는 제한된
 생성 작업이고, 수치·판정은 애초에 모델을 거치지 않는다(§5). 그래서 작은 모델이면 충분하다.
 
 **`gpt-5.4-mini`를 고른 근거** (2026-09-16 GMS 중계로 같은 프롬프트 실측):
@@ -274,13 +339,19 @@ app:
 | 항목 | 값 |
 | --- | --- |
 | 저장소 | Redis (`app.coach.cache-enabled`, 기본 on) |
-| 키 | `coach:<userId>:<topic>:<facts SHA-256 앞 16자>` |
+| 키 | `coach:<프롬프트 버전>:<userId>:<topic>:<facts SHA-256 앞 16자>` |
 | 값 | `{ message, model }` — **모델이 쓴 문장만** |
 | TTL | `app.coach.cache-ttl`, 기본 1시간 |
 
 ### 무효화는 TTL이 아니라 키가 한다
 
-키에 `CoachFacts` 해시가 들어간다. 서버 계산값이 1바이트라도 달라지면 키가 달라져 자동으로 다시
+키에 `CoachFacts` 해시와 **프롬프트 버전**(`CoachPromptFactory.VERSION`)이 들어간다.
+facts 해시만으로는 프롬프트 변경을 잡지 못한다 — 문구 규칙을 고쳐도 저장 데이터는 그대로라
+키가 같고, 옛 문장이 TTL 내내 계속 나간다. 문구를 고칠 때 이 상수를 올리면 그 순간부터 새로 생성된다
+(진단 ruleVersion을 올려 연쇄로 갈아엎는 방법도 있지만, 문구 한 줄 때문에 전 사용자의 진단을 다시
+실행할 수는 없다).
+
+`CoachFacts` 해시는 서버 계산값이 1바이트라도 달라지면 키가 달라져 자동으로 다시
 생성된다 — 재진단, 추천 상태 변경, 패턴 재분석이 모두 facts를 바꾸므로 **별도의 무효화 코드가 없다.**
 TTL은 "어쩌다 이상한 문장이 생성됐을 때의 잔존 상한"일 뿐이다.
 

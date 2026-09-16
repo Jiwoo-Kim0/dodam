@@ -51,6 +51,12 @@
 - [x] (2026-09-16) 설정으로 뺐다 — `max-tokens-parameter`(기본 `max_tokens`)와 `temperature`(비우면 본문에서 제외). 모델 교체가 코드 변경이 아니다. [ai-coach.md](ai-coach.md) §8-1.
 - [ ] 추론형 모델로 바꾼다면 `read-timeout`(현재 PT12S)도 함께 올린다. 넘기면 `AI_UNAVAILABLE`로 조용히 템플릿에 내려가 "느려졌다"는 사실이 드러나지 않는다.
 
+### 완료 진단 판별이 두 곳에 있다
+
+- [ ] "완료된 진단만 본다"(`filter(Diagnosis::isCompleted)`)가 `DiagnosisQueryService:70`과 `CoachFactAssembler:369` 두 곳에 있다. 지금은 같지만 진단 쪽 조건이 바뀌면(예: 취소 상태 추가) 코치는 따라가지 않는다 — 조용히 갈라지는 종류의 중복이다.
+- 해법 제안: `DiagnosisRepository`에 `findCompletedByDiagnosisIdAndUserId` 같은 메서드를 두고 양쪽이 공유한다. 조회 서비스를 호출하는 방식은 코치가 DTO 변환·페이징을 거치게 되고 도메인 결합이 생겨 택하지 않았다(코치가 리포지토리를 직접 쓰는 이유는 [ai-coach.md](ai-coach.md) §3-1).
+- 담당 근거: `DiagnosisRepository`는 진단 도메인 소유라 589에서 임의로 고치지 않았다.
+
 ### 명세서 진행상태
 
 - [ ] `docs/API명세서/21 AI Coach ....csv`가 아직 "시작 전"이다. Notion 내보내기 파일이라 레포에서 고치면 다음 내보내기에 덮인다 — Notion에서 갱신할 것.
@@ -1131,5 +1137,5 @@ API 명세 1 Auth에 없는 확장이다. 시연 범위 포함 여부는 FE 연�
 - [x] 시연 계정 비밀번호 설정 절차를 정했다(2026-09-15). `database/seeds/DODAM_DEMO_PASSWORD_SEED.sql`(10번)이 U0001~U0004에만 BCrypt 해시를 넣고, 비밀번호는 `seeds/README.md` "시연 계정 로그인" 절에 있다. 나머지 seed 사용자는 NULL 유지.
 - [x] 서버 스모크 스크립트 `scripts/be-a-server-smoke.sh`를 만들었다(2026-09-15). 공개 API만 사용해 로그인 → 계좌·거래·소비·목표·정기결제·패턴·알림 순으로 호출하고 상태 코드를 표로 남긴다. 비밀번호 미적용 상태의 서버에서 로그인 401을 받아 실패 메시지로 멈추는 경로까지 확인했다.
 - [x] 서버 DB에 10번 seed를 적용(2026-09-15, 담당자 실행)한 뒤 U0001로 스모크 15개 호출 전부 기대 상태 코드, U0002~U0004 로그인·계좌 요약 200. 결과 표는 notification.md "서버 스모크 (2026-09-15)".
-- [ ] U0002~U0004는 서버 DB에 패턴 분석 이력이 없다. 시연 전 `DEMO_EMAIL=seed.kmeans.u000N@dodam.invalid ... --analyze`로 한 번씩 실행하거나 앱에서 분석을 호출한다.
+- [x] U0002~U0004 패턴 분석 이력을 서버에 만들었다(2026-09-15 14:52, 스모크 `--analyze`, analysisId 2·3·4 COMPLETED/HYBRID, 스모크 15호출 전부 정상). 시연 계정 4명 모두 `GET /patterns/me`가 200이다. 재분석이 필요하면 같은 명령을 다시 실행한다(같은 달이면 200 cached).
 - [x] Goal·Subscription·Account·Transaction·Auth의 MySQL 검증은 위 서버 스모크(seed 적재된 서버 DB, prod 프로필)로 대신했다(2026-09-15). Finance Data·User는 스모크 대상 8개 API 밖이라 H2 회귀만 있다.
