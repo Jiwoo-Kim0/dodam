@@ -5,8 +5,11 @@ import com.ssafy.dodam.domain.recommendation.dto.response.RecommendationSimulati
 import com.ssafy.dodam.domain.recommendation.entity.Recommendation;
 import com.ssafy.dodam.domain.recommendation.entity.RecommendationReason;
 import com.ssafy.dodam.domain.recommendation.repository.RecommendationReasonRepository;
+import com.ssafy.dodam.domain.recommendation.service.generator.CategorySpendingIncreaseGenerator;
+import com.ssafy.dodam.domain.recommendation.service.generator.HighInterestLoanGenerator;
 import com.ssafy.dodam.domain.recommendation.service.generator.SavingGoalRiskGenerator;
 import com.ssafy.dodam.domain.recommendation.service.generator.SpendingGoalRiskGenerator;
+import com.ssafy.dodam.domain.simulation.dto.request.LoanRefinanceSimulationRequest;
 import com.ssafy.dodam.domain.simulation.dto.request.SavingSimulationRequest;
 import com.ssafy.dodam.domain.simulation.dto.request.SpendingSimulationRequest;
 import com.ssafy.dodam.domain.simulation.entity.SimulationType;
@@ -27,6 +30,12 @@ import org.springframework.stereotype.Component;
  *       추천 효과에는 {@code contributionAmount = R − A}만 있고 시뮬레이션은 변경 후 절대값을 받으므로, 생성기가 근거
  *       {@code GOAL_SAVING_SHORTFALL}의 evidence에 남긴 {@code requiredMonthlySaving}을 읽는다. 시뮬레이션 기준선의 현재 저축액이
  *       진단 시점 A와 달라도 목표에 필요한 R은 같으므로 델타보다 절대값이 안전하다.</li>
+ *   <li>SPENDING/REDUCE_CATEGORY_SPENDING(627) → {@code POST /simulations/spending}, {@code category}는 근거
+ *       {@code CATEGORY_SPENDING_INCREASE}의 evidence {@code categoryCode}, {@code monthlyReduction = effect.monthlyCostSaving}.</li>
+ *   <li>LOAN/REFINANCE_LOAN(627) → {@code POST /simulations/loan/refinance}, {@code targetProductId}는 근거
+ *       {@code REFINANCE_INTEREST_SAVING}의 evidence, {@code refinanceAmount = null}(잔액 전액). 절감액을 추정하지 못한 추천(대상 상품
+ *       없음)은 {@code REFINANCE_TARGET_MISSING}. 명세 17 대환 본문은 {@code accountNo}만 받는데 FE는 마스킹 번호만 가지므로
+ *       {@code accountNo = null}과 가정 {@code ACCOUNT_NO_REQUIRED_BY_CLIENT}를 함께 싣는다(619의 goalId처럼 loanId 본문 확장이 후속).</li>
  *   <li>CASHFLOW/SECURE_SHORTAGE_BUFFER → 대응 유형 없음.</li>
  * </ul>
  * {@code durationMonths}는 null로 두어 시뮬레이션 기본값을 따르고, {@code accountNo}는 원문 번호를 응답에 싣지 않는 정책상 항상 null이다.
@@ -37,6 +46,7 @@ import org.springframework.stereotype.Component;
 public class RecommendationSimulationPresetAssembler {
     static final String SPENDING_ENDPOINT = "/api/v1/simulations/spending";
     static final String SAVING_ENDPOINT = "/api/v1/simulations/saving";
+    static final String LOAN_REFINANCE_ENDPOINT = "/api/v1/simulations/loan/refinance";
     static final String REQUIRED_MONTHLY_SAVING_FIELD = "requiredMonthlySaving";
     private final RecommendationReasonRepository reasons;
 
@@ -48,27 +58,33 @@ public class RecommendationSimulationPresetAssembler {
         return assembleAll(userId, List.of(recommendation)).get(recommendation.getRecommendationId());
     }
 
-    /** 근거가 필요한 SAVING 추천만 골라 한 번의 쿼리로 읽는다. 목록 N건에서 N번 조회하지 않기 위해서다. */
+    /** 근거가 필요한 추천(SAVING·카테고리 소비·대환)만 골라 한 번의 쿼리로 읽는다. 목록 N건에서 N번 조회하지 않기 위해서다. */
     public Map<Long, RecommendationSimulationPreset> assembleAll(Long userId, List<Recommendation> recommendations) {
-        List<Long> savingIds = recommendations.stream().filter(RecommendationSimulationPresetAssembler::isSaving)
+        List<Long> needingReasons = recommendations.stream()
+                .filter(r -> isSaving(r) || isCategorySpending(r) || isRefinance(r))
                 .map(Recommendation::getRecommendationId).toList();
-        Map<Long, Long> requiredByRecommendation = new HashMap<>();
-        if (!savingIds.isEmpty()) {
-            for (RecommendationReason reason : reasons.findAllOwnedIn(userId, savingIds)) {
-                Long required = requiredMonthlySaving(reason);
-                if (required != null) {
-                    requiredByRecommendation.putIfAbsent(reason.getRecommendationId(), required);
+        Map<Long, JsonNode> evidenceByRecommendation = new HashMap<>();
+        if (!needingReasons.isEmpty()) {
+            for (RecommendationReason reason : reasons.findAllOwnedIn(userId, needingReasons)) {
+                if (reason.getEvidence() != null && isPresetReason(reason.getCode())) {
+                    evidenceByRecommendation.putIfAbsent(reason.getRecommendationId(), reason.getEvidence());
                 }
             }
         }
         Map<Long, RecommendationSimulationPreset> presets = new HashMap<>();
         for (Recommendation r : recommendations) {
-            presets.put(r.getRecommendationId(), build(r, requiredByRecommendation.get(r.getRecommendationId())));
+            presets.put(r.getRecommendationId(), build(r, evidenceByRecommendation.get(r.getRecommendationId())));
         }
         return presets;
     }
 
-    private static RecommendationSimulationPreset build(Recommendation r, Long requiredMonthlySaving) {
+    /** 유형마다 프리셋 값이 들어 있는 근거 코드는 하나뿐이라 코드로만 고른다. */
+    private static boolean isPresetReason(String code) {
+        return SavingGoalRiskGenerator.REASON_SHORTFALL.equals(code) || CategorySpendingIncreaseGenerator.REASON_INCREASE.equals(code)
+                || HighInterestLoanGenerator.REASON_INTEREST_SAVING.equals(code);
+    }
+
+    private static RecommendationSimulationPreset build(Recommendation r, JsonNode evidence) {
         if (isSpending(r)) {
             Long reduction = r.getMonthlyCostSaving();
             if (reduction == null || reduction <= 0) {
@@ -78,7 +94,20 @@ public class RecommendationSimulationPresetAssembler {
                     new SpendingSimulationRequest(null, reduction, null),
                     List.of(RecommendationSimulationPreset.REDUCTION_APPLIES_TO_TOTAL_SPENDING));
         }
+        if (isCategorySpending(r)) {
+            Long reduction = r.getMonthlyCostSaving();
+            if (reduction == null || reduction <= 0) {
+                return RecommendationSimulationPreset.unavailable(RecommendationSimulationPreset.EFFECT_AMOUNT_MISSING);
+            }
+            String category = textOf(evidence, CategorySpendingIncreaseGenerator.CATEGORY_CODE_FIELD);
+            if (category == null) {
+                return RecommendationSimulationPreset.unavailable(RecommendationSimulationPreset.SNAPSHOT_FIELD_MISSING);
+            }
+            return RecommendationSimulationPreset.of(SimulationType.SPENDING, SPENDING_ENDPOINT,
+                    new SpendingSimulationRequest(category, reduction, null), List.of());
+        }
         if (isSaving(r)) {
+            Long requiredMonthlySaving = longOf(evidence, REQUIRED_MONTHLY_SAVING_FIELD);
             if (requiredMonthlySaving == null || requiredMonthlySaving < 0) {
                 return RecommendationSimulationPreset.unavailable(RecommendationSimulationPreset.SNAPSHOT_FIELD_MISSING);
             }
@@ -88,6 +117,15 @@ public class RecommendationSimulationPresetAssembler {
                             ? List.of(RecommendationSimulationPreset.TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT)
                             : List.of());
         }
+        if (isRefinance(r)) {
+            Long targetProductId = longOf(evidence, HighInterestLoanGenerator.TARGET_PRODUCT_ID_FIELD);
+            if (targetProductId == null || targetProductId <= 0) {
+                return RecommendationSimulationPreset.unavailable(RecommendationSimulationPreset.REFINANCE_TARGET_MISSING);
+            }
+            return RecommendationSimulationPreset.of(SimulationType.LOAN_REFINANCE, LOAN_REFINANCE_ENDPOINT,
+                    new LoanRefinanceSimulationRequest(null, targetProductId, null),
+                    List.of(RecommendationSimulationPreset.ACCOUNT_NO_REQUIRED_BY_CLIENT));
+        }
         return RecommendationSimulationPreset.unavailable(RecommendationSimulationPreset.NO_MATCHING_SIMULATION_TYPE);
     }
 
@@ -95,15 +133,26 @@ public class RecommendationSimulationPresetAssembler {
         return Objects.equals(r.getDomain(), SpendingGoalRiskGenerator.DOMAIN) && Objects.equals(r.getType(), SpendingGoalRiskGenerator.TYPE);
     }
 
+    private static boolean isCategorySpending(Recommendation r) {
+        return Objects.equals(r.getDomain(), CategorySpendingIncreaseGenerator.DOMAIN)
+                && Objects.equals(r.getType(), CategorySpendingIncreaseGenerator.TYPE);
+    }
+
     private static boolean isSaving(Recommendation r) {
         return Objects.equals(r.getDomain(), SavingGoalRiskGenerator.DOMAIN) && Objects.equals(r.getType(), SavingGoalRiskGenerator.TYPE);
     }
 
-    private static Long requiredMonthlySaving(RecommendationReason reason) {
-        if (!SavingGoalRiskGenerator.REASON_SHORTFALL.equals(reason.getCode()) || reason.getEvidence() == null) {
-            return null;
-        }
-        JsonNode value = reason.getEvidence().get(REQUIRED_MONTHLY_SAVING_FIELD);
+    private static boolean isRefinance(Recommendation r) {
+        return Objects.equals(r.getDomain(), HighInterestLoanGenerator.DOMAIN) && Objects.equals(r.getType(), HighInterestLoanGenerator.TYPE);
+    }
+
+    private static Long longOf(JsonNode evidence, String field) {
+        JsonNode value = evidence == null ? null : evidence.get(field);
         return value == null || !value.isNumber() ? null : value.asLong();
+    }
+
+    private static String textOf(JsonNode evidence, String field) {
+        JsonNode value = evidence == null ? null : evidence.get(field);
+        return value == null || !value.isTextual() || value.asText().isBlank() ? null : value.asText();
     }
 }

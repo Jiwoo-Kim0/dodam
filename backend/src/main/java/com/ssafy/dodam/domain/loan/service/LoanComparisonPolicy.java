@@ -70,7 +70,8 @@ public final class LoanComparisonPolicy {
                 .orElse(null);
     }
 
-    static Set<String> loanTypesOf(String group) {
+    /** 비교군에 속한 상품 loan_type 집합. 진단(627)의 대환 후보 선별도 같은 모집단을 써야 하므로 public이다. */
+    public static Set<String> loanTypesOf(String group) {
         return GROUPS.getOrDefault(group, Set.of());
     }
 
