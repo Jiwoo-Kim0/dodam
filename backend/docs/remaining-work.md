@@ -81,7 +81,7 @@
 
 ### 카드 목록 응답의 `cardId`
 
-- [ ] `GET /cards` 항목에 `cardId`를 추가한다. 리볼빙 시뮬레이션(명세 17)과 `GET /installments?cardId=`가 `cardId`를 받는데 카드 목록은 마스킹 번호·이름·상태만 내려 FE가 값을 얻을 경로가 없다.
+- [x] (2026-09-16, 브랜치 `S15P21D105-527-card-list-card-id`) `GET /cards` 목록과 `GET /cards/{cardNo}` 상세에 `cardId`를 추가했다. 루트 명세 8 반영은 별도 요청 필요. 원문: 리볼빙 시뮬레이션(명세 17)과 `GET /installments?cardId=`가 `cardId`를 받는데 카드 목록은 마스킹 번호·이름·상태만 내려 FE가 값을 얻을 경로가 없다.
 - 근거: 616 실측에서 `GET /installments` 항목의 `cardId`로 역추적해야 했다(simulation.md §7). 카드 상세 경로는 `{cardNo}` 원문 기반이라 대안이 못 된다.
 - 담당 근거: 카드 API는 BE-B. 응답 필드 추가라 루트 명세(카드 목록) 변경 여부를 확인해야 한다.
 - 완료 조건: 카드 목록 항목에 `cardId`가 있고 card-basic-query.md와 FE 146에 공유된다.
@@ -131,7 +131,7 @@
 
 ### 중도해지이율 공시값 확보
 
-- [ ] 상품별 공시 중도해지이율을 확보해 `DepositEarlyTerminationRatePolicy`의 구간표를 대체한다.
+- [ ] 상품별 공시 중도해지이율을 확보해 `global/policy/EarlyTerminationRatePolicy`(2026-09-16 예·적금 통합)의 구간표를 대체한다.
 - 근거: 명세 11-1에 계산식이 없고 ERD `deposit_saving`에는 계약이율만 있어 중도해지이율 컬럼이 없다. 현재 값은 시중은행 관행으로 정한 **서비스 추정치**이며 응답의 `ratePolicy`·`rateTier`와 `ESTIMATED_EARLY_TERMINATION_RATE`로 드러낸다.
 - 선행 조건: `financial_product_option`에 중도해지이율을 담을 컬럼이 없다. ERD 변경과 상품 동기화 범위를 팀이 정해야 한다.
 - 완료 조건: 상품별 공시값으로 계산하고 추정 가정 코드를 응답에서 제거한다. 자료가 없는 상품은 추정치로 떨어진다는 사실을 응답에서 구분한다.
@@ -159,7 +159,7 @@
 
 ### 기존 테스트 실패 해소(536 범위 밖, 머지 전 확인 필요)
 
-- [ ] `DepositSavingApiIntegrationTest` 29건이 실패해 `gradlew clean build`가 깨진다. 535 파일이라 이번에 수정하지 않았다.
+- [x] 해소됨(2026-09-16 확인). `develop` `36be8a7`에서 전체 테스트가 통과한다. 아래는 당시 기록이다.
 - 근거: fixture의 `account` INSERT가 `currency`·`created_at`·`updated_at`을 채우지 않는데, H2가 `MinusAccountOwner` 매핑으로 `account`를 만들면 이 컬럼이 NOT NULL이 된다. `account`를 부분 매핑한 엔티티가 둘(`CardWithdrawalAccount`, `MinusAccountOwner`)이라 어느 쪽으로 DDL이 생성되는지에 따라 결과가 갈린다. `origin/develop`(`aff8056`)을 별도 worktree로 복사해 같은 실패를 재현했으므로 536이 만든 문제가 아니다.
 - 선행 조건: 535 담당이 fixture를 고칠지, `account` 부분 매핑을 하나로 합칠지 정한다.
 - 완료 조건: `gradlew clean build`가 통과한다. `CardQueryApiIntegrationTest.getsBenefitsAndEstimatedBenefitUsage` 1건도 같은 빌드에서 실패하며 535 문서에 기록된 날짜 의존 문제다.
@@ -170,14 +170,14 @@
 
 ### 예금과 적금의 세금 처리 통일
 
-- [ ] 적금 예상금액에도 이자소득세를 반영하거나, 예금·적금 모두 세전/세후를 함께 반환하도록 맞춘다.
+- [x] (2026-09-16, 브랜치 `S15P21D105-537-deposit-savings-tax-policy`) 적금 예상금액에 예금과 같은 15.4% 원천징수를 적용했다. `SavingsForecastResponse`에 `tax`·`expectedNetInterest`를 추가하고 `expectedAmount`를 세후 합계로 바꿨으며, 세율·절사는 `global/policy/InterestIncomeTaxPolicy`로 공유한다. 가정 코드는 `EXCLUDES_TAX_AND_FEES` → `GENERAL_INTEREST_INCOME_TAX_15_4` + `EXCLUDES_FEES`. FE는 적금 API를 아직 호출하지 않아 영향 없음.
 - 근거: 예금(536)은 15.4%를 원천징수한 세후 수령액을, 적금(537)은 세전 금액을 반환한다. 두 예상금액을 나란히 놓으면 적금이 유리해 보인다.
 - 선행 조건: 두 이슈가 모두 병합돼야 한다.
 - 완료 조건: 같은 원금·이율·기간에서 두 API의 세금 처리가 같고 문서의 가정 코드가 일치한다.
 
 ### 중도해지이율 정책 통합과 공시값 확보
 
-- [ ] `SavingsEarlyTerminationRatePolicy`와 `DepositEarlyTerminationRatePolicy`를 공용 위치로 합친다.
+- [x] (2026-09-16, 같은 브랜치) 두 클래스를 지우고 `global/policy/EarlyTerminationRatePolicy` 하나로 합쳤다. 응답·계산값 변화 없음.
 - [ ] 상품별 공시 중도해지이율을 확보해 두 표를 대체한다.
 - 근거: 같은 구간표를 두 도메인에 따로 두었다. 536과 537이 서로 다른 브랜치에서 병합될 수 있어 의존을 만들지 않았다. 현재 값은 시중은행 관행 기반 **서비스 추정치**다.
 - 선행 조건: 두 이슈 병합. 공시값은 `financial_product_option`에 담을 컬럼이 없어 ERD 변경 검토가 필요하다.
@@ -305,12 +305,11 @@
 
 계획: [loan-rate-priority-plan.md](loan-rate-priority-plan.md), 구현 계약: [loan-rate-priority.md](loan-rate-priority.md)
 
-3개 API 중 상환 우선순위만 구현했다. 아래가 남아 있는 동안 533 전체를 완료 처리하지 않는다.
+3개 API 모두 구현했다(금리비교·고금리 판정은 `2eb40bb`, 2026-09-16 확인). 아래 "시장금리 비교" 항목은 완료됐고 `goalId`·MySQL 항목만 남는다.
 
 ### 시장금리 비교와 고금리 판정 API
 
-- [ ] `GET /api/v1/loans/{accountNo}/rate-comparison`과 `GET /api/v1/loans/high-interest`를 구현한다.
-- 현재 동작: 두 경로는 존재하지 않는다. `GET /api/v1/loans/repayment-priority`만 동작한다.
+- [x] `GET /api/v1/loans/{accountNo}/rate-comparison`과 `GET /api/v1/loans/high-interest` 구현 완료(`LoanRateComparisonController`, 계약은 [loan-rate-priority.md](loan-rate-priority.md)). 아래는 착수 전 기록이다.
 - 선행 조건: 계획 8절 4단계의 공통 비교 계산기와 전용 테스트 fixture. 계획 5절의 비교군·상환방식 대응표와 기간 밴드, 최저금리 중앙값 기준은 확정 상태다.
 - 완료 조건: 계획 8절 5단계 게이트(시연 데이터에서 판정 1건 이상, 0건이면 기준 방식 재검토)를 통과하고 `rateSpreadThreshold`를 편차 분포 근거와 함께 확정한다. 확정값이 통계적 기준이 아니라 서비스 초기 임계값임을 응답과 문서에 남긴다.
 

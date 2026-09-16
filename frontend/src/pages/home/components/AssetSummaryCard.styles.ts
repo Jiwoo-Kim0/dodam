@@ -1,25 +1,25 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, fontFamily, fontSize, radius, spacing } from '@/styles';
+import { colors, componentSize, fontFamily, fontSize, radius, spacing } from '@/styles';
 
 export const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.white,
     borderRadius: radius.card,
+    justifyContent: 'center',
+    minHeight: 84,
     paddingHorizontal: spacing[4],
-    paddingVertical: spacing[3],
+    paddingVertical: spacing[2],
     position: 'relative',
     width: '100%',
   },
-  title: {
-    color: colors.textPrimary,
-    fontFamily: fontFamily.medium,
-    fontSize: fontSize.body1,
-    lineHeight: 20,
+  cardPressed: {
+    opacity: componentSize.bottomSheet.pressedOpacity,
   },
   content: {
     alignItems: 'center',
     flexDirection: 'row',
+    minHeight: 60,
     paddingRight: spacing[8],
   },
   copy: {
@@ -31,12 +31,11 @@ export const styles = StyleSheet.create({
     fontFamily: fontFamily.semiBold,
     fontSize: fontSize.title,
     letterSpacing: -0.6,
-    lineHeight: 28,
-    marginTop: spacing[1],
+    lineHeight: 30,
   },
   currencyUnit: {
     fontFamily: fontFamily.regular,
-    fontSize: fontSize.caption,
+    fontSize: fontSize.body2,
     letterSpacing: -0.2,
   },
   changeRow: {
@@ -48,47 +47,51 @@ export const styles = StyleSheet.create({
   changeArrow: {
     color: colors.primary.green,
     fontFamily: fontFamily.regular,
-    fontSize: fontSize.micro,
-    lineHeight: 14,
+    fontSize: fontSize.caption,
+    lineHeight: 16,
   },
   changeAmount: {
     color: colors.primary.green,
     fontFamily: fontFamily.regular,
-    fontSize: fontSize.micro,
-    lineHeight: 14,
+    fontSize: fontSize.caption,
+    lineHeight: 16,
   },
   changePrefix: {
     color: colors.textSecondary,
     fontFamily: fontFamily.regular,
-    fontSize: fontSize.micro,
-    lineHeight: 14,
+    fontSize: fontSize.caption,
+    lineHeight: 16,
   },
   netAssetLabel: {
     color: colors.textSecondary,
     fontFamily: fontFamily.regular,
-    fontSize: fontSize.micro,
-    lineHeight: 14,
+    fontSize: fontSize.caption,
+    lineHeight: 16,
     marginTop: spacing[1],
   },
   loadingIndicator: {
     alignSelf: 'flex-start',
-    marginTop: spacing[2],
+    height: 30,
   },
   errorText: {
     color: colors.textSecondary,
     fontFamily: fontFamily.regular,
     fontSize: fontSize.body2,
-    marginTop: spacing[2],
+    lineHeight: 30,
   },
   chartGroup: {
     alignItems: 'center',
     flexDirection: 'row',
     flexShrink: 0,
-    gap: spacing[2],
+    gap: spacing[3],
+    justifyContent: 'center',
+    minHeight: 60,
   },
   legend: {
     gap: spacing[1],
-    width: 42,
+    justifyContent: 'center',
+    minHeight: 60,
+    width: 48,
   },
   legendItem: {
     alignItems: 'center',
@@ -103,7 +106,7 @@ export const styles = StyleSheet.create({
   legendLabel: {
     color: colors.textSecondary,
     fontFamily: fontFamily.regular,
-    fontSize: fontSize.tiny,
-    lineHeight: 11,
+    fontSize: fontSize.caption,
+    lineHeight: 16,
   },
 });

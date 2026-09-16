@@ -980,6 +980,7 @@ CREATE TABLE `recommendation_history` (
 
 CREATE TABLE `improvement_action` (
   `action_id` BIGINT NOT NULL AUTO_INCREMENT,
+  `user_id` BIGINT NOT NULL,
   `recommendation_id` BIGINT NOT NULL,
   `title` VARCHAR(255) NOT NULL,
   `status` VARCHAR(30) NOT NULL,
@@ -992,11 +993,18 @@ CREATE TABLE `improvement_action` (
   `annual_cost_saving` BIGINT NULL,
   `interest_saving` BIGINT NULL,
   `goal_advanced_days` INT NULL,
+  `planned_at` DATETIME NOT NULL,
   `started_at` DATETIME NULL,
   `completed_at` DATETIME NULL,
+  `canceled_at` DATETIME NULL,
   `measured_at` DATETIME NULL,
+  `created_at` DATETIME NOT NULL,
+  `updated_at` DATETIME NULL,
   PRIMARY KEY (`action_id`),
   UNIQUE KEY `uk_improvement_action_recommendation_id` (`recommendation_id`),
+  KEY `idx_improvement_action_user_status` (`user_id`, `status`),
+  KEY `idx_improvement_action_user_planned` (`user_id`, `planned_at`),
+  KEY `idx_improvement_action_user_measured` (`user_id`, `measured_at`),
   CONSTRAINT `chk_improvement_action_status`
     CHECK (`status` IN ('PLANNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELED')),
   CONSTRAINT `chk_improvement_action_amounts`
@@ -1009,7 +1017,8 @@ CREATE TABLE `improvement_action` (
   CONSTRAINT `chk_improvement_action_dates`
     CHECK (`started_at` IS NULL OR `completed_at` IS NULL OR `started_at` <= `completed_at`),
   CONSTRAINT `fk_improvement_action_recommendation`
-    FOREIGN KEY (`recommendation_id`) REFERENCES `recommendation` (`recommendation_id`)
+    FOREIGN KEY (`user_id`, `recommendation_id`)
+    REFERENCES `recommendation` (`user_id`, `recommendation_id`)
 );
 
 CREATE TABLE `cashflow_forecast` (
@@ -1196,15 +1205,21 @@ CREATE TABLE `daily_report` (
   `report_id` BIGINT NOT NULL,
   `report_type` VARCHAR(20) NOT NULL,
   `report_date` DATE NOT NULL,
+  `data_status` VARCHAR(30) NOT NULL,
   `summary` TEXT NULL,
-  `available_today` BIGINT NOT NULL,
+  `available_today` BIGINT NULL,
+  `financial_summary` JSON NULL,
+  `notable_events` JSON NULL,
   `upcoming_events` JSON NULL,
   `risks` JSON NULL,
   `recommendations` JSON NULL,
+  `coach_message` TEXT NULL,
   PRIMARY KEY (`report_id`),
   KEY `idx_daily_report_parent` (`report_id`, `report_type`),
   CONSTRAINT `chk_daily_report_type`
     CHECK (`report_type` = 'DAILY'),
+  CONSTRAINT `chk_daily_report_data_status`
+    CHECK (`data_status` IN ('READY', 'NO_TRANSACTIONS', 'INSUFFICIENT_DATA')),
   CONSTRAINT `fk_daily_report_report`
     FOREIGN KEY (`report_id`, `report_type`)
     REFERENCES `report` (`report_id`, `type`)
@@ -1214,6 +1229,9 @@ CREATE TABLE `monthly_report` (
   `report_id` BIGINT NOT NULL,
   `report_type` VARCHAR(20) NOT NULL,
   `year_month` CHAR(7) NOT NULL,
+  `data_status` VARCHAR(30) NOT NULL,
+  `diagnosis_id` BIGINT NULL,
+  `overall_status` VARCHAR(20) NULL,
   `financial_summary` JSON NULL,
   `spending_summary` JSON NULL,
   `goal_summary` JSON NULL,
@@ -1224,6 +1242,8 @@ CREATE TABLE `monthly_report` (
   KEY `idx_monthly_report_parent` (`report_id`, `report_type`),
   CONSTRAINT `chk_monthly_report_type`
     CHECK (`report_type` = 'MONTHLY'),
+  CONSTRAINT `chk_monthly_report_data_status`
+    CHECK (`data_status` IN ('READY', 'NO_TRANSACTIONS', 'INSUFFICIENT_DATA')),
   CONSTRAINT `fk_monthly_report_report`
     FOREIGN KEY (`report_id`, `report_type`)
     REFERENCES `report` (`report_id`, `type`)

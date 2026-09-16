@@ -29,6 +29,14 @@ public interface DiagnosisRepository extends JpaRepository<Diagnosis, Long> {
 
     Optional<Diagnosis> findByDiagnosisIdAndUserId(Long diagnosisId, Long userId);
 
+    /**
+     * 기간 안에 완료된 최신 진단 1건. 월간 리포트가 "그 달의 종합 상태"를 붙일 때 쓴다(S15P21D105-590).
+     * 그 달에 진단이 없으면 비어 있으며, 다른 달의 진단을 끌어다 쓰지 않는다.
+     */
+    Optional<Diagnosis> findFirstByUserIdAndCompletedAtBetweenOrderByCompletedAtDescDiagnosisIdDesc(
+            Long userId, LocalDateTime from, LocalDateTime to
+    );
+
     /** 진단 이력. 명세 14의 목록 조회는 최신순이다. */
     Page<Diagnosis> findByUserIdOrderByCreatedAtDescDiagnosisIdDesc(Long userId, Pageable pageable);
 

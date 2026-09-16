@@ -23,7 +23,10 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.white,
   },
   lastSection: {
-    paddingBottom: spacing[6],
+    gap: spacing[2],
+    justifyContent: 'space-between',
+    paddingBottom: spacing[3],
+    paddingTop: spacing[3],
   },
   compactSection: {
     gap: spacing[3],
@@ -149,7 +152,7 @@ export const styles = StyleSheet.create({
   },
   comparisonImage: {
     aspectRatio: 340 / 258,
-    width: '44%',
+    width: '40%',
   },
   noticeBanner: {
     alignItems: 'center',
@@ -192,6 +195,7 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.background,
     borderRadius: radius.default,
     flexDirection: 'row',
+    gap: spacing[3],
     justifyContent: 'space-between',
     paddingHorizontal: spacing[4],
     minHeight: 74,
@@ -199,6 +203,12 @@ export const styles = StyleSheet.create({
   },
   insightCopy: {
     flex: 1,
+    minWidth: 0,
+  },
+  insightIcon: {
+    flexShrink: 0,
+    height: 36,
+    width: 36,
   },
   insightTitle: {
     color: colors.textPrimary,
@@ -297,8 +307,8 @@ export const styles = StyleSheet.create({
     borderColor: colors.divider,
     borderRadius: radius.default,
     borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[2],
+    paddingHorizontal: spacing[2],
+    paddingVertical: spacing[1],
     shadowColor: colors.textPrimary,
     shadowOffset: { height: 2, width: 0 },
     shadowOpacity: 0.08,
@@ -313,9 +323,9 @@ export const styles = StyleSheet.create({
   comparisonCards: {
     alignItems: 'flex-end',
     flexDirection: 'row',
-    gap: spacing[4],
+    gap: spacing[3],
     justifyContent: 'center',
-    marginTop: -spacing[3],
+    marginTop: -spacing[4],
   },
   comparisonCard: {
     alignItems: 'center',
@@ -327,13 +337,13 @@ export const styles = StyleSheet.create({
     shadowOffset: { height: 2, width: 0 },
     shadowOpacity: 0.14,
     shadowRadius: 5,
-    width: 112,
+    width: 104,
   },
   highlightedComparisonCard: {
     backgroundColor: colors.primary.lightGreen,
     borderColor: colors.primary.green,
     borderWidth: StyleSheet.hairlineWidth,
-    minHeight: 150,
+    minHeight: 132,
   },
   comparisonCardTitle: {
     color: colors.textPrimary,
@@ -344,8 +354,8 @@ export const styles = StyleSheet.create({
     alignItems: 'flex-end',
     flexDirection: 'row',
     gap: spacing[1],
-    height: 48,
-    marginTop: spacing[2],
+    height: 40,
+    marginTop: spacing[1],
   },
   chartBar: {
     backgroundColor: colors.divider,
@@ -356,28 +366,28 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.primary.green,
   },
   shortBar: {
-    height: 20,
+    height: 16,
   },
   mediumBar: {
-    height: 32,
+    height: 28,
   },
   tallBar: {
-    height: 46,
+    height: 38,
   },
   comparisonCardLabel: {
     color: colors.textTertiary,
-    marginTop: spacing[2],
+    marginTop: spacing[1],
     ...typography.caption,
   },
   comparisonCardAmount: {
     color: colors.textPrimary,
     fontFamily: fontFamily.semiBold,
     fontSize: fontSize.body1,
-    marginTop: spacing[2],
+    marginTop: spacing[1],
   },
   resultList: {
     alignSelf: 'stretch',
-    gap: spacing[2],
+    gap: spacing[1],
     marginHorizontal: spacing[2],
   },
   resultRow: {
@@ -386,7 +396,7 @@ export const styles = StyleSheet.create({
     borderRadius: radius.default,
     flexDirection: 'row',
     paddingHorizontal: spacing[4],
-    paddingVertical: spacing[2],
+    paddingVertical: spacing[1],
   },
   resultCopy: {
     flex: 1,
@@ -407,7 +417,7 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.primary.green,
     borderRadius: radius.default,
     justifyContent: 'center',
-    minHeight: 52,
+    minHeight: 48,
   },
   startButtonText: {
     color: colors.white,

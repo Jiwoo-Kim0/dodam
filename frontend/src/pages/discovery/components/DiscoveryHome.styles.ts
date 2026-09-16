@@ -136,14 +136,45 @@ export const styles = StyleSheet.create({
     width: 100,
   },
   insightSection: {
-    gap: spacing[4],
+    gap: spacing[3],
     marginTop: spacing[8],
+    minHeight: 270,
+  },
+  sectionHeaderRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
   sectionTitle: {
     color: colors.textPrimary,
     fontFamily: fontFamily.medium,
     fontSize: 16,
     lineHeight: 22,
+  },
+  diagnosisAction: {
+    alignItems: 'center',
+    backgroundColor: colors.primary.lightGreen,
+    borderRadius: radius.default,
+    justifyContent: 'center',
+    minHeight: 44,
+    paddingHorizontal: spacing[3],
+  },
+  diagnosisActionDisabled: {
+    backgroundColor: colors.ledger.softSurface,
+  },
+  diagnosisActionPressed: {
+    opacity: 0.7,
+  },
+  diagnosisActionText: {
+    color: colors.primary.green,
+    fontFamily: fontFamily.medium,
+    fontSize: fontSize.body2,
+  },
+  diagnosisActionTextDisabled: {
+    color: colors.textTertiary,
+  },
+  diagnosisFooter: {
+    marginTop: spacing[4],
   },
   insightListCard: {
     backgroundColor: colors.white,
@@ -167,14 +198,16 @@ export const styles = StyleSheet.create({
   viewAllButtonPressed: {
     opacity: 0.8,
   },
-  disabledButton: {
-    opacity: 0.45,
-  },
   cooldownLabel: {
-    ...typography.body2,
-    color: colors.textSecondary,
-    marginTop: spacing[2],
+    ...typography.caption,
+    color: colors.textTertiary,
+    marginBottom: spacing[3],
     textAlign: 'center',
+  },
+  viewAllText: {
+    ...typography.body2,
+    color: colors.primary.green,
+    fontFamily: fontFamily.medium,
   },
   viewAllButtonLabel: {
     ...typography.button,

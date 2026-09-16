@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Text, View } from 'react-native';
@@ -14,14 +15,17 @@ const NOTIFICATION_BENEFITS = [
   {
     title: '목표 달성',
     description: '목표에 가까워질 때마다 진행 상황을 알려드려요.',
+    icon: require('@/assets/icons/common/goal.png'),
   },
   {
     title: '현금흐름 위험',
     description: '잔액 부족 위험을 미리 알려드려요.',
+    icon: require('@/assets/icons/common/alert.png'),
   },
   {
     title: '개선 행동',
     description: '놓치기 쉬운 개선 행동을 알려드려요.',
+    icon: require('@/assets/icons/common/growing.png'),
   },
 ] as const;
 
@@ -59,9 +63,11 @@ export function NotificationConsentScreen() {
       <View style={styles.benefitList}>
         {NOTIFICATION_BENEFITS.map((benefit) => (
           <View key={benefit.title} style={styles.benefitCard}>
-            <View
-              importantForAccessibility="no-hide-descendants"
-              style={styles.iconSpace}
+            <Image
+              accessibilityIgnoresInvertColors
+              contentFit="contain"
+              source={benefit.icon}
+              style={styles.benefitIcon}
             />
             <View style={styles.benefitText}>
               <Text style={styles.benefitTitle}>{benefit.title}</Text>

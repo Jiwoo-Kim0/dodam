@@ -80,6 +80,7 @@ export function SpendingTrendSparkline({
   dailyTotals,
   previousDailyTotals,
 }: SpendingTrendSparklineProps) {
+  const previousMonth = month === 1 ? 12 : month - 1;
   const dayCount = getVisibleDayCount(year, month);
   const currentValues = createCumulativeValues(dailyTotals, dayCount);
   const previousValues = createCumulativeValues(previousDailyTotals, dayCount);
@@ -107,8 +108,8 @@ export function SpendingTrendSparkline({
     ? `${currentPath} L ${lastPoint.x} ${CHART_HEIGHT - CHART_PADDING} L ${firstPoint.x} ${CHART_HEIGHT - CHART_PADDING} Z`
     : '';
   const accessibilityLabel = hasPreviousData
-    ? `이번 달 누적 소비 ${formatCurrency(currentTotal)}, 지난달 같은 기간 누적 소비 ${formatCurrency(previousTotal)}`
-    : `이번 달 누적 소비 ${formatCurrency(currentTotal)}`;
+    ? `${month}월 누적 소비 ${formatCurrency(currentTotal)}, ${previousMonth}월 같은 기간 누적 소비 ${formatCurrency(previousTotal)}`
+    : `${month}월 누적 소비 ${formatCurrency(currentTotal)}`;
 
   return (
     <View style={styles.container}>
@@ -155,7 +156,7 @@ export function SpendingTrendSparkline({
       <View style={styles.legend}>
         <View style={styles.legendItem}>
           <View style={[styles.legendLine, { backgroundColor: currentLineColor }]} />
-          <Text style={styles.legendLabel}>이번 달</Text>
+          <Text style={styles.legendLabel}>{`${month}월`}</Text>
         </View>
         {hasPreviousData ? (
           <View style={styles.legendItem}>

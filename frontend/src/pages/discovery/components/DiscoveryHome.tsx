@@ -103,7 +103,7 @@ export function DiscoveryHome({
               <Text style={styles.summaryText}>
                 {isLoading
                   ? '진단 결과를 확인하고 있어요'
-                  : `진단에서 ${insights.length}건 발견했어요`}
+                  : `지금 확인할 내용 ${insights.length}개`}
               </Text>
               <Text style={styles.summarySubtext}>
                 각 항목에서 추천과 예상 효과를 확인해 보세요
@@ -126,7 +126,18 @@ export function DiscoveryHome({
           </View>
 
           <View style={styles.insightSection}>
-            <Text style={styles.sectionTitle}>지금 확인해볼 것</Text>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>지금 확인해볼 것</Text>
+              {insights.length > 0 ? (
+                <Pressable
+                  accessibilityLabel="전체 보기"
+                  accessibilityRole="button"
+                  hitSlop={8}
+                  onPress={onViewAll}>
+                  <Text style={styles.viewAllText}>전체 보기 ›</Text>
+                </Pressable>
+              ) : null}
+            </View>
             {error ? <Text style={styles.footnote}>{error}</Text> : null}
             <View style={styles.insightListCard}>
               {insights.slice(0, 4).map((insight, index, items) => (
@@ -173,25 +184,31 @@ export function DiscoveryHome({
           ) : null}
 
           {diagnosis && !isLoading ? (
-            <View>
+            <View style={styles.diagnosisFooter}>
+              {cooldown.label ? (
+                <Text style={styles.cooldownLabel}>{cooldown.label}</Text>
+              ) : null}
               <Pressable
                 accessibilityRole="button"
+                accessibilityState={{ disabled: !cooldown.canRun }}
                 disabled={!cooldown.canRun}
                 onPress={() => { void runAnalysis(true); }}
-                style={[styles.viewAllButton, !cooldown.canRun && styles.disabledButton]}>
-                <Text style={styles.viewAllButtonLabel}>새로 진단하기</Text>
+                style={({ pressed }) => [
+                  styles.diagnosisAction,
+                  !cooldown.canRun && styles.diagnosisActionDisabled,
+                  pressed && cooldown.canRun && styles.diagnosisActionPressed,
+                ]}>
+                <Text
+                  style={[
+                    styles.diagnosisActionText,
+                    !cooldown.canRun && styles.diagnosisActionTextDisabled,
+                  ]}>
+                  새로 진단하기
+                </Text>
               </Pressable>
-              {cooldown.label ? <Text style={styles.cooldownLabel}>{cooldown.label}</Text> : null}
             </View>
           ) : null}
 
-          {insights.length > 0 ? <Pressable
-            accessibilityLabel="전체 보기"
-            accessibilityRole="button"
-            onPress={onViewAll}
-            style={({ pressed }) => [styles.viewAllButton, pressed && styles.viewAllButtonPressed]}>
-            <Text style={styles.viewAllButtonLabel}>전체 보기</Text>
-          </Pressable> : null}
         </View>
       </RefreshableBouncyScrollView>
     </SafeAreaLayout>
