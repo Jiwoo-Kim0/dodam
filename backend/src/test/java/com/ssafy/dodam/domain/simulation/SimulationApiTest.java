@@ -1,6 +1,9 @@
 package com.ssafy.dodam.domain.simulation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
@@ -14,6 +17,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ssafy.dodam.domain.goal.entity.Goal;
 import com.ssafy.dodam.domain.goal.entity.GoalAccount;
+import com.ssafy.dodam.domain.goal.entity.GoalStatus;
 import com.ssafy.dodam.domain.goal.entity.GoalType;
 import com.ssafy.dodam.domain.goal.entity.SavingGoal;
 import com.ssafy.dodam.domain.goal.repository.GoalAccountRepository;
@@ -191,6 +195,91 @@ class SimulationApiTest {
         mvc.perform(post("/api/v1/simulations/saving").with(user(owner.toString()))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"accountNo\":\"9999999999999999\",\"monthlySavingAmount\":1}"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void savingSimulationWithGoalIdChangesOnlyThatGoal() throws Exception {
+        // 두 번째 목표는 연결 계좌가 없어 accountNo로는 고를 수 없다(619 추천 프리셋 경로)
+        Goal second = goals.save(Goal.create(owner, "여행", GoalType.SAVING, NOW.minusMonths(1)));
+        savingGoals.save(SavingGoal.create(second.getId(), 1_200_000L, NOW.toLocalDate().plusYears(1)));
+
+        String body = mvc.perform(post("/api/v1/simulations/saving").with(user(owner.toString()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"goalId\":" + second.getId() + ",\"monthlySavingAmount\":100000,\"durationMonths\":3}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.created").value(true))
+                .andExpect(jsonPath("$.data.simulation.request.goalId").value(second.getId()))
+                .andExpect(jsonPath("$.data.simulation.request.accountId").value(nullValue()))
+                // 첫 목표(속도 333,333)는 그대로, 두 번째 목표(속도 0)만 100,000을 받는다
+                .andExpect(jsonPath("$.data.simulation.after.monthlySaving").value(433_333))
+                .andExpect(jsonPath("$.data.simulation.goalImpacts[0].goalId").value(goalId))
+                .andExpect(jsonPath("$.data.simulation.goalImpacts[0].differenceDays").value(0))
+                .andExpect(jsonPath("$.data.simulation.goalImpacts[1].goalId").value(second.getId()))
+                .andExpect(jsonPath("$.data.simulation.goalImpacts[1].beforeForecastDate").value(nullValue()))
+                .andExpect(jsonPath("$.data.simulation.goalImpacts[1].afterForecastDate").value("2027-09-13"))
+                .andExpect(jsonPath("$.data.simulation.after.assumptions").value(not(hasItem("SPLIT_BY_REMAINING"))))
+                .andReturn().getResponse().getContentAsString();
+        long id = json.readTree(body).at("/data/simulation/simulationId").asLong();
+
+        // 같은 날 같은 goalId 재실행은 재사용, goalId 없는 실행은 지문이 달라 별개 저장
+        mvc.perform(post("/api/v1/simulations/saving").with(user(owner.toString()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"goalId\":" + second.getId() + ",\"monthlySavingAmount\":100000,\"durationMonths\":3}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.created").value(false))
+                .andExpect(jsonPath("$.data.simulation.simulationId").value(id));
+        mvc.perform(post("/api/v1/simulations/saving").with(user(owner.toString()))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"monthlySavingAmount\":100000,\"durationMonths\":3}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.simulation.request.goalId").value(nullValue()))
+                .andExpect(jsonPath("$.data.simulation.after.assumptions").value(hasItem("SPLIT_BY_REMAINING")));
+    }
+
+    @Test
+    void savingSimulationGoalIdRejectsUnusableGoalsWithoutStoringAnything() throws Exception {
+        long before = simulations.count();
+        // 타인·없는 목표는 404 — 존재를 흘리지 않는다
+        mvc.perform(post("/api/v1/simulations/saving").with(user(other.toString()))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"goalId\":" + goalId + ",\"monthlySavingAmount\":1}"))
+                .andExpect(status().isNotFound());
+        mvc.perform(post("/api/v1/simulations/saving").with(user(owner.toString()))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"goalId\":999999,\"monthlySavingAmount\":1}"))
+                .andExpect(status().isNotFound());
+        // accountNo와 동시 지정, 0·음수 goalId는 400
+        mvc.perform(post("/api/v1/simulations/saving").with(user(owner.toString()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"goalId\":" + goalId + ",\"accountNo\":\"" + ACCOUNT_NO + "\",\"monthlySavingAmount\":1}"))
+                .andExpect(status().isBadRequest());
+        for (String body : List.of("{\"goalId\":0,\"monthlySavingAmount\":1}", "{\"goalId\":-1,\"monthlySavingAmount\":1}",
+                "{\"goalId\":" + goalId + ".5,\"monthlySavingAmount\":1}")) {
+            mvc.perform(post("/api/v1/simulations/saving").with(user(owner.toString()))
+                            .contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest());
+        }
+        // 본인 목표라도 SPENDING·비ACTIVE는 400 — 기준선이 ACTIVE 모으기 목표만 읽는다
+        Goal spending = goals.save(Goal.create(owner, "외식 줄이기", GoalType.SPENDING, NOW));
+        mvc.perform(post("/api/v1/simulations/saving").with(user(owner.toString()))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"goalId\":" + spending.getId() + ",\"monthlySavingAmount\":1}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        Goal incomplete = goals.save(Goal.create(owner, "상세 누락", GoalType.SAVING, NOW));
+        mvc.perform(post("/api/v1/simulations/saving").with(user(owner.toString()))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"goalId\":" + incomplete.getId() + ",\"monthlySavingAmount\":1}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        incomplete.delete(NOW);
+        goals.save(incomplete);
+        mvc.perform(post("/api/v1/simulations/saving").with(user(owner.toString()))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"goalId\":" + incomplete.getId() + ",\"monthlySavingAmount\":1}"))
+                .andExpect(status().isNotFound());
+        Goal paused = goals.findById(goalId).orElseThrow();
+        paused.changeStatus(GoalStatus.PAUSED, NOW);
+        goals.save(paused);
+        mvc.perform(post("/api/v1/simulations/saving").with(user(owner.toString()))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"goalId\":" + goalId + ",\"monthlySavingAmount\":1}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        assertThat(simulations.count()).isEqualTo(before);
     }
 
     @Test

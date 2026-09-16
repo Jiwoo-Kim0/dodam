@@ -3,6 +3,10 @@ package com.ssafy.dodam.domain.simulation.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.ssafy.dodam.domain.account.repository.AccountRepository;
 import com.ssafy.dodam.domain.card.repository.CardRepository;
+import com.ssafy.dodam.domain.goal.entity.Goal;
+import com.ssafy.dodam.domain.goal.entity.GoalStatus;
+import com.ssafy.dodam.domain.goal.entity.GoalType;
+import com.ssafy.dodam.domain.goal.repository.GoalRepository;
 import com.ssafy.dodam.domain.loan.repository.LoanRepository;
 import com.ssafy.dodam.domain.product.repository.FinancialProductRepository;
 import com.ssafy.dodam.domain.simulation.dto.CashAdvanceInput;
@@ -49,6 +53,9 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>586: 리볼빙 cardId는 소유권 조건이 들어간 조회로 확인한다(없거나 타인이면 같은 404). 복합은 자식마다 같은 해석·검증을
  * 거쳐 모든 자식의 자원 존재·소유권을 지문 조회 <b>전</b>에 끝낸 뒤 자식 간 중복·충돌을 검사한다 — 재사용 반환 경로로
  * 소유권 검증을 우회할 수 없다.
+ *
+ * <p>619: 저축 시뮬레이션의 {@code goalId}는 소유권(404)과 함께 SAVING·ACTIVE(400)까지 여기서 확인한다. 기준선이 ACTIVE 목표만
+ * 읽으므로 그 밖의 목표는 효과를 계산할 수 없고, 조용히 전체 비례 배분으로 바꾸면 사용자가 고른 목표가 무시된 줄 모르게 된다.
  */
 @Component
 @Transactional(readOnly = true)
@@ -57,22 +64,28 @@ public class SimulationInputResolver {
     static final String PRODUCT_NOT_FOUND_MESSAGE = "상품을 찾을 수 없습니다.";
     static final String LOAN_NOT_FOUND_MESSAGE = "대출을 찾을 수 없습니다.";
     static final String CARD_NOT_FOUND_MESSAGE = "카드를 찾을 수 없습니다.";
+    static final String GOAL_NOT_FOUND_MESSAGE = "목표를 찾을 수 없습니다.";
+    static final String GOAL_AND_ACCOUNT_BOTH_MESSAGE = "goalId와 accountNo는 함께 지정할 수 없습니다.";
+    static final String GOAL_NOT_SAVING_MESSAGE = "모으기 목표만 지정할 수 있습니다.";
+    static final String GOAL_NOT_ACTIVE_MESSAGE = "진행 중인 목표만 지정할 수 있습니다.";
     private final TransactionCategoryRepository categories;
     private final AccountRepository accounts;
     private final FinancialProductRepository products;
     private final LoanRepository loans;
     private final CardRepository cards;
+    private final GoalRepository goals;
     private final SensitiveNumberHasher hasher;
     private final CombinedScenarioParser scenarioParser;
 
     public SimulationInputResolver(TransactionCategoryRepository categories, AccountRepository accounts,
-            FinancialProductRepository products, LoanRepository loans, CardRepository cards, SensitiveNumberHasher hasher,
-            CombinedScenarioParser scenarioParser) {
+            FinancialProductRepository products, LoanRepository loans, CardRepository cards, GoalRepository goals,
+            SensitiveNumberHasher hasher, CombinedScenarioParser scenarioParser) {
         this.categories = categories;
         this.accounts = accounts;
         this.products = products;
         this.loans = loans;
         this.cards = cards;
+        this.goals = goals;
         this.hasher = hasher;
         this.scenarioParser = scenarioParser;
     }
@@ -90,13 +103,31 @@ public class SimulationInputResolver {
     }
 
     public SavingChangeInput resolve(Long userId, SavingSimulationRequest request) {
+        boolean hasAccount = request.accountNo() != null && !request.accountNo().isBlank();
+        if (hasAccount && request.goalId() != null) {
+            throw new InvalidRequestException(GOAL_AND_ACCOUNT_BOTH_MESSAGE);
+        }
         Long accountId = null;
-        if (request.accountNo() != null && !request.accountNo().isBlank()) {
+        if (hasAccount) {
             accountId = accounts.findByUserIdAndAccountNoHash(userId, hasher.hash(request.accountNo().strip()))
                     .orElseThrow(() -> new ResourceNotFoundException("계좌를 찾을 수 없습니다."))
                     .getId();
         }
-        return new SavingChangeInput(accountId, request.monthlySavingAmount(), orDefault(request.durationMonths()));
+        Long goalId = request.goalId() == null ? null : ownedActiveSavingGoalId(userId, request.goalId());
+        return new SavingChangeInput(accountId, goalId, request.monthlySavingAmount(), orDefault(request.durationMonths()));
+    }
+
+    /** 소유권은 진단(goalId 지정)과 같은 조회로 404, 유형·상태는 소유권 확인 뒤라 존재 노출 없이 400이다. */
+    private Long ownedActiveSavingGoalId(Long userId, Long goalId) {
+        Goal goal = goals.findByIdAndUserIdAndDeletedAtIsNull(goalId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException(GOAL_NOT_FOUND_MESSAGE));
+        if (goal.getType() != GoalType.SAVING) {
+            throw new InvalidRequestException(GOAL_NOT_SAVING_MESSAGE);
+        }
+        if (goal.getStatus() != GoalStatus.ACTIVE) {
+            throw new InvalidRequestException(GOAL_NOT_ACTIVE_MESSAGE);
+        }
+        return goal.getId();
     }
 
     public SavingProductInput resolve(SavingProductSimulationRequest request) {

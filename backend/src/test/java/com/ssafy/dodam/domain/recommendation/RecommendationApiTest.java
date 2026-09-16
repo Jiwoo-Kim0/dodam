@@ -321,7 +321,8 @@ class RecommendationApiTest {
         assertThat(preset.path("request").path("accountNo").isNull()).isTrue();
         assertThat(preset.path("request").path("durationMonths").isNull()).isTrue();
         assertThat(preset.path("unavailableReason").isMissingNode()).isTrue();
-        assertThat(preset.path("assumptions").get(0).asText()).isEqualTo("TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT");
+        assertThat(preset.path("request").path("goalId").asLong()).isEqualTo(goalId); // 619: 추천이 겨냥한 목표를 그대로 넘긴다
+        assertThat(preset.path("assumptions")).isEmpty();
 
         // 상세·목록·priorities·상태변경이 같은 프리셋을 싣는다
         for (String path : new String[] {"$.data", "$.data.content[0]", "$.data.recommendations[0]"}) {
@@ -338,21 +339,28 @@ class RecommendationApiTest {
                 .andExpect(jsonPath("$.data.simulation.request.monthlySavingAmount").value(1_000_000));
         mvc.perform(get("/api/v1/recommendations/{id}", id).with(user(other.toString()))).andExpect(status().isNotFound());
 
-        // 프리셋 본문을 그대로 실행 → 201. 추천의 improvedForecastDate(진단 기준일 + ceil(1,000,000/1,000,000)개월)와 같은 날짜
+        // 프리셋 본문을 그대로 실행 → 201. 추천의 improvedForecastDate(진단 기준일 + ceil(1,000,000/1,000,000)개월)와 같은 날짜.
+        // 619: 목표가 둘이어도 프리셋의 goalId가 추천이 겨냥한 목표만 바꾸므로 등식이 유지된다(587은 목표 1개에서만 고정)
+        Goal another = goals.save(Goal.create(owner, "여행", GoalType.SAVING, NOW.minusMonths(1)));
+        savingGoals.save(SavingGoal.create(another.getId(), 2_000_000L, NOW.toLocalDate().plusYears(1)));
         String run = mvc.perform(post(preset.path("endpoint").asText()).with(user(owner.toString())).contentType(JSON)
                         .content(json.writeValueAsString(preset.path("request"))))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.created").value(true))
                 .andExpect(jsonPath("$.data.simulation.type").value("SAVING"))
+                .andExpect(jsonPath("$.data.simulation.request.goalId").value(goalId))
                 .andExpect(jsonPath("$.data.simulation.after.monthlySaving").value(1_000_000))
-                .andExpect(jsonPath("$.data.simulation.goalImpacts.length()").value(1))
+                .andExpect(jsonPath("$.data.simulation.goalImpacts.length()").value(2))
                 .andExpect(jsonPath("$.data.simulation.goalImpacts[0].goalId").value(goalId))
                 .andExpect(jsonPath("$.data.simulation.goalImpacts[0].beforeForecastDate").isEmpty())
+                .andExpect(jsonPath("$.data.simulation.goalImpacts[1].goalId").value(another.getId()))
+                .andExpect(jsonPath("$.data.simulation.goalImpacts[1].afterForecastDate").isEmpty()) // 대상이 아니라 속도 0 그대로
                 .andReturn().getResponse().getContentAsString();
         JsonNode simulation = json.readTree(run).at("/data/simulation");
         assertThat(simulation.at("/goalImpacts/0/afterForecastDate").asText())
                 .isEqualTo(item.at("/effect/improvedForecastDate").asText());
         assertThat(simulation.at("/request/accountId").isNull()).isTrue();
+        assertThat(simulation.at("/after/assumptions")).extracting(JsonNode::asText).doesNotContain("SPLIT_BY_REMAINING");
         assertThat(run).doesNotContain("requestHash");
 
         // 같은 날 같은 프리셋 재실행은 재사용(멱등)
