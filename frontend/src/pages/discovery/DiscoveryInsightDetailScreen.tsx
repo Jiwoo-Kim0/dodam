@@ -16,9 +16,14 @@ import { formatNumber } from '@/utils/currency';
 
 import { BasicSimulationSection } from './components/BasicSimulationSection';
 import {
+  categorySpendingCopy,
+  categorySpendingSummary,
+} from './categorySpendingCopy';
+import {
   discoveryDomainLabel,
+  isCategorySpendingIssue,
   parseIssueRouteId,
-  recommendationsForIssue,
+  recommendationsForDetail,
 } from './discoveryModel';
 import { styles } from './DiscoveryInsightDetailScreen.styles';
 import { loadAllPages } from './hooks/useDiscoveryData';
@@ -41,6 +46,7 @@ export function DiscoveryInsightDetailScreen({
   const [recommendations, setRecommendations] = useState<
     RecommendationApiResponse[]
   >([]);
+  const [sourceIssues, setSourceIssues] = useState<DiagnosisIssueApiResponse[]>([]);
   const [explanation, setExplanation] = useState<CoachMessageResponse | null>(
     null,
   );
@@ -55,16 +61,35 @@ export function DiscoveryInsightDetailScreen({
   );
   const [isLoading, setIsLoading] = useState(Boolean(routeIds));
   const [error, setError] = useState<string | null>(null);
+  const [relatedIssuesError, setRelatedIssuesError] = useState(false);
   const requestIdRef = useRef(0);
   const recommendationRequestIdRef = useRef(0);
+  const isCategorySpending = issue !== null && isCategorySpendingIssue(issue);
+  const spendingSummary = isCategorySpending
+    ? categorySpendingSummary(recommendations)
+    : null;
+  const recommendationCards = recommendations.map((recommendation) => {
+    const sourceIssue = sourceIssues.find(
+      (candidate) => candidate.issueId === recommendation.sourceIssueId,
+    );
+    return {
+      recommendation,
+      copy:
+        isCategorySpending && sourceIssue
+          ? categorySpendingCopy(sourceIssue, recommendation)
+          : { title: recommendation.title, description: recommendation.description },
+    };
+  });
 
   const load = useCallback(async () => {
     if (!diagnosisId || !issueId) return;
     const requestId = ++requestIdRef.current;
     setIsLoading(true);
     setError(null);
+    setRelatedIssuesError(false);
     setIssue(null);
     setRecommendations([]);
+    setSourceIssues([]);
     setExplanation(null);
     setExplanationError(null);
     setSelectedRecommendationId(null);
@@ -76,8 +101,22 @@ export function DiscoveryInsightDetailScreen({
         loadAllPages((page) => recommendationApi.getRecommendations(page)),
       ]);
       if (requestId !== requestIdRef.current) return;
+      let relatedIssues = [nextIssue];
+      if (isCategorySpendingIssue(nextIssue)) {
+        try {
+          relatedIssues = await loadAllPages((page) =>
+            diagnosisApi.getIssues(diagnosisId, page),
+          );
+        } catch {
+          if (requestId === requestIdRef.current) setRelatedIssuesError(true);
+        }
+      }
+      if (requestId !== requestIdRef.current) return;
       setIssue(nextIssue);
-      setRecommendations(recommendationsForIssue(allRecommendations, nextIssue));
+      setSourceIssues(relatedIssues);
+      setRecommendations(
+        recommendationsForDetail(allRecommendations, relatedIssues, nextIssue),
+      );
 
       try {
         const coach = await coachApi.getInefficiencyExplanation({
@@ -146,27 +185,74 @@ export function DiscoveryInsightDetailScreen({
                   {discoveryDomainLabel(issue.domain)}
                 </Text>
               </View>
-              <Text style={styles.title}>{issue.title}</Text>
+              <Text style={styles.title}>
+                {isCategorySpending && recommendations.length > 1
+                  ? `소비가 늘어난 항목 ${recommendations.length}개`
+                  : issue.title}
+              </Text>
             </View>
 
-            <View style={styles.adviceSection}>
-              <Image
-                accessibilityLabel="발견 근거를 설명하는 도리"
-                contentFit="contain"
-                source={require('@/assets/images/discovery/discovery_detail_advice.png')}
-                style={styles.adviceImage}
-              />
-              <View style={styles.adviceBubble}>
-                {/* 도리는 진단이 계산한 근거를 말한다. AI 조언은 추천 아래 별도 자리에 둔다. */}
+            {isCategorySpending ? (
+              <View style={styles.spendingAdviceSection}>
+                <Image
+                  accessibilityLabel="예상 절약 효과를 안내하는 도리"
+                  contentFit="contain"
+                  source={require('@/assets/images/discovery/discovery_detail_advice.png')}
+                  style={styles.spendingAdviceImage}
+                />
+                <View style={styles.spendingSpeechBubble}>
+                  <View pointerEvents="none" style={styles.spendingSpeechTail} />
+                  <Text style={styles.spendingAdviceText}>
+                    {spendingSummary ? (
+                      <>
+                        {spendingSummary.isComplete
+                          ? '전부 줄이면 1년간 약 '
+                          : '절약액이 계산된 항목을 줄이면 1년간 약 '}
+                        <Text style={styles.spendingAdviceAmount}>
+                          {spendingSummary.amount}원
+                        </Text>
+                        {' 아낄 수 있어요.'}
+                      </>
+                    ) : (
+                      '예상 절약액을 아직 계산할 수 없어요.'
+                    )}
+                  </Text>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.adviceSection}>
+                <View style={styles.adviceHeader}>
+                  <Image
+                    accessibilityLabel="발견 근거를 설명하는 도리"
+                    contentFit="contain"
+                    source={require('@/assets/images/discovery/discovery_detail_advice.png')}
+                    style={styles.adviceImage}
+                  />
+                  <View style={styles.adviceHeaderCopy}>
+                    <Text style={styles.adviceEyebrow}>도리가 발견했어요</Text>
+                    <Text style={styles.adviceHeading}>이런 변화가 보여요</Text>
+                  </View>
+                </View>
                 <Text style={styles.adviceText}>{issue.description}</Text>
               </View>
-            </View>
+            )}
 
             <View style={styles.recommendationSection}>
-              <Text style={styles.sectionTitle}>이렇게 바꿔볼 수 있어요</Text>
-              <Text style={styles.sectionDescription}>
-                이 발견 내용과 연결된 추천을 보여드려요.
+              <Text style={styles.sectionTitle}>
+                {isCategorySpending
+                  ? '소비를 이렇게 줄여볼 수 있어요'
+                  : '이렇게 바꿔볼 수 있어요'}
               </Text>
+              {isCategorySpending ? (
+                <Text style={styles.sectionDescription}>
+                  같은 진단에서 늘어난 소비 항목을 최대 3개 보여드려요.
+                </Text>
+              ) : null}
+              {relatedIssuesError ? (
+                <Text style={styles.sectionDescription}>
+                  다른 소비 항목을 불러오지 못했어요. 아래로 당겨 다시 시도해 주세요.
+                </Text>
+              ) : null}
 
               <View style={styles.recommendationList}>
                 {recommendations.length === 0 ? (
@@ -175,7 +261,7 @@ export function DiscoveryInsightDetailScreen({
                   </Text>
                 ) : null}
 
-                {recommendations.map((recommendation, index) => (
+                {recommendationCards.map(({ recommendation, copy }, index) => (
                   <View key={recommendation.recommendationId}>
                     <Pressable
                       accessibilityRole="button"
@@ -188,25 +274,27 @@ export function DiscoveryInsightDetailScreen({
                         styles.recommendationCard,
                         index === 0 && styles.recommendedCard,
                       ]}>
-                      <View style={styles.recommendationCopy}>
+                      <View style={styles.recommendationHeader}>
                         <Text style={styles.recommendationTitle}>
-                          {recommendation.title}
+                          {copy.title}
                         </Text>
-                        <Text style={styles.recommendationDetail}>
-                          {recommendation.description}
-                        </Text>
-                        {recommendation.effect.annualCostSaving !== null ? (
-                          <Text style={styles.recommendationDetail}>
-                            연 {formatNumber(recommendation.effect.annualCostSaving)}
-                            원 절약 예상
-                          </Text>
+                        {index === 0 &&
+                        (!isCategorySpending || recommendations.length > 1) ? (
+                          <View style={styles.recommendedBadge}>
+                            <Text style={styles.recommendedBadgeText}>
+                              {isCategorySpending ? '가장 추천' : '우선 추천'}
+                            </Text>
+                          </View>
                         ) : null}
                       </View>
-
-                      {index === 0 ? (
-                        <View style={styles.recommendedBadge}>
-                          <Text style={styles.recommendedBadgeText}>
-                            우선 추천
+                      <Text style={styles.recommendationDetail}>
+                        {copy.description}
+                      </Text>
+                      {recommendation.effect.annualCostSaving !== null ? (
+                        <View style={styles.savingRow}>
+                          <Text style={styles.savingLabel}>예상 절약</Text>
+                          <Text style={styles.savingValue}>
+                            연 {formatNumber(recommendation.effect.annualCostSaving)}원
                           </Text>
                         </View>
                       ) : null}
@@ -241,7 +329,9 @@ export function DiscoveryInsightDetailScreen({
                   '조언을 준비하고 있어요.'}
               </Text>
               {explanation ? (
-                <Text style={styles.disclaimer}>{explanation.disclaimer}</Text>
+                <View style={styles.disclaimerSection}>
+                  <Text style={styles.disclaimer}>{explanation.disclaimer}</Text>
+                </View>
               ) : null}
               {explanationError ? (
                 <Pressable
