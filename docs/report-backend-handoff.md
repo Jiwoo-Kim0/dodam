@@ -1,5 +1,9 @@
 # 월간 리포트 FE 화면 기준 API 협의안
 
+> **2026-09-16 백엔드 회신 완료.** API 19·20을 구현하면서 아래 항목을 확정했다. 항목별 답변과 최종 DTO·응답
+> 예시는 [backend/docs/improvement-report-contract.md](../backend/docs/improvement-report-contract.md) §4·§2에 있다.
+> 이 문서는 요청 원문으로 남겨 둔다.
+
 기준 화면: `frontend/src/pages/report/ReportScreen.tsx` 및 `frontend/src/types/report.types.ts`.
 현재 화면은 이미 프론트에서 구성되어 있으며, API 20 구현 전까지 거래·소비·자산·현금흐름 API를 조합한 **참고값**을 표시한다. 이 문서는 [백엔드의 API 20 선공유 계약](../backend/docs/improvement-report-contract.md)을 대체하는 확정 명세가 아니라, 화면을 실제 리포트 데이터로 연결하기 위한 추가 협의 요청이다.
 

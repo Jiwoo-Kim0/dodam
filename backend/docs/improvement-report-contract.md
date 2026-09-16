@@ -1,18 +1,33 @@
-# Day 11 Improvement / Report 응답 계약 (FE 선공유)
+# Day 11 Improvement / Report 응답 계약 (구현 확정본)
 
-작성일: 2026-09-16. **구현 전 선공유본이다.** Day 11에 구현할 API 19(Improvement)·20(Report)의 응답 형식을
-FE가 미리 화면을 만들 수 있도록 먼저 고정한다.
+작성일: 2026-09-16. **구현 완료본이다.** 2026-09-16 선공유본을 API 19(Improvement)·20(Report) 구현에 맞춰 갱신했다.
+FE 협의안([docs/report-backend-handoff.md](../../docs/report-backend-handoff.md))의 요청 항목은 §4에 항목별로 회신했다.
 
 기준 자료: [API 19](../../docs/API명세서/19%20Improvement%203cdbb6ea35648084a55bf4cec46b357d.csv),
 [API 20](../../docs/API명세서/20%20Report%203cdbb6ea3564807e98cfddff069700c1.csv),
 [ERD](../../docs/ERD/ERD%20작성%203c9bb6ea356480898bd9eddac2e6840d.md)(ImprovementAction / Report·DailyReport·MonthlyReport),
 [기획안](../../docs/기획안/기획안%20작성%203c3bb6ea35648097a693e0e321b3e9c0.md) 5-6(개선 결과 추적)·데일리 브리핑.
 
-> **바뀔 수 있는 것과 아닌 것**
-> - 바뀌지 않는다: 공통 봉투, 페이지 형식, 필드 이름, 타입, null 규칙, 에러 코드.
-> - 바뀔 수 있다: 계산식 세부(어떤 거래를 "절감"으로 볼지), 일부 필드가 구현 시점에 항상 null로 내려갈 가능성.
->   그 경우에도 **필드는 유지**한다 — FE가 옵셔널 체이닝만 하면 되도록.
-> 변경이 생기면 이 문서를 갱신하고 FE에 공유한다.
+> ## 선공유본에서 바뀐 것 (FE 확인 필요)
+>
+> 필드는 하나도 빠지지 않았다. 아래는 **추가**되거나 **계산 기준이 확정**된 항목이다.
+>
+> | # | 항목 | 선공유본 | 확정본 | 이유 |
+> | --- | --- | --- | --- | --- |
+> | 1 | `MonthlyReport.totalExpense` | "소비 집계와 같은 규칙"이면서 동시에 "`totalSaving`을 포함" | 숨기지 않은 EXPENSE **전부**(저축성 지출 포함) | 두 문장이 동시에 성립하지 않았다. 소비 집계(506)는 `NON_SPENDING`을 빼므로 `totalSaving`을 포함할 수 없다 |
+> | 2 | `totalSpending` (신규) | 없음 | 506 소비 정의(= `totalExpense − totalSaving`) | 화면마다 필요한 "지출"이 달라 둘 다 내려 준다. FE가 빼기로 추정하지 않게 |
+> | 3 | `MonthlySpendingPattern.ratioBase` (신규) | 없음 | `"TOTAL_SPENDING"` | `byCategory[].ratio`의 분모를 응답이 직접 밝힌다. 선공유 예시는 `bySpendingType` 합(1,850,000)과 카테고리 분모가 어긋나 있었다 |
+> | 4 | `dataStatus` (신규, Daily·Monthly) | 404 하나 | `READY` / `NO_TRANSACTIONS` / `INSUFFICIENT_DATA` | 협의안 3번. 미생성·거래 0건·계산 불가를 404 하나로 표현하지 않는다 |
+> | 5 | `/daily`·`/monthly`의 404 | 리포트 없으면 404 | **404 없음**. 없으면 생성해 200 | 위와 같은 이유. 404는 리포트 상세(#5)에만 남는다 |
+> | 6 | 기간 검증 | 없음 | 끝나지 않은 기간(오늘·이번 달)과 상한 초과는 **400** | 진행 중인 기간을 리포트로 굳히면 볼 때마다 숫자가 달라진다 |
+> | 7 | `UpcomingExpenses` | `yearMonth` 의미 불명확 | `yearMonth` = **집계할 월 그 자체**, 생략 시 오늘의 다음 달 | 선공유 예시(2026-08 리포트 → 2026-10)가 "생성 시점의 다음 달"이었다 |
+> | 8 | `UpcomingExpenses.partial`·`warnings` (신규) | `unavailableReason` 하나 | "못 만든 것"과 "덜 모은 것"을 분리 | 원본 하나가 비어도 카드 전체를 숨기면 쓸 수 있는 금액까지 사라진다 |
+> | 9 | `ActionComparison.unavailableReason` | `ACTION_NOT_COMPLETED` | `ACTION_NOT_MEASURABLE` | 완료 전(IN_PROGRESS)에도 측정한다. 측정하지 않는 것은 **취소된** 행동뿐이다 |
+> | 10 | `MonthlyGoalImpact.unavailableReason` (신규) | 없음 | `NO_HISTORY` / `NO_HISTORY_BEFORE_PERIOD` | 기록이 없어 못 낸 값과 0원을 구분한다 |
+> | 11 | `MonthlyReport.transactionCount` (신규) | 없음 | 그 달 INCOME·EXPENSE 거래 수 | 거래 0건과 "집계 실패"를 FE가 직접 확인할 수 있게 |
+> | 12 | `DailyReport`에 `totalSpending`·`totalSaving` (신규) | 없음 | 월간과 같은 정의 | 두 화면의 "지출"이 다른 뜻이 되지 않게 |
+
+---
 
 ## 0. 공통 규약 (기존 API와 동일)
 
@@ -25,20 +40,78 @@ FE가 미리 화면을 만들 수 있도록 먼저 고정한다.
 | 에러 | `{ "success": false, "data": null, "message": "...", "code": "RESOURCE_NOT_FOUND" }` |
 | 인증 | 전부 필수. 미인증 **401**, 남의 리소스·없는 리소스 모두 **404 `RESOURCE_NOT_FOUND`**(구분하지 않는다) |
 | 페이지 | `{ content, page, size, totalElements, totalPages, last }`. `page ≥ 0`, `size 1~100`, 위반 시 **400 `VALIDATION_ERROR`** |
-| 기간 | `startDate > endDate` → **400**. 기본 3개월·최대 12개월(`QueryPeriodPolicy`) |
+| 기간 | `startDate > endDate` → **400 `INVALID_REQUEST`**. 기본 3개월·최대 12개월(`QueryPeriodPolicy`) |
 | 날짜 | `yyyy-MM-dd`, 시각 `yyyy-MM-ddTHH:mm:ss`(Asia/Seoul), 월 `yyyy-MM` |
 | 금액 | **원 단위 정수**(JSON number). 소수·문자열 아님. 음수 가능 필드는 아래 표에 명시 |
-| 미계산 | 계산할 수 없으면 **`null`**이며 0으로 채우지 않는다. 0원과 "모름"은 다르다(추천 효과 8종이 이미 쓰는 규칙) |
+| 미계산 | 계산할 수 없으면 **`null`**이며 0으로 채우지 않는다. 0원과 "모름"은 다르다 |
 
-> **집계 API의 `null` 처리**: 데이터가 없어서 0인 경우와 계산 불가인 경우를 `total*`은 0으로,
-> `*Unavailable`/`unavailableReason`으로 구분한다. FE는 `unavailableReason != null`이면 수치 대신 안내 문구를 띄운다.
+> **`null`을 쓰는 곳이 세 종류다.** 셋을 같은 빈 상태로 그리면 안 된다.
+> 1. 값 자체가 `null` — 아직 측정하지 못했다(예: 측정 전 `actualMonthlySaving`).
+> 2. `unavailableReason != null` — 그 응답의 수치를 만들 수 없다. 수치 대신 안내 문구를 띄운다.
+> 3. `dataStatus != "READY"` — 리포트는 만들어졌지만 안이 비었거나 일부가 없다.
 
 ---
 
 ## 1. API 19 — Improvement (`/api/v1/improvements`)
 
-`ImprovementAction` = 사용자가 **실제로 수행한 개선 행동** 1건. `recommendation_id`로 개선안과 1:0..1로 이어진다
-(개선안을 ACCEPT하면 행동이 생긴다). 상태: `PLANNED`, `IN_PROGRESS`, `COMPLETED`, `CANCELED`.
+`ImprovementAction` = 사용자가 **실제로 수행한 개선 행동** 1건. `recommendation_id`로 개선안과 1:0..1로 이어진다.
+상태: `PLANNED`, `IN_PROGRESS`, `COMPLETED`, `CANCELED`.
+
+### 1-0. 행동은 추천 수락으로만 만들어진다
+
+API 19에는 행동을 만들거나 상태를 바꾸는 엔드포인트가 없다(명세 11개 중 쓰기는 재진단 하나뿐). 생명주기는
+추천 상태 변경(API 16)과 **같은 트랜잭션**에서 움직인다.
+
+| 추천 전이 | 행동 |
+| --- | --- |
+| `PENDING`/`DEFERRED` → `ACCEPTED` | 행동 생성(`PLANNED`, `plannedAt` = 수락 시각). 이미 있으면 **재사용**하고 기준선만 새로 잡는다 |
+| 측정 기준 기간 시작(수락 다음 달 1일)이 지남 | `IN_PROGRESS`, `startedAt` = 그 날 00:00 |
+| `ACCEPTED` → `COMPLETED` | `COMPLETED`, `completedAt` |
+| `ACCEPTED` → `REJECTED` / `DEFERRED` | `CANCELED`, `canceledAt` |
+
+**중복 없이 연결한다.** `uk_improvement_action_recommendation_id`(UNIQUE)가 추천 1건당 행동 1건을 DB에서
+보장한다. DEFERRED를 거쳐 다시 수락해도 새 행이 생기지 않는다 — 생기면 같은 개선안의 효과가 두 번 집계된다.
+
+### 1-0-1. 예상 효과와 실제 관측값
+
+| | 출처 | 언제 |
+| --- | --- | --- |
+| `expectedMonthlySaving` | `recommendation.monthly_cost_saving`(추천이 계산해 둔 예상치) | 추천 생성 시점 |
+| `actualMonthlySaving` | `improvement_action.monthly_cost_saving`(실행 후 실제 데이터로 측정) | 실행 후 1개월 이상 |
+
+**둘을 합치지 않는다.** 행동 테이블에는 예상치를 복사해 두지 않고 추천 행에서 조인해 읽는다(두 행이 어긋날
+여지를 없앤다). 측정 전이면 `actual*`과 `measuredAt`이 `null`이다 — 0원이 아니다.
+
+### 1-0-2. 측정 기준 (계산 기준 확정)
+
+```
+ ...  6월   7월   8월  │   9월   │  10월  11월  12월  ...
+     └──── before ────┘ 수락한 달 └──── after ─────┘
+```
+
+- **before** = 수락 월 직전 3개 **완료** 월. 수락 시점에 스냅샷으로 고정한다.
+- **after** = 수락 다음 달부터 최대 3개 **완료** 월. 완료 월이 0개면 아직 측정할 수 없다.
+- 수락한 달과 진행 중인 달은 **양쪽 모두에서 뺀다.** 20일치 소비를 한 달치와 비교하면 반드시 "개선"으로 보인다.
+- 개월 수가 다를 수 있으므로 금액은 합계가 아니라 **월평균**으로 비교한다(잔액성 값인 부채는 시점 값).
+- 완료 월이 1 → 2 → 3으로 늘면 **다시 측정**해 창을 넓힌다. 3개월이 차면 더 재지 않는다 — 그 뒤의 변화는
+  이 행동의 결과라고 말할 수 없다. `measuredAt`은 마지막 측정 시각이다.
+- 배치 스케줄러가 없으므로 **조회 시점이 측정 시점**이다. 밀린 측정은 API 19 조회와 월간 리포트 생성이 따라잡는다.
+
+| 실측 항목 | 계산식 | 단위 |
+| --- | --- | --- |
+| `spendingReduction` | `max(0, before.월평균소비 − after.월평균소비)` | 월 |
+| `savingIncrease` | `max(0, after.월평균저축성지출 − before.월평균저축성지출)` | 월 |
+| `debtReduction` | `max(0, before.부채잔액 − after.부채잔액)` | 잔액 차 |
+| `interestSaving` | `max(0, before.월이자 − after.월이자)` | 월 |
+| `monthlyCostSaving` | `spendingReduction + interestSaving` | 월 |
+| `annualCostSaving` | `monthlyCostSaving × 12` | 연 |
+| `goalAdvancedDays` | `before.예상달성일 − after.예상달성일`(일). 한쪽이 없으면 `null` | 일 |
+
+값은 모두 **0 이상**이다. 악화된 경우는 0으로 기록하고, 방향과 실제 수치는 전후 비교(#4)의 `delta`·`improved`가
+보여 준다. 여기서 음수를 "절감"으로 더하면 합계가 상쇄된다.
+
+소비·저축의 정의는 506 소비 집계를 그대로 쓴다(숨긴 거래 제외, `NON_SPENDING`은 저축성 지출로 분리).
+월 이자는 `상환 중 대출 잔액 × 연이율 ÷ 1200`(원 단위 반올림)의 합이며, 상환일정 계산기의 월이율 정의와 같다.
 
 ### 공통 객체 `ImprovementAction`
 
@@ -51,18 +124,18 @@ FE가 미리 화면을 만들 수 있도록 먼저 고정한다.
   "type": "CANCEL_SUBSCRIPTION",
   "title": "쓰지 않는 구독을 정리하세요",
   "status": "COMPLETED",
-  "plannedAt": "2026-09-01T10:00:00",
-  "startedAt": "2026-09-02T09:30:00",
-  "completedAt": "2026-09-10T18:00:00",
+  "plannedAt": "2026-09-16T12:00:00",
+  "startedAt": "2026-10-01T00:00:00",
+  "completedAt": "2026-10-10T18:00:00",
   "canceledAt": null,
   "expectedMonthlySaving": 12000,
   "actualMonthlySaving": 11000,
-  "measuredAt": "2026-10-01T04:00:00"
+  "measuredAt": "2026-11-05T09:00:00"
 }
 ```
 
-- `expected*` = 추천이 계산해 둔 예상치, `actual*` = 실행 후 실제 데이터로 측정한 값. **둘을 합치지 않는다.**
-- 측정 전이면 `actual*`과 `measuredAt`이 `null`이다. 측정은 실행 후 최소 1개월 데이터가 쌓여야 가능하다.
+`goalId`·`domain`·`type`은 연결된 추천에서 읽는다(행동 행에 복사하지 않는다). `title`만 수락 당시 문구를
+보존하기 위해 복사한다.
 
 ### 엔드포인트
 
@@ -80,6 +153,8 @@ FE가 미리 화면을 만들 수 있도록 먼저 고정한다.
 | 10 | 월별 개선추이 | GET `/monthly-trend` | `startMonth?`, `endMonth?` | `MonthlyTrend` |
 | 11 | 재진단 요청 | POST `/rediagnose` | body `{ goalId? }` | `RediagnoseResult` |
 
+#2의 기간은 **수락 시각(`plannedAt`) 기준**이다. 완료·측정 시각으로 거르면 아직 실행 중인 행동이 사라진다.
+
 ### 1-1. `ImprovementSummary` (GET /summary)
 
 ```json
@@ -91,26 +166,24 @@ FE가 미리 화면을 만들 수 있도록 먼저 고정한다.
   "totalAnnualSaving": 372000,
   "totalDebtReduction": 1200000,
   "firstActionAt": "2026-07-02T09:30:00",
-  "lastMeasuredAt": "2026-10-01T04:00:00"
+  "lastMeasuredAt": "2026-11-05T09:00:00"
 }
 ```
 
-`byStatus`는 **4개 상태 키를 항상 모두** 포함한다(0이어도). FE가 키 존재 여부를 분기하지 않도록 —
-추천 요약(`RecommendationSummaryResponse`)이 이미 쓰는 규칙이다.
+`byStatus`는 **4개 상태 키를 항상 모두** 포함한다(0이어도). 합계는 **측정된 실측값만** 더한다.
+합계가 0이면서 `measuredActions: 0`이면 "효과가 0원"이 아니라 "아직 측정된 게 없다"는 뜻이다.
 
 ### 1-2. `ActionComparison` (GET /actions/{actionId}/comparison)
-
-기획안 5-6 "실행 전후의 금융 데이터를 비교하여 개선 효과를 수치화".
 
 ```json
 {
   "actionId": 12,
-  "status": "COMPLETED",
+  "status": "IN_PROGRESS",
   "beforePeriod": { "startDate": "2026-06-01", "endDate": "2026-08-31" },
-  "afterPeriod":  { "startDate": "2026-09-01", "endDate": "2026-11-30" },
+  "afterPeriod":  { "startDate": "2026-10-01", "endDate": "2026-10-31" },
   "metrics": [
     { "metric": "MONTHLY_SPENDING", "displayName": "월 소비금액",
-      "before": 1850000, "after": 1739000, "delta": -111000, "improved": true },
+      "before": 1500000, "after": 1000000, "delta": -500000, "improved": true },
     { "metric": "MONTHLY_SAVING", "displayName": "월 저축금액",
       "before": 400000, "after": 511000, "delta": 111000, "improved": true },
     { "metric": "DEBT_BALANCE", "displayName": "부채 잔액",
@@ -123,10 +196,13 @@ FE가 미리 화면을 만들 수 있도록 먼저 고정한다.
 ```
 
 - `delta = after − before`이며 **부호를 그대로** 내려준다. "좋아졌는지"는 `improved`가 알려준다
-  (소비는 줄어야 개선, 저축은 늘어야 개선이라 부호만으로 판단할 수 없다).
-- 비교 기간이 아직 안 찼으면 `metrics: []` + `unavailableReason: "AFTER_PERIOD_NOT_READY"`.
-  다른 값: `ACTION_NOT_COMPLETED`, `INSUFFICIENT_DATA`.
+  (소비는 줄어야 개선, 저축은 늘어야 개선이라 부호만으로 판단할 수 없다). 변화가 없으면 `improved: false`다.
+- 비교할 수 없으면 `metrics: []` + `unavailableReason`:
+  `ACTION_NOT_MEASURABLE`(취소된 행동), `BEFORE_SNAPSHOT_MISSING`(수락 시점 기준선을 못 만들었다),
+  `AFTER_PERIOD_NOT_READY`(실행 후 완료된 달이 아직 없다), `INSUFFICIENT_DATA`(관측된 지표가 하나도 없다).
 - `metric` 코드는 **확정**이며 늘어날 수 있다. FE는 모르는 코드를 만나면 `displayName`으로 렌더링한다.
+- `beforePeriod`·`afterPeriod`는 **저장된 스냅샷의 기간**이다. 조회 시점에 다시 계산하지 않는다
+  (`unavailableReason`이 있을 때만 정책이 계산한 예정 구간을 보여 준다).
 
 ### 1-3. `AmountTotal` (GET /savings, /debt-reduction, /spending-reduction, /saving-increase)
 
@@ -135,23 +211,27 @@ FE가 미리 화면을 만들 수 있도록 먼저 고정한다.
 ```json
 {
   "metric": "SAVINGS",
-  "totalAmount": 372000,
-  "monthlyAmount": 31000,
+  "totalAmount": 6000000,
+  "monthlyAmount": 500000,
   "currency": "KRW",
-  "measuredFrom": "2026-07-01",
-  "measuredTo": "2026-11-30",
-  "contributingActions": 3,
+  "measuredFrom": "2026-11-05",
+  "measuredTo": "2026-11-05",
+  "contributingActions": 1,
   "unavailableReason": null
 }
 ```
 
-`metric`: `SAVINGS` | `DEBT_REDUCTION` | `SPENDING_REDUCTION` | `SAVING_INCREASE`.
-측정된 행동이 없으면 `totalAmount: 0`, `contributingActions: 0`, `unavailableReason: null`
-(데이터가 없어서 0인 것이지 계산 불가가 아니다).
+| `metric` | `monthlyAmount` | `totalAmount` |
+| --- | --- | --- |
+| `SAVINGS` | Σ `monthlyCostSaving` | 월 금액 × 12 |
+| `SPENDING_REDUCTION` | Σ `spendingReduction` | 월 금액 × 12 |
+| `SAVING_INCREASE` | Σ `savingIncrease` | 월 금액 × 12 |
+| `DEBT_REDUCTION` | **`null`**(잔액 차라 월 개념이 없다) | Σ `debtReduction` |
+
+측정된 행동이 없으면 `totalAmount: 0`, `contributingActions: 0`, `measuredFrom/To: null`,
+`unavailableReason: null`. 데이터가 없어서 0인 것이지 계산 불가가 아니다.
 
 ### 1-4. `GoalImpactSummary` (GET /goal-impact)
-
-기획안 5-6 "목표 달성 예상 시점 3개월 단축" 화면.
 
 ```json
 {
@@ -169,23 +249,33 @@ FE가 미리 화면을 만들 수 있도록 먼저 고정한다.
 }
 ```
 
-- `advancedDays` 양수 = 앞당겨짐, 음수 = 밀림. `null`이면 한쪽 예상일을 계산할 수 없다.
-- ACTIVE 목표만 담는다. 목표가 없으면 `goals: []`.
+- `baselineForecastDate` = 그 목표에 연결된 **가장 이른** 개선 행동의 수락 시점 예상 달성일.
+  나중 행동의 기준선을 쓰면 먼저 실행한 행동이 앞당긴 만큼이 기준선에 이미 반영돼 효과가 사라진다.
+- `currentForecastDate` = 조회 시점 예상 달성일(목표 도메인의 계산을 그대로 부른다).
+- `advancedDays` 양수 = 앞당겨짐, 음수 = 밀림. `null`이면 `unavailableReason`을 본다:
+  `NO_CONTRIBUTING_ACTION`, `BASELINE_FORECAST_UNAVAILABLE`, `CURRENT_FORECAST_UNAVAILABLE`.
+  (저축속도가 0이면 예상 달성일이 없다. 0일 앞당겨진 것으로 꾸미지 않는다.)
+- ACTIVE 모으기 목표만 담는다. 목표가 없으면 `goals: []`.
 
 ### 1-5. `MonthlyTrend` (GET /monthly-trend)
 
 ```json
 {
-  "startMonth": "2026-06",
-  "endMonth": "2026-11",
+  "startMonth": "2026-07",
+  "endMonth": "2026-09",
   "months": [
-    { "yearMonth": "2026-06", "completedActions": 0, "monthlySaving": 0,
+    { "yearMonth": "2026-07", "completedActions": 0, "monthlySaving": 0,
       "spendingReduction": 0, "savingIncrease": 0, "debtReduction": 0 }
   ]
 }
 ```
 
-`months`는 **빈 달을 0으로 채워 연속**으로 내려준다. 차트가 구멍을 메우지 않아도 되도록.
+- `months`는 빈 달을 0으로 채워 **연속**으로 내려준다. 차트가 구멍을 메우지 않아도 되도록.
+- 월 배정 기준이 다르다. `completedActions`는 **완료된**(`completedAt`) 달, 금액 4종은 **측정된**(`measuredAt`) 달이다.
+  하나로 합치면 같은 행동이 두 달에 중복 집계된다.
+- 기본 구간은 **양 끝을 모두 생략했을 때만** 6개월이다(차트가 6개 점은 있어야 추세로 보인다).
+  한쪽만 주면 공용 정책(기본 3개월·최대 12개월)을 따른다. 월 범위 검증은 공용 `YearMonthPeriodPolicy`가
+  **실제 현재 월** 기준으로 한다(미래 월은 400).
 
 ### 1-6. `RediagnoseResult` (POST /rediagnose)
 
@@ -194,14 +284,47 @@ FE가 미리 화면을 만들 수 있도록 먼저 고정한다.
 ```
 
 - 신규 진단이면 **201 + `created: true`**, 중복 요청이 막혀 직전 진단을 돌려주면 **200 + `created: false`**.
-  (진단 실행 API `POST /api/v1/diagnoses`가 이미 쓰는 규약과 같다.)
-- 진행 중이면 **409 `DIAGNOSIS_IN_PROGRESS`**.
+- 진행 중이면 **409 `DIAGNOSIS_IN_PROGRESS`**. 없는 목표·남의 목표는 **404**.
+- 중복 방지는 진단 실행 API(`POST /api/v1/diagnoses`)의 정책을 그대로 쓴다 — 같은 날 같은 규칙 버전의 완료
+  진단이 있으면 재사용한다. `forceRefresh`는 열지 않는다(연타로 같은 날 진단이 쌓이지 않게).
 
 ---
 
 ## 2. API 20 — Report (`/api/v1/reports`)
 
 `Report`(종합) + `DailyReport` / `MonthlyReport`(하위). `(user_id, type, period)`당 1건.
+
+### 2-0. 생성·캐시·상태 (계산 기준 확정)
+
+**리포트는 조회 시점에 만들어진다**(배치 스케줄러가 없다).
+
+- 끝난 기간을 조회하면 저장본을 돌려주고, 없으면 만들어 저장한 뒤 돌려준다. **200이다.**
+- `READY`로 저장된 리포트는 **고정**이다. 같은 달을 다시 봐도 숫자와 `generatedAt`이 그대로다.
+- `NO_TRANSACTIONS`·`INSUFFICIENT_DATA`는 **다음 조회 때 다시 계산**한다. 금융망 동기화가 늦게 도착해
+  거래가 나중에 생기는 경우가 있다.
+- 하위 응답(#4 소비패턴, #6 목표변화, #8 개선행동 요약)은 **저장된 월간 리포트의 JSON을 읽는다.**
+  같은 달을 두 경로로 다시 집계하면 합계가 어긋난다. #7 예정비용만 조회 시점 계산이다(미래 스케줄).
+
+| 상태 | 뜻 | `unavailableReason` |
+| --- | --- | --- |
+| `READY` | 정상 생성. 수치를 보여 준다 | `null` |
+| `NO_TRANSACTIONS` | 기간은 끝났지만 거래가 0건. 합계는 0원이며 계산 불가가 아니다 | `"NO_TRANSACTIONS"` |
+| `INSUFFICIENT_DATA` | 핵심 집계를 만들지 못했다. 수치 대신 안내 문구 | `"INSUFFICIENT_DATA"` |
+
+### 2-0-1. 조회 가능 범위
+
+| 대상 | 기본값 | 허용 | 위반 |
+| --- | --- | --- | --- |
+| `/monthly` `yearMonth` | 직전 완료 월 | 직전 완료 월부터 **24개월 전**까지 | 이번 달·미래·상한 초과·형식 오류 → **400 `INVALID_REQUEST`** |
+| `/daily` `date` | 어제 | 어제부터 **400일 전**까지 | 오늘·미래·상한 초과 → **400** |
+| `/monthly/upcoming-expenses` `yearMonth` | 오늘의 **다음 달** | 12개월 뒤까지. 과거도 형식만 맞으면 받는다 | 12개월 초과 → **400** |
+| `/` (목록) `fromDate`·`toDate` | 최근 3개월 | 최대 12개월 | 시작 > 종료 → **400** |
+
+목록(#3)에는 **이미 생성된 리포트만** 나온다(조회한 적 없는 달은 아직 존재하지 않는다).
+정렬은 `periodStart DESC, reportId DESC`다 — `period`는 DAILY(`yyyy-MM-dd`)와 MONTHLY(`yyyy-MM`)가 섞인
+문자열이라 문자열 정렬로는 두 유형을 함께 늘어놓을 수 없다.
+
+### 엔드포인트
 
 | # | API | Method · Endpoint | Query/Path | 응답 `data` |
 | --- | --- | --- | --- | --- |
@@ -214,18 +337,14 @@ FE가 미리 화면을 만들 수 있도록 먼저 고정한다.
 | 7 | 다음달 예정비용 | GET `/monthly/upcoming-expenses` | `yearMonth?` | `UpcomingExpenses` |
 | 8 | 월간 개선행동 요약 | GET `/monthly/improvements` | `yearMonth?` | `MonthlyImprovements` |
 
-`yearMonth`는 `yyyy-MM`이며 형식이 틀리면 **400 `VALIDATION_ERROR`**. 생략하면 직전 완료 월.
-`date` 생략 시 어제(브리핑은 "전날에 대한" 요약이다 — 기획안).
-해당 기간 리포트가 없으면 **404 `RESOURCE_NOT_FOUND`**.
-
 ### 2-1. `ReportSummary` (목록 항목)
 
 ```json
 { "reportId": 91, "type": "MONTHLY", "period": "2026-08", "generatedAt": "2026-09-01T05:00:00" }
 ```
 
-`period`는 타입에 따라 `yyyy-MM-dd`(DAILY) 또는 `yyyy-MM`(MONTHLY)인 **문자열**이다.
-상세(#5)는 `type`에 따라 아래 두 형식 중 하나를 돌려주며, 공통 필드 `reportId`·`type`·`period`·`generatedAt`로 분기한다.
+상세(#5)는 `type`에 따라 아래 두 형식 중 하나를 돌려주며, 공통 필드 `reportId`·`type`·`period`·`generatedAt`로
+분기한다. **#5만 404가 있다**(없는 리포트·타인 리포트를 구분하지 않는다).
 
 ### 2-2. `DailyReport` (GET /daily)
 
@@ -235,23 +354,41 @@ FE가 미리 화면을 만들 수 있도록 먼저 고정한다.
   "type": "DAILY",
   "period": "2026-09-15",
   "generatedAt": "2026-09-16T05:00:00",
+  "dataStatus": "READY",
   "totalIncome": 0,
   "totalExpense": 47800,
-  "transactionCount": 4,
+  "totalSpending": 47800,
+  "totalSaving": 0,
+  "transactionCount": 2,
   "topCategories": [
-    { "categoryCode": "DINING", "categoryName": "외식", "amount": 32000, "count": 2 }
+    { "categoryCode": "DINING", "categoryName": "외식", "amount": 32000, "count": 1 },
+    { "categoryCode": "UNCATEGORIZED", "categoryName": "미분류", "amount": 15800, "count": 1 }
   ],
   "balanceChange": -47800,
   "notableEvents": [
     { "code": "SUBSCRIPTION_CHARGED", "message": "정기결제 1건이 결제되었습니다.", "amount": 12000 }
   ],
-  "coachMessage": null
+  "coachMessage": null,
+  "unavailableReason": null
 }
 ```
 
-- `coachMessage`는 **API 21의 응답을 여기에 끼워 넣지 않는다.** 별도 호출(`POST /api/v1/coach/...`)이며
-  이 필드는 나중에 브리핑 전용 문구가 생길 자리다. 당분간 `null`로 내려간다.
-- `balanceChange = totalIncome − totalExpense`. 음수 가능.
+- 합계 정의는 월간과 같다. `totalExpense = totalSpending + totalSaving`,
+  `balanceChange = totalIncome − totalExpense`(음수 가능).
+- `topCategories`는 **소비만** 담고 상위 5개다. 그 합은 `totalSpending`과 같고 `totalExpense`와는 다르다.
+  미분류는 `UNCATEGORIZED`/`미분류`로 내려간다.
+- `transactionCount`는 숨기지 않은 **INCOME·EXPENSE** 거래 수다(TRANSFER 제외 — 내 계좌 간 이동은 세지 않는다).
+- `notableEvents`는 **그날 실제로 관측된 사실**만 담는다. 코드는 4종이며 각각 SQL 한 줄로 되짚을 수 있다.
+
+| 코드 | 조건 | `amount` |
+| --- | --- | --- |
+| `NO_SPENDING` | 거래는 있는데 소비가 0원 | `0` |
+| `INCOME_RECEIVED` | 수입 > 0 | 그날 수입 합 |
+| `LARGE_EXPENSE` | 그날 최대 단일 소비 > 직전 30일 일평균 소비(일평균이 0이면 판정하지 않는다) | 그 지출 금액 |
+| `SUBSCRIPTION_CHARGED` | 그날 정기결제 결제 이력이 있다 | 그날 결제 합 |
+
+- **`coachMessage`는 API 21의 응답이 아니다.** 브리핑 전용 문구가 생길 자리이며 당분간 `null`이다.
+  "어제 소비가 목표 달성일을 며칠 바꿨다" 같은 인과 문장은 근거 계산이 따로 필요해 만들지 않는다.
 
 ### 2-3. `MonthlyReport` (GET /monthly)
 
@@ -261,20 +398,34 @@ FE가 미리 화면을 만들 수 있도록 먼저 고정한다.
   "type": "MONTHLY",
   "period": "2026-08",
   "generatedAt": "2026-09-01T05:00:00",
+  "dataStatus": "READY",
   "totalIncome": 3200000,
   "totalExpense": 1850000,
+  "totalSpending": 1450000,
   "totalSaving": 400000,
   "netCashflow": 1350000,
-  "previousMonth": { "totalIncome": 3200000, "totalExpense": 1960000, "totalSaving": 350000 },
-  "changeFromPreviousMonth": { "totalIncome": 0, "totalExpense": -110000, "totalSaving": 50000 },
+  "transactionCount": 4,
+  "previousMonth": { "totalIncome": 3200000, "totalExpense": 1910000, "totalSpending": 1560000, "totalSaving": 350000 },
+  "changeFromPreviousMonth": { "totalIncome": 0, "totalExpense": -60000, "totalSpending": -110000, "totalSaving": 50000 },
   "diagnosisId": 77,
-  "overallStatus": "CAUTION"
+  "overallStatus": "CAUTION",
+  "unavailableReason": null
 }
 ```
 
-- `previousMonth`가 없으면(첫 달) 해당 필드와 `changeFromPreviousMonth`가 **둘 다 `null`**이다.
-- `netCashflow = totalIncome − totalExpense`. `totalSaving`은 저축성 지출이며 `totalExpense`에 **포함**된다
-  (이중 차감하지 말 것 — 소비 집계와 같은 규칙이다).
+| 필드 | 정의 |
+| --- | --- |
+| `totalExpense` | 숨기지 않은 EXPENSE **전부**(저축성 지출 포함) |
+| `totalSpending` | 506 소비 정의(EXPENSE에서 `NON_SPENDING` 제외). 소비 화면·패턴 API와 같은 숫자 |
+| `totalSaving` | 저축성 지출(`NON_SPENDING`). `totalExpense`에 **포함**되며 이중 차감하지 않는다 |
+| `netCashflow` | `totalIncome − totalExpense` |
+| `diagnosisId`·`overallStatus` | 그 달 안에 **완료된 가장 최근 진단**. 없으면 둘 다 `null`(다른 달 진단을 끌어다 쓰지 않는다) |
+
+`totalExpense = totalSpending + totalSaving`이 항상 성립한다.
+
+**전월 비교**: 사용자의 첫 거래일보다 앞선 달은 비교 대상이 아예 없으므로 `previousMonth`와
+`changeFromPreviousMonth`가 **둘 다 `null`**이다. 이전 달이 존재하는데 거래가 0건이면 `null`이 아니라 0원이다.
+`changeFromPreviousMonth`는 부호를 그대로 둔다.
 
 ### 2-4. `MonthlySpendingPattern` (GET /monthly/spending-pattern)
 
@@ -282,17 +433,25 @@ FE가 미리 화면을 만들 수 있도록 먼저 고정한다.
 {
   "yearMonth": "2026-08",
   "totalExpense": 1850000,
+  "totalSpending": 1450000,
+  "ratioBase": "TOTAL_SPENDING",
   "byCategory": [
-    { "categoryCode": "DINING", "categoryName": "외식", "amount": 420000, "ratio": 0.2270, "count": 31 }
+    { "categoryCode": "UNCATEGORIZED", "categoryName": "미분류", "amount": 900000, "ratio": 0.6207, "count": 1 },
+    { "categoryCode": "DINING", "categoryName": "외식", "amount": 550000, "ratio": 0.3793, "count": 1 }
   ],
-  "bySpendingType": { "FIXED": 900000, "VARIABLE": 850000, "NON_SPENDING": 100000 },
-  "weekdayWeekend": { "weekday": 1200000, "weekend": 650000 },
-  "comparedToPrevious": { "amountDelta": -110000, "ratioDelta": -0.0561 }
+  "bySpendingType": { "FIXED": 900000, "VARIABLE": 550000, "NON_SPENDING": 400000 },
+  "weekdayWeekend": { "weekday": 1450000, "weekend": 0 },
+  "comparedToPrevious": { "amountDelta": -110000, "ratioDelta": -0.0705 }
 }
 ```
 
-`ratio`는 **0~1 소수 4자리**다. 퍼센트 변환은 FE가 한다(패턴 분석 API 3과 같은 규칙).
-`bySpendingType`은 3개 키를 항상 포함한다.
+- `ratio`는 **0~1 소수 4자리**다. 퍼센트 변환은 FE가 한다(패턴 분석 API 3과 같은 규칙).
+- **분모가 항목마다 다르다.** 섞으면 비율의 합이 1을 넘는다.
+  - `byCategory[].ratio` 분모 = `totalSpending`(`ratioBase`가 명시한다). 카테고리 집계는 소비만 담는다.
+  - `bySpendingType`은 3개 키를 항상 포함하고 합 = `totalExpense`.
+  - `weekdayWeekend`는 소비 기준이며 합 = `totalSpending`. 토·일이 주말이다.
+- `comparedToPrevious.amountDelta` = 그 달 소비 − 전월 소비(부호 그대로).
+  `ratioDelta` = `amountDelta ÷ 전월 소비`(증감률, 0~1 소수 4자리). 전월 소비가 0이면 `null`.
 
 ### 2-5. `MonthlyGoalImpact` (GET /monthly/goal-impact)
 
@@ -303,12 +462,22 @@ FE가 미리 화면을 만들 수 있도록 먼저 고정한다.
     { "goalId": 5, "goalName": "비상금 1,000만원 만들기",
       "startAmount": 3000000, "endAmount": 3400000, "contributed": 400000,
       "progressRatio": 0.34,
-      "forecastDateAtStart": "2028-03-31", "forecastDateAtEnd": "2027-12-31", "advancedDays": 91 }
+      "forecastDateAtStart": "2028-03-31", "forecastDateAtEnd": "2027-12-31", "advancedDays": 91,
+      "unavailableReason": null }
   ]
 }
 ```
 
-`goalId`를 주면 해당 목표 1건만, 남의 목표면 **404**.
+- 값은 **`goal_history`에서만** 읽는다. 목표 잔액·예상 달성일은 기록된 시점 값이라야 과거 달을 재현할 수 있다.
+  오늘의 잔액으로 지난달 리포트를 만들면 그 달의 변화가 아니라 오늘 상태가 나온다.
+- `startAmount` = 그 달 시작 **직전** 마지막 기록, `endAmount` = 그 달 마지막 기록.
+- `contributed = endAmount − startAmount`. `progressRatio = endAmount ÷ 목표 금액`(0~1 소수 4자리).
+- `advancedDays` 양수 = 그 달 동안 달성일이 앞당겨졌다.
+- `unavailableReason`: `NO_HISTORY`(그 목표의 기록이 아예 없다),
+  `NO_HISTORY_BEFORE_PERIOD`(그 달 안에 목표가 만들어져 시작값이 없다 — 끝값과 예상일은 그대로 준다).
+- 모으기 목표만 담는다(줄이기 목표에는 "모인 금액"·"예상 달성일" 개념이 없다). 삭제된 목표는 빼고, 그 달에
+  달성·취소된 목표는 남긴다.
+- `goalId`를 주면 해당 목표 1건만. 남의 목표·삭제된 목표·줄이기 목표는 모두 **404**.
 
 ### 2-6. `UpcomingExpenses` (GET /monthly/upcoming-expenses)
 
@@ -317,18 +486,33 @@ FE가 미리 화면을 만들 수 있도록 먼저 고정한다.
 ```json
 {
   "yearMonth": "2026-10",
+  "collectedFrom": "2026-10-01",
+  "collectedTo": "2026-10-31",
   "totalAmount": 1240000,
   "items": [
     { "sourceType": "CARD", "label": "카드 결제예정금액", "amount": 780000, "dueDate": "2026-10-14" },
     { "sourceType": "LOAN", "label": "대출 상환", "amount": 320000, "dueDate": "2026-10-25" },
     { "sourceType": "SUBSCRIPTION", "label": "정기결제", "amount": 140000, "dueDate": null }
   ],
+  "partial": false,
+  "warnings": [],
   "unavailableReason": null
 }
 ```
 
-`sourceType`: `CARD` | `LOAN` | `SUBSCRIPTION` | `SAVINGS` | `MINUS_ACCOUNT`.
-`dueDate`가 `null`인 것은 그 달 안에 여러 건이 흩어져 있다는 뜻이다(합계만 의미 있다).
+- `yearMonth`는 **집계할 월 그 자체**이며 생략하면 오늘의 다음 달이다.
+- 원본은 현금흐름 예측과 **같은 수집기**(`CashflowEventCollector`)다. 카드 청구·대출 상환·정기결제·적금 납입을
+  각자 다시 읽으면 같은 출금이 두 번 잡히거나(구독이 카드 청구서에 이미 들어 있는 경우) 한쪽만 잡힌다.
+  수집기가 dedupe 키로 중복을 막고, 확정할 수 없는 원본은 금액에 넣지 않고 사유로 남긴다.
+- `sourceType`: `CARD` | `LOAN` | `SUBSCRIPTION` | `SAVINGS` | `MINUS_ACCOUNT`. 수입(INFLOW)은 제외한다.
+- `dueDate`가 `null`인 것은 그 달 안에 여러 건이 흩어져 있다는 뜻이다(합계만 의미 있다).
+- **"못 만든 것"과 "덜 모은 것"을 구분한다.**
+  - `unavailableReason != null` → `totalAmount`가 `null`이고 수치 대신 안내 문구.
+    `PERIOD_ELAPSED`(이미 지난 월), `SOURCE_CONFLICT`(같은 예정이 원본마다 금액·날짜가 다르다),
+    `SOURCE_UNAVAILABLE`(원본 조회 자체가 실패했다).
+  - `partial: true` → 합계는 있지만 **과소집계**다. 수치를 보여 주되 "일부 빠졌을 수 있음"을 함께 표시한다.
+    사유는 `warnings`에 원본 코드 그대로 담는다(`PARTIALLY_ELAPSED`, `ACCOUNT_SCHEDULE_SOURCE_UNAVAILABLE`,
+    `CARD_SUBSCRIPTION_REQUIRES_BILLING_RECONCILIATION` 등).
 
 ### 2-7. `MonthlyImprovements` (GET /monthly/improvements)
 
@@ -345,6 +529,8 @@ FE가 미리 화면을 만들 수 있도록 먼저 고정한다.
 ```
 
 §1의 `ImprovementAction`을 **줄인 형태**다(리포트 화면에 필요한 필드만). 상세는 API 19 #3으로 간다.
+월 배정 기준은 API 19 월별 추이와 같다 — 건수는 각 시각(`completedAt`/`startedAt`/`canceledAt`)이 찍힌 달,
+`monthlySaving`은 그 달에 **측정된** 실측값 합이다. `actions`에는 그 달에 하나라도 해당한 행동이 들어간다.
 
 ---
 
@@ -352,9 +538,40 @@ FE가 미리 화면을 만들 수 있도록 먼저 고정한다.
 
 1. **`null`과 `0`을 구분해 렌더링**한다. `null` = 아직 측정 못 함(빈 상태 UI), `0` = 측정했는데 0원.
 2. **`unavailableReason`이 있는 응답**(`ActionComparison`, `AmountTotal`, `UpcomingExpenses`,
-   `GoalImpactSummary.goals[]`)은 그 값이 `null`이 아니면 수치 대신 안내 문구를 띄운다.
-3. **`byStatus`·`bySpendingType` 같은 맵은 키가 항상 전부 있다.** 반대로 `topCategories`·`items`·`goals`는
+   `GoalImpactSummary.goals[]`, `MonthlyGoalImpact.goals[]`)은 그 값이 `null`이 아니면 수치 대신 안내 문구를 띄운다.
+3. **`dataStatus`를 먼저 본다.** `READY`가 아니면 그 리포트의 수치는 "비었다"는 뜻이지 "실패"가 아니다.
+4. **`UpcomingExpenses.partial`은 숨김이 아니라 경고다.** 수치를 그대로 보여 주되 표시를 덧붙인다.
+5. **`byStatus`·`bySpendingType` 같은 맵은 키가 항상 전부 있다.** 반대로 `topCategories`·`items`·`goals`는
    빈 배열일 수 있다.
-4. **`delta`류는 부호가 그대로다.** 좋아졌는지는 `improved` 플래그로 판단한다.
-5. **AI 코치 문장은 리포트 응답에 들어 있지 않다.** 필요하면 API 21을 별도로 호출한다
+6. **`delta`류는 부호가 그대로다.** 좋아졌는지는 `improved` 플래그로 판단한다.
+7. **비율의 분모를 확인한다.** `byCategory[].ratio`는 `ratioBase`가 가리키는 값이 분모다.
+8. **AI 코치 문장은 리포트 응답에 들어 있지 않다.** 필요하면 API 21을 별도로 호출한다
    ([ai-coach.md](ai-coach.md)). 리포트의 `coachMessage`는 당분간 `null`이다.
+
+---
+
+## 4. FE 협의안 회신 (docs/report-backend-handoff.md)
+
+| 협의안 | 회신 |
+| --- | --- |
+| 1. 기준 월·`generatedAt`·데이터 부족 사유, 0원과 null 구분 | 기준 월은 직전 완료 월 유지. `generatedAt`은 `Report.createdAt`이며 `READY` 리포트는 고정된다. 사유는 `dataStatus` + `unavailableReason`(§2-0)으로 나눴다 |
+| 2. 금융 효율 점수 (`score`·`percentile` 등) | **제공하지 않는다.** 점수 산식과 비교 모집단이 확정되지 않았고, 근거 없는 점수를 API로 굳히면 되돌리기 어렵다. 그 자리에는 `MonthlyReport.overallStatus`(그 달 완료 진단의 종합 상태 `HEALTHY`/`CAUTION`/`RISK`)와 `diagnosisId`를 쓴다. 상세 근거는 진단 API로 간다. **현재 위험을 과거 점수에 적용하거나 점수에서 순위를 역산하지 않는다**는 FE 판단에 동의한다 |
+| 2. 금융 생활 패턴 (`status`·`title`·`description`·`evidencePeriod`) | **문구 목록은 제공하지 않는다.** 진단 문제(API 14 `/issues`)가 이미 `domain`·`type`·`severity`·`evidence`를 갖고 있어 같은 것을 두 번 정의하게 된다. 리포트에서는 `MonthlySpendingPattern`(관측치)만 주고, 문장이 필요하면 진단 문제를 쓴다 |
+| 2. 다음 달 예상 지출 | `UpcomingExpenses`로 제공(§2-6). **예측이 아니라 확정 스케줄**이다. 중복 제거는 현금흐름 수집기의 dedupe 키가 맡는다 — 카드 사용액을 다시 합산하지 않는다. `basis`에 해당하는 정보는 `partial`·`warnings`로 내려간다 |
+| 2. 주요 지표 (저축률·고정비 비중·카드 사용액·대출 잔액) | 리포트에 새로 넣지 않는다. `MonthlySpendingPattern.bySpendingType`(고정비 비중)과 `MonthlyReport`의 소득·소비·저축으로 저축률을 만들 수 있다. 카드 사용액·대출 잔액은 기존 개별 API가 정답을 갖고 있고, 리포트가 같은 숫자를 다시 정의하면 두 화면이 어긋난다 |
+| 2. 지난 소비 6개월 추이 | 리포트에 넣지 않는다. 기존 카테고리 추이 API를 그대로 쓴다. 필요하면 `/reports/monthly`를 6번 부르는 대신 개선 추이(API 19 #10)처럼 별도 엔드포인트를 다음 티켓에서 연다 |
+| 3. 상태 구분 | `dataStatus` 3종 + `unavailableReason`으로 나눴다(§2-0). 일시적 서버 오류는 기존대로 5xx이며 리포트 상태로 표현하지 않는다 |
+| 4. 월 선택 UI | 월간 24개월, 데일리 400일 전까지. 끝나지 않은 기간은 400. 미생성 월은 조회하면 생성된다(§2-0-1). 재생성은 `READY`가 아닌 리포트에만 일어난다 |
+| 데일리 브리핑 | `coachMessage`는 계속 `null`이다. 대신 `notableEvents` 4종을 **관측 사실**로 내려 준다(§2-2). 인과 문장은 만들지 않는다 — FE 판단에 동의한다 |
+
+---
+
+## 5. 구현 위치
+
+| 영역 | 경로 |
+| --- | --- |
+| 스키마 | `backend/src/main/resources/db/migration/V37__create_improvement_action.sql`, `V38__create_report.sql` |
+| Improvement | `backend/src/main/java/com/ssafy/dodam/domain/improvement/` |
+| Report | `backend/src/main/java/com/ssafy/dodam/domain/report/` |
+| 추천 수락 연결 | `RecommendationStatusService` → `ImprovementActionRecorder` |
+| 테스트 | `ImprovementApiTest`(10), `ReportApiTest`(12), `ImprovementMeasurementPolicyTest`, `ReportPeriodPolicyTest` |
