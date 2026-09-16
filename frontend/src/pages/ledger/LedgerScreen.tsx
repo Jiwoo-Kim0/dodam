@@ -1,12 +1,12 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
+import { Alert } from 'react-native';
 
 import { AppHeader } from '@/components/appHeader/AppHeader';
+import { ScreenState } from '@/components/screenState/ScreenState';
 import { routes } from '@/constants/routes';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import { EMPTY_LEDGER_DRAFT } from '@/mocks/ledger';
-import { colors } from '@/styles';
 import type {
   LedgerTransaction,
   LedgerTransactionDraft,
@@ -254,29 +254,18 @@ export function LedgerScreen() {
           showBackButton
           title={view === 'calendar' ? '전체 내역' : '가계부'}
         />
-        <View style={styles.statusContainer}>
-          {error ? (
-            <>
-              <Text style={styles.statusTitle}>가계부를 불러오지 못했어요.</Text>
-              <Text style={styles.statusDescription}>
-                {__DEV__
-                  ? error.message
-                  : '네트워크 상태를 확인한 뒤 다시 시도해주세요.'}
-              </Text>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => void refetch()}
-                style={({ pressed }) => [
-                  styles.retryButton,
-                  pressed && styles.retryButtonPressed,
-                ]}>
-                <Text style={styles.retryButtonLabel}>다시 시도</Text>
-              </Pressable>
-            </>
-          ) : (
-            <ActivityIndicator color={colors.primary.green} size="small" />
-          )}
-        </View>
+        <ScreenState
+          description={
+            error
+              ? __DEV__
+                ? error.message
+                : '네트워크 상태를 확인한 뒤 다시 시도해주세요.'
+              : '가계부를 불러오고 있어요'
+          }
+          isLoading={!error}
+          onRetry={error ? () => void refetch() : undefined}
+          title={error ? '가계부를 불러오지 못했어요.' : undefined}
+        />
       </SafeAreaLayout>
     );
   }

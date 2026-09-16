@@ -43,23 +43,6 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.white,
     borderRadius: radius.card,
   },
-  stateContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 360,
-    paddingHorizontal: spacing[6],
-  },
-  stateTitle: {
-    ...typography.subtitle,
-    color: colors.textPrimary,
-    marginBottom: spacing[2],
-  },
-  stateText: {
-    ...typography.body1,
-    color: colors.textSecondary,
-    marginTop: spacing[2],
-    textAlign: 'center',
-  },
   /** 가계부·브리핑의 작은 카드 제목과 같은 15/20 규칙을 사용한다. */
   cardTitle: {
     color: colors.textPrimary,
