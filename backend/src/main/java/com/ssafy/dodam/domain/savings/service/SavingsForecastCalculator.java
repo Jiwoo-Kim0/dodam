@@ -3,6 +3,8 @@ package com.ssafy.dodam.domain.savings.service;
 import com.ssafy.dodam.domain.savings.dto.response.SavingsForecastResponse;
 import com.ssafy.dodam.domain.savings.repository.SavingsAccountRow;
 import com.ssafy.dodam.domain.savings.repository.SavingsPaymentRow;
+import com.ssafy.dodam.global.policy.EarlyTerminationRatePolicy;
+import com.ssafy.dodam.global.policy.InterestIncomeTaxPolicy;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -26,14 +28,14 @@ public class SavingsForecastCalculator {
         var reasons = new TreeSet<String>();
         List<String> assumptions = new ArrayList<>(List.of(
                 "MONTHLY_CONTRIBUTIONS", "ACTUAL_DAYS_365_SIMPLE_INTEREST",
-                "EXCLUDES_TAX_AND_FEES", "NO_INTEREST_AFTER_MATURITY"));
+                "EXCLUDES_FEES", InterestIncomeTaxPolicy.POLICY_CODE, "NO_INTEREST_AFTER_MATURITY"));
         assumptions.add(early ? "ESTIMATED_EARLY_TERMINATION_RATE" : "FIXED_CURRENT_RATE");
         // 중도해지는 계약이율이 아니라 경과기간 구간별 중도해지이율을 적용한다. 이율 0%는 "이자가 없다"는
         // 계산된 답처럼 보이지만 실제 적금 중도해지에는 낮더라도 이율이 붙는다.
         long elapsedMonths = account.openingDate() == null ? 0
                 : Math.max(0, ChronoUnit.MONTHS.between(account.openingDate(), today));
         BigDecimal rate = early
-                ? SavingsEarlyTerminationRatePolicy.resolve(
+                ? EarlyTerminationRatePolicy.resolve(
                         account.interestRate() == null ? BigDecimal.ZERO : account.interestRate(), elapsedMonths)
                 : account.interestRate();
         List<SavingsPaymentRow> rows = allPayments.stream()
@@ -101,6 +103,8 @@ public class SavingsForecastCalculator {
         }
         Long expectedPrincipal = null;
         Long expectedInterest = null;
+        Long tax = null;
+        Long expectedNetInterest = null;
         Long expectedAmount = null;
         if (reasons.isEmpty() && futurePrincipal != null) {
             expectedPrincipal = SavingsAmounts.amount(BigDecimal.valueOf(principal).add(BigDecimal.valueOf(futurePrincipal)));
@@ -109,8 +113,11 @@ public class SavingsForecastCalculator {
             if (expectedPrincipal == null || expectedInterest == null) {
                 reasons.add("AMOUNT_OUT_OF_RANGE");
             } else {
+                // 예금(DepositInterestCalculator)과 같은 원천징수 절사 규칙이라 두 API의 수령액을 나란히 비교할 수 있다.
+                tax = InterestIncomeTaxPolicy.withhold(expectedInterest);
+                expectedNetInterest = expectedInterest - tax;
                 expectedAmount = SavingsAmounts.amount(
-                        BigDecimal.valueOf(expectedPrincipal).add(BigDecimal.valueOf(expectedInterest)));
+                        BigDecimal.valueOf(expectedPrincipal).add(BigDecimal.valueOf(expectedNetInterest)));
                 if (expectedAmount == null) {
                     reasons.add("AMOUNT_OUT_OF_RANGE");
                 }
@@ -119,10 +126,10 @@ public class SavingsForecastCalculator {
         return new SavingsForecastResponse(account.accountId(), account.accountNoMasked(), today, calculationDate,
                 reasons.isEmpty() ? "COMPLETE" : "UNAVAILABLE", List.copyOf(reasons),
                 assumptions.stream().sorted().toList(), rate,
-                early ? SavingsEarlyTerminationRatePolicy.POLICY_CODE : null,
-                early ? SavingsEarlyTerminationRatePolicy.describe(elapsedMonths) : null,
+                early ? EarlyTerminationRatePolicy.POLICY_CODE : null,
+                early ? EarlyTerminationRatePolicy.describe(elapsedMonths) : null,
                 early ? elapsedMonths : null, principal, futurePrincipal,
-                expectedPrincipal, expectedInterest, expectedAmount);
+                expectedPrincipal, expectedInterest, tax, expectedNetInterest, expectedAmount);
     }
 
     private BigDecimal weightedPrincipal(long amount, LocalDate from, LocalDate through) {

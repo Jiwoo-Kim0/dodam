@@ -3,6 +3,8 @@ package com.ssafy.dodam.domain.deposit.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.ssafy.dodam.global.policy.EarlyTerminationRatePolicy;
+
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -75,17 +77,17 @@ class DepositCalculationTest {
     void earlyTerminationRateFollowsTheElapsedMonthTiers(
             long elapsedMonths, String expectedRate, String expectedTier
     ) {
-        assertThat(DepositEarlyTerminationRatePolicy.resolve(new BigDecimal("3.00"), elapsedMonths))
+        assertThat(EarlyTerminationRatePolicy.resolve(new BigDecimal("3.00"), elapsedMonths))
                 .isEqualByComparingTo(new BigDecimal(expectedRate));
-        assertThat(DepositEarlyTerminationRatePolicy.describe(elapsedMonths)).isEqualTo(expectedTier);
+        assertThat(EarlyTerminationRatePolicy.describe(elapsedMonths)).isEqualTo(expectedTier);
     }
 
     /** 비율을 곱한 값이 최저이율보다 낮아지는 저금리 계약에서도 연 0.10%는 보장한다. */
     @Test
     void earlyTerminationRateNeverFallsBelowTheFloor() {
-        assertThat(DepositEarlyTerminationRatePolicy.resolve(new BigDecimal("0.10"), 36))
+        assertThat(EarlyTerminationRatePolicy.resolve(new BigDecimal("0.10"), 36))
                 .isEqualByComparingTo(new BigDecimal("0.1000"));
-        assertThat(DepositEarlyTerminationRatePolicy.resolve(BigDecimal.ZERO, 36))
+        assertThat(EarlyTerminationRatePolicy.resolve(BigDecimal.ZERO, 36))
                 .isEqualByComparingTo(new BigDecimal("0.1000"));
     }
 

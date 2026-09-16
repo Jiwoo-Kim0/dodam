@@ -131,7 +131,7 @@
 
 ### 중도해지이율 공시값 확보
 
-- [ ] 상품별 공시 중도해지이율을 확보해 `DepositEarlyTerminationRatePolicy`의 구간표를 대체한다.
+- [ ] 상품별 공시 중도해지이율을 확보해 `global/policy/EarlyTerminationRatePolicy`(2026-09-16 예·적금 통합)의 구간표를 대체한다.
 - 근거: 명세 11-1에 계산식이 없고 ERD `deposit_saving`에는 계약이율만 있어 중도해지이율 컬럼이 없다. 현재 값은 시중은행 관행으로 정한 **서비스 추정치**이며 응답의 `ratePolicy`·`rateTier`와 `ESTIMATED_EARLY_TERMINATION_RATE`로 드러낸다.
 - 선행 조건: `financial_product_option`에 중도해지이율을 담을 컬럼이 없다. ERD 변경과 상품 동기화 범위를 팀이 정해야 한다.
 - 완료 조건: 상품별 공시값으로 계산하고 추정 가정 코드를 응답에서 제거한다. 자료가 없는 상품은 추정치로 떨어진다는 사실을 응답에서 구분한다.
@@ -170,14 +170,14 @@
 
 ### 예금과 적금의 세금 처리 통일
 
-- [ ] 적금 예상금액에도 이자소득세를 반영하거나, 예금·적금 모두 세전/세후를 함께 반환하도록 맞춘다.
+- [x] (2026-09-16, 브랜치 `S15P21D105-537-deposit-savings-tax-policy`) 적금 예상금액에 예금과 같은 15.4% 원천징수를 적용했다. `SavingsForecastResponse`에 `tax`·`expectedNetInterest`를 추가하고 `expectedAmount`를 세후 합계로 바꿨으며, 세율·절사는 `global/policy/InterestIncomeTaxPolicy`로 공유한다. 가정 코드는 `EXCLUDES_TAX_AND_FEES` → `GENERAL_INTEREST_INCOME_TAX_15_4` + `EXCLUDES_FEES`. FE는 적금 API를 아직 호출하지 않아 영향 없음.
 - 근거: 예금(536)은 15.4%를 원천징수한 세후 수령액을, 적금(537)은 세전 금액을 반환한다. 두 예상금액을 나란히 놓으면 적금이 유리해 보인다.
 - 선행 조건: 두 이슈가 모두 병합돼야 한다.
 - 완료 조건: 같은 원금·이율·기간에서 두 API의 세금 처리가 같고 문서의 가정 코드가 일치한다.
 
 ### 중도해지이율 정책 통합과 공시값 확보
 
-- [ ] `SavingsEarlyTerminationRatePolicy`와 `DepositEarlyTerminationRatePolicy`를 공용 위치로 합친다.
+- [x] (2026-09-16, 같은 브랜치) 두 클래스를 지우고 `global/policy/EarlyTerminationRatePolicy` 하나로 합쳤다. 응답·계산값 변화 없음.
 - [ ] 상품별 공시 중도해지이율을 확보해 두 표를 대체한다.
 - 근거: 같은 구간표를 두 도메인에 따로 두었다. 536과 537이 서로 다른 브랜치에서 병합될 수 있어 의존을 만들지 않았다. 현재 값은 시중은행 관행 기반 **서비스 추정치**다.
 - 선행 조건: 두 이슈 병합. 공시값은 `financial_product_option`에 담을 컬럼이 없어 ERD 변경 검토가 필요하다.
