@@ -56,6 +56,10 @@ public class Recommendation {
     @Column(name = "goal_id")
     private Long goalId;
 
+    // 628: 후보의 근거가 된 진단 문제. 여러 문제를 합친 후보와 628 이전 행은 null이다. 진단 일치·소유권은 Store가 검증한다.
+    @Column(name = "source_issue_id")
+    private Long sourceIssueId;
+
     @Column(name = "domain", nullable = false, length = 50)
     private String domain;
 
@@ -143,6 +147,7 @@ public class Recommendation {
             Long userId,
             Long diagnosisId,
             Long goalId,
+            Long sourceIssueId,
             String domain,
             String type,
             String title,
@@ -155,6 +160,7 @@ public class Recommendation {
         this.userId = userId;
         this.diagnosisId = diagnosisId;
         this.goalId = goalId;
+        this.sourceIssueId = sourceIssueId;
         this.domain = domain;
         this.type = type;
         this.title = title;
@@ -176,6 +182,7 @@ public class Recommendation {
     /**
      * 새 추천을 PENDING 상태로 만든다.
      *
+     * @param sourceIssueId 근거가 된 진단 문제(628). 합성 후보면 null. 양수만 허용한다
      * @param priority 양수. 점수 계산은 548이 맡으므로 여기서는 값의 범위만 검사한다
      * @param effect null이면 {@link Effect#NONE}
      * @param generationKey 64자리 hex. {@code RecommendationGenerationKey}가 만든다
@@ -184,6 +191,7 @@ public class Recommendation {
             Long userId,
             Long diagnosisId,
             Long goalId,
+            Long sourceIssueId,
             String domain,
             String type,
             String title,
@@ -199,6 +207,9 @@ public class Recommendation {
         if (diagnosisId == null || diagnosisId <= 0) {
             throw new IllegalArgumentException("진단을 지정해야 합니다.");
         }
+        if (sourceIssueId != null && sourceIssueId <= 0) {
+            throw new IllegalArgumentException("sourceIssueId는 양수여야 합니다: " + sourceIssueId);
+        }
         requireText("domain", domain, 50);
         requireText("type", type, 50);
         requireText("title", title, 255);
@@ -212,7 +223,7 @@ public class Recommendation {
         if (now == null) {
             throw new IllegalArgumentException("생성 시각이 필요합니다.");
         }
-        return new Recommendation(userId, diagnosisId, goalId, domain, type, title, description,
+        return new Recommendation(userId, diagnosisId, goalId, sourceIssueId, domain, type, title, description,
                 priority, effect == null ? Effect.NONE : effect, generationKey, now);
     }
 

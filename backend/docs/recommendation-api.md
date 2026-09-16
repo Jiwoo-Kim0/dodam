@@ -1,6 +1,6 @@
 # Recommendation API — 생성·조회 (S15P21D105-548) · 상태변경·이력 (S15P21D105-549) · 시뮬레이션 프리셋 (S15P21D105-587)
 
-작성일: 2026-09-13, 갱신 2026-09-15(587 §5.1)·2026-09-16(627 생성기 2종). 547 저장 기반([recommendation.md](recommendation.md)) 위에 API 16의 HTTP 경로 13개를 구현했다.
+작성일: 2026-09-13, 갱신 2026-09-15(587 §5.1)·2026-09-16(627 생성기 2종, 628 `sourceIssueId`). 547 저장 기반([recommendation.md](recommendation.md)) 위에 API 16의 HTTP 경로 13개를 구현했다.
 계획과 결정 배경은 [recommendation-api-plan.md](recommendation-api-plan.md), [simulation-587-plan.md](simulation-587-plan.md) §3에 있다.
 
 기준 자료: [API 16](../../docs/API명세서/16%20Recommendation%203cdbb6ea3564801eb1bbc55201aee86a.csv),
@@ -52,6 +52,7 @@
 `POST /api/v1/recommendations/generate` Body `{ diagnosisId, goalId? }` → 신규 1건 이상이면 **201**, 전부 재사용·후보 0건이면 **200**.
 
 응답 `{ diagnosisId, goalId, created, reused, items[]{recommendation, score, created}, skipped[]{issueId, issueType, reason} }`.
+`items[].recommendation.sourceIssueId`(628)는 그 추천을 만든 진단 문제 id다. FE는 `GET /diagnoses/{id}/issues`의 `issueId`와 이 값으로 문제별 추천을 고른다 — 627부터 같은 진단에 같은 domain/type 문제가 여러 개(카테고리별·대출별) 생기므로 정렬 순서로 대응시키면 틀린다. 여러 문제를 합친 후보와 628 이전에 만든 추천은 null이다(재생성해도 기존 행을 돌려주므로 채워지지 않는다).
 `goalId` 생략 시 진단의 goalId를 물려받는다. 후보 0건이면 `items` 빈 목록이고 `skipped`가 이유를 드러낸다(문제 0건이면 skipped도 빈 목록).
 같은 진단·같은 규칙 버전은 같은 generation_key → 재요청은 `reused`로 기존 행(상태·근거·priority 불변). 동시 요청은 사용자 행 잠금으로 직렬화된다.
 
@@ -71,14 +72,14 @@
 | `GET /recommendations` | `status?`(enum 외 400), `domain?`(`^[A-Z][A-Z0-9_]{0,49}$`), `page≥0`, `size 1~100` 기본 20 | `PageResponse<Recommendation>` | `createdAt DESC, id DESC` |
 | `GET /recommendations/summary` | 없음 | `total, byStatus{5종, 0 포함}, byDomain{}, expectedMonthlyCostSaving, expectedContributionAmount`(PENDING+ACCEPTED 합) | 0으로 채운 객체 |
 | `GET /recommendations/priorities` | `goalId?`(타인·삭제 → 404) | `diagnosisId, goalId, recommendations[]` — 최신 완료 진단(goalId 있으면 그 목표의)의 PENDING·DEFERRED를 `priority ASC, id ASC` | 완료 진단 없음 → `diagnosisId=null`, 빈 목록 |
-| `GET /recommendations/{id}` | | `recommendationId, diagnosisId, goalId, domain, type, title, description, priority, status, effect{…}, simulation{…}(§5.1), createdAt, updatedAt` | |
+| `GET /recommendations/{id}` | | `recommendationId, diagnosisId, sourceIssueId(628), goalId, domain, type, title, description, priority, status, effect{…}, simulation{…}(§5.1), createdAt, updatedAt` | |
 | `GET /{id}/reasons` | | `[{reasonId, code, description, evidence}]` `reasonId ASC` | 빈 배열 |
 | `GET /{id}/effect` | | `available, 8개 효과 필드, measuredAt(=createdAt), assumptions[]` | 모두 null → `available=false` |
 | `GET /{id}/goal-impact` | | `goalId, currentForecastDate, improvedForecastDate, advancedDays, contributionAmount, unavailableReason`(`NO_GOAL` / `NOT_CALCULATED` / null) | |
 
 ### 5.1 시뮬레이션 프리셋 `simulation` (587)
 
-`RecommendationResponse`가 나가는 모든 곳(생성 `items[].recommendation`, 목록 항목, priorities 항목, 상세, 상태변경 응답)에 같은 값으로 실린다.
+`RecommendationResponse`가 나가는 모든 곳(생성 `items[].recommendation`, 목록 항목, priorities 항목, 상세, 상태변경 응답)에 같은 값으로 실린다. `sourceIssueId`(628)도 같은 다섯 곳에 실린다.
 저장된 추천·근거를 명세 17 요청 본문 모양으로 재배열한 **실행 제안**이며 재계산·실행이 아니다. FE는 `request`를 그대로 또는 사용자가 고쳐서 `endpoint`에 POST한다.
 조립은 `RecommendationSimulationPresetAssembler`가 하고, 목록·priorities에서는 SAVING 추천의 근거를 `findAllOwnedIn`으로 한 번에 읽는다.
 
@@ -156,12 +157,17 @@ H2 (`.\gradlew.bat test --tests 'com.ssafy.dodam.domain.recommendation.*'`, 2026
 - `RecommendationSimulationPresetAssemblerTest` +2: 카테고리 프리셋 `{category: FOOD, monthlyReduction}`·코드 없음 `SNAPSHOT_FIELD_MISSING`·금액 없음 `EFFECT_AMOUNT_MISSING`, 대환 프리셋 `{accountNo: null, targetProductId, refinanceAmount: null}` + `ACCOUNT_NO_REQUIRED_BY_CLIENT`, 대상 상품 없음 `REFINANCE_TARGET_MISSING`.
 - `RecommendationApiTest` +1: 실제 진단(식비 +40,000, 대출 12% → 6% 대환 18,000 절감, 연체 대출)으로 추천 3건 생성 — 우선순위 대환(31) > 연체 비교(30) > 식비(26), 효과·프리셋·근거 evidence, 응답에 계좌번호 원문 없음, 상세·목록·재요청 `reused=3`, 카테고리 프리셋 그대로 실행 시 식비 140,000 → 100,000.
 
-MySQL: 스키마 변경 없음. 547 `RecommendationMySqlIntegrationTest` 3건은 `RECOMMENDATION_MYSQL_TEST_URL` 설정 시만 실행된다.
+628 (2026-09-16, `RecommendationApiTest` 10건·`RecommendationStoreTest` 19건 통과):
+
+- `RecommendationApiTest` +1: 실제 진단의 `issueId`가 생성·목록·priorities·상세·defer 응답의 `sourceIssueId`와 같고 재요청에도 유지. 627 사례에 같은 `LOAN/HIGH_INTEREST_RATE` 문제 2건이 각자의 `issueId`로 구분되는 검증 추가.
+- 저장·MySQL 검증은 [recommendation.md](recommendation.md) §10.
+
+MySQL: 628 `V36`(`source_issue_id`)은 MySQL 8.0에서 실측했다(recommendation.md §10). 547 `RecommendationMySqlIntegrationTest` 3건은 `RECOMMENDATION_MYSQL_TEST_URL` 설정 시만 실행된다.
 
 ## 9. 현재 제한사항과 인계
 
 - [ ] 카드·계좌·예적금 추천 없음. 진단 규칙(저사용 카드, 휴면 계좌 등)이 먼저다. 생성기를 추가하면 Collector가 자동으로 모은다. 대출은 627에서 대환 추천 1종만 추가했다(금리인하요구권·일부 상환 권고는 없음).
-- [ ] 추천 응답에 `sourceIssueId`가 없다. 후보에는 있지만 `recommendation` 테이블에 컬럼이 없어 저장·응답으로 이어지지 않는다. FE 발견 상세 화면의 문제별 추천 연결에 필요하며 627 범위에서 제외했다(remaining-work 627 절).
+- [x] (628, 2026-09-16) 추천 응답 `sourceIssueId` 추가. 문제별 추천 조회 API(`GET /diagnoses/{id}/issues/{issueId}/recommendations`)는 FE가 응답 필드로 충분하다고 해 두지 않았다.
 - [ ] 군집 α = 0. 545 군집 연동 후 `RecommendationPriorityPolicy`에 보조 점수를 더한다.
 - [ ] ACCEPT 시 `improvement_action` 생성은 Improvement 이슈. 여기서는 훅을 두지 않았다. 시뮬레이션 실행 결과를 추천에 되돌려 연결하는 것(추천 id 저장)도 같은 이슈에서 계약을 정한다 — 587은 추천 → 시뮬레이션 방향만 연결했다.
 - [ ] `annualCostSaving = monthly × 12`, 우선순위 가중치, 같은 상태 재요청 409는 서비스 결정이다. 팀 합의가 다르면 생성기 버전(`548.1`)을 올린다.
