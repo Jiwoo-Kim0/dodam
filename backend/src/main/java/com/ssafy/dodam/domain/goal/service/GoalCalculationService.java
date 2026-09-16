@@ -1,19 +1,15 @@
 package com.ssafy.dodam.domain.goal.service;
 
-import com.ssafy.dodam.domain.account.entity.Account;
-import com.ssafy.dodam.domain.account.repository.AccountRepository;
 import com.ssafy.dodam.domain.goal.dto.response.GoalForecastResponse;
 import com.ssafy.dodam.domain.goal.dto.response.GoalProgressResponse;
 import com.ssafy.dodam.domain.goal.dto.response.GoalRiskResponse;
 import com.ssafy.dodam.domain.goal.dto.response.RequiredSavingResponse;
 import com.ssafy.dodam.domain.goal.dto.response.SpendingGoalProgressResponse;
 import com.ssafy.dodam.domain.goal.entity.Goal;
-import com.ssafy.dodam.domain.goal.entity.GoalAccount;
 import com.ssafy.dodam.domain.goal.entity.GoalHistoryEvent;
 import com.ssafy.dodam.domain.goal.entity.GoalType;
 import com.ssafy.dodam.domain.goal.entity.SavingGoal;
 import com.ssafy.dodam.domain.goal.entity.SpendingGoal;
-import com.ssafy.dodam.domain.goal.repository.GoalAccountRepository;
 import com.ssafy.dodam.domain.goal.repository.GoalRepository;
 import com.ssafy.dodam.domain.goal.repository.SavingGoalRepository;
 import com.ssafy.dodam.domain.goal.repository.SpendingGoalRepository;
@@ -68,8 +64,7 @@ public class GoalCalculationService {
     private final GoalRepository goalRepository;
     private final SavingGoalRepository savingGoalRepository;
     private final SpendingGoalRepository spendingGoalRepository;
-    private final GoalAccountRepository goalAccountRepository;
-    private final AccountRepository accountRepository;
+    private final GoalAllocationReader allocationReader;
     private final FinancialProfileRepository financialProfileRepository;
     private final JdbcSpendingAnalysisReader spendingAnalysisReader;
     private final GoalHistoryRecorder goalHistoryRecorder;
@@ -79,8 +74,7 @@ public class GoalCalculationService {
             GoalRepository goalRepository,
             SavingGoalRepository savingGoalRepository,
             SpendingGoalRepository spendingGoalRepository,
-            GoalAccountRepository goalAccountRepository,
-            AccountRepository accountRepository,
+            GoalAllocationReader allocationReader,
             FinancialProfileRepository financialProfileRepository,
             JdbcSpendingAnalysisReader spendingAnalysisReader,
             GoalHistoryRecorder goalHistoryRecorder,
@@ -89,8 +83,7 @@ public class GoalCalculationService {
         this.goalRepository = goalRepository;
         this.savingGoalRepository = savingGoalRepository;
         this.spendingGoalRepository = spendingGoalRepository;
-        this.goalAccountRepository = goalAccountRepository;
-        this.accountRepository = accountRepository;
+        this.allocationReader = allocationReader;
         this.financialProfileRepository = financialProfileRepository;
         this.spendingAnalysisReader = spendingAnalysisReader;
         this.goalHistoryRecorder = goalHistoryRecorder;
@@ -329,19 +322,16 @@ public class GoalCalculationService {
         SavingGoal savingGoal = savingGoalRepository.findById(goal.getId())
                 .orElseThrow(() -> new ResourceNotFoundException(GoalService.GOAL_NOT_FOUND_MESSAGE));
 
-        List<GoalAccount> links = goalAccountRepository.findAllByGoalIdOrderByAccountIdAsc(goal.getId());
-        long current = links.isEmpty()
-                ? 0
-                : accountRepository.findAllById(links.stream().map(GoalAccount::getAccountId).toList()).stream()
-                        .mapToLong(Account::getBalance)
-                        .sum();
+        // 모인 금액 = 확보액(626 GoalAllocationReader: 예·적금 전액 + 입출금은 담은 금액). 시뮬레이션 기준선과 같은 정의다
+        GoalAllocationReader.GoalAllocation allocation = allocationReader.readGoal(userId, goal.getId());
+        long current = allocation.securedAmount();
         // 동기화로 계좌 잔액이 바뀐 뒤에도 저장된 모인 금액이 실제와 맞게 유지되도록 조회 시점에 갱신하고, 바뀌었으면 이력을 남긴다
         LocalDateTime now = goalClock.now();
-        if (updateAmount && goal.updateCurrentAmount(Math.max(0L, current), now)) {
+        if (updateAmount && goal.updateCurrentAmount(current, now)) {
             goalHistoryRecorder.record(goal, savingGoal, GoalHistoryEvent.AMOUNT_UPDATED, now);
         }
 
-        return new SavingContext(goal, savingGoal, Math.max(0L, current), links.size(), today);
+        return new SavingContext(goal, savingGoal, current, allocation.accounts().size(), today);
     }
 
     private SpendingContext spendingContext(Long userId, Goal goal, SpendingGoal spendingGoal, LocalDate today) {

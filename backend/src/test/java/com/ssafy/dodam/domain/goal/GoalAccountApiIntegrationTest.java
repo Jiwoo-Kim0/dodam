@@ -158,8 +158,16 @@ class GoalAccountApiIntegrationTest {
                 .andExpect(jsonPath("$.data.accounts[0].accountType").value("DEMAND_DEPOSIT"))
                 .andExpect(jsonPath("$.data.accounts[0].balance").value(1_850_000))
                 .andExpect(jsonPath("$.data.accounts[0].contributionAmount").value(nullValue()))
+                // 626: 기여액이 null인 링크는 잔액 전체가 이 목표에 담긴 것으로 읽는다(구 방식 호환)
+                .andExpect(jsonPath("$.data.accounts[0].allocatedToThisGoal").value(1_850_000))
+                .andExpect(jsonPath("$.data.accounts[0].allocatedElsewhere").value(0))
+                .andExpect(jsonPath("$.data.accounts[0].availableToAllocate").value(0))
+                .andExpect(jsonPath("$.data.accounts[0].shortfallAmount").value(0))
+                .andExpect(jsonPath("$.data.accounts[0].allocationStatus").value("OK"))
                 .andExpect(jsonPath("$.data.accounts[1].accountId").value(12))
                 .andExpect(jsonPath("$.data.accounts[1].status").value("INACTIVE"))
+                .andExpect(jsonPath("$.data.accounts[1].allocatedToThisGoal").value(600_000))
+                .andExpect(jsonPath("$.data.accounts[1].availableToAllocate").value(0))
                 .andExpect(jsonPath("$.data.accounts[*].accountNo").doesNotExist());
 
         // 목표의 모인 금액·진행률이 갱신된다
@@ -174,6 +182,68 @@ class GoalAccountApiIntegrationTest {
                 "SELECT user_id, account_type FROM goal_account WHERE goal_id = ? AND account_id = 12", goalId);
         assertThat(row.get("user_id")).isEqualTo(userId);
         assertThat(row.get("account_type")).isEqualTo("SAVINGS");
+    }
+
+    /**
+     * 626 확보액 정의: 입출금 링크의 `contribution_amount`가 있으면 그 금액만, 없으면 잔액 전체. 같은 입출금 계좌가 다른 목표에도
+     * 담겨 있으면 그만큼 `allocatedElsewhere`·가용액이 줄고, 실제 잔액이 총 할당 아래로 내려가면 계좌 단위 부족을 표시한다.
+     * 담기 API는 MR-B에서 추가되므로 여기서는 할당 행을 직접 넣어 읽기 경로만 검증한다.
+     */
+    @Test
+    void demandDepositContributionIsReadAsAllocatedAmountAndSharedAcrossGoals() throws Exception {
+        long goalA = createSaving("A 목표", 3_000_000);
+        long goalB = createSaving("B 목표", 1_000_000);
+        link(goalA, List.of(MAIN_ID, SAVINGS_ID));
+        jdbcTemplate.update("UPDATE goal_account SET contribution_amount = 500000 WHERE goal_id = ? AND account_id = ?",
+                goalA, MAIN_ID);
+        jdbcTemplate.update(
+                "INSERT INTO goal_account (user_id, goal_id, account_id, account_type, contribution_amount) VALUES (?, ?, ?, 'DEMAND_DEPOSIT', 300000)",
+                userId, goalB, MAIN_ID);
+
+        // A 확보액 = 입출금 담은 500,000 + 적금 전액 600,000. 잔액 1,850,000 중 다른 목표(B)에 300,000이 담겨 있다
+        mockMvc.perform(get("/api/v1/goals/" + goalA + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalBalance").value(1_100_000))
+                .andExpect(jsonPath("$.data.accounts[0].accountId").value(11))
+                .andExpect(jsonPath("$.data.accounts[0].balance").value(1_850_000))
+                .andExpect(jsonPath("$.data.accounts[0].contributionAmount").value(500_000))
+                .andExpect(jsonPath("$.data.accounts[0].allocatedToThisGoal").value(500_000))
+                .andExpect(jsonPath("$.data.accounts[0].allocatedElsewhere").value(300_000))
+                .andExpect(jsonPath("$.data.accounts[0].availableToAllocate").value(1_050_000))
+                .andExpect(jsonPath("$.data.accounts[0].shortfallAmount").value(0))
+                .andExpect(jsonPath("$.data.accounts[0].allocationStatus").value("OK"))
+                .andExpect(jsonPath("$.data.accounts[1].allocatedToThisGoal").value(600_000));
+
+        // 목표 계산(510)도 같은 정의를 쓴다: 연결 계좌 잔액 합 2,450,000이 아니라 확보액 1,100,000. 조회 시점에 저장값도 갱신된다
+        mockMvc.perform(get("/api/v1/goals/" + goalA + "/progress").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.currentAmount").value(1_100_000));
+        mockMvc.perform(get("/api/v1/goals/" + goalA).header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.currentAmount").value(1_100_000));
+        mockMvc.perform(get("/api/v1/goals/" + goalB + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalBalance").value(300_000))
+                .andExpect(jsonPath("$.data.accounts[0].allocatedElsewhere").value(500_000));
+
+        // 실제 출금으로 잔액 700,000: 총 할당 800,000이 잔액을 100,000 넘는다. 설정액은 유지하고 부족만 표시, 가용액 0
+        jdbcTemplate.update("UPDATE account SET balance = 700000 WHERE account_id = ?", MAIN_ID);
+        mockMvc.perform(get("/api/v1/goals/" + goalA + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalBalance").value(1_100_000))
+                .andExpect(jsonPath("$.data.accounts[0].allocatedToThisGoal").value(500_000))
+                .andExpect(jsonPath("$.data.accounts[0].availableToAllocate").value(0))
+                .andExpect(jsonPath("$.data.accounts[0].shortfallAmount").value(100_000))
+                .andExpect(jsonPath("$.data.accounts[0].allocationStatus").value("NEEDS_ADJUSTMENT"));
+
+        // B를 삭제하면 그 할당은 가용액 계산에서 빠진다(삭제 목표의 링크는 합산하지 않는다)
+        mockMvc.perform(delete("/api/v1/goals/" + goalB).header(HttpHeaders.AUTHORIZATION, bearer)).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/goals/" + goalA + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.accounts[0].allocatedElsewhere").value(0))
+                .andExpect(jsonPath("$.data.accounts[0].availableToAllocate").value(200_000))
+                .andExpect(jsonPath("$.data.accounts[0].shortfallAmount").value(0))
+                .andExpect(jsonPath("$.data.accounts[0].allocationStatus").value("OK"));
     }
 
     @Test
