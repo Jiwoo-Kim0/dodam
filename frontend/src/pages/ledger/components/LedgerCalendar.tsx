@@ -202,6 +202,11 @@ export function LedgerCalendar({
 
   const feedGroups = groupsByDateDesc.slice(0, visibleFeedDateCount);
   const hasMoreFeedDays = groupsByDateDesc.length > visibleFeedDateCount;
+  const emptyFeedMessage = searchQuery.trim()
+    ? '검색 결과가 없어요.'
+    : showHiddenTransactions
+      ? '숨긴 거래 내역이 없어요.'
+      : '거래 내역이 없어요.';
 
   const handleLoadMoreFeed = () => {
     if (!hasMoreFeedDays) return;
@@ -263,7 +268,7 @@ export function LedgerCalendar({
         />
 
         <View style={[styles.card, styles.totalsCard]}>
-          <Text style={styles.totalPrimaryLabel}>이번 달 지출</Text>
+          <Text style={styles.totalPrimaryLabel}>{`${month}월 지출`}</Text>
           <Text style={styles.totalPrimaryValue}>{`${formatNumber(summary.expense)}원`}</Text>
           <View style={styles.totalSecondaryRow}>
             <View style={styles.totalSecondaryItem}>
@@ -289,6 +294,19 @@ export function LedgerCalendar({
             style={styles.searchInput}
             value={searchQuery}
           />
+          {searchQuery ? (
+            <Pressable
+              accessibilityLabel="검색어 지우기"
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={() => setSearchQuery('')}
+              style={({ pressed }) => [
+                styles.searchClearButton,
+                pressed && styles.rowPressed,
+              ]}>
+              <Text style={styles.searchClearIcon}>×</Text>
+            </Pressable>
+          ) : null}
         </View>
 
         <Pressable
@@ -338,6 +356,7 @@ export function LedgerCalendar({
                       <Pressable
                         accessibilityLabel={`${calendarDay.dateKey} 거래 보기`}
                         accessibilityRole="button"
+                        hitSlop={9}
                         onPress={() => handleSelectDay(calendarDay.dateKey)}
                         style={[
                           styles.calendarDayButton,
@@ -401,9 +420,7 @@ export function LedgerCalendar({
             ))
           ) : (
             <View style={styles.emptyState}>
-              <Text style={styles.emptyStateText}>
-                {showHiddenTransactions ? '숨긴 거래 내역이 없어요.' : '거래 내역이 없어요.'}
-              </Text>
+              <Text style={styles.emptyStateText}>{emptyFeedMessage}</Text>
             </View>
           )}
         </View>

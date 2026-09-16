@@ -45,10 +45,16 @@ export function TransactionForm({
   onSave,
   onDelete,
 }: TransactionFormProps) {
+  const [hasTouchedAmount, setHasTouchedAmount] = useState(false);
   const [isDatePickerVisible, setIsDatePickerVisible] = useState(false);
   const [isTimePickerVisible, setIsTimePickerVisible] = useState(false);
   const [selectorWidth, setSelectorWidth] = useState(0);
   const canSave = Number(draft.amountText) > 0;
+  const amountError = hasTouchedAmount && !canSave
+    ? draft.amountText
+      ? '금액은 1원 이상 입력해 주세요.'
+      : '금액을 입력해 주세요.'
+    : null;
   const typeLabel = draft.transactionType === 'income' ? '수입' : '지출';
 
   const pillProgress = useSharedValue(draft.transactionType === 'income' ? 1 : 0);
@@ -121,18 +127,27 @@ export function TransactionForm({
         </View>
 
         <View style={styles.formCard}>
-          <View style={styles.formRow}>
-            <Text style={styles.formLabel}>금액</Text>
-            <TextInput
-              accessibilityLabel="거래 금액"
-              keyboardType="number-pad"
-              onChangeText={(value) => onChange({ amountText: getDigits(value) })}
-              placeholder="금액을 입력하세요"
-              placeholderTextColor={colors.textTertiary}
-              style={styles.amountInput}
-              value={draft.amountText ? formatNumber(Number(draft.amountText)) : ''}
-            />
-            <Text style={styles.amountUnit}>원</Text>
+          <View style={styles.amountFieldSection}>
+            <View style={[styles.formRow, styles.formRowWithoutDivider]}>
+              <Text style={styles.formLabel}>금액</Text>
+              <TextInput
+                accessibilityHint={amountError ?? undefined}
+                accessibilityLabel="거래 금액"
+                keyboardType="number-pad"
+                onBlur={() => setHasTouchedAmount(true)}
+                onChangeText={(value) => onChange({ amountText: getDigits(value) })}
+                placeholder="금액을 입력하세요"
+                placeholderTextColor={colors.textTertiary}
+                style={styles.amountInput}
+                value={draft.amountText ? formatNumber(Number(draft.amountText)) : ''}
+              />
+              <Text style={styles.amountUnit}>원</Text>
+            </View>
+            {amountError ? (
+              <Text accessibilityLiveRegion="polite" style={styles.formValidationText}>
+                {amountError}
+              </Text>
+            ) : null}
           </View>
 
           <Pressable

@@ -2,7 +2,6 @@ import { StyleSheet } from 'react-native';
 
 import {
   colors,
-  componentSize,
   fontFamily,
   fontSize,
   radius,
@@ -128,7 +127,7 @@ export const styles = StyleSheet.create({
     lineHeight: 22,
   },
   expenseAmount: {
-    ...typography.display,
+    ...typography.headline,
     color: colors.textPrimary,
     marginTop: spacing[1],
   },
@@ -318,8 +317,8 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.ledger.softSurface,
   },
   transactionCategoryIcon: {
-    height: componentSize.touchTarget,
-    width: componentSize.touchTarget,
+    height: 36,
+    width: 36,
   },
   transactionCategoryIconCompact: {
     height: 36,
@@ -415,6 +414,19 @@ export const styles = StyleSheet.create({
     fontFamily: fontFamily.regular,
     fontSize: fontSize.body1,
     paddingVertical: spacing[2],
+  },
+  searchClearButton: {
+    alignItems: 'center',
+    borderRadius: radius.round,
+    height: 28,
+    justifyContent: 'center',
+    width: 28,
+  },
+  searchClearIcon: {
+    color: colors.textTertiary,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.subtitle,
+    lineHeight: 22,
   },
   hiddenTransactionsButton: {
     alignSelf: 'flex-end',
@@ -772,6 +784,22 @@ export const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     minHeight: 70,
+  },
+  amountFieldSection: {
+    borderBottomColor: colors.divider,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingBottom: spacing[2],
+  },
+  formRowWithoutDivider: {
+    borderBottomWidth: 0,
+  },
+  formValidationText: {
+    color: colors.ledger.expense,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.caption,
+    lineHeight: 16,
+    marginTop: -spacing[1],
+    paddingLeft: 96,
   },
   formLabel: {
     color: colors.textPrimary,
