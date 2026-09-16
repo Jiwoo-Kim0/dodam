@@ -20,8 +20,8 @@ import java.util.List;
  * @param assumptions       프리셋 값에 적용된 가정. {@code REDUCTION_APPLIES_TO_TOTAL_SPENDING}: 카테고리를 지정하지 않아 전체 소비 기준.
  *                          {@code TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT}: 추천에 goalId가 없어 저축액이 모든 모으기 목표에 남은 금액 비례로
  *                          배분됨. 619부터 저축 프리셋은 {@code request.goalId}로 대상 목표를 넘기므로 정상 자료에서는 나오지 않는다.
- *                          {@code ACCOUNT_NO_REQUIRED_BY_CLIENT}: 대환 프리셋의 {@code accountNo}가 null이며 명세 17 본문이 원문
- *                          계좌번호를 요구함 — 추천 근거의 {@code loanId}로 대출을 특정하는 본문 확장 전까지 FE가 채울 수 없다
+ *                          {@code ACCOUNT_NO_REQUIRED_BY_CLIENT}: (2026-09-16 이전 저장분) 대환 본문이 원문 계좌번호만 받던 때의
+ *                          가정. 지금은 {@code request.loanId}로 대출을 특정하므로 새로 만들어지지 않는다
  */
 public record RecommendationSimulationPreset(
         boolean available,

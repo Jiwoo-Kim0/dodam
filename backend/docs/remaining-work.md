@@ -16,7 +16,7 @@
 
 ### 대환 프리셋을 FE가 실행할 수 없다
 
-- [ ] 명세 17 `POST /simulations/loan/refinance` 본문은 `accountNo`(원문)만 받는데 FE는 마스킹 값만 가진다. 대환 추천 프리셋은 `accountNo: null` + 가정 `ACCOUNT_NO_REQUIRED_BY_CLIENT`로 나가며 그대로 POST하면 400이다. 619가 저축 프리셋에 `goalId`를 추가한 것처럼 `loanId?`(accountNo와 동시 지정 불가, 타인·없는 대출 404)를 본문에 추가하고 프리셋이 근거 `REFINANCE_INTEREST_SAVING`의 `loanId`를 싣도록 바꾼다. 같은 이유로 `GET /loans/{accountNo}/*` 계열도 FE가 호출할 수 없다(533 절 참고).
+- [x] (2026-09-16, 브랜치 `S15P21D105-587-refinance-loan-id`) `POST /simulations/loan/refinance`·`/loan/prepayment` 본문에 `loanId?`를 추가하고(accountNo와 정확히 하나), 프리셋이 evidence의 `loanId`를 싣는다. `GET /loans` 목록·상세에도 `loanId`를 추가해 FE가 값을 얻을 수 있다. 원문: 명세 17 `POST /simulations/loan/refinance` 본문은 `accountNo`(원문)만 받는데 FE는 마스킹 값만 가진다. 대환 추천 프리셋은 `accountNo: null` + 가정 `ACCOUNT_NO_REQUIRED_BY_CLIENT`로 나가며 그대로 POST하면 400이다. 619가 저축 프리셋에 `goalId`를 추가한 것처럼 `loanId?`(accountNo와 동시 지정 불가, 타인·없는 대출 404)를 본문에 추가하고 프리셋이 근거 `REFINANCE_INTEREST_SAVING`의 `loanId`를 싣도록 바꾼다. 같은 이유로 `GET /loans/{accountNo}/*` 계열도 FE가 호출할 수 없다(533 절 참고).
 
 ### 서비스 초기값으로 둔 기준
 

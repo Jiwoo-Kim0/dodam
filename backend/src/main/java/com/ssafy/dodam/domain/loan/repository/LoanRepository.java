@@ -10,4 +10,6 @@ public interface LoanRepository extends
         JpaSpecificationExecutor<Loan> {
 
     Optional<Loan> findByUserIdAndAccountNoHash(Long userId, String accountNoHash);
+
+    Optional<Loan> findByIdAndUserId(Long id, Long userId);
 }
