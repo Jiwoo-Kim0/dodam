@@ -1,50 +1,38 @@
+import { getTransactionCategoryIcon } from '@/constants/transactionCategoryIcons';
 import { colors } from '@/styles';
 import type {
   CategorySpendingApiResponse,
   DailySpendingApiResponse,
   SpendingMonthlySummaryApiResponse,
   TransactionApiResponse,
+  TransactionCategoryApiResponse,
 } from '@/types/ledgerApi.types';
 import type {
+  LedgerCategory,
   LedgerCategorySummary,
   LedgerDailyTotal,
   LedgerMonthlySummary,
   LedgerTransaction,
 } from '@/types/ledger.types';
 
-const CATEGORY_ID_BY_CODE: Readonly<Record<string, string>> = {
-  FOOD: 'food',
-  CAFE: 'cafeSnack',
-  GROCERY: 'convenienceMart',
-  CONVENIENCE: 'convenienceMart',
-  SUBSCRIPTION: 'subscription',
-  SHOPPING: 'shopping',
-  CULTURE: 'hobbyLeisure',
-  MEDICAL: 'healthFitness',
-  HOUSING: 'housingTelecom',
-  UTILITIES: 'housingTelecom',
-  BEAUTY: 'beauty',
-  PUBLIC_TRANSPORT: 'publicTransport',
-  TAXI: 'publicTransport',
-  TRANSPORT: 'publicTransport',
-  CAR: 'car',
-  TRAVEL: 'travelLodging',
-  EDUCATION: 'education',
-  TRANSFER: 'transfer',
-  ETC: 'etc',
-  UNCATEGORIZED: 'etc',
-};
-
 function getCategoryId(categoryCode: string | null): string {
-  if (!categoryCode) {
-    return 'etc';
-  }
-
-  return CATEGORY_ID_BY_CODE[categoryCode] ?? 'etc';
+  return categoryCode ?? 'ETC';
 }
 
-function getTransactionTime(transactionTime: string): string {
-  return transactionTime.slice(0, 5);
+function getTransactionTime(transactionTime: string | null): string {
+  return transactionTime?.slice(0, 5) ?? '00:00';
+}
+
+export function mapTransactionCategories(
+  categories: readonly TransactionCategoryApiResponse[],
+): LedgerCategory[] {
+  return categories.map((category) => ({
+    id: category.code,
+    code: category.code,
+    apiId: category.categoryId,
+    label: category.name,
+    icon: getTransactionCategoryIcon(category.code),
+  }));
 }
 
 export function mapTransaction(
@@ -126,7 +114,7 @@ export function mapCategorySpending(
   >();
 
   response.categories.forEach((category) => {
-    const categoryId = getCategoryId(category.code);
+    const categoryId = category.code;
     const current = categoriesById.get(categoryId);
 
     categoriesById.set(categoryId, {
@@ -142,7 +130,7 @@ export function mapCategorySpending(
 
   const topCategories = aggregatedCategories.slice(0, 3);
   const rankedCategoryIds = topCategories
-    .filter((category) => category.categoryId !== 'etc')
+    .filter((category) => category.categoryId !== 'ETC')
     .map((category) => category.categoryId);
 
   return topCategories.map((category) => ({
@@ -150,7 +138,7 @@ export function mapCategorySpending(
     amount: category.amount,
     ratio: Math.round(category.ratio),
     color:
-      category.categoryId === 'etc'
+      category.categoryId === 'ETC'
         ? colors.ledger.categoryOther
         : CATEGORY_COLORS[rankedCategoryIds.indexOf(category.categoryId)],
   }));

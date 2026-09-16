@@ -141,7 +141,7 @@ public class GoalController {
             @PathVariable @Positive Long goalId,
             @Valid @RequestBody UpdateGoalAccountsRequest request
     ) {
-        return ApiResponse.success(goalAccountService.replaceAccounts(principal.userId(), goalId, request.accountNos()));
+        return ApiResponse.success(goalAccountService.replaceAccounts(principal.userId(), goalId, request.accountIds()));
     }
 
     // ---------- S15P21D105-510 목표 진행률·필요 저축액·예상 달성일·소비목표 진행률·위험상태 ----------

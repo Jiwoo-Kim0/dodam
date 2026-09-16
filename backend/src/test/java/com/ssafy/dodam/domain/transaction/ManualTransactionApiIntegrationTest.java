@@ -128,15 +128,18 @@ class ManualTransactionApiIntegrationTest {
 
     @Test
     void createsManualTransactionWithCategoryDefaultSpendingType() throws Exception {
+        Map<String, Object> body = body(today.minusDays(1), "expense", 8500L, "  동네 분식  ", 12L, "cash", " 점심 ");
+        body.put("transactionTime", "13:05");
+
         MvcResult result = mockMvc.perform(post("/api/v1/transactions")
                         .header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(body(today.minusDays(1), "expense", 8500L, "  동네 분식  ", 12L, "cash", " 점심 "))))
+                        .content(json(body)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.transactionId").value(startsWith("MN-")))
                 .andExpect(jsonPath("$.data.transactionDate").value(today.minusDays(1).toString()))
-                .andExpect(jsonPath("$.data.transactionTime").value(nullValue()))
+                .andExpect(jsonPath("$.data.transactionTime").value("13:05:00"))
                 .andExpect(jsonPath("$.data.transactionType").value("EXPENSE"))
                 .andExpect(jsonPath("$.data.amount").value(8500))
                 .andExpect(jsonPath("$.data.balanceAfter").value(nullValue()))
@@ -154,16 +157,18 @@ class ManualTransactionApiIntegrationTest {
                 .andReturn();
 
         String id = objectMapper.readTree(result.getResponse().getContentAsString()).path("data").path("transactionId").asText();
-        Map<String, Object> row = jdbcTemplate.queryForMap("SELECT source_type, account_id, category_id, spending_type FROM `transaction` WHERE transaction_id = ?", id);
+        Map<String, Object> row = jdbcTemplate.queryForMap("SELECT source_type, account_id, category_id, spending_type, transaction_time FROM `transaction` WHERE transaction_id = ?", id);
         assertThat(row.get("source_type")).isEqualTo("MANUAL");
         assertThat(row.get("account_id")).isNull();
         assertThat(row.get("category_id")).isEqualTo(12L);
         assertThat(row.get("spending_type")).isEqualTo("FIXED");
+        assertThat(String.valueOf(row.get("transaction_time"))).startsWith("13:05");
 
-        // 등록 직후 목록·상세에 보인다
+        // 등록 직후 목록·상세에 보인다(JDBC reader가 시각을 그대로 읽는다)
         mockMvc.perform(get("/api/v1/transactions/" + id).header(HttpHeaders.AUTHORIZATION, bearer))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.merchantName").value("동네 분식"));
+                .andExpect(jsonPath("$.data.merchantName").value("동네 분식"))
+                .andExpect(jsonPath("$.data.transactionTime").value("13:05:00"));
         mockMvc.perform(get("/api/v1/transactions").header(HttpHeaders.AUTHORIZATION, bearer))
                 .andExpect(jsonPath("$.data.content", hasSize(2)));
     }
@@ -181,11 +186,56 @@ class ManualTransactionApiIntegrationTest {
                         .content(json(minimal)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.transactionType").value("INCOME"))
+                .andExpect(jsonPath("$.data.transactionTime").value(nullValue()))
                 .andExpect(jsonPath("$.data.merchantName").value(nullValue()))
                 .andExpect(jsonPath("$.data.categoryId").value(nullValue()))
                 .andExpect(jsonPath("$.data.spendingType").value(nullValue()))
                 .andExpect(jsonPath("$.data.paymentMethod").value(nullValue()))
                 .andExpect(jsonPath("$.data.memo").value(nullValue()));
+    }
+
+    @Test
+    void acceptsTimeWithSecondsAndRejectsUnparseableTime() throws Exception {
+        Map<String, Object> withSeconds = body(today, "EXPENSE", 1000L, null, null, null, null);
+        withSeconds.put("transactionTime", "23:59:30");
+        mockMvc.perform(post("/api/v1/transactions")
+                        .header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(withSeconds)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.transactionTime").value("23:59:30"));
+
+        Map<String, Object> invalid = body(today, "EXPENSE", 1000L, null, null, null, null);
+        invalid.put("transactionTime", "25:00");
+        mockMvc.perform(post("/api/v1/transactions")
+                        .header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(invalid)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+
+        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM `transaction` WHERE source_type = 'MANUAL'", Long.class)).isEqualTo(1L);
+    }
+
+    @Test
+    void listsSameDayTransactionsByTimeDescendingWithNullTimeLast() throws Exception {
+        String morning = createManual(today, "EXPENSE", 1000L, "아침", null, null, null, "08:30");
+        String noTime = createManual(today, "EXPENSE", 2000L, "시각 없음", null, null, null, null);
+        String evening = createManual(today, "EXPENSE", 3000L, "저녁", null, null, null, "19:45");
+
+        // fixture의 SSAFY 거래(1001, 오늘, 시각 null)도 같은 날이라 시각 없는 두 건은 ID 내림차순으로 이어진다
+        mockMvc.perform(get("/api/v1/transactions").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content", hasSize(4)))
+                .andExpect(jsonPath("$.data.content[0].transactionId").value(evening))
+                .andExpect(jsonPath("$.data.content[0].transactionTime").value("19:45:00"))
+                .andExpect(jsonPath("$.data.content[1].transactionId").value(morning))
+                .andExpect(jsonPath("$.data.content[1].transactionTime").value("08:30:00"))
+                .andExpect(jsonPath("$.data.content[2].transactionTime").value(nullValue()))
+                .andExpect(jsonPath("$.data.content[3].transactionTime").value(nullValue()));
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT transaction_time FROM `transaction` WHERE transaction_id = ?", Object.class, noTime)).isNull();
     }
 
     @Test
@@ -253,7 +303,7 @@ class ManualTransactionApiIntegrationTest {
 
     @Test
     void updatesOnlyProvidedFieldsAndClearsWithBlank() throws Exception {
-        String id = createManual(today.minusDays(3), "EXPENSE", 20_000L, "카페", 2L, "CARD", "원래 메모");
+        String id = createManual(today.minusDays(3), "EXPENSE", 20_000L, "카페", 2L, "CARD", "원래 메모", "12:00");
 
         mockMvc.perform(put("/api/v1/transactions/" + id)
                         .header(HttpHeaders.AUTHORIZATION, bearer)
@@ -265,6 +315,7 @@ class ManualTransactionApiIntegrationTest {
                 .andExpect(jsonPath("$.data.memo").value(nullValue()))
                 .andExpect(jsonPath("$.data.categoryCode").value("FOOD"))
                 .andExpect(jsonPath("$.data.transactionDate").value(today.minusDays(3).toString()))
+                .andExpect(jsonPath("$.data.transactionTime").value("12:00:00"))
                 .andExpect(jsonPath("$.data.merchantName").value("카페"))
                 .andExpect(jsonPath("$.data.paymentMethod").value("CARD"))
                 .andExpect(jsonPath("$.data.sourceType").value("MANUAL"))
@@ -273,25 +324,40 @@ class ManualTransactionApiIntegrationTest {
         mockMvc.perform(put("/api/v1/transactions/" + id)
                         .header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("transactionDate", today.toString(), "transactionType", "income",
-                                "merchantName", "  ", "paymentMethod", ""))))
+                        .content(json(Map.of("transactionDate", today.toString(), "transactionTime", "00:22",
+                                "transactionType", "income", "merchantName", "  ", "paymentMethod", ""))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.transactionDate").value(today.toString()))
+                .andExpect(jsonPath("$.data.transactionTime").value("00:22:00"))
                 .andExpect(jsonPath("$.data.transactionType").value("INCOME"))
                 .andExpect(jsonPath("$.data.merchantName").value(nullValue()))
                 .andExpect(jsonPath("$.data.paymentMethod").value(nullValue()))
                 .andExpect(jsonPath("$.data.categoryCode").value("FOOD"));
+
+        // 시각만 보내도 "빈 Body"가 아니고, 시각이 없던 거래에 시각을 채울 수 있다
+        String noTime = createManual(today, "EXPENSE", 5000L, null, null, null, null);
+        mockMvc.perform(put("/api/v1/transactions/" + noTime)
+                        .header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("transactionTime", "09:15"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.transactionTime").value("09:15:00"))
+                .andExpect(jsonPath("$.data.updatedAt").isNotEmpty());
+        mockMvc.perform(get("/api/v1/transactions/" + noTime).header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(jsonPath("$.data.transactionTime").value("09:15:00"));
     }
 
     @Test
     void duplicateUpdateKeepsUpdatedAt() throws Exception {
-        String id = createManual(today, "EXPENSE", 20_000L, "카페", 2L, "CARD", "메모");
+        String id = createManual(today, "EXPENSE", 20_000L, "카페", 2L, "CARD", "메모", "12:00");
 
         mockMvc.perform(put("/api/v1/transactions/" + id)
                         .header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("amount", 20_000, "merchantName", "카페", "categoryId", 2))))
+                        .content(json(Map.of("amount", 20_000, "merchantName", "카페", "categoryId", 2,
+                                "transactionTime", "12:00:00"))))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.transactionTime").value("12:00:00"))
                 .andExpect(jsonPath("$.data.updatedAt").value(nullValue()));
     }
 
@@ -400,10 +466,21 @@ class ManualTransactionApiIntegrationTest {
     private String createManual(
             LocalDate date, String type, Long amount, String merchant, Long categoryId, String paymentMethod, String memo
     ) throws Exception {
+        return createManual(date, type, amount, merchant, categoryId, paymentMethod, memo, null);
+    }
+
+    private String createManual(
+            LocalDate date, String type, Long amount, String merchant, Long categoryId, String paymentMethod, String memo,
+            String time
+    ) throws Exception {
+        Map<String, Object> body = body(date, type, amount, merchant, categoryId, paymentMethod, memo);
+        if (time != null) {
+            body.put("transactionTime", time);
+        }
         MvcResult result = mockMvc.perform(post("/api/v1/transactions")
                         .header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(body(date, type, amount, merchant, categoryId, paymentMethod, memo))))
+                        .content(json(body)))
                 .andExpect(status().isCreated())
                 .andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsString()).path("data").path("transactionId").asText();

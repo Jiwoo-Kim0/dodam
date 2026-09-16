@@ -102,6 +102,7 @@ interface LedgerCalendarProps {
   summary: LedgerMonthlySummary;
   dailyTotals: readonly LedgerDailyTotal[];
   transactions: readonly LedgerTransaction[];
+  hiddenTransactions: readonly LedgerTransaction[];
   categories: readonly LedgerCategory[];
   onBackPress: () => void;
   onPreviousMonth: () => void;
@@ -119,6 +120,7 @@ export function LedgerCalendar({
   summary,
   dailyTotals,
   transactions,
+  hiddenTransactions,
   categories,
   onBackPress,
   onPreviousMonth,
@@ -135,6 +137,7 @@ export function LedgerCalendar({
   );
   const [visibleFeedDateCount, setVisibleFeedDateCount] = useState(FEED_PAGE_SIZE);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showHiddenTransactions, setShowHiddenTransactions] = useState(false);
   const [isMonthPickerVisible, setIsMonthPickerVisible] = useState(false);
   const [calendarCardY, setCalendarCardY] = useState(0);
   const [calendarWidgetBottomY, setCalendarWidgetBottomY] = useState(0);
@@ -156,9 +159,8 @@ export function LedgerCalendar({
 
   const searchedTransactions = useMemo(
     () =>
-      transactions
-        .filter((transaction) => !transaction.hidden)
-        .filter((transaction) => {
+      (showHiddenTransactions ? hiddenTransactions : transactions).filter(
+        (transaction) => {
           const query = searchQuery.trim().toLocaleLowerCase('ko-KR');
           if (!query) return true;
 
@@ -167,7 +169,13 @@ export function LedgerCalendar({
             .toLocaleLowerCase('ko-KR')
             .includes(query);
         }),
-    [categoryById, searchQuery, transactions],
+    [
+      categoryById,
+      hiddenTransactions,
+      searchQuery,
+      showHiddenTransactions,
+      transactions,
+    ],
   );
 
   const groupsByDateDesc = useMemo(() => {
@@ -198,6 +206,23 @@ export function LedgerCalendar({
   const handleLoadMoreFeed = () => {
     if (!hasMoreFeedDays) return;
     setVisibleFeedDateCount((count) => count + FEED_PAGE_SIZE);
+  };
+
+  const toggleHiddenTransactions = () => {
+    const nextShowHidden = !showHiddenTransactions;
+    setShowHiddenTransactions(nextShowHidden);
+    setVisibleFeedDateCount(FEED_PAGE_SIZE);
+
+    if (nextShowHidden && hiddenTransactions.length > 0) {
+      const latestHiddenDate = hiddenTransactions.reduce(
+        (latest, transaction) =>
+          transaction.transactionDate > latest
+            ? transaction.transactionDate
+            : latest,
+        hiddenTransactions[0].transactionDate,
+      );
+      setSelectedDate(latestHiddenDate);
+    }
   };
 
   const calendarBottomY = calendarCardY + calendarWidgetBottomY;
@@ -266,6 +291,26 @@ export function LedgerCalendar({
           />
         </View>
 
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ selected: showHiddenTransactions }}
+          onPress={toggleHiddenTransactions}
+          style={({ pressed }) => [
+            styles.hiddenTransactionsButton,
+            showHiddenTransactions && styles.hiddenTransactionsButtonSelected,
+            pressed && styles.rowPressed,
+          ]}>
+          <Text
+            style={[
+              styles.hiddenTransactionsButtonText,
+              showHiddenTransactions && styles.hiddenTransactionsButtonTextSelected,
+            ]}>
+            {showHiddenTransactions
+              ? '전체 거래 보기'
+              : `숨긴 내역 ${hiddenTransactions.length}건`}
+          </Text>
+        </Pressable>
+
         <View
           onLayout={(event) => setCalendarCardY(event.nativeEvent.layout.y)}
           style={[styles.card, styles.calendarCard]}>
@@ -275,65 +320,62 @@ export function LedgerCalendar({
                 event.nativeEvent.layout.y + event.nativeEvent.layout.height,
               )
             }>
-            <View style={styles.weekdayRow}>
-              {WEEKDAYS.map((weekday) => (
-                <Text key={weekday} style={styles.weekdayLabel}>
-                  {weekday}
-                </Text>
-              ))}
-            </View>
+              <View style={styles.weekdayRow}>
+                {WEEKDAYS.map((weekday) => (
+                  <Text key={weekday} style={styles.weekdayLabel}>
+                    {weekday}
+                  </Text>
+                ))}
+              </View>
 
-            <View style={styles.calendarGrid}>
-              {calendarDays.map((calendarDay) => {
-                const total = totalsByDate.get(calendarDay.dateKey);
-                const isSelected = calendarDay.dateKey === selectedDate;
+              <View style={styles.calendarGrid}>
+                {calendarDays.map((calendarDay) => {
+                  const total = totalsByDate.get(calendarDay.dateKey);
+                  const isSelected = calendarDay.dateKey === selectedDate;
 
-                return (
-                  <View key={calendarDay.dateKey} style={styles.calendarCell}>
-                    <Pressable
-                      accessibilityLabel={`${calendarDay.dateKey} 거래 보기`}
-                      accessibilityRole="button"
-                      onPress={() => handleSelectDay(calendarDay.dateKey)}
-                      style={[
-                        styles.calendarDayButton,
-                        isSelected && styles.calendarDaySelected,
-                      ]}>
-                      <Text
+                  return (
+                    <View key={calendarDay.dateKey} style={styles.calendarCell}>
+                      <Pressable
+                        accessibilityLabel={`${calendarDay.dateKey} 거래 보기`}
+                        accessibilityRole="button"
+                        onPress={() => handleSelectDay(calendarDay.dateKey)}
                         style={[
-                          styles.calendarDay,
-                          isSelected && styles.calendarDaySelectedText,
-                          !calendarDay.isCurrentMonth && styles.calendarDayOutside,
+                          styles.calendarDayButton,
+                          isSelected && styles.calendarDaySelected,
                         ]}>
-                        {calendarDay.day}
-                      </Text>
-                    </Pressable>
-                    {total?.income ? (
-                      <Text
-                        accessibilityLabel={`수입 ${formatNumber(total.income)}원`}
-                        adjustsFontSizeToFit
-                        minimumFontScale={0.6}
-                        numberOfLines={1}
-                        style={[
-                          styles.calendarTotal,
-                          styles.calendarIncome,
-                        ]}>
-                        {`+${formatNumber(total.income)}`}
-                      </Text>
-                    ) : null}
-                    {total?.expense ? (
-                      <Text
-                        accessibilityLabel={`지출 ${formatNumber(total.expense)}원`}
-                        adjustsFontSizeToFit
-                        minimumFontScale={0.6}
-                        numberOfLines={1}
-                        style={[styles.calendarTotal, styles.calendarNeutral]}>
-                        {`-${formatNumber(total.expense)}`}
-                      </Text>
-                    ) : null}
-                  </View>
-                );
-              })}
-            </View>
+                        <Text
+                          style={[
+                            styles.calendarDay,
+                            isSelected && styles.calendarDaySelectedText,
+                            !calendarDay.isCurrentMonth && styles.calendarDayOutside,
+                          ]}>
+                          {calendarDay.day}
+                        </Text>
+                      </Pressable>
+                      {total?.income ? (
+                        <Text
+                          accessibilityLabel={`수입 ${formatNumber(total.income)}원`}
+                          adjustsFontSizeToFit
+                          minimumFontScale={0.6}
+                          numberOfLines={1}
+                          style={[styles.calendarTotal, styles.calendarIncome]}>
+                          {`+${formatNumber(total.income)}`}
+                        </Text>
+                      ) : null}
+                      {total?.expense ? (
+                        <Text
+                          accessibilityLabel={`지출 ${formatNumber(total.expense)}원`}
+                          adjustsFontSizeToFit
+                          minimumFontScale={0.6}
+                          numberOfLines={1}
+                          style={[styles.calendarTotal, styles.calendarNeutral]}>
+                          {`-${formatNumber(total.expense)}`}
+                        </Text>
+                      ) : null}
+                    </View>
+                  );
+                })}
+              </View>
           </View>
         </View>
 
@@ -359,7 +401,9 @@ export function LedgerCalendar({
             ))
           ) : (
             <View style={styles.emptyState}>
-              <Text style={styles.emptyStateText}>거래 내역이 없어요.</Text>
+              <Text style={styles.emptyStateText}>
+                {showHiddenTransactions ? '숨긴 거래 내역이 없어요.' : '거래 내역이 없어요.'}
+              </Text>
             </View>
           )}
         </View>

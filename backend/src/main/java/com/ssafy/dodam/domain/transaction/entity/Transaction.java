@@ -94,6 +94,7 @@ public class Transaction {
             String id,
             Long userId,
             LocalDate transactionDate,
+            LocalTime transactionTime,
             TransactionType transactionType,
             long amount,
             String merchantName,
@@ -106,6 +107,7 @@ public class Transaction {
         this.id = id;
         this.userId = userId;
         this.transactionDate = transactionDate;
+        this.transactionTime = transactionTime;
         this.transactionType = transactionType;
         this.amount = amount;
         this.merchantName = merchantName;
@@ -122,12 +124,14 @@ public class Transaction {
      * 사용자가 직접 등록한 거래(S15P21D105-505). 계좌·카드에 연결되지 않고 잔액 정보도 없다.
      * 값 검증(양수 금액, 미래 아닌 거래일, 카테고리 존재, 메모 규칙)은 서비스가 끝낸 상태여야 한다.
      *
-     * @param category 선택. 있으면 기본 소비유형을 함께 적용한다
+     * @param transactionTime 선택. 사용자가 고른 거래 시각. 없으면 null이며 목록 정렬에서 같은 날 거래의 맨 뒤로 간다
+     * @param category        선택. 있으면 기본 소비유형을 함께 적용한다
      */
     public static Transaction createManual(
             String id,
             Long userId,
             LocalDate transactionDate,
+            LocalTime transactionTime,
             TransactionType transactionType,
             long amount,
             String merchantName,
@@ -140,6 +144,7 @@ public class Transaction {
                 id,
                 userId,
                 transactionDate,
+                transactionTime,
                 transactionType,
                 amount,
                 merchantName,
@@ -162,6 +167,7 @@ public class Transaction {
      */
     public boolean updateManualDetails(
             LocalDate transactionDate,
+            LocalTime transactionTime,
             TransactionType transactionType,
             Long amount,
             LocalDateTime now
@@ -169,6 +175,10 @@ public class Transaction {
         boolean changed = false;
         if (transactionDate != null && !transactionDate.equals(this.transactionDate)) {
             this.transactionDate = transactionDate;
+            changed = true;
+        }
+        if (transactionTime != null && !transactionTime.equals(this.transactionTime)) {
+            this.transactionTime = transactionTime;
             changed = true;
         }
         if (transactionType != null && transactionType != this.transactionType) {

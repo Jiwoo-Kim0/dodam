@@ -61,6 +61,13 @@ class GoalAccountApiIntegrationTest {
     private static final String CLOSED_NO = "4444444455555555";
     private static final String OTHER_USER_NO = "1100000000000021";
     private static final String UNKNOWN_NO = "9999999999999999";
+    private static final long MAIN_ID = 11L;
+    private static final long SAVINGS_ID = 12L;
+    private static final long DEPOSIT_ID = 13L;
+    private static final long MINUS_ID = 14L;
+    private static final long CLOSED_ID = 15L;
+    private static final long OTHER_USER_ID = 21L;
+    private static final long UNKNOWN_ID = 999L;
     private static final LocalDateTime SEEDED_AT = LocalDateTime.of(2026, 9, 7, 9, 0);
 
     @Autowired
@@ -140,7 +147,7 @@ class GoalAccountApiIntegrationTest {
         mockMvc.perform(put("/api/v1/goals/" + goalId + "/accounts")
                         .header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("accountNos", List.of(SAVINGS_NO, MAIN_NO, MAIN_NO)))))
+                        .content(json(Map.of("accountIds", List.of(SAVINGS_ID, MAIN_ID, MAIN_ID)))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.goalId").value(goalId))
                 .andExpect(jsonPath("$.data.linkedCount").value(2))
@@ -172,7 +179,7 @@ class GoalAccountApiIntegrationTest {
     @Test
     void listsLinkedAccountsWithPaging() throws Exception {
         long goalId = createSaving("목표", 20_000_000);
-        link(goalId, List.of(MAIN_NO, SAVINGS_NO, DEPOSIT_NO));
+        link(goalId, List.of(MAIN_ID, SAVINGS_ID, DEPOSIT_ID));
 
         mockMvc.perform(get("/api/v1/goals/" + goalId + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer))
                 .andExpect(status().isOk())
@@ -213,13 +220,13 @@ class GoalAccountApiIntegrationTest {
     @Test
     void replacesLinkSetAndUnlinksAllWithEmptyArray() throws Exception {
         long goalId = createSaving("목표", 20_000_000);
-        link(goalId, List.of(MAIN_NO, SAVINGS_NO));
+        link(goalId, List.of(MAIN_ID, SAVINGS_ID));
 
         // 하나 빼고 하나 추가
         mockMvc.perform(put("/api/v1/goals/" + goalId + "/accounts")
                         .header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("accountNos", List.of(MAIN_NO, DEPOSIT_NO)))))
+                        .content(json(Map.of("accountIds", List.of(MAIN_ID, DEPOSIT_ID)))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.linkedCount").value(2))
                 .andExpect(jsonPath("$.data.totalBalance").value(11_850_000))
@@ -232,7 +239,7 @@ class GoalAccountApiIntegrationTest {
         mockMvc.perform(put("/api/v1/goals/" + goalId + "/accounts")
                         .header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("accountNos", List.of()))))
+                        .content(json(Map.of("accountIds", List.of()))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.linkedCount").value(0))
                 .andExpect(jsonPath("$.data.totalBalance").value(0));
@@ -242,11 +249,11 @@ class GoalAccountApiIntegrationTest {
     @Test
     void sameSetIsIdempotentAndRefreshesBalance() throws Exception {
         long goalId = createSaving("목표", 5_000_000);
-        link(goalId, List.of(MAIN_NO));
+        link(goalId, List.of(MAIN_ID));
         String updatedAt = jdbcTemplate.queryForObject("SELECT updated_at FROM goal WHERE goal_id = ?", String.class, goalId);
 
         // 같은 집합이면 연결 행은 그대로, 잔액이 안 바뀌면 updated_at도 그대로
-        link(goalId, List.of(MAIN_NO));
+        link(goalId, List.of(MAIN_ID));
         assertThat(jdbcTemplate.queryForObject("SELECT updated_at FROM goal WHERE goal_id = ?", String.class, goalId))
                 .isEqualTo(updatedAt);
 
@@ -255,7 +262,7 @@ class GoalAccountApiIntegrationTest {
         mockMvc.perform(put("/api/v1/goals/" + goalId + "/accounts")
                         .header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("accountNos", List.of(MAIN_NO)))))
+                        .content(json(Map.of("accountIds", List.of(MAIN_ID)))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.totalBalance").value(2_000_000));
         assertThat(jdbcTemplate.queryForObject("SELECT current_amount FROM goal WHERE goal_id = ?", Long.class, goalId))
@@ -265,30 +272,41 @@ class GoalAccountApiIntegrationTest {
     @Test
     void rejectsUnlinkableAccountsWithoutPartialChange() throws Exception {
         long goalId = createSaving("목표", 5_000_000);
-        link(goalId, List.of(MAIN_NO));
+        link(goalId, List.of(MAIN_ID));
 
         mockMvc.perform(put("/api/v1/goals/" + goalId + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("accountNos", List.of(SAVINGS_NO, MINUS_NO)))))
+                        .content(json(Map.of("accountIds", List.of(SAVINGS_ID, MINUS_ID)))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("입출금·예금·적금 계좌만 목표에 연결할 수 있습니다."));
         mockMvc.perform(put("/api/v1/goals/" + goalId + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("accountNos", List.of(CLOSED_NO)))))
+                        .content(json(Map.of("accountIds", List.of(CLOSED_ID)))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("해지된 계좌는 목표에 연결할 수 없습니다."));
         mockMvc.perform(put("/api/v1/goals/" + goalId + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("accountNos", List.of(OTHER_USER_NO)))))
+                        .content(json(Map.of("accountIds", List.of(OTHER_USER_ID)))))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.message").value("계좌를 찾을 수 없습니다."));
         mockMvc.perform(put("/api/v1/goals/" + goalId + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("accountNos", List.of(UNKNOWN_NO)))))
+                        .content(json(Map.of("accountIds", List.of(UNKNOWN_ID)))))
                 .andExpect(status().isNotFound());
         mockMvc.perform(put("/api/v1/goals/" + goalId + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("accountNos", List.of("12-34")))))
+                        .content(json(Map.of("accountIds", List.of(0L)))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        mockMvc.perform(put("/api/v1/goals/" + goalId + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"accountIds\": [null]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        // 계좌번호 원문(이전 계약)을 보내면 숫자로 읽을 수 없어 400
+        mockMvc.perform(put("/api/v1/goals/" + goalId + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("accountNos", List.of(MAIN_NO)))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
         mockMvc.perform(put("/api/v1/goals/" + goalId + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer)
@@ -305,11 +323,11 @@ class GoalAccountApiIntegrationTest {
     void rejectsAccountLinkedToAnotherLiveGoalButTakesOverFromDeletedGoal() throws Exception {
         long first = createSaving("첫 목표", 5_000_000);
         long second = createSaving("둘째 목표", 5_000_000);
-        link(first, List.of(MAIN_NO));
+        link(first, List.of(MAIN_ID));
 
         mockMvc.perform(put("/api/v1/goals/" + second + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("accountNos", List.of(MAIN_NO)))))
+                        .content(json(Map.of("accountIds", List.of(MAIN_ID)))))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("ACCOUNT_ALREADY_LINKED_TO_GOAL"));
 
@@ -317,7 +335,7 @@ class GoalAccountApiIntegrationTest {
         mockMvc.perform(delete("/api/v1/goals/" + first).header(HttpHeaders.AUTHORIZATION, bearer)).andExpect(status().isOk());
         mockMvc.perform(put("/api/v1/goals/" + second + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("accountNos", List.of(MAIN_NO)))))
+                        .content(json(Map.of("accountIds", List.of(MAIN_ID)))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.linkedCount").value(1));
         assertThat(jdbcTemplate.queryForList("SELECT goal_id FROM goal_account WHERE account_id = 11", Long.class))
@@ -329,7 +347,7 @@ class GoalAccountApiIntegrationTest {
         long spending = createSpending("줄이기", 300_000);
         mockMvc.perform(put("/api/v1/goals/" + spending + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("accountNos", List.of(MAIN_NO)))))
+                        .content(json(Map.of("accountIds", List.of(MAIN_ID)))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("줄이기 목표에는 계좌를 연결할 수 없습니다."));
 
@@ -339,14 +357,14 @@ class GoalAccountApiIntegrationTest {
                 .andExpect(status().isOk());
         mockMvc.perform(put("/api/v1/goals/" + canceled + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("accountNos", List.of(MAIN_NO)))))
+                        .content(json(Map.of("accountIds", List.of(MAIN_ID)))))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("GOAL_NOT_EDITABLE"));
 
         long mine = createSaving("내 목표", 1_000_000);
         mockMvc.perform(put("/api/v1/goals/" + mine + "/accounts").header(HttpHeaders.AUTHORIZATION, otherBearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("accountNos", List.of(OTHER_USER_NO)))))
+                        .content(json(Map.of("accountIds", List.of(OTHER_USER_ID)))))
                 .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/v1/goals/" + mine + "/accounts").header(HttpHeaders.AUTHORIZATION, otherBearer))
                 .andExpect(status().isNotFound());
@@ -378,11 +396,11 @@ class GoalAccountApiIntegrationTest {
         return objectMapper.readTree(result.getResponse().getContentAsString()).path("data").path("goalId").asLong();
     }
 
-    private void link(long goalId, List<String> accountNos) throws Exception {
+    private void link(long goalId, List<Long> accountIds) throws Exception {
         mockMvc.perform(put("/api/v1/goals/" + goalId + "/accounts")
                         .header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("accountNos", accountNos))))
+                        .content(json(Map.of("accountIds", accountIds))))
                 .andExpect(status().isOk());
     }
 

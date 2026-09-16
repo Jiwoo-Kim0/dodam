@@ -2,18 +2,20 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { assetApi } from '@/api';
 import { fetchAllPages } from '@/api/pagination';
-import type { AssetOverview, AssetSection } from '@/types/asset.types';
+import type { AssetAnalysis, AssetOverview, AssetSection } from '@/types/asset.types';
 import { mapOwnedAssetOverview } from '@/utils/assetOverview';
 import { toDateKey } from '@/utils/date';
 
 import { mapAssetSections } from '../utils/assetMappers';
 
 interface AssetData {
+  analysis: AssetAnalysis | null;
   overview: AssetOverview | null;
   sections: readonly AssetSection[];
 }
 
 const EMPTY_ASSET_DATA: AssetData = {
+  analysis: null,
   overview: null,
   sections: [],
 };
@@ -54,6 +56,8 @@ export function useAssetData() {
       const [
         accounts,
         accountSummary,
+        accountBalanceSummary,
+        inactiveAccounts,
         cards,
         cardPaymentSchedules,
         loans,
@@ -65,6 +69,8 @@ export function useAssetData() {
       ] = await Promise.all([
         assetApi.getAccounts(),
         assetApi.getAccountSummary(),
+        assetApi.getAccountBalanceSummary(),
+        assetApi.getInactiveAccounts(),
         assetApi.getCards(),
         assetApi.getCardPaymentSchedules(schedulePeriod),
         assetApi.getLoans(),
@@ -85,6 +91,13 @@ export function useAssetData() {
       if (requestId !== requestIdRef.current) return;
 
       setData({
+        analysis: {
+          cashTotal: accountBalanceSummary.totalCash,
+          cashAccountCount: accountBalanceSummary.accountCount,
+          inactiveAccountCount: inactiveAccounts.count,
+          inactiveBalance: inactiveAccounts.totalBalance,
+          inactiveMonths: inactiveAccounts.criteria.inactiveMonths,
+        },
         overview: mapOwnedAssetOverview(accountSummary),
         sections: mapAssetSections({
           accounts,
