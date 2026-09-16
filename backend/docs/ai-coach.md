@@ -155,10 +155,10 @@ app:
     enabled: true
     base-url: https://gms.ssafy.io/gmsapi/api.openai.com   # SSAFY GMS 중계
     chat-path: /v1/chat/completions
-    model: gpt-4o-mini
+    model: gpt-5.4-mini
     max-tokens: 600
-    max-tokens-parameter: max_tokens   # 계열에 따라 max_completion_tokens
-    temperature: 0.2                   # 비우면 요청 본문에서 빠진다
+    max-tokens-parameter: max_completion_tokens   # 4o 계열은 max_tokens
+    temperature: 0.2                              # 비우면 요청 본문에서 빠진다
     max-attempts: 2
     connect-timeout: PT3S
     read-timeout: PT12S
@@ -174,9 +174,24 @@ app:
 
 ### 8-1. 모델 선정과 교체
 
-**`gpt-4o-mini`를 기본으로 둔 이유**: 코치가 하는 일은 "이미 계산된 사실 목록 → 2문단 400자 이내
-한국어"다. 추론이 필요 없는 제한된 생성 작업이고, 수치·판정은 애초에 모델을 거치지 않는다(§5).
-작은 모델로 충분하고, 값이 싸며, `read-timeout`(12초) 안에 안정적으로 들어온다.
+코치가 하는 일은 "이미 계산된 사실 목록 → 2문단 400자 이내 한국어"다. 추론이 필요 없는 제한된
+생성 작업이고, 수치·판정은 애초에 모델을 거치지 않는다(§5). 그래서 작은 모델이면 충분하다.
+
+**`gpt-5.4-mini`를 고른 근거** (2026-09-16 GMS 중계로 같은 프롬프트 실측):
+
+| | gpt-4o-mini | **gpt-5.4-mini** |
+| --- | --- | --- |
+| 응답 시간 | 1.849s | **1.715s** |
+| `reasoning_tokens` | 0 | **0** — 추론형 지연 위험 없음 |
+| 도메인 해석 | ❌ 금융 진단 결과를 시스템 모니터링 지표로 오해<br>("시스템이 정상 작동", "관련 데이터가 균형") | ✅ 재무 맥락 유지<br>("지출과 수입 흐름을 꾸준히 확인하면") |
+| 신뢰도 표현 | 단정 | 유보적("일부 변동 가능성은 염두에") — `disclaimer`와 같은 방향 |
+| 사실에 없는 숫자 | 없음 | 없음 |
+
+더 빠르면서 문장이 정확했다. `reasoning_tokens`가 0이라 추론형 모델에서 우려한 타임아웃 위험도 없다.
+
+**`temperature`는 낮게 유지한다.** 재현성 때문만이 아니라, 출력이 흔들릴수록 없는 숫자를 만들 확률이
+올라가 §5의 가드에 걸리는 빈도(= 템플릿으로 내려가는 빈도)가 는다. `gpt-5.4-mini`가 이 값을 받는 것은
+실측으로 확인했다.
 
 **교체는 코드 변경이 아니라 설정 변경이다.** 요청 본문 구성이 모델 계열마다 다르기 때문에 세 가지를
 설정으로 뺐다.

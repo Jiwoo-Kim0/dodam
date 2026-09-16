@@ -44,15 +44,18 @@ app:
     # 인증 헤더는 OpenAI와 같은 `Authorization: Bearer <토큰>`을 그대로 쓴다.
     base-url: https://gms.ssafy.io/gmsapi/api.openai.com
     chat-path: /v1/chat/completions
-    # 모델 선정 근거: 코치가 하는 일은 "이미 계산된 사실 목록 → 2문단 400자 이내 한국어"다.
-    # 추론이 필요 없는 제한된 생성 작업이라 작은 모델로 충분하고, 값이 싸고 응답이 빨라
-    # read-timeout 안에 안정적으로 들어온다. 문장 품질이 부족하면 아래 3줄만 바꿔 교체한다.
-    model: gpt-4o-mini
+    # 모델 선정 근거(2026-09-16 GMS 중계로 실측, backend/docs/ai-coach.md 8-1):
+    #   코치가 하는 일은 "이미 계산된 사실 목록 → 2문단 400자 이내 한국어"다. 추론이 필요 없다.
+    #   gpt-4o-mini(1.849s)와 비교해 gpt-5.4-mini(1.715s)가 더 빠르면서 도메인 해석이 정확했다.
+    #   4o-mini는 같은 프롬프트에서 금융 진단 결과를 시스템 모니터링 지표로 오해했다.
+    #   reasoning_tokens가 0이라 추론형 모델의 지연 위험도 없다(read-timeout 여유 충분).
+    model: gpt-5.4-mini
     max-tokens: 600
     # 상한을 싣는 필드 이름. 모델 계열마다 다르다(max_tokens / max_completion_tokens).
-    # 이름이 틀리면 공급자가 400으로 거부한다.
-    max-tokens-parameter: max_tokens
-    # 같은 사실에서 매번 다른 문장이 나오면 검증도 재현도 어렵다.
+    # 이름이 틀리면 공급자가 400으로 거부한다. gpt-5 계열은 max_completion_tokens를 요구한다.
+    max-tokens-parameter: max_completion_tokens
+    # 같은 사실에서 매번 다른 문장이 나오면 검증도 재현도 어렵다. 출력이 흔들릴수록 없는 숫자를
+    # 만들 확률이 올라가 CoachNumberGuard에 걸리는 빈도도 는다 → 낮게 유지한다.
     # 이 값을 받지 않는 모델로 바꾸면 값을 비워라(비우면 요청 본문에서 빠진다).
     temperature: 0.2
     max-attempts: 2               # 429·5xx·네트워크 오류일 때만 재시도한다(401·400은 즉시 포기)
