@@ -50,6 +50,10 @@ app:
     # 테스트는 외부 AI를 호출하지 않는다. 기본 경로는 템플릿이며, AI 경로는 CoachTextGenerator를 Mock으로
     # 대체해 검증한다(호출 실패·지어낸 숫자 시나리오 포함).
     enabled: false
+  coach:
+    # 테스트에는 Redis가 없다. 캐시 동작은 CoachAnswerCache를 Mock으로 대체해 검증하고,
+    # Redis 구현은 RedisCoachAnswerCacheTest가 따로 본다(연결 시도가 테스트를 느리게 하지 않도록 끈다).
+    cache-enabled: false
   pattern:
     # H2 테스트는 인프로세스 학습을 검증한다. 아티팩트 로딩은 ClusterModelArtifactLoaderTest가 따로 본다.
     model-location: ""

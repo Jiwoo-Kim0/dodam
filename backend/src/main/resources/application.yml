@@ -62,6 +62,13 @@ app:
     connect-timeout: PT3S
     read-timeout: PT12S           # 사용자가 화면에서 기다리는 동기 호출이다
 
+  coach:
+    # AI 코치 응답 캐시(backend/docs/ai-coach.md 10절). 저장소는 Redis다.
+    # 캐시 키에 facts 해시가 들어가므로 서버 계산값이 바뀌면 자동으로 다시 생성된다 —
+    # TTL은 무효화 수단이 아니라 "이상한 문장이 생성됐을 때의 잔존 상한"이다.
+    cache-enabled: true
+    cache-ttl: PT1H
+
   pattern:
     # API 3 패턴 분석 정책값. 명세·기획안에 수치가 없는 항목의 서비스 기본안(backend/docs/pattern.md).
     lookback-months: 6          # 분석 기간(완료된 달 기준)
