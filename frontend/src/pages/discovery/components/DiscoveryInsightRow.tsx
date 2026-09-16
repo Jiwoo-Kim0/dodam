@@ -4,7 +4,7 @@ import { Pressable, Text, View } from 'react-native';
 
 import type { DiscoveryInsight } from '../discoveryModel';
 import { colors } from '@/styles';
-import { formatNumber } from '@/utils/currency';
+import { formatRoundedAmount } from '@/utils/currency';
 
 import { styles } from './DiscoveryInsightRow.styles';
 
@@ -60,7 +60,7 @@ export function DiscoveryInsightRow({ insight, isLast, onPress }: DiscoveryInsig
             ) : (
               <>
                 <Text style={styles.amountUnit}>연 </Text>
-                {formatNumber(insight.annualSavingAmount)}원
+                {formatRoundedAmount(insight.annualSavingAmount)}원
               </>
             )}
           </Text>
