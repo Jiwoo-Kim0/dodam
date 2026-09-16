@@ -1,6 +1,6 @@
 ﻿진행상태,담당자,API명,Method,Endpoint,인증 여부,데이터/연동,Parameter,제한사항
 시작 전,,소비 감소 시뮬레이션,POST,/api/v1/simulations/spending,O,자체,"Body: category?, monthlyReduction, durationMonths?",본인 리소스만 접근; 입력값 검증; 중복 요청 방지
-시작 전,,저축액 변경 시뮬레이션,POST,/api/v1/simulations/saving,O,자체,"Body: accountNo?, monthlySavingAmount, durationMonths?",본인 리소스만 접근; 입력값 검증; 중복 요청 방지
+시작 전,,저축액 변경 시뮬레이션,POST,/api/v1/simulations/saving,O,자체,"Body: accountNo?, goalId?, monthlySavingAmount, durationMonths?","본인 리소스만 접근; 입력값 검증; 중복 요청 방지; accountNo와 goalId 동시 지정 불가(400); goalId는 본인 ACTIVE 모으기 목표만"
 시작 전,,예적금 신규가입 시뮬레이션,POST,/api/v1/simulations/saving-product,O,상품 DB + 자체,"Body: productId, monthlyAmount, term",DB 최신 동기화 시점 기준; 실시간 상품정보 아님; 입력값 검증
 시작 전,,대출 추가상환 시뮬레이션,POST,/api/v1/simulations/loan/prepayment,O,SSAFY + 자체,"Body: accountNo, prepaymentAmount, paymentDate?",사전 생성된 SSAFY 금융데이터 기준; 입력값 검증
 시작 전,,대환 시뮬레이션,POST,/api/v1/simulations/loan/refinance,O,상품 DB + 자체,"Body: accountNo, targetProductId, refinanceAmount?",DB 최신 동기화 시점 기준; 실시간 상품정보 아님

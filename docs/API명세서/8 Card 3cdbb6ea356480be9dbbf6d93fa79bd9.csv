@@ -1,9 +1,9 @@
 ﻿진행상태,담당자,API명,Method,Endpoint,인증 여부,데이터/연동,Parameter,제한사항
 시작 전,,보유 카드 조회,GET,/api/v1/cards,O,SSAFY,"Query: issuerCode?, status?","본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
-연 데이터 범위 내"
+연 데이터 범위 내; 응답 항목에 cardId 포함(시뮬레이션·할부 조회용, 2026-09-16)"
 시작 전,,카드 요약,GET,/api/v1/cards/summary,O,자체,없음,본인 리소스만 접근
 시작 전,,카드 상세,GET,/api/v1/cards/{cardNo},O,SSAFY,Path: cardNo,"본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
-연 데이터 범위 내"
+연 데이터 범위 내; 응답에 cardId 포함(2026-09-16)"
 시작 전,,카드 사용내역,GET,/api/v1/cards/{cardNo}/transactions,O,SSAFY,"Path: cardNo / Query: startDate?, endDate?, page?,
 size?","본인 리소스만 접근; page≥0, size 1~100 (도담 정책); 시작일≤종료일; 조회기간 정책 제한; SSAFY
 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시연 데이터 범위 내"
