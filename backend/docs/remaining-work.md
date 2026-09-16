@@ -2,16 +2,40 @@
 
 마지막 갱신: 2026-09-16
 
-백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 587, 589, 611이다.
+백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 587, 589, 611, 627이다.
+
+## S15P21D105-627 — 발견 화면 진단 규칙 확장 (소비 증가·고금리 대출)
+
+구현 계약: [diagnosis-api.md](diagnosis-api.md) §규칙·근거(627 절), [recommendation-api.md](recommendation-api.md) §2·§5.1. 범위 결정: [diagnosis-627-plan.md](diagnosis-627-plan.md)
+
+### FE 요청 중 범위 밖으로 남긴 항목
+
+- [ ] **추천 응답 `sourceIssueId`**: FE가 문제별 추천을 연결하려면 필요하다. `RecommendationCandidate.sourceIssueId`는 있으나 `recommendation` 테이블에 컬럼이 없어 저장되지 않는다. Flyway 컬럼 추가 + `Recommendation.pending` 시그니처 + 응답 DTO 확장이 필요하며, 대안인 `GET /diagnoses/{id}/issues/{issueId}/recommendations`는 저장 컬럼 없이는 만들 수 없다.
+- [ ] **발견 요약 통합 수치**(문제 수·전체 개선 시 연 절감액·목표 단축일): 현재 `GET /recommendations/summary`는 사용자 전체 PENDING·ACCEPTED 추천을 단순 합산한다. 같은 문제의 대안 추천 중복 제거와 Combined Simulation 기반 목표 단축일 계산이 필요하다. 계산 불가는 0이 아니라 null + 사유로 준다.
+- 미사용 구독(사용 기록 없음)·유휴자금(비상금·생활비 보존 기준 미정)은 2026-09-16 FE와 합의해 하지 않기로 했다. 다시 하려면 "정기결제 점검" 표현 또는 사용 기록 데이터 추가가 선행돼야 한다.
+
+### 대환 프리셋을 FE가 실행할 수 없다
+
+- [ ] 명세 17 `POST /simulations/loan/refinance` 본문은 `accountNo`(원문)만 받는데 FE는 마스킹 값만 가진다. 대환 추천 프리셋은 `accountNo: null` + 가정 `ACCOUNT_NO_REQUIRED_BY_CLIENT`로 나가며 그대로 POST하면 400이다. 619가 저축 프리셋에 `goalId`를 추가한 것처럼 `loanId?`(accountNo와 동시 지정 불가, 타인·없는 대출 404)를 본문에 추가하고 프리셋이 근거 `REFINANCE_INTEREST_SAVING`의 `loanId`를 싣도록 바꾼다. 같은 이유로 `GET /loans/{accountNo}/*` 계열도 FE가 호출할 수 없다(533 절 참고).
+
+### 서비스 초기값으로 둔 기준
+
+- [ ] 소비 증가 심각도 경계(증가율 50% → HIGH), 고금리 심각도 경계(편차 2.0%p 또는 연체 → HIGH), 최근/이전 3개월 고정, 미분류 제외, 대환 후보의 같은 업권 한정은 팀 확정값이 아니다. 바뀌면 `DiagnosisRuleVersion`을 올린다.
+- [ ] 대환 절감액은 잔여 회차와 정확히 같은 `term` 옵션이 있는 상품만 대상이다(시뮬레이션과 같은 제약). 시연 seed의 대출 상품 옵션이 12·24·36·60개월 위주라 잔여 회차가 그 값과 다른 대출은 대부분 `NO_ELIGIBLE_PRODUCT`가 된다. seed 환경에서 실제 판정 건수를 확인하고, 필요하면 인접 기간 옵션 허용 여부를 시뮬레이션(585)과 함께 정한다.
+- [ ] 대출 판정은 API 11 `highInterest`를 재호출하므로 대출 상품 전량을 진단마다 읽는다(76개 상품·319 옵션 규모라 문제없음). 상품 수가 크게 늘면 재검토.
+
+### MySQL 검증
+
+- [ ] 스키마 변경은 없다. H2 통합 테스트만 통과했고 MySQL JSON 컬럼(`current_value`의 BigDecimal·LocalDate 직렬화)은 기존 규칙과 같은 경로라 별도 실측하지 않았다. seed 환경에서 `POST /diagnoses` 한 번으로 두 규칙의 실제 결과를 확인한다.
 
 ## S15P21D105-589 — AI Coach (API 21)
 
 구현 계약: [ai-coach.md](ai-coach.md)
 
-### 응답 캐시가 없다
+### 응답 캐시
 
-- [ ] `(userId, topic, 대상 id, facts 해시)` 키로 짧은 TTL 캐시를 둔다. 같은 진단으로 요약을 반복 호출하면 그때마다 외부 API에 과금된다. 코치는 저장값을 문장으로 옮기는 일이라 같은 입력이면 같은 출력이어도 무방하다.
-- 근거: Redis는 이미 붙어 있고 Java 코드에 사용처가 하나도 없다(`infra/docker-compose.yml` redis 블록 주석). 코치가 첫 사용처로 적합하다.
+- [x] (2026-09-16) Redis 캐시 적용. 키 `coach:<userId>:<topic>:<facts 해시>`, TTL 기본 1시간. 무효화는 facts 해시가 하므로 별도 코드가 없다. [ai-coach.md](ai-coach.md) §10.
+- [ ] **배포 후 Redis 연결을 확인한다.** 이 프로젝트에서 Redis를 쓰는 첫 코드라 비밀번호·연결 설정이 실제로 맞는지 여기서 처음 드러난다. 실패해도 코치는 정상 동작하므로(예외를 삼킨다) 겉으로는 티가 안 난다 — 로그에서 `Coach cache lookup failed`가 반복되는지 봐야 한다.
 
 ### 사용자별 호출 레이트 리밋이 없다
 

@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -12,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ssafy.dodam.domain.coach.service.CoachAnswerCache;
 import com.ssafy.dodam.domain.coach.service.CoachGenerationException;
 import com.ssafy.dodam.domain.coach.service.CoachTextGenerator;
 import com.ssafy.dodam.domain.diagnosis.entity.Diagnosis;
@@ -28,6 +31,7 @@ import com.ssafy.dodam.domain.user.entity.User;
 import com.ssafy.dodam.domain.user.repository.UserRepository;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -60,6 +64,7 @@ class CoachApiTest {
     @Autowired RecommendationRepository recommendations;
     @Autowired RecommendationReasonRepository reasons;
     @MockitoBean CoachTextGenerator generator;
+    @MockitoBean CoachAnswerCache cache;
 
     private Long owner;
     private Long other;
@@ -70,7 +75,7 @@ class CoachApiTest {
     @BeforeEach
     void setup() {
         given(generator.isAvailable()).willReturn(false);
-        given(generator.modelName()).willReturn("gpt-4o-mini");
+        given(generator.modelName()).willReturn("gpt-5.4-mini");
 
         owner = users.save(User.createLocalUser(UUID.randomUUID() + "@example.com", "unused", "코치")).getId();
         other = users.save(User.createLocalUser(UUID.randomUUID() + "@example.com", "unused", "다른 사용자")).getId();
@@ -223,7 +228,7 @@ class CoachApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.source").value("AI"))
                 .andExpect(jsonPath("$.data.degradedReason").isEmpty())
-                .andExpect(jsonPath("$.data.model").value("gpt-4o-mini"))
+                .andExpect(jsonPath("$.data.model").value("gpt-5.4-mini"))
                 .andExpect(jsonPath("$.data.message").value("매달 12,000원을 아낄 수 있는 개선안입니다.\n\n사용 기록을 확인해 보세요."))
                 // 수치는 AI 경로에서도 서버가 만든다
                 .andExpect(jsonPath("$.data.highlights[0]").value("영역: SPENDING"));
@@ -254,6 +259,56 @@ class CoachApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.source").value("TEMPLATE"))
                 .andExpect(jsonPath("$.data.degradedReason").value("AI_UNVERIFIED_NUMBER"));
+    }
+
+    // ---------- 응답 캐시 ----------
+
+    @Test
+    void cachesSuccessfulAiAnswersOnly() throws Exception {
+        given(generator.isAvailable()).willReturn(true);
+        given(generator.generate(any(), any())).willReturn("매달 12,000원을 아낄 수 있는 개선안입니다.");
+
+        mvc.perform(post("/api/v1/coach/recommendation-explanation").with(user(owner.toString()))
+                        .contentType(JSON).content("{\"recommendationId\":" + recommendationId + "}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.source").value("AI"));
+        verify(cache).put(any(), eq(new CoachAnswerCache.Entry("매달 12,000원을 아낄 수 있는 개선안입니다.", "gpt-5.4-mini")));
+
+        // 템플릿은 저장하지 않는다. 저장하면 공급자가 복구된 뒤에도 TTL 내내 템플릿만 나간다.
+        willThrow(new CoachGenerationException("OpenAI unreachable")).given(generator).generate(any(), any());
+        mvc.perform(post("/api/v1/coach/financial-summary").with(user(owner.toString())).contentType(JSON).content("{}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.source").value("TEMPLATE"));
+        // put이 여전히 1회 = 템플릿 응답은 저장되지 않았다
+        verify(cache, times(1)).put(any(), any());
+    }
+
+    @Test
+    void servesCachedAnswerWithoutCallingTheModel() throws Exception {
+        given(generator.isAvailable()).willReturn(true);
+        given(cache.find(any())).willReturn(
+                Optional.of(new CoachAnswerCache.Entry("저장해 둔 설명입니다.", "gpt-5.4-mini")));
+
+        mvc.perform(post("/api/v1/coach/financial-summary").with(user(owner.toString())).contentType(JSON).content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.source").value("AI"))
+                .andExpect(jsonPath("$.data.degradedReason").isEmpty())
+                .andExpect(jsonPath("$.data.model").value("gpt-5.4-mini"))
+                .andExpect(jsonPath("$.data.message").value("저장해 둔 설명입니다."))
+                // 수치는 캐시가 아니라 매번 DB에서 다시 만든다
+                .andExpect(jsonPath("$.data.facts.sections[0].facts[3].value").value("2건"));
+        verify(generator, never()).generate(any(), any());
+    }
+
+    @Test
+    void cachedAnswerIsUsedEvenWhenTheProviderIsDown() throws Exception {
+        // AI가 꺼져 있어도 이미 받아 둔 문장이 있으면 템플릿보다 그쪽이 낫다
+        given(generator.isAvailable()).willReturn(false);
+        given(cache.find(any())).willReturn(
+                Optional.of(new CoachAnswerCache.Entry("저장해 둔 설명입니다.", "gpt-5.4-mini")));
+
+        mvc.perform(post("/api/v1/coach/financial-summary").with(user(owner.toString())).contentType(JSON).content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.source").value("AI"))
+                .andExpect(jsonPath("$.data.message").value("저장해 둔 설명입니다."));
     }
 
     @Test

@@ -16,7 +16,10 @@ import com.ssafy.dodam.domain.recommendation.entity.Recommendation;
 import com.ssafy.dodam.domain.recommendation.entity.RecommendationReason;
 import com.ssafy.dodam.domain.recommendation.repository.RecommendationReasonRepository;
 import com.ssafy.dodam.domain.recommendation.service.RecommendationSimulationPresetAssembler;
+import com.ssafy.dodam.domain.recommendation.service.generator.CategorySpendingIncreaseGenerator;
+import com.ssafy.dodam.domain.recommendation.service.generator.HighInterestLoanGenerator;
 import com.ssafy.dodam.domain.recommendation.service.generator.SavingGoalRiskGenerator;
+import com.ssafy.dodam.domain.simulation.dto.request.LoanRefinanceSimulationRequest;
 import com.ssafy.dodam.domain.simulation.dto.request.SavingSimulationRequest;
 import com.ssafy.dodam.domain.simulation.dto.request.SpendingSimulationRequest;
 import com.ssafy.dodam.domain.simulation.entity.SimulationType;
@@ -129,6 +132,55 @@ class RecommendationSimulationPresetAssemblerTest {
         assertThat(presets.get(1L).type()).isEqualTo(SimulationType.SPENDING);
         assertThat(presets.get(2L).request()).isEqualTo(new SavingSimulationRequest(null, 3L, 400_000L, null));
         assertThat(presets.get(5L).unavailableReason()).isEqualTo(RecommendationSimulationPreset.SNAPSHOT_FIELD_MISSING);
+    }
+
+    @Test
+    void categorySpendingPresetCarriesCategoryCodeFromReason() {
+        Recommendation r = recommendation(6L, "SPENDING", "REDUCE_CATEGORY_SPENDING",
+                new Recommendation.Effect(40_000L, 480_000L, null, null, null, null, null, null));
+        ObjectNode evidence = json.createObjectNode();
+        evidence.put("categoryCode", "FOOD").put("increaseAmount", 40_000L);
+        given(reasons.findAllOwnedIn(7L, List.of(6L))).willReturn(List.of(
+                RecommendationReason.of(6L, CategorySpendingIncreaseGenerator.REASON_INCREASE, "증가", evidence)));
+
+        RecommendationSimulationPreset preset = assembler.assemble(7L, r);
+
+        assertThat(preset.available()).isTrue();
+        assertThat(preset.type()).isEqualTo(SimulationType.SPENDING);
+        assertThat(preset.request()).isEqualTo(new SpendingSimulationRequest("FOOD", 40_000L, null));
+        assertThat(preset.assumptions()).isEmpty();
+
+        given(reasons.findAllOwnedIn(7L, List.of(6L))).willReturn(List.of(
+                RecommendationReason.of(6L, CategorySpendingIncreaseGenerator.REASON_INCREASE, "증가", json.createObjectNode())));
+        assertThat(assembler.assemble(7L, r).unavailableReason()).isEqualTo(RecommendationSimulationPreset.SNAPSHOT_FIELD_MISSING);
+        Recommendation noAmount = recommendation(6L, "SPENDING", "REDUCE_CATEGORY_SPENDING", Recommendation.Effect.NONE);
+        assertThat(assembler.assemble(7L, noAmount).unavailableReason()).isEqualTo(RecommendationSimulationPreset.EFFECT_AMOUNT_MISSING);
+    }
+
+    @Test
+    void refinancePresetUsesTargetProductFromReasonAndLeavesAccountNoToClient() {
+        Recommendation r = recommendation(8L, "LOAN", "REFINANCE_LOAN",
+                new Recommendation.Effect(6_000L, 18_000L, 18_000L, null, null, null, null, null));
+        ObjectNode evidence = json.createObjectNode();
+        evidence.put("loanId", 5L).put("targetProductId", 40L).put("interestSaving", 18_000L);
+        given(reasons.findAllOwnedIn(7L, List.of(8L))).willReturn(List.of(
+                RecommendationReason.of(8L, HighInterestLoanGenerator.REASON_ABOVE_MARKET, "고금리", json.createObjectNode().put("loanId", 5L)),
+                RecommendationReason.of(8L, HighInterestLoanGenerator.REASON_INTEREST_SAVING, "절감", evidence)));
+
+        RecommendationSimulationPreset preset = assembler.assemble(7L, r);
+
+        assertThat(preset.available()).isTrue();
+        assertThat(preset.type()).isEqualTo(SimulationType.LOAN_REFINANCE);
+        assertThat(preset.endpoint()).isEqualTo("/api/v1/simulations/loan/refinance");
+        assertThat(preset.request()).isEqualTo(new LoanRefinanceSimulationRequest(null, 40L, null));
+        assertThat(preset.assumptions()).containsExactly(RecommendationSimulationPreset.ACCOUNT_NO_REQUIRED_BY_CLIENT);
+
+        // 절감액을 추정하지 못한 추천은 대상 상품 근거가 없다
+        given(reasons.findAllOwnedIn(7L, List.of(8L))).willReturn(List.of(
+                RecommendationReason.of(8L, HighInterestLoanGenerator.REASON_ESTIMATE_UNAVAILABLE, "불가", json.createObjectNode())));
+        RecommendationSimulationPreset unavailable = assembler.assemble(7L, r);
+        assertThat(unavailable.available()).isFalse();
+        assertThat(unavailable.unavailableReason()).isEqualTo(RecommendationSimulationPreset.REFINANCE_TARGET_MISSING);
     }
 
     private static Recommendation recommendation(long id, String domain, String type, Recommendation.Effect effect) {

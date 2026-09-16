@@ -51,7 +51,7 @@ domain/simulation/
 - **`SimulationBaseline`**: 실행 시점 현황. `SimulationBaselineReader`가 읽기 전용으로 모은다.
   - 소득: `financial_profile.monthly_income`. 없으면 null + `INCOME_UNKNOWN`.
   - 소비: **기준일이 속한 달을 제외한 직전 3개 달력월**의 월평균(전체·카테고리 코드별, 미분류는 `UNCATEGORIZED`). 거래가 없으면 0 + `SPENDING_NO_TRANSACTIONS`.
-  - 모으기 목표(ACTIVE·SAVING): Goal 도메인과 같은 정의 — 모인 금액 = 연결 계좌 잔액 합, 속도 = 모인 금액 / max(1, 생성일~기준일 경과 개월), 남은 금액 = max(0, 목표 − 모인 금액), 예상 달성일 = `GoalAchievementProjection`. 없으면 `NO_ACTIVE_SAVING_GOAL`.
+  - 모으기 목표(ACTIVE·SAVING): Goal 도메인과 같은 정의 — 모인 금액 = 확보액(626 `GoalAllocationReader`: 예·적금 전액 + 입출금은 그 목표에 담은 금액, null 기여액은 잔액 전체), 속도 = 모인 금액 / max(1, 생성일~기준일 경과 개월), 남은 금액 = max(0, 목표 − 모인 금액), 예상 달성일 = `GoalAchievementProjection`. 없으면 `NO_ACTIVE_SAVING_GOAL`.
   - 줄이기 목표(ACTIVE·SPENDING): 예산, 이번 달 지출, 예상 월말 지출(Goal과 같은 식 `spent × 월 일수 / 경과 일수`, 반올림).
 - **`GoalAchievementProjection.expectedDate(remaining, pace, base)`**: 남은 금액 ≤ 0 → base, 속도 ≤ 0 → null, 그 외 `base + ceil(remaining / pace)`개월. `GoalCalculationService.getForecast`와 같은 식이며 `SimulationApiTest.baselineForecastMatchesGoalForecastApi`가 Goal API 응답과 대조한다.
   Goal 코드를 호출하지 않는 이유: develop의 `getForecast`는 목표 잔액을 갱신하고 이력을 남기는 쓰기 경로이고, 546이 같은 메서드를 수정 중이라 550에서 Goal 도메인을 건드리면 충돌한다. **546 병합 후 Goal 쪽에 순수 함수가 생기면 이 클래스를 그 함수로 교체한다.**

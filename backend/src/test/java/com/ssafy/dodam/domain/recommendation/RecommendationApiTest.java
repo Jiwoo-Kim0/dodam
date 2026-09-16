@@ -27,6 +27,7 @@ import com.ssafy.dodam.domain.user.entity.FinancialProfile;
 import com.ssafy.dodam.domain.user.entity.User;
 import com.ssafy.dodam.domain.user.repository.FinancialProfileRepository;
 import com.ssafy.dodam.domain.user.repository.UserRepository;
+import com.ssafy.dodam.global.security.SensitiveNumberHasher;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -62,6 +63,7 @@ class RecommendationApiTest {
     @Autowired RecommendationHistoryRepository histories;
     @Autowired FinancialProfileRepository profiles;
     @Autowired JdbcTemplate jdbc;
+    @Autowired SensitiveNumberHasher hasher;
     @MockitoBean DiagnosisClock diagnosisClock;
     @MockitoBean RecommendationClock clock;
     // 587: 추천 프리셋을 그대로 실행하는 검증에서 시뮬레이션 기준일을 진단 기준일과 같은 날로 고정한다
@@ -427,12 +429,162 @@ class RecommendationApiTest {
                 .isEqualTo(monthlyCostSaving);
     }
 
+    /**
+     * 627: 카테고리 소비 증가·고금리 대출 진단 → 추천 3건. 식비 100,000 → 140,000(+40,000), 대출 1,200,000·12%·만기일시 3회(이자 36,000)를
+     * 6% 상품 A로 대환하면 18,000 절감(회차당 6,000). 연체 대출은 절감액 없이 비교 권고만. 우선순위: 대환(HIGH 30 + 효과 1) >
+     * 연체 대출(HIGH 30) > 식비(MEDIUM 20 + 효과 1 + 난이도 5).
+     */
+    @Test
+    void categorySpendingAndRefinanceRecommendationsCarryPresets() throws Exception {
+        Long fresh = users.save(User.createLocalUser(UUID.randomUUID() + "@example.com", "unused", "627")).getId();
+        long food = category("FOOD", "식비");
+        for (int month = 3; month <= 5; month++) {
+            expense(fresh, LocalDate.of(2026, month, 5), 100_000L, food);
+        }
+        expense(fresh, LocalDate.of(2026, 6, 5), 120_000L, food);
+        expense(fresh, LocalDate.of(2026, 7, 5), 140_000L, food);
+        expense(fresh, LocalDate.of(2026, 8, 5), 160_000L, food);
+        long company = company();
+        long own = product(company, "내 신용대출", "PERSONAL_CREDIT");
+        long productA = product(company, "A 신용대출", "PERSONAL_CREDIT");
+        option(productA, 3, "6", "BULLET");
+        long productB = product(company, "B 갈아타기", "CREDIT_REFINANCE");
+        option(productB, 12, "8", "BULLET");
+        long loanId = loan(fresh, "9900000000011", own, "ACTIVE", 1_200_000L, "12");
+        long overdue = loan(fresh, "9900000000012", own, "OVERDUE", 500_000L, "9.5");
+
+        long diagnosisId = diagnose(fresh, null);
+        String generated = mvc.perform(post("/api/v1/recommendations/generate").with(user(fresh.toString())).contentType(JSON)
+                        .content("{\"diagnosisId\":" + diagnosisId + "}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.created").value(3))
+                .andExpect(jsonPath("$.data.skipped").isEmpty())
+                .andExpect(jsonPath("$.data.items[0].recommendation.type").value("REFINANCE_LOAN"))
+                .andExpect(jsonPath("$.data.items[0].recommendation.priority").value(1))
+                .andExpect(jsonPath("$.data.items[1].recommendation.type").value("REFINANCE_LOAN"))
+                .andExpect(jsonPath("$.data.items[2].recommendation.type").value("REDUCE_CATEGORY_SPENDING"))
+                .andExpect(jsonPath("$.data.items[2].recommendation.priority").value(3))
+                .andReturn().getResponse().getContentAsString();
+        JsonNode refinance = json.readTree(generated).at("/data/items/0/recommendation");
+        assertThat(refinance.at("/domain").asText()).isEqualTo("LOAN");
+        assertThat(refinance.at("/title").asText()).isEqualTo("'신용대출' A 신용대출(으)로 대환 검토하기");
+        assertThat(refinance.at("/effect/interestSaving").asLong()).isEqualTo(18_000L);
+        assertThat(refinance.at("/effect/monthlyCostSaving").asLong()).isEqualTo(6_000L);
+        assertThat(refinance.at("/effect/annualCostSaving").asLong()).isEqualTo(18_000L);
+        assertThat(refinance.at("/simulation/available").asBoolean()).isTrue();
+        assertThat(refinance.at("/simulation/type").asText()).isEqualTo("LOAN_REFINANCE");
+        assertThat(refinance.at("/simulation/endpoint").asText()).isEqualTo("/api/v1/simulations/loan/refinance");
+        assertThat(refinance.at("/simulation/request/targetProductId").asLong()).isEqualTo(productA);
+        assertThat(refinance.at("/simulation/request/accountNo").isNull()).isTrue();
+        assertThat(refinance.at("/simulation/request/refinanceAmount").isNull()).isTrue();
+        assertThat(refinance.at("/simulation/assumptions/0").asText()).isEqualTo("ACCOUNT_NO_REQUIRED_BY_CLIENT");
+        assertThat(generated).doesNotContain("9900000000011");
+        long refinanceId = refinance.at("/recommendationId").asLong();
+        mvc.perform(get("/api/v1/recommendations/{id}/reasons", refinanceId).with(user(fresh.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].code").value("LOAN_RATE_ABOVE_MARKET"))
+                .andExpect(jsonPath("$.data[1].code").value("REFINANCE_INTEREST_SAVING"))
+                .andExpect(jsonPath("$.data[1].evidence.loanId").value(loanId))
+                .andExpect(jsonPath("$.data[1].evidence.targetProductId").value(productA))
+                .andExpect(jsonPath("$.data[1].evidence.feesIncluded").value(false));
+
+        JsonNode comparison = json.readTree(generated).at("/data/items/1/recommendation");
+        assertThat(comparison.at("/title").asText()).isEqualTo("'신용대출' 대환 조건 비교하기");
+        assertThat(comparison.at("/effect/interestSaving").isNull()).isTrue();
+        assertThat(comparison.at("/simulation/available").asBoolean()).isFalse();
+        assertThat(comparison.at("/simulation/unavailableReason").asText()).isEqualTo("REFINANCE_TARGET_MISSING");
+        mvc.perform(get("/api/v1/recommendations/{id}/reasons", comparison.at("/recommendationId").asLong()).with(user(fresh.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[1].code").value("REFINANCE_ESTIMATE_UNAVAILABLE"))
+                .andExpect(jsonPath("$.data[1].evidence.loanId").value(overdue))
+                .andExpect(jsonPath("$.data[1].evidence.reason").value("LOAN_OVERDUE"));
+
+        JsonNode spending = json.readTree(generated).at("/data/items/2/recommendation");
+        assertThat(spending.at("/domain").asText()).isEqualTo("SPENDING");
+        assertThat(spending.at("/title").asText()).isEqualTo("식비 소비 월 40,000원 줄이기");
+        assertThat(spending.at("/effect/monthlyCostSaving").asLong()).isEqualTo(40_000L);
+        assertThat(spending.at("/effect/annualCostSaving").asLong()).isEqualTo(480_000L);
+        assertThat(spending.at("/simulation/type").asText()).isEqualTo("SPENDING");
+        assertThat(spending.at("/simulation/request/category").asText()).isEqualTo("FOOD");
+        assertThat(spending.at("/simulation/request/monthlyReduction").asLong()).isEqualTo(40_000L);
+        assertThat(spending.at("/simulation/assumptions").isEmpty()).isTrue();
+        // 목록·상세에서도 같은 프리셋이 실리고, 재요청은 전부 재사용된다
+        mvc.perform(get("/api/v1/recommendations/{id}", spending.at("/recommendationId").asLong()).with(user(fresh.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.simulation.request.category").value("FOOD"));
+        mvc.perform(get("/api/v1/recommendations?domain=LOAN").with(user(fresh.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(2));
+        mvc.perform(post("/api/v1/recommendations/generate").with(user(fresh.toString())).contentType(JSON)
+                        .content("{\"diagnosisId\":" + diagnosisId + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.reused").value(3));
+        // 카테고리 프리셋을 그대로 실행하면 식비 월평균 140,000에서 40,000을 줄인 결과가 된다
+        FinancialProfile profile = FinancialProfile.empty(fresh);
+        profile.update(3_000_000L, null, null, null, null);
+        profiles.save(profile);
+        mvc.perform(post(spending.at("/simulation/endpoint").asText()).with(user(fresh.toString())).contentType(JSON)
+                        .content(json.writeValueAsString(spending.at("/simulation/request"))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.simulation.type").value("SPENDING"))
+                .andExpect(jsonPath("$.data.simulation.before.monthlySpending").value(140_000))
+                .andExpect(jsonPath("$.data.simulation.after.monthlySpending").value(100_000));
+    }
+
     private void expense(LocalDate date, long amount) {
+        expense(owner, date, amount, null);
+    }
+
+    private void expense(Long userId, LocalDate date, long amount, Long categoryId) {
         jdbc.update("""
                 INSERT INTO `transaction` (transaction_id, user_id, account_id, card_id, category_id, transaction_date,
                     transaction_time, transaction_type, amount, balance_after, merchant_name, payment_method, spending_type,
                     summary, memo, hidden, source_type, created_at, updated_at)
-                VALUES (?, ?, NULL, NULL, NULL, ?, NULL, 'EXPENSE', ?, NULL, NULL, 'CARD', 'VARIABLE', 'test', NULL, FALSE, 'SEED', ?, NULL)
-                """, UUID.randomUUID().toString(), owner, date, amount, NOW);
+                VALUES (?, ?, NULL, NULL, ?, ?, NULL, 'EXPENSE', ?, NULL, NULL, 'CARD', 'VARIABLE', 'test', NULL, FALSE, 'SEED', ?, NULL)
+                """, UUID.randomUUID().toString(), userId, categoryId, date, amount, NOW);
+    }
+
+    private long category(String code, String name) {
+        if (jdbc.queryForObject("SELECT COUNT(*) FROM transaction_category WHERE code = ?", Integer.class, code) == 0) {
+            jdbc.update("INSERT INTO transaction_category (code, name, default_spending_type, active) VALUES (?, ?, 'VARIABLE', TRUE)", code, name);
+        }
+        return jdbc.queryForObject("SELECT category_id FROM transaction_category WHERE code = ?", Long.class, code);
+    }
+
+    private long company() {
+        if (jdbc.queryForObject("SELECT COUNT(*) FROM financial_company WHERE company_code = 'TESTBANK'", Integer.class) == 0) {
+            jdbc.update("INSERT INTO financial_company (company_code, company_name, sector) VALUES ('TESTBANK', '테스트은행', 'BANK')");
+        }
+        return jdbc.queryForObject("SELECT company_id FROM financial_company WHERE company_code = 'TESTBANK'", Long.class);
+    }
+
+    private long product(long companyId, String name, String loanType) {
+        jdbc.update("""
+                INSERT INTO financial_product (company_id, source_type, external_product_code, product_type, product_name, join_way,
+                    saving_type, loan_type, special_condition, join_member, min_rate, max_rate, max_limit, baseline_performance,
+                    max_benefit_limit, description, benefits, synced_at)
+                VALUES (?, 'SEED', NULL, 'LOAN', ?, NULL, NULL, ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?)
+                """, companyId, name, loanType, NOW.minusDays(1));
+        return jdbc.queryForObject("SELECT MAX(product_id) FROM financial_product", Long.class);
+    }
+
+    private void option(long productId, int term, String minRate, String repaymentType) {
+        jdbc.update("""
+                INSERT INTO financial_product_option (product_id, term, rate, preferred_rate, rate_type, min_rate, max_rate, repayment_type, limit_amount)
+                VALUES (?, ?, NULL, NULL, 'FIXED', ?, 10, ?, NULL)
+                """, productId, term, new java.math.BigDecimal(minRate), repaymentType);
+    }
+
+    /** 만기일시 12개월 약정, 다음 상환일 2026-10-01, 만기 2026-12-01 → 기준일 이후 3회. */
+    private long loan(Long userId, String accountNo, long productId, String status, long balance, String rate) {
+        jdbc.update("""
+                INSERT INTO loan (user_id, withdrawal_account_id, withdrawal_account_type, financial_product_id, institution_code,
+                    institution_name, account_no_hash, account_no_masked, account_name, loan_type, repayment_type, status, loan_period,
+                    start_date, maturity_date, original_principal, balance, interest_rate, repayment_day, next_repayment_date, created_at, updated_at)
+                VALUES (?, 1, 'DEMAND_DEPOSIT', ?, 'TESTBANK', '테스트은행', ?, '9900-***-**001', '신용대출', 'CREDIT', 'BULLET', ?, 12,
+                    ?, ?, ?, ?, ?, 1, ?, ?, NULL)
+                """, userId, productId, hasher.hash(accountNo), status, LocalDate.of(2025, 12, 1), LocalDate.of(2026, 12, 1), balance, balance,
+                new java.math.BigDecimal(rate), LocalDate.of(2026, 10, 1), NOW);
+        return jdbc.queryForObject("SELECT loan_id FROM loan WHERE user_id = ? AND account_no_hash = ?", Long.class, userId, hasher.hash(accountNo));
     }
 }

@@ -1,6 +1,6 @@
 # Recommendation API — 생성·조회 (S15P21D105-548) · 상태변경·이력 (S15P21D105-549) · 시뮬레이션 프리셋 (S15P21D105-587)
 
-작성일: 2026-09-13, 갱신 2026-09-15(587 §5.1). 547 저장 기반([recommendation.md](recommendation.md)) 위에 API 16의 HTTP 경로 13개를 구현했다.
+작성일: 2026-09-13, 갱신 2026-09-15(587 §5.1)·2026-09-16(627 생성기 2종). 547 저장 기반([recommendation.md](recommendation.md)) 위에 API 16의 HTTP 경로 13개를 구현했다.
 계획과 결정 배경은 [recommendation-api-plan.md](recommendation-api-plan.md), [simulation-587-plan.md](simulation-587-plan.md) §3에 있다.
 
 기준 자료: [API 16](../../docs/API명세서/16%20Recommendation%203cdbb6ea3564801eb1bbc55201aee86a.csv),
@@ -10,7 +10,7 @@
 
 | 포함 | 제외(후속) |
 | --- | --- |
-| 운영 생성기 3종(진단이 만드는 3개 문제 유형 대응) | 대출·카드·계좌·예적금 추천 — 대응 진단 규칙 미구현 |
+| 운영 생성기 5종(진단이 만드는 5개 문제 유형 대응. 627: 카테고리 소비 증가·고금리 대출) | 카드·계좌·예적금 추천 — 대응 진단 규칙 미구현 |
 | 효과 계산, 우선순위 점수·순위 | 군집 가중치 α (군집 미연동, α = 0) |
 | POST generate, GET 목록·summary·priorities·상세·reasons·effect·goal-impact | ACCEPT 시 `improvement_action` 생성 (Improvement 이슈) |
 | POST accept·reject·complete·defer, GET history | 대출·카드 등 추가 유형의 시뮬레이션 대응 |
@@ -26,9 +26,13 @@
 | GOAL/SAVING_GOAL_RISK | SAVING / INCREASE_MONTHLY_SAVING · `:<goalId>` | `currentValue.requiredMonthlySaving`(R)·`averageMonthlySaving`(A), `evidence.savingGoalSnapshot.targetAmount`, `evidence.goalSnapshot.currentAmount` | `contributionAmount = R − A`. `remaining = target − current`. `currentForecastDate = base + ceil(remaining/A)`(A ≤ 0 → null), `improvedForecastDate = base + ceil(remaining/R)`, `advancedDays = current − improved`(한쪽 null → null). R − A ≤ 0 또는 remaining = 0 → 후보 없음. 금액 필드 누락 → 날짜 null + 근거 `SNAPSHOT_FIELD_MISSING` |
 | GOAL/SPENDING_GOAL_RISK | SPENDING / REDUCE_SPENDING · `:<goalId>` | `currentValue.monthlyBudget·spent·projectedMonthEnd` | `monthlyCostSaving = max(0, max(spent, projected) − budget)`, `annualCostSaving = monthly × 12`(가정 `ANNUAL_IS_MONTHLY_TIMES_12`, 이 생성기만). 0 → 후보 없음 |
 | CASHFLOW/BALANCE_SHORTAGE | CASHFLOW / SECURE_SHORTAGE_BUFFER · `:<riskId>` | `currentValue.riskId·riskDate·expectedBalance`, `evidence.forecastId` | 부족액 `max(0, −expectedBalance)`. `riskReduction = BALANCE_SHORTAGE_AVOIDED`, 금액 효과 null |
+| SPENDING/CATEGORY_SPENDING_INCREASE (627, 버전 `627.1`) | SPENDING / REDUCE_CATEGORY_SPENDING · `:<categoryId>` | `currentValue.categoryId·categoryCode·categoryName·monthlyAverage·increaseAmount`, `benchmarkValue.previousMonthlyAverage` | `monthlyCostSaving = increaseAmount`(이전 평균 수준으로 되돌리기), `annualCostSaving = monthly × 12`. 증가액 ≤ 0 → 후보 없음. 근거 `CATEGORY_SPENDING_INCREASE` evidence에 `categoryCode` 보존(프리셋용) |
+| LOAN/HIGH_INTEREST_RATE (627, 버전 `627.1`) | LOAN / REFINANCE_LOAN · `:<loanId>` | `currentValue.loanId·accountName·balance·interestRate·referenceRate·rateDifference·refinance{available, targetProductId, appliedRate, remainingInstallments, interestSaving…}` | 추정 있음: `interestSaving`(만기까지 총이자 차이), `monthlyCostSaving = interestSaving / 잔여 회차`, `annualCostSaving = monthly × min(12, 잔여 회차)`(잔여 12회 미만에 ×12를 적용하면 부풀려지므로 소비 생성기와 다르다). 근거 `LOAN_RATE_ABOVE_MARKET` + `REFINANCE_INTEREST_SAVING`(evidence `loanId·targetProductId·feesIncluded=false`). 추정 없음(연체·조건 맞는 상품 없음): 제목 "대환 조건 비교하기", 효과 `NONE`, 근거 `LOAN_RATE_ABOVE_MARKET` + `REFINANCE_ESTIMATE_UNAVAILABLE`(evidence `reason`) |
 
 예상 달성일 식은 `GoalCalculationService.forecast()`와 같다. 현재·개선 달성일을 **같은 식·같은 기준일**로 계산하므로 546이 스냅샷에 넣는 `forecast`는 읽지 않는다(v2·v3 진단 동일 결과).
-근거 코드: `GOAL_SAVING_SHORTFALL`, `GOAL_FORECAST_DELAY`, `SNAPSHOT_FIELD_MISSING`, `SPENDING_OVER_BUDGET`, `CASHFLOW_SHORTAGE`.
+근거 코드: `GOAL_SAVING_SHORTFALL`, `GOAL_FORECAST_DELAY`, `SNAPSHOT_FIELD_MISSING`, `SPENDING_OVER_BUDGET`, `CASHFLOW_SHORTAGE`,
+`CATEGORY_SPENDING_INCREASE`, `LOAN_RATE_ABOVE_MARKET`, `REFINANCE_INTEREST_SAVING`, `REFINANCE_ESTIMATE_UNAVAILABLE`(627).
+우선순위 점수에서 LOAN 추천은 실행 난이도 +5를 받지 않고, `interestSaving`은 효과 점수에 들어가지 않는다(`monthlyCostSaving`만).
 
 ## 3. 우선순위 (`RecommendationPriorityPolicy`)
 
@@ -92,9 +96,12 @@
 | --- | --- | --- | --- | --- |
 | SPENDING / REDUCE_SPENDING | SPENDING · `/api/v1/simulations/spending` | `{category: null, monthlyReduction, durationMonths: null}` | `effect.monthlyCostSaving`. 진단 SPENDING_GOAL_RISK가 목표 예산 전체 기준이라 카테고리 미지정 | `REDUCTION_APPLIES_TO_TOTAL_SPENDING` |
 | SAVING / INCREASE_MONTHLY_SAVING | SAVING · `/api/v1/simulations/saving` | `{accountNo: null, goalId, monthlySavingAmount: R, durationMonths: null}` | `goalId`는 추천의 `goalId`(619). R은 근거 `GOAL_SAVING_SHORTFALL` evidence의 `requiredMonthlySaving`. 시뮬레이션은 변경 후 절대값을 받으므로 `contributionAmount`(R − A)가 아니라 R을 준다 | 없음. 추천에 `goalId`가 없을 때만 `TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT` |
+| SPENDING / REDUCE_CATEGORY_SPENDING (627) | SPENDING · `/api/v1/simulations/spending` | `{category: <categoryCode>, monthlyReduction, durationMonths: null}` | `category`는 근거 `CATEGORY_SPENDING_INCREASE` evidence의 `categoryCode`, 금액은 `effect.monthlyCostSaving` | 없음. 근거에 코드가 없으면 `SNAPSHOT_FIELD_MISSING`, 금액 없음 `EFFECT_AMOUNT_MISSING` |
+| LOAN / REFINANCE_LOAN (627) | LOAN_REFINANCE · `/api/v1/simulations/loan/refinance` | `{accountNo: null, targetProductId, refinanceAmount: null}` | `targetProductId`는 근거 `REFINANCE_INTEREST_SAVING` evidence. `refinanceAmount: null`은 잔액 전액 | `ACCOUNT_NO_REQUIRED_BY_CLIENT` — 명세 17 대환 본문은 계좌번호 원문만 받는데 FE는 마스킹 값만 가지므로 **현재 FE가 그대로 실행할 수 없다**. 619의 `goalId`처럼 `loanId` 본문 확장이 후속(remaining-work 627 절). 절감액을 추정하지 못한 추천은 `available=false`, `REFINANCE_TARGET_MISSING` |
 | CASHFLOW / SECURE_SHORTAGE_BUFFER, 그 외 | `available=false` | 없음 | — | `unavailableReason=NO_MATCHING_SIMULATION_TYPE` |
 
-- `available=false`면 `type`·`endpoint`·`request` 키가 없고 `unavailableReason`이 있다. 사유: `NO_MATCHING_SIMULATION_TYPE`(대응 유형 없음), `EFFECT_AMOUNT_MISSING`(소비 추천의 월 절감액 없음·0), `SNAPSHOT_FIELD_MISSING`(저축 추천 근거에 R 없음). `assumptions`는 항상 배열(없으면 `[]`).
+- `available=false`면 `type`·`endpoint`·`request` 키가 없고 `unavailableReason`이 있다. 사유: `NO_MATCHING_SIMULATION_TYPE`(대응 유형 없음), `EFFECT_AMOUNT_MISSING`(소비 추천의 월 절감액 없음·0), `SNAPSHOT_FIELD_MISSING`(저축 추천 근거에 R 없음, 카테고리 소비 추천 근거에 코드 없음), `REFINANCE_TARGET_MISSING`(대환 추천에 대상 상품 없음). `assumptions`는 항상 배열(없으면 `[]`).
+- 근거 조회는 SAVING·REDUCE_CATEGORY_SPENDING·REFINANCE_LOAN 추천이 있을 때만 `findAllOwnedIn`으로 한 번 한다(627에서 SAVING 한정에서 확장).
 - `accountNo`는 항상 null이다. 원문 계좌번호를 응답에 싣지 않고 FE도 마스킹 값만 가진다. 대상 목표는 619(2026-09-16)부터 `goalId`로 넘긴다 — 명세 17 `POST /simulations/saving` 본문 확장(simulation.md §4). SAVING 추천은 생성기가 진단 evidence `targetId`를 `Recommendation.goalId`에 채워야만 만들어지므로 과거 추천에도 `goalId`가 있다. FE는 `request`를 그대로 POST하면 되고, 그 사이 목표가 PAUSED·삭제됐으면 실행이 400/404다(프리셋은 재계산하지 않는다).
 - `durationMonths: null`은 시뮬레이션 기본값(12개월)을 뜻한다. 추천 상태(REJECTED 등)와 무관하게 제공하며 실행 여부는 FE가 정한다.
 - 일관성: 진단 기준일 = 실행일이면 `effect.improvedForecastDate` = 프리셋 실행의 대상 `goalId`에 해당하는 `goalImpacts[].afterForecastDate`다. 목표가 여러 개여도 대상 목표만 변경한다(simulation.md §11.1).
@@ -143,11 +150,18 @@ H2 (`.\gradlew.bat test --tests 'com.ssafy.dodam.domain.recommendation.*'`, 2026
 - `RecommendationSimulationPresetAssemblerTest`: 저축 프리셋 `request.goalId` = 추천 goalId(단건·목록 일괄), `assumptions=[]`.
 - `RecommendationApiTest`: 생성·상세·목록·priorities·상태변경 응답의 프리셋에 `goalId`가 실리고, 목표 2개에서 프리셋 그대로 실행한 결과가 대상 목표만 바꿔 `afterForecastDate` = `effect.improvedForecastDate`, 비대상 목표 불변·`SPLIT_BY_REMAINING` 없음.
 
+627 (2026-09-16, 같은 명령 통과 — 생성기 10건·프리셋 8건·API 9건):
+
+- `RecommendationGeneratorTest` +3: 카테고리 생성기(이전 평균 복원액·×12·근거 `categoryCode`·증가 0 → 후보 없음·benchmark 없음 → INSUFFICIENT_DATA), 대환 생성기(추정 있음: 절감 18,000·회차당 6,000·잔여 3회라 연간 18,000, 근거 2종·`feesIncluded=false`; 추정 없음: 효과 NONE·"대환 조건 비교하기"·`REFINANCE_ESTIMATE_UNAVAILABLE`, 기준금리 없음 → INSUFFICIENT_DATA).
+- `RecommendationSimulationPresetAssemblerTest` +2: 카테고리 프리셋 `{category: FOOD, monthlyReduction}`·코드 없음 `SNAPSHOT_FIELD_MISSING`·금액 없음 `EFFECT_AMOUNT_MISSING`, 대환 프리셋 `{accountNo: null, targetProductId, refinanceAmount: null}` + `ACCOUNT_NO_REQUIRED_BY_CLIENT`, 대상 상품 없음 `REFINANCE_TARGET_MISSING`.
+- `RecommendationApiTest` +1: 실제 진단(식비 +40,000, 대출 12% → 6% 대환 18,000 절감, 연체 대출)으로 추천 3건 생성 — 우선순위 대환(31) > 연체 비교(30) > 식비(26), 효과·프리셋·근거 evidence, 응답에 계좌번호 원문 없음, 상세·목록·재요청 `reused=3`, 카테고리 프리셋 그대로 실행 시 식비 140,000 → 100,000.
+
 MySQL: 스키마 변경 없음. 547 `RecommendationMySqlIntegrationTest` 3건은 `RECOMMENDATION_MYSQL_TEST_URL` 설정 시만 실행된다.
 
 ## 9. 현재 제한사항과 인계
 
-- [ ] 대출·카드·계좌·예적금 추천 없음. 진단 규칙(고금리 대출, 저사용 카드, 휴면 계좌 등)이 먼저다. 생성기를 추가하면 Collector가 자동으로 모은다.
+- [ ] 카드·계좌·예적금 추천 없음. 진단 규칙(저사용 카드, 휴면 계좌 등)이 먼저다. 생성기를 추가하면 Collector가 자동으로 모은다. 대출은 627에서 대환 추천 1종만 추가했다(금리인하요구권·일부 상환 권고는 없음).
+- [ ] 추천 응답에 `sourceIssueId`가 없다. 후보에는 있지만 `recommendation` 테이블에 컬럼이 없어 저장·응답으로 이어지지 않는다. FE 발견 상세 화면의 문제별 추천 연결에 필요하며 627 범위에서 제외했다(remaining-work 627 절).
 - [ ] 군집 α = 0. 545 군집 연동 후 `RecommendationPriorityPolicy`에 보조 점수를 더한다.
 - [ ] ACCEPT 시 `improvement_action` 생성은 Improvement 이슈. 여기서는 훅을 두지 않았다. 시뮬레이션 실행 결과를 추천에 되돌려 연결하는 것(추천 id 저장)도 같은 이슈에서 계약을 정한다 — 587은 추천 → 시뮬레이션 방향만 연결했다.
 - [ ] `annualCostSaving = monthly × 12`, 우선순위 가중치, 같은 상태 재요청 409는 서비스 결정이다. 팀 합의가 다르면 생성기 버전(`548.1`)을 올린다.
