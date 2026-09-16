@@ -224,6 +224,17 @@ services:
       KAKAO_APP_ID: ${KAKAO_APP_ID:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       # ───────────────────────────────────────────────────────────────────
+      # ── AI 코치 (2026-09-16 추가, S15P21D105-589) ──────────────────
+      # 키는 Day 5에 발급해 .env에 넣어 뒀지만 여기서 전달하지 않아
+      # 컨테이너 안에서는 없는 것과 같았다. API 21이 실제로 쓰기 시작하면서 추가한다.
+      # (backend 컨테이너 → api.openai.com 연결성은 Day 7에 401로 확인됨)
+      #
+      # `:-` 기본값을 둔 이유: 값이 비어도 백엔드는 정상 기동하고 코치만
+      #   템플릿 응답(기획안 11-3의 대체 방법)으로 내려간다. 배포를 막을 사안이 아니다.
+      #   대신 application-prod.yml이 ${OPENAI_API_KEY}를 참조하므로
+      #   check-env.sh 3-1이 "이 줄이 사라졌는지"는 계속 감시한다.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # ───────────────────────────────────────────────────────────────────
       # [임시 조치] 2026-09-08
       # develop에 상품 엔티티(financial_company / financial_product /
       # financial_product_option)는 들어왔는데 그 테이블을 만드는 Flyway 마이그레이션이

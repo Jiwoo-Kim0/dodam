@@ -49,4 +49,11 @@ tasks.named('test') {
     useJUnitPlatform()
     // 통합 테스트 클래스마다 Spring 컨텍스트가 캐시되어(50개 이상) 기본 힙(512MB)에서는 OutOfMemoryError로 컨텍스트 로딩이 실패한다.
     maxHeapSize = '2g'
+    // Spring TestContext 캐시 기본 상한은 32다. 상한을 넘으면 LRU로 컨텍스트를 닫는데,
+    // 닫히는 컨텍스트의 `ddl-auto: create-drop`이 H2 인메모리 DB의 스키마를 드롭한다.
+    // 그 DB(`jdbc:h2:mem:dodam`)를 공유하는 다른 캐시 컨텍스트들은 그때부터 전부
+    // "Table ... not found"로 실패한다 — 새로 추가한 테스트가 아니라 무관한 테스트가 깨지므로
+    // 원인을 찾기 어렵다. 실제로 2026-09-16에 컨텍스트가 33개가 되면서 98건이 이렇게 깨졌다.
+    // 컨텍스트 수가 64에 가까워지면 힙과 함께 다시 올려야 한다.
+    systemProperty 'spring.test.context.cache.maxSize', '64'
 }

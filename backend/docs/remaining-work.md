@@ -2,7 +2,37 @@
 
 마지막 갱신: 2026-09-16
 
-백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 587, 611이다.
+백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 587, 589, 611이다.
+
+## S15P21D105-589 — AI Coach (API 21)
+
+구현 계약: [ai-coach.md](ai-coach.md)
+
+### 응답 캐시가 없다
+
+- [ ] `(userId, topic, 대상 id, facts 해시)` 키로 짧은 TTL 캐시를 둔다. 같은 진단으로 요약을 반복 호출하면 그때마다 외부 API에 과금된다. 코치는 저장값을 문장으로 옮기는 일이라 같은 입력이면 같은 출력이어도 무방하다.
+- 근거: Redis는 이미 붙어 있고 Java 코드에 사용처가 하나도 없다(`infra/docker-compose.yml` redis 블록 주석). 코치가 첫 사용처로 적합하다.
+
+### 사용자별 호출 레이트 리밋이 없다
+
+- [ ] 코치 3종에 사용자당 호출 제한을 건다. 외부 과금이 걸린 유일한 엔드포인트인데 nginx 레이트 리밋은 로그인 경로에만 걸려 있다.
+
+### 군집 근거가 아직 비어 있다
+
+- [ ] `diagnosis_issue.cluster_context_json`은 항상 null이다(`DiagnosisEvaluator`가 `CLUSTER: UNAVAILABLE/CLUSTER_NOT_CONNECTED`를 남긴다). 545가 군집 신호를 붙이면 코치의 "군집 근거" 구간이 코드 변경 없이 채워진다 — 붙은 뒤 실제로 실리는지 확인한다.
+- 요약(`/financial-summary`)의 군집 구간은 `pattern_analysis`의 완료 행을 읽으므로 이미 동작한다. 두 경로가 다르다.
+
+### 모델 교체 시 파라미터명
+
+- [ ] o-시리즈 모델로 바꾸려면 `max_tokens` → `max_completion_tokens` 변경이 필요하다(`OpenAiCoachTextGenerator`). 현재 기본값 `gpt-4o-mini`는 `max_tokens`를 받는다.
+
+### 명세서 진행상태
+
+- [ ] `docs/API명세서/21 AI Coach ....csv`가 아직 "시작 전"이다. Notion 내보내기 파일이라 레포에서 고치면 다음 내보내기에 덮인다 — Notion에서 갱신할 것.
+
+### Day 11 선공유 계약
+
+- [ ] [improvement-report-contract.md](improvement-report-contract.md)를 FE에 전달하고 필드를 합의받는다. 구현 전 선공유본이라 계산식 세부는 Day 11에 확정된다.
 
 ## S15P21D105-587 — Simulation 전체 통합·추천 연결
 
