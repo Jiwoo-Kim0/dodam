@@ -1015,6 +1015,47 @@ docker-gc = 2026-09-16 17:22
 
 기존 crontab은 `crontab.bak.20260916-gc`로 백업했다.
 
+### 28. `check-env.sh` 앱↔compose 대조 범위 확장 (17:3x)
+
+17절에서 드러난 사각지대를 닫는다. 그때 compose 누락을 이 검사가 못 잡은 이유는 **두 가지**였다.
+
+1. 대조 대상이 `application-prod.yml`뿐인데 소셜 설정은 **`application.yml`**에 있었다
+2. 그 변수들은 `${KAKAO_APP_ID:}`처럼 **기본값이 있어** 백엔드가 정상 기동해버린다
+   → 겉보기 정상, 구글 로그인만 런타임 503
+
+두 번째가 특히 중요하다. 기존 정규식 `\$\{[A-Z_][A-Z0-9_]*\}`는 **기본값 없는 참조만**
+매칭하므로, 파일을 추가로 읽게 해도 `${VAR:...}` 형태는 여전히 놓친다.
+
+#### 수정 내용
+
+- 대조 대상을 `application.yml` + `application-prod.yml` 두 개로 (`APP_CONFIGS`)
+  `application-local.yml`은 로컬 개발 전용이라 제외
+- **기본값 유무로 심각도를 나눈다**
+
+| 형태 | 의미 | 판정 |
+| --- | --- | --- |
+| `${VAR}` | 비면 앱이 기동하지 못함 | **ERROR** (배포 차단) |
+| `${VAR:...}` | 기동은 하지만 기능이 조용히 죽음 | **WARN** (배포는 진행) |
+
+- compose 전달 여부 판정을 `compose_passes()` 함수로 묶어 중복 제거
+
+기본값 있는 변수를 ERROR로 올리지 않은 이유: 실제로 값 없이 운영 중인 항목
+(`KAKAO_APP_ID`는 비어도 정상 동작)이 있고, 배포를 막을 사안이 아니다.
+
+#### 검증 (EC2, 실제 운영 파일 대상 / 사본으로 고장 시나리오)
+
+| 시나리오 | 기대 | 결과 |
+| --- | --- | --- |
+| 현재 상태 | 통과 | `통과 (필수 변수 16개 확인)` exit=0 |
+| compose에서 `GOOGLE_CLIENT_ID` 제거 | WARN, 배포 진행 | WARN 출력, exit=0 |
+| compose에서 `JWT_SECRET` 제거 | ERROR, 배포 차단 | ERROR 출력, exit=1 |
+
+두 번째 시나리오가 **17절에서 실제로 놓쳤던 바로 그 상황**이다. 이제 잡힌다.
+현재 상태에서 새로 뜨는 경고는 없다(`application.yml`의 기본값 있는 변수 3개
+— `FCM_SERVICE_ACCOUNT_PATH`·`KAKAO_APP_ID`·`GOOGLE_CLIENT_ID` — 모두 compose가 전달 중).
+
+테스트에 쓴 `/tmp` 사본은 정리했다. **운영 `check-env.sh`는 다음 배포 때 교체된다.**
+
 ## 남은 것
 - [x] ~~첫 배포에서 `infra-backend:deployed` 태그 생성 확인~~ — 27절, latest=deployed·rollback=직전 정상
 - [ ] 롤백 경로 실제 검증 — 일부러 깨는 커밋으로 "코드+이미지가 함께 되돌아오는지" 확인
@@ -1038,7 +1079,7 @@ docker-gc = 2026-09-16 17:22
 - [x] ~~`KAKAO_CLIENT_ID` 값 정체 확인~~ — REST API 키였다(불필요, 19절에서 제거)
 - [ ] **카카오 네이티브 앱 키 확보 후 FE 전달** — 앱 설정 → 앱 키. 서버·`.env`와 무관
 - [x] ~~운영 `.env`의 미사용 3줄 정리~~ — 19절에서 제거, check-env 통과
-- [ ] `check-env.sh` 3-1 대조에 `application.yml`도 포함 (17절 발견 1의 사각지대)
+- [x] ~~`check-env.sh` 3-1 대조에 `application.yml`도 포함~~ — 28절, 기본값 유무로 ERROR/WARN 분리까지
 - [x] ~~`external-integrations.md` 4절 갱신~~ — 21절에서 처리
 - [x] ~~카카오 콘솔 설정(Android 플랫폼·로그인 ON·닉네임 동의)~~ — 23절, 사용자 직접 완료
 - [x] ~~구글 동의 화면 **테스트 사용자** 등록~~ — 2026-09-16 완료(사용자 직접). 이후 합류하는 팀원은 그때마다 추가 필요
