@@ -8,14 +8,15 @@ import type {
 import { apiClient } from './apiClient';
 
 interface GetNotificationsParams {
+  isRead?: boolean;
   page?: number;
   size?: number;
 }
 
 export const notificationApi = {
-  getNotifications: ({ page = 0, size = 20 }: GetNotificationsParams = {}) =>
+  getNotifications: ({ isRead, page = 0, size = 20 }: GetNotificationsParams = {}) =>
     apiClient.get<PageResponse<NotificationApiResponse>>('/v1/notifications', {
-      query: { page, size },
+      query: { isRead, page, size },
     }),
 
   getUnreadCount: () =>

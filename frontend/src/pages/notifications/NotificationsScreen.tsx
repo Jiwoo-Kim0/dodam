@@ -23,6 +23,7 @@ function getErrorMessage(error: unknown, fallback: string) {
 export function NotificationsScreen() {
   const router = useRouter();
   const {
+    applyNotification,
     deleteNotification,
     error,
     isLoading,
@@ -65,6 +66,8 @@ export function NotificationsScreen() {
         let response = await notificationApi.getNotification(notificationId);
         if (requestId !== detailRequestIdRef.current) return;
         setDetail(response);
+        // 다른 기기에서 먼저 읽었을 수 있다. 서버가 준 읽음 상태를 목록에도 반영한다.
+        applyNotification(response);
 
         if (!response.isRead) {
           try {
@@ -91,7 +94,7 @@ export function NotificationsScreen() {
         }
       }
     },
-    [markRead],
+    [applyNotification, markRead],
   );
 
   const openDetail = (notification: NotificationApiResponse) => {
