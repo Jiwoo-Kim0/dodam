@@ -49,16 +49,20 @@ CREATE TABLE spending_goal (
 );
 
 -- 509 연결계좌. 다른 fixture와의 DROP 순서 의존을 피하려고 goal·account 외래키는 걸지 않는다(실제 V8에는 있다).
--- 계좌당 목표 1개 제약(uk_goal_account_account)은 서비스가 먼저 검사하지만 DB에서도 막는다.
+-- 626(V35): 계좌당 목표 1개 제약은 예·적금에만 남긴다. MySQL의 IF() 생성 컬럼을 H2 CASE 식으로 옮긴 것이며,
+-- 입출금(DEMAND_DEPOSIT)은 NULL이라 여러 목표에 담을 수 있다. 서비스가 먼저 검사하지만 DB에서도 막는다.
 CREATE TABLE goal_account (
     user_id BIGINT NOT NULL,
     goal_id BIGINT NOT NULL,
     account_id BIGINT NOT NULL,
     account_type VARCHAR(30) NOT NULL,
     contribution_amount BIGINT,
+    exclusive_account_id BIGINT GENERATED ALWAYS AS (
+        CASE WHEN account_type IN ('DEPOSIT', 'SAVINGS') THEN account_id ELSE NULL END),
     PRIMARY KEY (goal_id, account_id),
-    CONSTRAINT uk_test_goal_account_account UNIQUE (account_id),
-    CONSTRAINT chk_test_goal_account_type CHECK (account_type IN ('DEMAND_DEPOSIT', 'DEPOSIT', 'SAVINGS'))
+    CONSTRAINT uk_test_goal_account_exclusive_account UNIQUE (exclusive_account_id),
+    CONSTRAINT chk_test_goal_account_type CHECK (account_type IN ('DEMAND_DEPOSIT', 'DEPOSIT', 'SAVINGS')),
+    CONSTRAINT chk_test_goal_account_contribution_amount CHECK (contribution_amount IS NULL OR contribution_amount >= 0)
 );
 
 -- 계좌 fixture와 같은 V3 스키마. 계좌 행은 테스트 코드가 넣는다.

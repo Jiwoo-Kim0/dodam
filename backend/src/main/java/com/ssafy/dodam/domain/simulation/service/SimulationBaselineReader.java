@@ -1,17 +1,14 @@
 package com.ssafy.dodam.domain.simulation.service;
 
-import com.ssafy.dodam.domain.account.entity.Account;
-import com.ssafy.dodam.domain.account.repository.AccountRepository;
 import com.ssafy.dodam.domain.goal.entity.Goal;
-import com.ssafy.dodam.domain.goal.entity.GoalAccount;
 import com.ssafy.dodam.domain.goal.entity.GoalStatus;
 import com.ssafy.dodam.domain.goal.entity.GoalType;
 import com.ssafy.dodam.domain.goal.entity.SavingGoal;
 import com.ssafy.dodam.domain.goal.entity.SpendingGoal;
-import com.ssafy.dodam.domain.goal.repository.GoalAccountRepository;
 import com.ssafy.dodam.domain.goal.repository.GoalRepository;
 import com.ssafy.dodam.domain.goal.repository.SavingGoalRepository;
 import com.ssafy.dodam.domain.goal.repository.SpendingGoalRepository;
+import com.ssafy.dodam.domain.goal.service.GoalAllocationReader;
 import com.ssafy.dodam.domain.simulation.dto.SimulationBaseline;
 import com.ssafy.dodam.domain.transaction.repository.JdbcSpendingAnalysisReader;
 import com.ssafy.dodam.domain.transaction.repository.JdbcSpendingReader;
@@ -24,7 +21,6 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -50,20 +46,18 @@ public class SimulationBaselineReader {
     private final GoalRepository goals;
     private final SavingGoalRepository savingGoals;
     private final SpendingGoalRepository spendingGoals;
-    private final GoalAccountRepository goalAccounts;
-    private final AccountRepository accounts;
+    private final GoalAllocationReader allocationReader;
 
     public SimulationBaselineReader(FinancialProfileRepository profiles, JdbcSpendingReader spendingReader,
             JdbcSpendingAnalysisReader spendingAnalysisReader, GoalRepository goals, SavingGoalRepository savingGoals,
-            SpendingGoalRepository spendingGoals, GoalAccountRepository goalAccounts, AccountRepository accounts) {
+            SpendingGoalRepository spendingGoals, GoalAllocationReader allocationReader) {
         this.profiles = profiles;
         this.spendingReader = spendingReader;
         this.spendingAnalysisReader = spendingAnalysisReader;
         this.goals = goals;
         this.savingGoals = savingGoals;
         this.spendingGoals = spendingGoals;
-        this.goalAccounts = goalAccounts;
-        this.accounts = accounts;
+        this.allocationReader = allocationReader;
     }
 
     public SimulationBaseline read(Long userId, LocalDate baseDate) {
@@ -107,11 +101,9 @@ public class SimulationBaselineReader {
         List<Long> ids = savingType.stream().map(Goal::getId).toList();
         Map<Long, SavingGoal> details = savingGoals.findAllByGoalIdIn(ids).stream()
                 .collect(Collectors.toMap(SavingGoal::getGoalId, Function.identity()));
-        Map<Long, List<GoalAccount>> links = goalAccounts.findAllByUserIdAndGoalIdIn(userId, ids).stream()
-                .collect(Collectors.groupingBy(GoalAccount::getGoalId));
-        Collection<Long> accountIds = links.values().stream().flatMap(List::stream).map(GoalAccount::getAccountId).toList();
-        Map<Long, Long> balances = accountIds.isEmpty() ? Map.of() : accounts.findAllById(accountIds).stream()
-                .collect(Collectors.toMap(Account::getId, Account::getBalance));
+        // Goal 도메인과 같은 정의(626 GoalAllocationReader): 모인 금액 = 예·적금 전액 + 입출금은 그 목표에 담은 금액.
+        // 입출금 하나를 여러 목표에 나눠 담아도 같은 잔액이 두 목표에 중복 합산되지 않는다.
+        Map<Long, GoalAllocationReader.GoalAllocation> allocations = allocationReader.readGoals(userId, ids);
 
         List<SimulationBaseline.SavingGoal> result = new ArrayList<>();
         for (Goal goal : savingType) {
@@ -119,10 +111,10 @@ public class SimulationBaselineReader {
             if (detail == null) {
                 continue;
             }
-            List<Long> linked = links.getOrDefault(goal.getId(), List.of()).stream()
-                    .map(GoalAccount::getAccountId).sorted().toList();
-            // Goal 도메인과 같은 정의: 모인 금액 = 연결 계좌 잔액 합(0 이상), 속도 = 모인 금액 / max(1, 경과 개월)
-            long current = Math.max(0L, linked.stream().mapToLong(id -> balances.getOrDefault(id, 0L)).sum());
+            GoalAllocationReader.GoalAllocation allocation = allocations.get(goal.getId());
+            List<Long> linked = allocation == null ? List.of() : allocation.accountIds();
+            // 속도 = 모인 금액 / max(1, 경과 개월)
+            long current = allocation == null ? 0L : allocation.securedAmount();
             long monthsElapsed = Math.max(1L, ChronoUnit.MONTHS.between(goal.getCreatedAt().toLocalDate(), baseDate));
             long pace = current / monthsElapsed;
             long remaining = Math.max(0L, detail.getTargetAmount() - current);

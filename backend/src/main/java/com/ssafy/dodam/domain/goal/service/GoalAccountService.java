@@ -24,7 +24,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,8 +32,9 @@ import org.springframework.transaction.annotation.Transactional;
  * API 12 목표 연결계좌(S15P21D105-509).
  *
  * <p>모으기(SAVING) 목표에만 계좌를 연결할 수 있고(ERD `fk_goal_account_saving_goal`), 한 계좌는 한 목표에만 연결된다
- * (`uk_goal_account_account`). 연결이 바뀌면 목표의 모인 금액(`goal.current_amount`)을 연결 계좌 잔액 합으로 다시 놓고
- * 이력(511)을 남긴다. 계좌 잔액이 동기화로 바뀐 뒤의 재계산은 510 계산 API가 조회 시점에 한다.
+ * (`uk_goal_account_account`; 626 V35부터 DB 제약은 예·적금에만 남고 입출금은 할당 API가 따로 다룬다). 연결이 바뀌면
+ * 목표의 모인 금액(`goal.current_amount`)을 {@link GoalAllocationReader}의 확보액으로 다시 놓고 이력(511)을 남긴다.
+ * 계좌 잔액이 동기화로 바뀐 뒤의 재계산은 510 계산 API가 조회 시점에 한다.
  */
 @Service
 @Transactional
@@ -55,6 +55,7 @@ public class GoalAccountService {
     private final AccountRepository accountRepository;
     private final GoalHistoryRecorder goalHistoryRecorder;
     private final GoalClock goalClock;
+    private final GoalAllocationReader allocationReader;
 
     public GoalAccountService(
             GoalRepository goalRepository,
@@ -62,7 +63,8 @@ public class GoalAccountService {
             SavingGoalRepository savingGoalRepository,
             AccountRepository accountRepository,
             GoalHistoryRecorder goalHistoryRecorder,
-            GoalClock goalClock
+            GoalClock goalClock,
+            GoalAllocationReader allocationReader
     ) {
         this.goalRepository = goalRepository;
         this.goalAccountRepository = goalAccountRepository;
@@ -70,6 +72,7 @@ public class GoalAccountService {
         this.accountRepository = accountRepository;
         this.goalHistoryRecorder = goalHistoryRecorder;
         this.goalClock = goalClock;
+        this.allocationReader = allocationReader;
     }
 
     /**
@@ -78,8 +81,7 @@ public class GoalAccountService {
     @Transactional(readOnly = true)
     public GoalAccountsResponse getAccounts(Long userId, Long goalId, int page, int size) {
         Goal goal = findOwned(userId, goalId);
-        List<GoalAccount> links = goalAccountRepository.findAllByGoalIdOrderByAccountIdAsc(goal.getId());
-        return toResponse(goal, links, page, size);
+        return toResponse(goal, allocationReader.readGoal(userId, goal.getId()), page, size);
     }
 
     /**
@@ -144,15 +146,16 @@ public class GoalAccountService {
             goalAccountRepository.saveAll(added);
         }
 
-        long total = requested.values().stream().mapToLong(Account::getBalance).sum();
-        boolean amountChanged = goal.updateCurrentAmount(total, now);
+        // 새 링크는 contribution_amount가 null(전액)이고 기존 입출금 할당액은 그대로 두므로, 확보액은 Reader 정의로 다시 읽는다
+        GoalAllocationReader.GoalAllocation allocation = allocationReader.readGoal(userId, goal.getId());
+        boolean amountChanged = goal.updateCurrentAmount(allocation.securedAmount(), now);
         if (setChanged || amountChanged) {
             goalHistoryRecorder.record(goal, savingGoalRepository.findById(goal.getId()).orElse(null),
                     setChanged ? GoalHistoryEvent.ACCOUNTS_UPDATED : GoalHistoryEvent.AMOUNT_UPDATED, now);
         }
 
-        List<GoalAccount> links = goalAccountRepository.findAllByGoalIdOrderByAccountIdAsc(goal.getId());
-        return toResponse(goal, links, 0, Math.max(1, Math.max(links.size(), 20)));
+        int linked = allocation.accounts().size();
+        return toResponse(goal, allocation, 0, Math.max(1, Math.max(linked, 20)));
     }
 
     // ---------- helpers ----------
@@ -162,25 +165,15 @@ public class GoalAccountService {
                 .orElseThrow(() -> new ResourceNotFoundException(GoalService.GOAL_NOT_FOUND_MESSAGE));
     }
 
-    private GoalAccountsResponse toResponse(Goal goal, List<GoalAccount> links, int page, int size) {
-        Map<Long, Account> accounts = links.isEmpty()
-                ? Map.of()
-                : accountRepository.findAllById(links.stream().map(GoalAccount::getAccountId).toList()).stream()
-                        .collect(Collectors.toMap(Account::getId, Function.identity()));
-        long totalBalance = links.stream()
-                .map(link -> accounts.get(link.getAccountId()))
-                .filter(account -> account != null)
-                .mapToLong(Account::getBalance)
-                .sum();
-
+    private GoalAccountsResponse toResponse(Goal goal, GoalAllocationReader.GoalAllocation allocation, int page, int size) {
+        List<GoalAllocationReader.LinkedAccount> links = allocation.accounts();
         int from = Math.min(page * size, links.size());
         int to = Math.min(from + size, links.size());
         List<GoalAccountsResponse.Item> items = links.subList(from, to).stream()
-                .filter(link -> accounts.containsKey(link.getAccountId()))
-                .map(link -> GoalAccountsResponse.Item.from(link, accounts.get(link.getAccountId())))
+                .map(GoalAccountsResponse.Item::from)
                 .toList();
         int totalPages = links.isEmpty() ? 0 : (int) Math.ceil(links.size() / (double) size);
         return new GoalAccountsResponse(
-                goal.getId(), links.size(), totalBalance, items, page, size, totalPages, to >= links.size());
+                goal.getId(), links.size(), allocation.securedAmount(), items, page, size, totalPages, to >= links.size());
     }
 }

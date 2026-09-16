@@ -16,6 +16,8 @@ import com.ssafy.dodam.domain.recommendation.service.RecommendationPriorityPolic
 import com.ssafy.dodam.domain.recommendation.service.RecommendationTransitionPolicy;
 import com.ssafy.dodam.domain.recommendation.entity.RecommendationStatus;
 import com.ssafy.dodam.domain.recommendation.service.generator.CashflowShortageGenerator;
+import com.ssafy.dodam.domain.recommendation.service.generator.CategorySpendingIncreaseGenerator;
+import com.ssafy.dodam.domain.recommendation.service.generator.HighInterestLoanGenerator;
 import com.ssafy.dodam.domain.recommendation.service.generator.SavingGoalRiskGenerator;
 import com.ssafy.dodam.domain.recommendation.service.generator.SpendingGoalRiskGenerator;
 import java.time.LocalDate;
@@ -34,6 +36,8 @@ class RecommendationGeneratorTest {
     private final SavingGoalRiskGenerator saving = new SavingGoalRiskGenerator(json);
     private final SpendingGoalRiskGenerator spending = new SpendingGoalRiskGenerator(json);
     private final CashflowShortageGenerator cashflow = new CashflowShortageGenerator(json);
+    private final CategorySpendingIncreaseGenerator categorySpending = new CategorySpendingIncreaseGenerator(json);
+    private final HighInterestLoanGenerator highInterestLoan = new HighInterestLoanGenerator(json);
 
     private RecommendationInput input(RecommendationInput.Issue... issues) {
         ObjectNode snapshot = json.createObjectNode();
@@ -171,6 +175,93 @@ class RecommendationGeneratorTest {
         List<RecommendationPriorityPolicy.Scored> tie = RecommendationPriorityPolicy.rank(input, List.of(sameIssueOtherKey, c), BASE);
         assertThat(tie).extracting(RecommendationPriorityPolicy.Scored::score).containsExactly(16, 16);
         assertThat(tie.get(0).candidate().candidateKey()).isEqualTo("REDUCE_SPENDING:9");
+    }
+
+    private RecommendationInput.Issue issue(long id, String domain, String type, IssueSeverity severity, JsonNode current,
+            JsonNode benchmark, JsonNode evidence) {
+        return new RecommendationInput.Issue(id, domain, type, severity, "t", "d", current, benchmark, evidence, DetectionSource.RULE, null, null);
+    }
+
+    @Test
+    void categorySpendingGeneratorRestoresPreviousAverageAndKeepsCategoryCode() {
+        ObjectNode current = json.createObjectNode().put("categoryId", 3L).put("categoryCode", "FOOD").put("categoryName", "식비")
+                .put("monthlyAverage", 140_000L).put("increaseAmount", 40_000L).put("increaseRatePercent", 40.0).put("consecutiveMonths", 3);
+        ObjectNode benchmark = json.createObjectNode().put("previousMonthlyAverage", 100_000L);
+        ObjectNode evidence = json.createObjectNode().put("targetId", 3L);
+        Outcome outcome = categorySpending.generate(input(), issue(21L, "SPENDING", "CATEGORY_SPENDING_INCREASE", IssueSeverity.MEDIUM,
+                current, benchmark, evidence));
+        RecommendationCandidate candidate = outcome.candidates().get(0);
+        assertThat(candidate.candidateKey()).isEqualTo("REDUCE_CATEGORY_SPENDING:3");
+        assertThat(candidate.domain()).isEqualTo("SPENDING");
+        assertThat(candidate.sourceIssueId()).isEqualTo(21L);
+        assertThat(candidate.effect().monthlyCostSaving()).isEqualTo(40_000L);
+        assertThat(candidate.effect().annualCostSaving()).isEqualTo(480_000L);
+        assertThat(candidate.title()).isEqualTo("식비 소비 월 40,000원 줄이기");
+        assertThat(candidate.reasons()).hasSize(1);
+        assertThat(candidate.reasons().get(0).code()).isEqualTo("CATEGORY_SPENDING_INCREASE");
+        assertThat(candidate.reasons().get(0).evidence().path("categoryCode").asText()).isEqualTo("FOOD");
+        assertThat(candidate.reasons().get(0).evidence().path("consecutiveMonths").asInt()).isEqualTo(3);
+
+        ObjectNode flat = current.deepCopy().put("increaseAmount", 0L);
+        assertThat(categorySpending.generate(input(), issue(22L, "SPENDING", "CATEGORY_SPENDING_INCREASE", IssueSeverity.LOW, flat, benchmark, evidence))
+                .candidates()).isEmpty();
+        assertThat(categorySpending.generate(input(), issue(23L, "SPENDING", "CATEGORY_SPENDING_INCREASE", IssueSeverity.LOW, current, null, evidence))
+                .skipReason()).isEqualTo(SkipReason.INSUFFICIENT_DATA);
+        assertThat(categorySpending.supports(issue(1L, "GOAL", "SPENDING_GOAL_RISK", IssueSeverity.LOW, null, null))).isFalse();
+    }
+
+    private ObjectNode loanCurrent(boolean withEstimate) {
+        ObjectNode current = json.createObjectNode().put("loanId", 5L).put("accountName", "신용대출").put("balance", 1_200_000L)
+                .put("interestRate", new java.math.BigDecimal("12.0000")).put("referenceRate", new java.math.BigDecimal("7.0000"))
+                .put("rateDifference", new java.math.BigDecimal("5.0000")).put("comparisonGroup", "CREDIT");
+        ObjectNode refinance = current.putObject("refinance").put("available", withEstimate).put("feesIncluded", false);
+        if (withEstimate) {
+            refinance.put("targetProductId", 40L).put("targetProductName", "A 신용대출").put("appliedRate", new java.math.BigDecimal("6.0000"))
+                    .put("remainingInstallments", 3).put("beforeInterest", 36_000L).put("afterInterest", 18_000L).put("interestSaving", 18_000L)
+                    .put("monthlySaving", 6_000L);
+        } else {
+            refinance.put("unavailableReason", "NO_ELIGIBLE_PRODUCT");
+        }
+        return current;
+    }
+
+    @Test
+    void highInterestLoanGeneratorUsesDiagnosisEstimateAndCapsAnnualByRemainingInstallments() {
+        ObjectNode evidence = json.createObjectNode().put("targetId", 5L);
+        Outcome outcome = highInterestLoan.generate(input(), issue(31L, "LOAN", "HIGH_INTEREST_RATE", IssueSeverity.HIGH, loanCurrent(true), null, evidence));
+        RecommendationCandidate candidate = outcome.candidates().get(0);
+        assertThat(candidate.candidateKey()).isEqualTo("REFINANCE_LOAN:5");
+        assertThat(candidate.domain()).isEqualTo("LOAN");
+        assertThat(candidate.type()).isEqualTo("REFINANCE_LOAN");
+        assertThat(candidate.effect().interestSaving()).isEqualTo(18_000L);
+        assertThat(candidate.effect().monthlyCostSaving()).isEqualTo(6_000L);
+        // 잔여 3회 → 연간은 ×12가 아니라 ×3
+        assertThat(candidate.effect().annualCostSaving()).isEqualTo(18_000L);
+        assertThat(candidate.title()).isEqualTo("'신용대출' A 신용대출(으)로 대환 검토하기");
+        assertThat(candidate.description()).contains("연 12%").contains("7%").contains("5%p").contains("18,000원");
+        assertThat(candidate.reasons()).extracting(RecommendationCandidate.Reason::code)
+                .containsExactly("LOAN_RATE_ABOVE_MARKET", "REFINANCE_INTEREST_SAVING");
+        assertThat(candidate.reasons().get(1).evidence().path("targetProductId").asLong()).isEqualTo(40L);
+        assertThat(candidate.reasons().get(1).evidence().path("feesIncluded").asBoolean()).isFalse();
+    }
+
+    @Test
+    void highInterestLoanGeneratorWithoutEstimateStillRecommendsComparison() {
+        ObjectNode evidence = json.createObjectNode().put("targetId", 5L);
+        Outcome outcome = highInterestLoan.generate(input(), issue(32L, "LOAN", "HIGH_INTEREST_RATE", IssueSeverity.MEDIUM, loanCurrent(false), null, evidence));
+        RecommendationCandidate candidate = outcome.candidates().get(0);
+        assertThat(candidate.candidateKey()).isEqualTo("REFINANCE_LOAN:5");
+        assertThat(candidate.effect()).isEqualTo(Recommendation.Effect.NONE);
+        assertThat(candidate.title()).isEqualTo("'신용대출' 대환 조건 비교하기");
+        assertThat(candidate.reasons()).extracting(RecommendationCandidate.Reason::code)
+                .containsExactly("LOAN_RATE_ABOVE_MARKET", "REFINANCE_ESTIMATE_UNAVAILABLE");
+        assertThat(candidate.reasons().get(1).evidence().path("reason").asText()).isEqualTo("NO_ELIGIBLE_PRODUCT");
+
+        ObjectNode noRate = loanCurrent(true);
+        noRate.remove("referenceRate");
+        assertThat(highInterestLoan.generate(input(), issue(33L, "LOAN", "HIGH_INTEREST_RATE", IssueSeverity.MEDIUM, noRate, null, evidence))
+                .skipReason()).isEqualTo(SkipReason.INSUFFICIENT_DATA);
+        assertThat(highInterestLoan.supports(issue(1L, "CASHFLOW", "BALANCE_SHORTAGE", IssueSeverity.LOW, null, null))).isFalse();
     }
 
     @Test

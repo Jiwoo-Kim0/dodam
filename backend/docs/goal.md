@@ -18,7 +18,7 @@ JIRA `S15P21D105-455` (D6 Goal 기본 CRUD·계산 API 구현)의 하위 티켓 
 - FE의 "모으기(saving)"가 SAVING, "줄이기(reducing)"가 SPENDING이다.
 - 세 엔티티는 연관관계 없이 같은 `goal_id`로 서비스가 묶는다. `goal_type` 컬럼은 복합 외래키 `(goal_id, goal_type) → goal(goal_id, type)`을
   위해 항상 부모의 `type`과 같은 값이 들어간다.
-- `current_amount`(모인 금액)는 연결 계좌 잔액 합이다. 연결을 바꾸는 PUT(509)과 계산 API(510: progress·required-saving·forecast·risk)를
+- `current_amount`(모인 금액)는 연결 계좌 확보액 합이다(626 이전에는 잔액 합; 정의는 「연결계좌」 절). 연결을 바꾸는 PUT(509)과 계산 API(510: progress·required-saving·forecast·risk)를
   호출할 때마다 다시 계산해 저장값도 갱신한다. 그래서 동기화로 잔액이 바뀐 뒤에도 계산 API를 한 번 부르면 목록·요약의 모인 금액이 맞아진다.
   줄이기 목표는 0으로 둔다.
 - V5(`goal`)는 543이, V7(`saving_goal`·`spending_goal`)은 507이, V8(`goal_account`)은 509가, V9(`goal_history`)는 511이 만들었다.
@@ -119,14 +119,35 @@ ACHIEVED·CANCELED는 종료 상태다. 어디로도 옮길 수 없고 다른 �
 
 ## 연결계좌 (509)
 
-모으기 목표에 계좌를 연결하면 그 계좌들의 잔액 합이 목표의 `currentAmount`가 된다. ERD의 `fk_goal_account_saving_goal` 때문에
-줄이기 목표에는 연결할 수 없고, `uk_goal_account_account` 때문에 한 계좌는 한 목표에만 연결된다.
+모으기 목표에 계좌를 연결하면 그 계좌들의 **확보액** 합이 목표의 `currentAmount`가 된다. ERD의 `fk_goal_account_saving_goal` 때문에
+줄이기 목표에는 연결할 수 없다. 계좌당 목표 1개 제약(`uk_goal_account_account`)은 626(V35)부터 예·적금에만 남고
+(`exclusive_account_id` 생성 컬럼 + UNIQUE), 입출금은 여러 목표에 금액을 나눠 담을 수 있다.
+
+### 확보액 정의 (626, `GoalAllocationReader`)
+
+목표 API·진단·저축 시뮬레이션 기준선이 모두 이 한 정의를 쓴다. 입출금 하나를 여러 목표에 담아도 같은 잔액이 두 목표에 중복 합산되지 않는다.
+
+| 항목 | 정의 |
+| --- | --- |
+| 링크 기여액(`allocatedToThisGoal`) | `contribution_amount`가 있으면 그 값. 없으면 계좌 잔액 전체(0 미만은 0) |
+| 예·적금 | `contribution_amount`는 항상 null → 잔액 전체가 연결 목표의 확보액 |
+| 입출금 | 담은 금액. **null은 626 이전 방식(잔액 전체)** 으로 읽는다. 기존 행과 시연 seed는 그대로 유효하며 처음 담기/꺼내기 시 숫자로 바뀐다 |
+| 목표 확보액(`totalBalance` = `currentAmount`) | 그 목표의 링크 기여액 합 |
+| 계좌 총 할당 | 그 계좌가 **삭제되지 않은** 모든 목표에 기여하는 금액 합(목표 상태·페이지와 무관) |
+| `availableToAllocate` | `max(0, balance − 총 할당)`. 예·적금은 항상 0 |
+| `shortfallAmount` | `max(0, 총 할당 − max(0, balance))`. 실제 출금으로 설정액이 잔액을 넘은 상태. 계좌 단위이며 목표별로 합산하지 않는다 |
+| `allocationStatus` | `shortfallAmount > 0`이면 `NEEDS_ADJUSTMENT`, 아니면 `OK` |
+
+부족 상태에서도 확보액은 설정액 그대로 계산한다(진행률이 실제보다 높게 보일 수 있으므로 FE가 부족을 함께 표시). 총자산은 원본 계좌 기준으로
+한 번만 합산하므로 자산이 부풀지 않는다. 담기/꺼내기 API(`PUT /goals/{goalId}/allocations/{accountId}`)는 626 MR-B에서 추가한다
+([goal-allocation-626-plan.md](goal-allocation-626-plan.md)).
 
 ### 조회 `GET /goals/{goalId}/accounts?page&size`
 
 - 계좌 ID 순. 각 항목은 계좌 응답(5)과 같은 필드(`accountId`, `bankCode`, `bankName`, `accountNoMasked`, `accountName`, `accountType`,
-  `status`, `balance`)에 `contributionAmount`를 더한 것이다. 계좌번호 원문은 주지 않는다.
-- `linkedCount`(전체 연결 수), `totalBalance`(연결 계좌 잔액 합)는 페이지와 무관한 전체 값이다.
+  `status`, `balance`)에 `contributionAmount`(저장 원문, null 가능)와 626 할당 필드 `allocatedToThisGoal`, `allocatedElsewhere`,
+  `availableToAllocate`, `shortfallAmount`, `allocationStatus`를 더한 것이다. 계좌번호 원문은 주지 않는다.
+- `linkedCount`(전체 연결 수), `totalBalance`(목표 확보액 = `currentAmount`; 필드 이름은 509 계약 유지)는 페이지와 무관한 전체 값이다.
 - 줄이기 목표나 연결이 없는 목표는 빈 목록(404 아님).
 
 ### 변경 `PUT /goals/{goalId}/accounts` Body `{ "accountIds": [11, 13, …] }`
@@ -149,9 +170,10 @@ ACHIEVED·CANCELED는 종료 상태다. 어디로도 옮길 수 없고 다른 �
 | 다른 살아 있는 목표에 연결된 계좌 | 409 `ACCOUNT_ALREADY_LINKED_TO_GOAL`. 삭제(soft delete)된 목표의 연결은 해제하고 이어받는다 |
 
 - 검증을 모두 끝낸 뒤 반영하므로 부분 반영은 없다.
-- 반영 후 `goal.current_amount`를 연결 계좌 잔액 합으로 다시 놓는다(`updated_at` 갱신). 집합이 같고 잔액도 같으면 아무것도 바꾸지 않는다.
+- 반영 후 `goal.current_amount`를 확보액으로 다시 놓는다(`updated_at` 갱신). 집합이 같고 확보액도 같으면 아무것도 바꾸지 않는다.
   집합은 같아도 잔액이 바뀌었으면 모인 금액만 갱신되므로, FE가 "새로고침" 용도로 같은 목록을 다시 PUT해도 된다.
-- `contributionAmount`(계좌별 기여 금액)는 명세 Body에 대응 필드가 없어 null로 두고 잔액 전체를 기여로 본다.
+- 새로 연결한 링크의 `contribution_amount`는 null(전액)이다. 이미 담은 금액이 있는 입출금 링크를 같은 목록으로 다시 PUT해도 할당액은 유지된다.
+- MR-A 시점: PUT은 아직 입출금도 받는다(626 이전과 같음). MR-B에서 예·적금 한정으로 바뀐다.
 - 응답은 조회와 같은 형태(연결 계좌 전체, 1페이지).
 
 ## 계산 (510)
@@ -160,7 +182,7 @@ ACHIEVED·CANCELED는 종료 상태다. 어디로도 옮길 수 없고 다른 �
 
 | 용어 | 정의 |
 | --- | --- |
-| 현재 확보 금액 `currentAmount` | 연결 계좌 잔액 합(조회 시 다시 계산) |
+| 현재 확보 금액 `currentAmount` | 연결 계좌 확보액 합(조회 시 다시 계산, 626 정의) |
 | 경과 개월 `monthsElapsed` | 목표 생성일 → 기준일, 최소 1 (첫 달에도 속도를 정의) |
 | 현재 저축속도 `averageMonthlySaving` | currentAmount / monthsElapsed |
 | 남은 개월 `monthsRemaining` | 기준일 → 목표일, 올림. 목표일이 지났으면 0 |

@@ -29,16 +29,20 @@ public class DiagnosisEvaluator {
     private final ObjectMapper json;
     private final SavingGoalRepository savingGoals;
     private final SpendingGoalRepository spendingGoals;
+    private final SpendingIncreaseRule spendingIncrease;
+    private final HighInterestLoanRule highInterestLoan;
 
     public DiagnosisEvaluator(GoalRepository goals, GoalCalculationService goalCalculation,
             CashflowQueryService cashflow, ObjectMapper json, SavingGoalRepository savingGoals,
-            SpendingGoalRepository spendingGoals) {
+            SpendingGoalRepository spendingGoals, SpendingIncreaseRule spendingIncrease, HighInterestLoanRule highInterestLoan) {
         this.goals = goals;
         this.goalCalculation = goalCalculation;
         this.cashflow = cashflow;
         this.json = json;
         this.savingGoals = savingGoals;
         this.spendingGoals = spendingGoals;
+        this.spendingIncrease = spendingIncrease;
+        this.highInterestLoan = highInterestLoan;
     }
 
     public Evaluation evaluate(Diagnosis diagnosis) {
@@ -48,7 +52,8 @@ public class DiagnosisEvaluator {
                 .put("asOf", diagnosis.getCreatedAt().toString()).put("timezone", "Asia/Seoul");
         ArrayNode coverage = snapshot.putArray("coverage");
         snapshot.putArray("assumptions").add("LOCAL_DATA_ONLY").add("PARTIAL_RULE_COVERAGE")
-                .add("GOAL_RULES_USE_CURRENT_ACCOUNT_BALANCES");
+                .add("GOAL_RULES_USE_CURRENT_ACCOUNT_BALANCES").add("SPENDING_INCREASE_EXCLUDES_CURRENT_MONTH")
+                .add("REFINANCE_ESTIMATE_EXCLUDES_FEES");
         ArrayNode inputs = snapshot.putArray("goals");
         List<Goal> selected = diagnosis.getGoalId() == null
                 ? goals.findAllByUserIdAndDeletedAtIsNull(diagnosis.getUserId()).stream()
@@ -78,8 +83,11 @@ public class DiagnosisEvaluator {
         }
         coverage.addObject().put("ruleKey", "GOAL").put("status", selected.isEmpty() ? "NOT_APPLICABLE" : "EVALUATED");
         evaluateCashflow(diagnosis, issues, snapshot, coverage);
+        evaluateSpendingIncrease(diagnosis, issues, snapshot, coverage);
+        evaluateHighInterestLoan(diagnosis, issues, snapshot, coverage);
+        // 627이 카테고리 소비 증가·고금리 대출을 붙였다. 고정/변동지출 유형별 증가와 이자·상환 부담 규칙은 아직 정책이 없다.
         for (String rule : List.of("DORMANT_ACCOUNT", "FIXED_SPENDING_INCREASE", "VARIABLE_SPENDING_INCREASE",
-                "HIGH_RATE_LOAN", "LOAN_INTEREST_BURDEN", "LOAN_REPAYMENT_BURDEN", "LOW_USAGE_CARD",
+                "LOAN_INTEREST_BURDEN", "LOAN_REPAYMENT_BURDEN", "LOW_USAGE_CARD",
                 "CARD_PAYMENT_BURDEN", "SAVING_CASHFLOW_BURDEN")) {
             coverage.addObject().put("ruleKey", rule).put("status", "UNAVAILABLE").put("reason", "RULE_POLICY_NOT_DEFINED");
         }
@@ -110,6 +118,42 @@ public class DiagnosisEvaluator {
                     .put("reason", "STORED_FORECAST_INPUT_COMPLETENESS_UNKNOWN");
         } catch (ResourceNotFoundException missing) {
             coverage.addObject().put("ruleKey", "CASHFLOW").put("status", "UNAVAILABLE").put("reason", "FORECAST_NOT_FOUND");
+        }
+    }
+
+    /**
+     * 진행 중인 달을 뺀 최근 3개월 vs 이전 3개월. 이전 기간에 소비가 있는 카테고리가 하나도 없으면 비교 자체가 성립하지 않으므로
+     * 문제 0건과 구분해 {@code NO_BASELINE_SPENDING}으로 남긴다.
+     */
+    private void evaluateSpendingIncrease(Diagnosis diagnosis, List<DiagnosisIssue> issues, ObjectNode snapshot, ArrayNode coverage) {
+        SpendingIncreaseRule.Result result = spendingIncrease.evaluate(diagnosis.getUserId(), diagnosis.getCreatedAt().toLocalDate());
+        snapshot.set("spendingIncrease", json.valueToTree(result));
+        for (SpendingIncreaseRule.Item item : result.items()) {
+            issues.add(spendingIncrease.toIssue(diagnosis, result, item));
+        }
+        ObjectNode entry = coverage.addObject().put("ruleKey", SpendingIncreaseRule.TYPE);
+        if (result.evaluatedCategories() == 0) {
+            entry.put("status", "UNAVAILABLE").put("reason", SpendingIncreaseRule.COVERAGE_NO_BASELINE);
+        } else {
+            entry.put("status", "EVALUATED");
+        }
+    }
+
+    /** 잔액이 있는 대출이 없으면 NOT_APPLICABLE. 일부 대출의 비교 조건을 만들지 못했으면 EVALUATED에 사유를 덧붙인다. */
+    private void evaluateHighInterestLoan(Diagnosis diagnosis, List<DiagnosisIssue> issues, ObjectNode snapshot, ArrayNode coverage) {
+        HighInterestLoanRule.Result result = highInterestLoan.evaluate(diagnosis.getUserId(), diagnosis.getCreatedAt().toLocalDate());
+        snapshot.set("highInterestLoan", json.valueToTree(result));
+        for (HighInterestLoanRule.Item item : result.items()) {
+            issues.add(highInterestLoan.toIssue(diagnosis, result, item));
+        }
+        ObjectNode entry = coverage.addObject().put("ruleKey", HighInterestLoanRule.TYPE);
+        if (!result.applicable()) {
+            entry.put("status", "NOT_APPLICABLE");
+        } else {
+            entry.put("status", "EVALUATED");
+            if (result.unavailableCount() > 0) {
+                entry.put("reason", HighInterestLoanRule.COVERAGE_INCOMPLETE);
+            }
         }
     }
 
