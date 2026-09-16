@@ -1,12 +1,12 @@
 import { Image, Pressable, ScrollView, Text, View } from 'react-native';
 
 import { FINANCIAL_INSTITUTIONS } from '@/mocks/financeConnection';
-import type { GoalAccount } from '@/mocks/goalAccounts';
+import type { AccountApiResponse } from '@/types/assetApi.types';
 
 import { styles } from './GoalAccountSelectionList.styles';
 
 interface GoalAccountSelectionListProps {
-  accounts: readonly GoalAccount[];
+  accounts: readonly AccountApiResponse[];
   selectedAccountIds: readonly string[];
   onToggle: (accountId: string) => void;
 }
@@ -25,40 +25,41 @@ export function GoalAccountSelectionList({
         contentContainerStyle={styles.accountList}>
         {accounts.map((account) => {
           const institution = FINANCIAL_INSTITUTIONS.find(
-            ({ id }) => id === account.institutionId,
+            ({ name }) =>
+              account.bankName.includes(name.replace('은행', '')) ||
+              name.includes(account.bankName.replace('은행', '')),
           );
-          const isSelected = selectedAccountIds.includes(account.id);
-
-          if (!institution) {
-            return null;
-          }
+          const accountId = String(account.accountId);
+          const isSelected = selectedAccountIds.includes(accountId);
 
           return (
             <View
-              key={account.id}
+              key={accountId}
               style={[
                 styles.accountCard,
                 isSelected && styles.selectedAccountCard,
               ]}>
               <Pressable
-                onPress={() => onToggle(account.id)}
+                onPress={() => onToggle(accountId)}
                 accessibilityRole="checkbox"
-                accessibilityLabel={`${account.displayName} ${account.maskedAccountNumber}`}
+                accessibilityLabel={`${account.bankName} ${account.accountNoMasked}`}
                 accessibilityState={{ checked: isSelected }}
                 style={({ pressed }) => [
                   styles.accountRow,
                   pressed && styles.pressedRow,
                 ]}>
-                <Image
-                  source={institution.logo}
-                  accessibilityLabel={institution.name}
-                  style={styles.bankLogo}
-                />
+                {institution ? (
+                  <Image
+                    source={institution.logo}
+                    accessibilityLabel={institution.name}
+                    style={styles.bankLogo}
+                  />
+                ) : null}
 
                 <View style={styles.accountInfo}>
-                  <Text style={styles.bankName}>{account.displayName}</Text>
+                  <Text style={styles.bankName}>{account.bankName}</Text>
                   <Text style={styles.accountNumber}>
-                    {account.maskedAccountNumber}
+                    {account.accountNoMasked}
                   </Text>
                 </View>
 

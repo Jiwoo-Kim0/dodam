@@ -1,25 +1,21 @@
 import { Image } from 'expo-image';
 import { Pressable, Text, View } from 'react-native';
 
-import { MOCK_ASSET_SECTIONS } from '@/mocks/assets';
 import { FINANCIAL_INSTITUTIONS } from '@/mocks/financeConnection';
+import type { GoalAccountApiResponse } from '@/types/goalApi.types';
 import { formatCurrency } from '@/utils/currency';
 
 import { styles } from './GoalLinkedAccounts.styles';
 
 interface GoalLinkedAccountsProps {
-  accountIds: readonly string[];
+  accounts: readonly GoalAccountApiResponse[];
   onManage: () => void;
 }
 
 export function GoalLinkedAccounts({
-  accountIds,
+  accounts,
   onManage,
 }: GoalLinkedAccountsProps) {
-  const accounts = MOCK_ASSET_SECTIONS.flatMap(({ items }) => items).filter(
-    ({ id }) => accountIds.includes(id),
-  );
-
   return (
     <View style={styles.section}>
       <View style={styles.header}>
@@ -39,41 +35,41 @@ export function GoalLinkedAccounts({
       <View style={styles.card}>
         {accounts.map((account, index) => {
           const institution = FINANCIAL_INSTITUTIONS.find(
-            ({ id }) => id === account.institutionId,
+            ({ name }) =>
+              account.bankName.includes(name.replace('은행', '')) ||
+              name.includes(account.bankName.replace('은행', '')),
           );
-
-          if (!institution) {
-            return null;
-          }
 
           return (
             <View
               accessible
-              accessibilityLabel={`${institution.name}, ${account.productName}, ${formatCurrency(account.amount)}`}
-              key={account.id}
+              accessibilityLabel={`${account.bankName}, ${account.accountName}, ${formatCurrency(account.balance)}`}
+              key={account.accountId}
               style={[
                 styles.accountRow,
                 index < accounts.length - 1 && styles.accountDivider,
               ]}
             >
-              <Image
-                accessibilityIgnoresInvertColors
-                contentFit="contain"
-                source={institution.logo}
-                style={styles.logo}
-              />
+              {institution ? (
+                <Image
+                  accessibilityIgnoresInvertColors
+                  contentFit="contain"
+                  source={institution.logo}
+                  style={styles.logo}
+                />
+              ) : null}
 
               <View style={styles.accountInformation}>
                 <Text numberOfLines={1} style={styles.bankName}>
-                  {institution.name}
+                  {account.bankName}
                 </Text>
                 <Text numberOfLines={1} style={styles.productName}>
-                  {account.productName}
+                  {account.accountName}
                 </Text>
               </View>
 
               <Text numberOfLines={1} style={styles.amount}>
-                {formatCurrency(account.amount)}
+                {formatCurrency(account.balance)}
               </Text>
             </View>
           );
