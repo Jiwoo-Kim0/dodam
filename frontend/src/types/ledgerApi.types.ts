@@ -70,6 +70,7 @@ export interface CategorySpendingApiResponse {
 
 export interface CreateManualTransactionRequest {
   transactionDate: string;
+  transactionTime?: string;
   transactionType: 'INCOME' | 'EXPENSE';
   amount: number;
   merchantName?: string;

@@ -184,6 +184,7 @@ export function LedgerScreen() {
     )?.apiId;
     const request = {
       transactionDate: draft.transactionDate,
+      transactionTime: draft.transactionTime,
       transactionType:
         draft.transactionType === 'income' ? ('INCOME' as const) : ('EXPENSE' as const),
       amount,
