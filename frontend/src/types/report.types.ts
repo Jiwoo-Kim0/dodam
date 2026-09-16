@@ -77,6 +77,7 @@ export interface MonthlyReport {
   efficiencyScore: ReportEfficiencyScore;
   patterns: readonly ReportFinancePattern[];
   patternCoachingMessage: string;
+  patternCoachingDisclaimer: string | null;
   patternCharacterImage: ImageSourcePropType;
   nextMonthForecast: ReportNextMonthForecast;
   keyMetrics: readonly ReportKeyMetric[];

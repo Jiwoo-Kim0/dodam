@@ -6,14 +6,24 @@ import { type LayoutChangeEvent, Pressable, Text, View } from 'react-native';
 import { AppHeader } from '@/components/appHeader/AppHeader';
 import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
-import { DISCOVERY_INSIGHTS, DISCOVERY_SUMMARY } from '@/mocks/discovery';
 import { colors } from '@/styles';
-import { formatNumber } from '@/utils/currency';
+
+import type { DiscoveryInsight } from '../discoveryModel';
+import type { DiagnosisCooldown } from '../diagnosisCooldown';
 
 import { DiscoveryInsightRow } from './DiscoveryInsightRow';
 import { styles } from './DiscoveryHome.styles';
 
 type DiscoveryHomeProps = {
+  diagnosis: { completedAt: string } | null;
+  insights: DiscoveryInsight[];
+  isLoading: boolean;
+  error: string | null;
+  cooldown: DiagnosisCooldown;
+  canRetryRecommendations: boolean;
+  load: () => Promise<void>;
+  runAnalysis: (forceRefresh?: boolean) => Promise<void>;
+  retryRecommendationGeneration: () => Promise<void>;
   onBack: () => void;
   onInsightPress: (insightId: string) => void;
   onViewAll: () => void;
@@ -21,7 +31,20 @@ type DiscoveryHomeProps = {
 
 const GRADIENT_TOP_OFFSET = 190;
 
-export function DiscoveryHome({ onBack, onInsightPress, onViewAll }: DiscoveryHomeProps) {
+export function DiscoveryHome({
+  canRetryRecommendations,
+  cooldown,
+  diagnosis,
+  error,
+  insights,
+  isLoading,
+  load,
+  onBack,
+  onInsightPress,
+  onViewAll,
+  retryRecommendationGeneration,
+  runAnalysis,
+}: DiscoveryHomeProps) {
   const [gradientContainerHeight, setGradientContainerHeight] = useState(0);
 
   const handleGradientContainerLayout = (event: LayoutChangeEvent) => {
@@ -34,11 +57,13 @@ export function DiscoveryHome({ onBack, onInsightPress, onViewAll }: DiscoveryHo
 
       <RefreshableBouncyScrollView
         contentContainerStyle={styles.scrollContent}
+        onRefresh={() => { void load(); }}
+        refreshing={isLoading}
         style={styles.scroll}>
         <View style={styles.titleGroup}>
           <Text style={styles.subtitle}>
-            {DISCOVERY_SUMMARY.userName}님의 절약 잠재력{' '}
-            <Text style={styles.subtitleHighlight}>{DISCOVERY_INSIGHTS.length}건</Text>
+            지금 확인할 발견 내용{' '}
+            <Text style={styles.subtitleHighlight}>{insights.length}건</Text>
           </Text>
         </View>
 
@@ -76,18 +101,12 @@ export function DiscoveryHome({ onBack, onInsightPress, onViewAll }: DiscoveryHo
                 style={styles.summaryIcon}
               />
               <Text style={styles.summaryText}>
-                다 바꾸면 연{' '}
-                <Text style={styles.summaryAmountHighlight}>
-                  {formatNumber(DISCOVERY_SUMMARY.totalAnnualSavingAmount)}
-                </Text>
-                원 절약
+                {isLoading
+                  ? '진단 결과를 확인하고 있어요'
+                  : `진단에서 ${insights.length}건 발견했어요`}
               </Text>
               <Text style={styles.summarySubtext}>
-                목표를 약{' '}
-                <Text style={styles.summaryDaysHighlight}>
-                  {DISCOVERY_SUMMARY.goalAccelerationDays}일
-                </Text>{' '}
-                앞당길 수 있어요
+                각 항목에서 추천과 예상 효과를 확인해 보세요
               </Text>
             </View>
 
@@ -108,29 +127,71 @@ export function DiscoveryHome({ onBack, onInsightPress, onViewAll }: DiscoveryHo
 
           <View style={styles.insightSection}>
             <Text style={styles.sectionTitle}>지금 확인해볼 것</Text>
+            {error ? <Text style={styles.footnote}>{error}</Text> : null}
             <View style={styles.insightListCard}>
-              {DISCOVERY_INSIGHTS.map((insight, index) => (
+              {insights.slice(0, 4).map((insight, index, items) => (
                 <DiscoveryInsightRow
                   insight={insight}
-                  isLast={index === DISCOVERY_INSIGHTS.length - 1}
+                  isLast={index === items.length - 1}
                   key={insight.id}
                   onPress={() => onInsightPress(insight.id)}
                 />
               ))}
+              {!isLoading && insights.length === 0 && !error ? (
+                <Text style={styles.footnote}>
+                  현재 진단에서 발견된 항목이 없어요. 분석되지 않은 항목은 제외됩니다.
+                </Text>
+              ) : null}
             </View>
 
             <Text style={styles.footnote}>
-              분석 기준: {DISCOVERY_SUMMARY.analysisPeriodLabel}
+              {diagnosis
+                ? `분석 시점: ${new Date(diagnosis.completedAt).toLocaleDateString('ko-KR')}`
+                : '아직 완료된 진단이 없어요.'}
             </Text>
           </View>
 
-          <Pressable
+          {(error || !diagnosis || canRetryRecommendations) && !isLoading ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                void (canRetryRecommendations
+                  ? retryRecommendationGeneration()
+                  : error
+                    ? load()
+                    : runAnalysis());
+              }}
+              style={styles.viewAllButton}>
+              <Text style={styles.viewAllButtonLabel}>
+                {canRetryRecommendations
+                  ? '추천 생성 다시 시도'
+                  : error
+                    ? '다시 시도하기'
+                    : '진단 시작하기'}
+              </Text>
+            </Pressable>
+          ) : null}
+
+          {diagnosis && !isLoading ? (
+            <View>
+              <Pressable
+                accessibilityRole="button"
+                disabled={!cooldown.canRun}
+                onPress={() => { void runAnalysis(true); }}
+                style={[styles.viewAllButton, !cooldown.canRun && styles.disabledButton]}>
+                <Text style={styles.viewAllButtonLabel}>새로 진단하기</Text>
+              </Pressable>
+              {cooldown.label ? <Text style={styles.cooldownLabel}>{cooldown.label}</Text> : null}
+            </View>
+          ) : null}
+
+          {insights.length > 0 ? <Pressable
             accessibilityLabel="전체 보기"
             accessibilityRole="button"
             onPress={onViewAll}
             style={({ pressed }) => [styles.viewAllButton, pressed && styles.viewAllButtonPressed]}>
             <Text style={styles.viewAllButtonLabel}>전체 보기</Text>
-          </Pressable>
+          </Pressable> : null}
         </View>
       </RefreshableBouncyScrollView>
     </SafeAreaLayout>

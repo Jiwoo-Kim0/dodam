@@ -46,6 +46,7 @@ export const MONTHLY_REPORT: MonthlyReport = {
     },
   ],
   patternCoachingMessage: '주말 외식비를 조금만 줄여도 한 달에 약 5만원을 아낄 수 있어요!',
+  patternCoachingDisclaimer: null,
   patternCharacterImage: require('@/assets/characters/dori/dori_memo.png'),
   nextMonthForecast: {
     description: '최근 3개월의 소비 흐름과 다음 달 예정된 고정지출을 기준으로 예측했어요',

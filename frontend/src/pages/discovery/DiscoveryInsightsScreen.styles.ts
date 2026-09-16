@@ -82,6 +82,15 @@ export const styles = StyleSheet.create({
     fontFamily: fontFamily.semiBold,
     fontSize: fontSize.body2,
   },
+  disabledButton: {
+    opacity: 0.45,
+  },
+  cooldownLabel: {
+    ...typography.body2,
+    color: colors.textSecondary,
+    marginTop: spacing[2],
+    textAlign: 'center',
+  },
   listSection: {
     gap: spacing[2],
     marginTop: spacing[6],

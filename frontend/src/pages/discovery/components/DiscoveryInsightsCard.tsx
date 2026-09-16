@@ -1,7 +1,7 @@
 import { SymbolView } from 'expo-symbols';
 import { Pressable, Text, View } from 'react-native';
 
-import type { DiscoveryInsight } from '@/mocks/discovery';
+import type { DiscoveryInsight } from '../discoveryModel';
 import { colors } from '@/styles';
 import { formatNumber } from '@/utils/currency';
 
@@ -42,8 +42,12 @@ export function DiscoveryInsightsCard({ insight, onPress }: DiscoveryInsightsCar
       <View style={styles.amountRow}>
         <Text style={styles.amountLabel}>예상 절감액</Text>
         <View style={styles.amountValueRow}>
-          <Text style={styles.amountValue}>{formatNumber(insight.annualSavingAmount)}</Text>
-          <Text style={styles.amountUnit}> 원/연</Text>
+          <Text style={styles.amountValue}>
+            {insight.annualSavingAmount === null
+              ? '산정 전'
+              : formatNumber(insight.annualSavingAmount)}
+          </Text>
+          {insight.annualSavingAmount !== null ? <Text style={styles.amountUnit}> 원/연</Text> : null}
           <SymbolView
             name={{ android: 'chevron_right', ios: 'chevron.right', web: 'chevron_right' }}
             size={16}
