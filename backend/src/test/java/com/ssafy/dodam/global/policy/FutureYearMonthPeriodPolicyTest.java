@@ -50,6 +50,18 @@ class FutureYearMonthPeriodPolicyTest {
                 .isEqualTo(YearMonth.of(9999, 12));
     }
 
+    @Test
+    void resolvesSingleMonthWithinTheSameTwelveMonthWindow() {
+        assertThat(policy.resolveMonth(null, now)).isEqualTo(now);
+        assertThat(policy.resolveMonth("2027-08", now)).isEqualTo(YearMonth.of(2027, 8));
+        assertThatThrownBy(() -> policy.resolveMonth("2027-09", now))
+                .isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> policy.resolveMonth("2026-08", now))
+                .isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> policy.resolveMonth("2026-13", now))
+                .isInstanceOf(InvalidRequestException.class);
+    }
+
     @ParameterizedTest
     @ValueSource(ints = {0, -1, 13, Integer.MAX_VALUE})
     void rejectsInvalidForecastLengths(int value) {

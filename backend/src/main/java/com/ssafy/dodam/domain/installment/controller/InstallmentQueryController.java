@@ -1,5 +1,6 @@
 package com.ssafy.dodam.domain.installment.controller;
 
+import com.ssafy.dodam.domain.installment.dto.response.InstallmentBurdenResponse;
 import com.ssafy.dodam.domain.installment.dto.response.InstallmentDetailResponse;
 import com.ssafy.dodam.domain.installment.dto.response.InstallmentResponse;
 import com.ssafy.dodam.domain.installment.dto.response.InstallmentScheduleResponse;
@@ -77,6 +78,16 @@ public class InstallmentQueryController {
     ) {
         rejectBlank(parameters, Set.of("months"));
         return ApiResponse.success(service.getForecast(userIdResolver.resolve(authentication), months));
+    }
+
+    @GetMapping("/burden")
+    public ApiResponse<InstallmentBurdenResponse> getBurden(
+            @RequestParam(required = false) String yearMonth,
+            @RequestParam Map<String, String> parameters,
+            Authentication authentication
+    ) {
+        rejectBlank(parameters, Set.of("yearMonth"));
+        return ApiResponse.success(service.getBurden(userIdResolver.resolve(authentication), yearMonth));
     }
 
     private void rejectBlank(Map<String, String> parameters, Set<String> names) {

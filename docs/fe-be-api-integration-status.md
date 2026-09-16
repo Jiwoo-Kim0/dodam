@@ -2,20 +2,20 @@
 
 프론트엔드(`frontend/src/api/*`)가 호출하는 엔드포인트와 백엔드(`backend/.../controller/*`)가 실제로 제공하는 엔드포인트를 1:1로 대조한 결과다. 명세서가 아니라 **현재 코드 기준**이며, 두 영역이 어긋난 곳과 아직 연결되지 않은 곳을 한 번에 보기 위한 문서다.
 
-- 기준 커밋: `develop` @ `36be8a7` (2026-09-16, `origin/develop`과 동일).
-- 대조 범위: FE `src/api` 13개 모듈의 호출 84건, BE 컨트롤러 36개의 매핑 215건.
+- 기준 커밋: `develop` @ `36be8a7` (2026-09-16). BE 수치는 530 부담률 브랜치(`installments/burden` +1)를 반영했다.
+- 대조 범위: FE `src/api` 13개 모듈의 호출 84건, BE 컨트롤러 36개의 매핑 216건.
 - 판정 기준: 경로·HTTP 메서드·쿼리/바디 파라미터 이름·응답 DTO 필드명과 null 가능성·enum 값을 코드에서 직접 비교했다. 실제 요청을 보내 검증한 것은 아니다.
 
 ## 1. 요약
 
 | 구분 | 건수 |
 | --- | ---: |
-| BE 제공 엔드포인트 | 215 |
+| BE 제공 엔드포인트 | 216 |
 | FE가 호출하는 엔드포인트 | 84 |
 | 그중 경로·메서드·파라미터·응답 필드가 모두 일치 | 84 |
 | 불일치(호출이 실패하거나 필드가 깨지는 경우) | 0 |
 | 참고 사항(동작에는 문제 없으나 FE 타입이 BE보다 좁거나 넓은 경우) | 5 (§4) |
-| BE에만 있고 FE가 아직 호출하지 않는 엔드포인트 | 131 (§5) |
+| BE에만 있고 FE가 아직 호출하지 않는 엔드포인트 | 132 (§5) |
 | FE에서 mock 데이터로 그리는 화면 | 업무 데이터 기준 0건, 표시용 상수 2건 (§6) |
 
 ## 2. 공통 계약 호환성
@@ -189,7 +189,7 @@ FE `financeErrorCodes` 7개(`FINANCE_CONNECTION_NOT_FOUND`, `FINANCE_ALREADY_CON
 
 FE 타입 union과 BE enum은 다음을 모두 확인했고 값이 같다: `AccountType`, `AccountStatus`, `InstallmentStatus`, `FinanceConnectionStatus`, `FinanceSyncScope/Status`, `SimulationType/Status`, `GoalType/Status`, `RiskSeverity`, `IssueSeverity`, `RecommendationStatus`, `CoachTopic/Source/DegradedReason`, `EventDirection`, `UserRole`, `TransactionType`, `SpendingType`, `TransactionSourceType`(FE는 `SSAFY|MANUAL|SEED`, BE 동일).
 
-## 5. BE에만 있고 FE가 아직 호출하지 않는 엔드포인트 (131)
+## 5. BE에만 있고 FE가 아직 호출하지 않는 엔드포인트 (132)
 
 FE 화면 연동 시 그대로 쓸 수 있는 API다. 계약은 각 `backend/docs/*.md`를 따른다. 경로는 `/api/v1` 접두어를 생략했다.
 
@@ -205,7 +205,7 @@ FE 화면 연동 시 그대로 쓸 수 있는 API다. 계약은 각 `backend/doc
 | Deposit | `GET /deposits/{accountNo}`, `/{accountNo}/early-termination`, `/{accountNo}/maturity-forecast`, `/{accountNo}/rate-comparison` | `deposit-detail.md` |
 | Savings | `GET /savings/{accountNo}`, `/{accountNo}/payments`, `/{accountNo}/early-termination`, `/{accountNo}/maturity-forecast`, `/{accountNo}/rate-comparison`, `/payment-schedules`, `/monthly-amount`, `/cashflow-burden`, `/disposable-balance` | `savings.md` |
 | Deposit/Savings 통합 | `GET /deposit-savings/maturities`, `/rate` | `deposit-savings.md` |
-| Installment | `GET /installments/{installmentId}`, `/forecast` | `installment-query.md` |
+| Installment | `GET /installments/{installmentId}`, `/forecast`, `/burden`(2026-09-16 추가) | `installment-query.md` |
 | Spending | `GET /spending/progress`, `/goal-comparison` | `spending-aggregation.md` |
 | Cashflow | `POST /cashflow/forecasts`; `GET /cashflow/forecasts/latest`, `/daily-balances`, `/available-today` | `cashflow*.md` |
 | Goal | `GET /goals/summary` | `goal.md` |
