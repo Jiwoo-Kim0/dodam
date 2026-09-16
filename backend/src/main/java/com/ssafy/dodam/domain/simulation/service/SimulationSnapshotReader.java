@@ -85,7 +85,8 @@ public class SimulationSnapshotReader {
                 loan.getFinancialProductId(), productLoanType);
     }
 
-    private static ProductSnapshot toSnapshot(FinancialProduct product) {
+    /** 회사·옵션이 로드된 엔티티를 스냅샷으로 바꾼다. 진단(627)의 대환 절감 추정도 같은 변환을 쓰므로 public이다. */
+    public static ProductSnapshot toSnapshot(FinancialProduct product) {
         List<ProductSnapshot.Option> options = product.getOptions().stream()
                 .sorted(Comparator.comparing(FinancialProductOption::getTerm, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(FinancialProductOption::getId))
