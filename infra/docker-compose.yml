@@ -235,18 +235,17 @@ services:
       #   check-env.sh 3-1이 "이 줄이 사라졌는지"는 계속 감시한다.
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # ───────────────────────────────────────────────────────────────────
-      # [임시 조치] 2026-09-08
-      # develop에 상품 엔티티(financial_company / financial_product /
-      # financial_product_option)는 들어왔는데 그 테이블을 만드는 Flyway 마이그레이션이
-      # 없어서, Hibernate `validate`가 실패하며 백엔드가 기동하지 못했다.
-      # (재시작 루프 → 외부 502. 빌드 #14, #15가 실제로 FAILURE로 끝남)
+      # [해소됨] 2026-09-16 — `SPRING_JPA_HIBERNATE_DDL_AUTO: none` 제거
       #
-      # 백엔드 소스(application-prod.yml)를 인프라가 고치는 대신 환경변수로 덮어쓴다.
-      # Spring Boot의 relaxed binding으로 spring.jpa.hibernate.ddl-auto에 매핑된다.
+      # 2026-09-08에 상품 엔티티를 만드는 Flyway 마이그레이션이 없어 Hibernate `validate`가
+      # 실패했고(재시작 루프 → 외부 502, 빌드 #14·#15 FAILURE), 임시로 여기서 `none`으로
+      # 덮어쓰고 있었다. 마이그레이션이 모두 들어와 조건이 해소되어 제거했다.
+      # → 이제 application-prod.yml의 `ddl-auto: validate`가 그대로 적용된다.
       #
-      # ★ 해당 테이블을 만드는 마이그레이션이 들어오면 이 줄을 제거하고
-      #   validate로 되돌릴 것. 자세한 경위: infra/todo/jiw/day-04.md
-      SPRING_JPA_HIBERNATE_DDL_AUTO: none
+      # 제거 전 검증: 운영 DB flyway_schema_history 25건 전부 success, 최신 V35이며
+      # 레포 마이그레이션 25개와 일치. 운영 DB에 일회용 컨테이너로 SPRING_FLYWAY_ENABLED=false
+      # + validate 드라이런을 돌려 schema-validation 오류 0건·정상 기동을 확인했다.
+      # 경위: infra/todo/jiw/day-04.md(발생), day-08.md 24절(해소)
       # ───────────────────────────────────────────────────────────────────
       TZ: Asia/Seoul
     volumes:
