@@ -74,9 +74,23 @@
 
 | topic | sections |
 | --- | --- |
-| FINANCIAL_SUMMARY | 진단 개요(완료 시각·규칙 버전·종합 상태·문제 수·높은 심각도 수·목표 연계 여부) / 심각도별 문제 수 / 영역별 문제 수 / 주요 문제 3건 / 소비패턴 군집(라벨·모델 버전·표본 수·신뢰도·이탈 상위 3개 특징의 내 값·기준 범위·방향) |
+| FINANCIAL_SUMMARY | 진단 개요(완료 시각·규칙 버전·종합 상태·문제 수·높은 심각도 수·목표 연계 여부) / 심각도별 문제 수 / 영역별 문제 수 / 주요 문제 3건 / **진단 검사 범위**(검사한·검사 못 한 항목 수와 이름) / 소비패턴 군집(라벨·모델 버전·표본 수·신뢰도·이탈 상위 3개 특징의 내 값·기준 범위·방향) |
 | INEFFICIENCY_EXPLANATION | 문제 개요(영역·유형·심각도·탐지 방식·탐지 시각·모델 버전·규칙 버전) / 현재 값 / 기준 값 / 탐지 근거 / 군집 근거 |
 | RECOMMENDATION_EXPLANATION | 개선안 개요(영역·유형·우선순위·상태·생성 시각) / 예상 효과(null 아닌 것만) / 저장된 근거(code·description·evidence) |
+
+### `issueCount = 0`을 "이상 없음"으로 옮기지 않기
+
+**문제 0건은 "다 검사했는데 이상이 없다"와 "검사를 못 했다"를 구분하지 않는다.** 현재 진단 규칙 12개
+중 10개가 미구현(`RULE_POLICY_NOT_DEFINED`)·미연동(`CLUSTER_NOT_CONNECTED`)으로 항상 `UNAVAILABLE`이고,
+나머지 2개(GOAL·CASHFLOW)도 자료가 없으면 건너뛴다. 실제로 2026-09-16 운영 진단은 12개 중 **GOAL 1개만**
+검사됐다.
+
+이 상태에서 "탐지된 문제 0건"만 주면 모델은 그것을 "금융 상태가 건강하다"로 옮긴다. 그것은 서버가
+하지 않은 판정이다. 그래서 진단 스냅샷의 `coverage`를 사실로 싣고, 검사하지 못한 항목이 있으면
+`notes`로 "문제가 전혀 없다고 단정하지 말고 검사하지 못한 항목이 있다는 점을 함께 알려라"를 넣는다.
+
+`overallStatus`가 null인 경우도 마찬가지다. 진단은 문제가 0건일 때 `HEALTHY`가 아니라 **null(판정 보류)**을
+저장한다(`DiagnosisEvaluator`). 이것을 '양호'로 바꿔 말하지 말라는 지시를 함께 넣는다.
 
 `notes`는 모델이 **새로 판정하지 못하게 못박는 줄**이다: "심각도는 서버가 판정했다", "군집 결과가 없으니
 또래 비교를 언급하지 말 것", "효과 금액이 없으니 절감액을 추정하지 말 것" 등. 데이터 상태에 따라 붙는다.
@@ -153,11 +167,12 @@
 app:
   ai:
     enabled: true
-    base-url: https://api.openai.com
+    base-url: https://gms.ssafy.io/gmsapi/api.openai.com   # SSAFY GMS 중계
     chat-path: /v1/chat/completions
-    model: gpt-4o-mini          # max_tokens 파라미터를 받는 모델이어야 한다(o-시리즈는 파라미터명이 다르다)
-    temperature: 0.2
+    model: gpt-5.4-mini
     max-tokens: 600
+    max-tokens-parameter: max_completion_tokens   # 4o 계열은 max_tokens
+    temperature: 0.2                              # 비우면 요청 본문에서 빠진다
     max-attempts: 2
     connect-timeout: PT3S
     read-timeout: PT12S
@@ -171,6 +186,40 @@ app:
 - `infra/docker-compose.yml` backend `environment:`에 `OPENAI_API_KEY: ${OPENAI_API_KEY:-}`를 추가했다.
   키는 Day 5에 발급해 EC2 `.env`에 있었지만 컨테이너로 전달되지 않는 상태였다.
 
+### 8-1. 모델 선정과 교체
+
+코치가 하는 일은 "이미 계산된 사실 목록 → 2문단 400자 이내 한국어"다. 추론이 필요 없는 제한된
+생성 작업이고, 수치·판정은 애초에 모델을 거치지 않는다(§5). 그래서 작은 모델이면 충분하다.
+
+**`gpt-5.4-mini`를 고른 근거** (2026-09-16 GMS 중계로 같은 프롬프트 실측):
+
+| | gpt-4o-mini | **gpt-5.4-mini** |
+| --- | --- | --- |
+| 응답 시간 | 1.849s | **1.715s** |
+| `reasoning_tokens` | 0 | **0** — 추론형 지연 위험 없음 |
+| 도메인 해석 | ❌ 금융 진단 결과를 시스템 모니터링 지표로 오해<br>("시스템이 정상 작동", "관련 데이터가 균형") | ✅ 재무 맥락 유지<br>("지출과 수입 흐름을 꾸준히 확인하면") |
+| 신뢰도 표현 | 단정 | 유보적("일부 변동 가능성은 염두에") — `disclaimer`와 같은 방향 |
+| 사실에 없는 숫자 | 없음 | 없음 |
+
+더 빠르면서 문장이 정확했다. `reasoning_tokens`가 0이라 추론형 모델에서 우려한 타임아웃 위험도 없다.
+
+**`temperature`는 낮게 유지한다.** 재현성 때문만이 아니라, 출력이 흔들릴수록 없는 숫자를 만들 확률이
+올라가 §5의 가드에 걸리는 빈도(= 템플릿으로 내려가는 빈도)가 는다. `gpt-5.4-mini`가 이 값을 받는 것은
+실측으로 확인했다.
+
+**교체는 코드 변경이 아니라 설정 변경이다.** 요청 본문 구성이 모델 계열마다 다르기 때문에 세 가지를
+설정으로 뺐다.
+
+| 설정 | 언제 바꾸나 |
+| --- | --- |
+| `model` | 모델 이름 |
+| `max-tokens-parameter` | 상한 필드 이름이 계열마다 다르다(`max_tokens` / `max_completion_tokens`). 틀리면 공급자가 **400**으로 거부한다 |
+| `temperature` | 이 값을 받지 않는 모델이면 **비운다**(비우면 본문에서 빠진다) |
+
+**추론형 모델로 바꿀 때는 `read-timeout`도 함께 올린다.** 내부 사고에 시간을 쓰는 모델은 12초를
+넘기기 쉽고, 그러면 `AI_UNAVAILABLE`로 조용히 템플릿에 내려간다 — 화면은 정상으로 보이므로
+느려졌다는 사실 자체가 드러나지 않는다.
+
 ### 환경별 키 주입 경로
 
 | 환경 | 경로 |
@@ -178,6 +227,22 @@ app:
 | 운영 | `infra/.env` → `docker-compose.yml` `environment:` → 컨테이너 환경변수 → `application-prod.yml` |
 | 로컬 | 셸·IDE 환경변수 → `application-local.yml`(`${OPENAI_API_KEY:}`, **선택**) |
 | 테스트 | 주입하지 않는다. `app.ai.enabled=false` |
+
+### 8-2. 우리는 OpenAI에 직접 붙지 않는다 (SSAFY GMS 중계)
+
+`OPENAI_API_KEY`는 **OpenAI가 아니라 SSAFY GMS가 발급한 중계 토큰**이다. 이름이 `OPENAI_API_KEY`라
+오해하기 쉬우므로 여기 명시해 둔다.
+
+| 항목 | 값 |
+| --- | --- |
+| 중계 주소 규칙 | `https://gms.ssafy.io/gmsapi/<원래 호스트>/<원래 경로>` |
+| `base-url` | `https://gms.ssafy.io/gmsapi/api.openai.com` |
+| 인증 헤더 | OpenAI와 동일 — `Authorization: Bearer <토큰>` |
+| 토큰 형식 | OpenAI 형식(`sk-`)이 **아니다**. 길이도 다르다 |
+
+> **같은 토큰을 `api.openai.com`에 직접 던지면 401이 난다. 이것은 정상이며 키 문제가 아니다.**
+> 2026-09-16에 이 401을 "키가 잘렸다"로 읽고 재발급까지 갈 뻔했다(day-10 13·14절).
+> 외부 API 실패를 볼 때는 "올바른 상대에게 말하고 있는가"를 응답 코드보다 먼저 확인해야 한다.
 
 **`backend/.env`는 운영 경로에 없다.** `backend/.dockerignore`가 `.env`를 제외하고 Dockerfile도
 복사하지 않는다. `backend/.env.example`은 로컬 실행 시 개발자가 직접 주입할 값의 체크리스트일 뿐이다
@@ -194,16 +259,63 @@ app:
 | `CoachNumberGuardTest` | 서버 숫자 통과, 모델이 계산한 연 절감액 차단, 반올림 허용, 선행 0·목록 번호 |
 | `CoachSensitiveDataGuardTest` | 이메일·계좌·휴대폰 차단, 금액·날짜·비율 통과 |
 | `CoachEvidenceReaderTest` | 식별자 키 제거, 이름 키 예외 목록, 11자리 정수 차단, 중첩·배열 상한 |
+| `CoachCacheKeyTest` | 같은 facts→같은 키, 값 변경→키 변경, 사용자 분리, 실패 시 null |
+| `RedisCoachAnswerCacheTest` | TTL 적용, 왕복, 미스, **Redis 장애·손상값 무시**, 비활성 시 미접속 |
 | `OpenAiCoachTextGeneratorTest` | 요청 형식, 401 즉시 포기, 5xx 재시도 후 실패, 429 재시도 후 성공, 비JSON, 키 없음 |
 
 테스트는 실제 OpenAI를 호출하지 않는다(`app.ai.enabled=false` + `CoachTextGenerator` Mock).
 실패 경로(타임아웃·지어낸 숫자)는 실제 호출로는 재현할 수 없다.
 
-## 10. 남은 것
+## 10. 응답 캐시
 
-- **응답 캐시가 없다.** 같은 진단으로 요약을 반복 호출하면 그때마다 과금된다. `(userId, topic, 대상 id,
-  facts 해시)` 키로 짧은 TTL 캐시를 두는 것이 다음 단계다(Redis는 이미 붙어 있고 아직 사용처가 없다).
+같은 진단으로 요약을 두 번 부르면 두 번 과금된다. 코치는 "저장된 사실 → 문장"이라 **입력이 같으면
+출력이 같아도 되므로**, 모델이 쓴 문장을 재사용한다.
+
+| 항목 | 값 |
+| --- | --- |
+| 저장소 | Redis (`app.coach.cache-enabled`, 기본 on) |
+| 키 | `coach:<userId>:<topic>:<facts SHA-256 앞 16자>` |
+| 값 | `{ message, model }` — **모델이 쓴 문장만** |
+| TTL | `app.coach.cache-ttl`, 기본 1시간 |
+
+### 무효화는 TTL이 아니라 키가 한다
+
+키에 `CoachFacts` 해시가 들어간다. 서버 계산값이 1바이트라도 달라지면 키가 달라져 자동으로 다시
+생성된다 — 재진단, 추천 상태 변경, 패턴 재분석이 모두 facts를 바꾸므로 **별도의 무효화 코드가 없다.**
+TTL은 "어쩌다 이상한 문장이 생성됐을 때의 잔존 상한"일 뿐이다.
+
+| 상황 | 결과 |
+| --- | --- |
+| 화면 재진입, 여러 기기, 시연 중 반복 | 적중 |
+| 재진단 / 최신 진단이 바뀜 / 추천 상태 변경 / 패턴 재분석 | 갱신 (facts가 달라짐) |
+| 다른 사용자 | 갱신 (키에 `userId`) |
+
+대상 id(`diagnosisId` 등)는 키에 넣지 않는다. facts가 같으면 어느 대상이든 같은 문장이 타당하고,
+같은 id라도 facts가 바뀌면 이미 다른 키다. `userId`를 넣는 것은 facts가 회원 재무 수치라서,
+해시가 겹치거나 두 사용자의 facts가 같아도 서로의 문장이 섞이지 않게 하기 위해서다.
+
+### 세 가지 규칙
+
+1. **문장만 저장한다.** `facts`·`highlights`는 매번 DB에서 다시 만든다. 캐시가 낡아서 화면의 숫자가
+   틀리는 상황이 구조적으로 불가능해진다.
+2. **성공한 AI 문장만 저장한다.** 템플릿을 저장하면 공급자가 복구된 뒤에도 TTL 내내 템플릿만 나간다.
+3. **캐시는 생성기 가용성보다 먼저 본다.** AI가 꺼져 있어도 받아 둔 문장이 있으면 템플릿보다 낫다.
+
+### Redis가 죽어도 코치는 산다
+
+**이 프로젝트에서 Redis를 실제로 쓰는 첫 코드다.** 접속 설정은 처음부터 있었지만 Java 사용처가 없었고,
+비밀번호·연결 설정이 맞는지는 여기서 처음 드러난다(H2로 도는 테스트는 잡지 못한다).
+
+그래서 `RedisCoachAnswerCache`는 **모든 예외를 삼킨다.** 조회 실패는 캐시 미스와 같게, 저장 실패는
+무시로 다룬다. 캐시는 비용 절감 장치이지 기능이 아니므로, Redis 장애가 코치 장애가 되면 캐시를 넣지
+않느니만 못하다. 둘 다 WARN으로 남겨 "캐시가 동작하지 않는다"는 사실 자체는 드러나게 한다.
+
+`generatedAt`은 캐시 적중 시에도 지금 시각이다. 응답 전체가 매번 새로 조립되고 문장만 재사용하므로,
+문장이 만들어진 시각보다 응답이 만들어진 시각이 맞다.
+
+## 11. 남은 것
+
 - **사용자별 호출 레이트 리밋이 없다.** nginx 레이트 리밋은 로그인 경로에만 걸려 있다.
 - 군집 구간은 `pattern_analysis`에 완료 행이 있어야 채워진다. 진단의 `clusterContext`는 아직 항상 null이다
   (`DiagnosisEvaluator`가 `CLUSTER: UNAVAILABLE/CLUSTER_NOT_CONNECTED`를 남긴다) — 545가 붙으면 그대로 실린다.
-- 모델을 o-시리즈로 바꾸려면 `max_tokens` → `max_completion_tokens` 파라미터명 변경이 필요하다.
+- (해소됨) 모델 교체는 설정으로 한다 — `max-tokens-parameter`와 `temperature` 비우기. §8-1 참고.

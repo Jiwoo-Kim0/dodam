@@ -39,32 +39,45 @@ public class CoachService {
     private final CoachTemplateWriter template;
     private final CoachNumberGuard numbers;
     private final CoachSensitiveDataGuard sensitive;
+    private final CoachAnswerCache cache;
+    private final CoachCacheKey cacheKey;
     private final CoachClock clock;
 
     public CoachService(CoachFactAssembler assembler, CoachPromptFactory prompts, CoachTextGenerator generator,
-            CoachTemplateWriter template, CoachNumberGuard numbers, CoachSensitiveDataGuard sensitive, CoachClock clock) {
+            CoachTemplateWriter template, CoachNumberGuard numbers, CoachSensitiveDataGuard sensitive,
+            CoachAnswerCache cache, CoachCacheKey cacheKey, CoachClock clock) {
         this.assembler = assembler;
         this.prompts = prompts;
         this.generator = generator;
         this.template = template;
         this.numbers = numbers;
         this.sensitive = sensitive;
+        this.cache = cache;
+        this.cacheKey = cacheKey;
         this.clock = clock;
     }
 
     public CoachMessageResponse financialSummary(Long userId, Long diagnosisId) {
-        return explain(assembler.financialSummary(userId, diagnosisId));
+        return explain(userId, assembler.financialSummary(userId, diagnosisId));
     }
 
     public CoachMessageResponse inefficiency(Long userId, Long diagnosisId, Long issueId) {
-        return explain(assembler.inefficiency(userId, diagnosisId, issueId));
+        return explain(userId, assembler.inefficiency(userId, diagnosisId, issueId));
     }
 
     public CoachMessageResponse recommendation(Long userId, Long recommendationId) {
-        return explain(assembler.recommendation(userId, recommendationId));
+        return explain(userId, assembler.recommendation(userId, recommendationId));
     }
 
-    private CoachMessageResponse explain(CoachFacts facts) {
+    private CoachMessageResponse explain(Long userId, CoachFacts facts) {
+        // 캐시는 생성기 가용성보다 먼저 본다. 같은 사실에 대해 이미 받아 둔 문장이 있으면 외부 호출이
+        // 필요 없고, AI가 지금 꺼져 있더라도 그 문장을 쓰는 편이 템플릿보다 낫다.
+        String key = cacheKey.of(userId, facts);
+        Optional<CoachAnswerCache.Entry> cached = cache.find(key);
+        if (cached.isPresent()) {
+            return respond(facts, CoachSource.AI, null, cached.get().model(), cached.get().message());
+        }
+
         if (!generator.isAvailable()) {
             return respond(facts, CoachSource.TEMPLATE, CoachDegradedReason.AI_DISABLED, null, template.write(facts));
         }
@@ -101,7 +114,10 @@ public class CoachService {
             return respond(facts, CoachSource.TEMPLATE, CoachDegradedReason.AI_UNVERIFIED_NUMBER, null, template.write(facts));
         }
 
-        return respond(facts, CoachSource.AI, null, generator.modelName(), generated.trim());
+        String message = generated.trim();
+        // 성공한 AI 문장만 저장한다. 템플릿을 저장하면 공급자가 복구된 뒤에도 TTL 내내 템플릿만 나간다.
+        cache.put(key, new CoachAnswerCache.Entry(message, generator.modelName()));
+        return respond(facts, CoachSource.AI, null, generator.modelName(), message);
     }
 
     private CoachMessageResponse respond(CoachFacts facts, CoachSource source, CoachDegradedReason reason,
