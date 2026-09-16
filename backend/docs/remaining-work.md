@@ -11,7 +11,7 @@
 ### FE 요청 중 범위 밖으로 남긴 항목
 
 - [x] (S15P21D105-628, 2026-09-16) 추천 응답 `sourceIssueId` — `V36` 컬럼·Store 검증·응답 5곳. [recommendation-api.md](recommendation-api.md) §4, [recommendation.md](recommendation.md) §2·§6·§10. 남은 것: 루트 명세 16에 응답 필드 반영(사용자 요청 시), FE에 "628 이전 추천은 null" 전달.
-- [ ] **발견 요약 통합 수치**(문제 수·전체 개선 시 연 절감액·목표 단축일): 현재 `GET /recommendations/summary`는 사용자 전체 PENDING·ACCEPTED 추천을 단순 합산한다. 같은 문제의 대안 추천 중복 제거와 Combined Simulation 기반 목표 단축일 계산이 필요하다. 계산 불가는 0이 아니라 null + 사유로 준다.
+- [x] (2026-09-16, 브랜치 `S15P21D105-548-recommendation-summary-fields`) `GET /recommendations/summary`에 `discovery{diagnosisId, issueCount, openRecommendationCount, expectedAnnualCostSaving, expectedGoalAdvanceDays, notes[]}` 추가 — 최신 완료 진단 한 건 기준, 문제별 최대 대안 합산, 단축일은 최댓값(복합 미실행, note로 명시). FE에 형태 확인 필요. 원문: **발견 요약 통합 수치**(문제 수·전체 개선 시 연 절감액·목표 단축일): 현재 `GET /recommendations/summary`는 사용자 전체 PENDING·ACCEPTED 추천을 단순 합산한다. 같은 문제의 대안 추천 중복 제거와 Combined Simulation 기반 목표 단축일 계산이 필요하다. 계산 불가는 0이 아니라 null + 사유로 준다.
 - 미사용 구독(사용 기록 없음)·유휴자금(비상금·생활비 보존 기준 미정)은 2026-09-16 FE와 합의해 하지 않기로 했다. 다시 하려면 "정기결제 점검" 표현 또는 사용 기록 데이터 추가가 선행돼야 한다.
 
 ### 대환 프리셋을 FE가 실행할 수 없다

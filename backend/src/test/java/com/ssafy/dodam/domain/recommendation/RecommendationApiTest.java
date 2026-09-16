@@ -199,9 +199,14 @@ class RecommendationApiTest {
                 .andExpect(jsonPath("$.data.byStatus.PENDING").value(2)).andExpect(jsonPath("$.data.byStatus.COMPLETED").value(0))
                 .andExpect(jsonPath("$.data.byDomain.SAVING").value(2))
                 .andExpect(jsonPath("$.data.expectedContributionAmount").value(2_000_000))
-                .andExpect(jsonPath("$.data.expectedMonthlyCostSaving").value(0));
+                .andExpect(jsonPath("$.data.expectedMonthlyCostSaving").value(0))
+                // 발견 수치는 최신 진단 한 건만 본다
+                .andExpect(jsonPath("$.data.discovery.diagnosisId").value(latestDiagnosis))
+                .andExpect(jsonPath("$.data.discovery.openRecommendationCount").value(1))
+                .andExpect(jsonPath("$.data.discovery.expectedAnnualCostSaving").value(org.hamcrest.Matchers.nullValue()));
         mvc.perform(get("/api/v1/recommendations/summary").with(user(other.toString())))
-                .andExpect(jsonPath("$.data.total").value(0)).andExpect(jsonPath("$.data.byStatus.PENDING").value(0));
+                .andExpect(jsonPath("$.data.total").value(0)).andExpect(jsonPath("$.data.byStatus.PENDING").value(0))
+                .andExpect(jsonPath("$.data.discovery").value(org.hamcrest.Matchers.nullValue()));
 
         mvc.perform(get("/api/v1/recommendations/priorities").with(user(owner.toString())))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.diagnosisId").value(latestDiagnosis))
@@ -519,6 +524,16 @@ class RecommendationApiTest {
         assertThat(spending.at("/simulation/request/category").asText()).isEqualTo("FOOD");
         assertThat(spending.at("/simulation/request/monthlyReduction").asLong()).isEqualTo(40_000L);
         assertThat(spending.at("/simulation/assumptions").isEmpty()).isTrue();
+        // 발견 요약: 문제별 최대 연 절감액의 합(대환 18,000 + 식비 480,000, 비교 추천은 금액 없음), 단축일은 값 없음
+        mvc.perform(get("/api/v1/recommendations/summary").with(user(fresh.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.discovery.diagnosisId").value(diagnosisId))
+                .andExpect(jsonPath("$.data.discovery.issueCount").value(issueByLoan.size() + 1))
+                .andExpect(jsonPath("$.data.discovery.openRecommendationCount").value(3))
+                .andExpect(jsonPath("$.data.discovery.expectedAnnualCostSaving").value(498_000))
+                .andExpect(jsonPath("$.data.discovery.expectedGoalAdvanceDays").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.discovery.notes[0]").value("ANNUAL_SAVING_BEST_ALTERNATIVE_PER_ISSUE"))
+                .andExpect(jsonPath("$.data.discovery.notes[1]").value("GOAL_ADVANCE_UNAVAILABLE"));
         // 목록·상세에서도 같은 프리셋이 실리고, 재요청은 전부 재사용된다
         mvc.perform(get("/api/v1/recommendations/{id}", spending.at("/recommendationId").asLong()).with(user(fresh.toString())))
                 .andExpect(status().isOk())

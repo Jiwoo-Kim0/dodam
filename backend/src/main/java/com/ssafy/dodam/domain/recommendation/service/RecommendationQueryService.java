@@ -22,11 +22,13 @@ import com.ssafy.dodam.global.policy.QueryPeriod;
 import com.ssafy.dodam.global.policy.QueryPeriodPolicy;
 import com.ssafy.dodam.global.response.PageResponse;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
@@ -91,7 +93,53 @@ public class RecommendationQueryService {
                 contribution += r.getContributionAmount() == null ? 0 : r.getContributionAmount();
             }
         }
-        return new RecommendationSummaryResponse(all.size(), byStatus, byDomain, monthly, contribution);
+        return new RecommendationSummaryResponse(all.size(), byStatus, byDomain, monthly, contribution, discovery(userId, all));
+    }
+
+    /**
+     * 발견 화면 통합 수치. 사용자 전체 합계는 진단을 거듭할수록 같은 문제의 추천이 쌓여 부풀므로, 최신 완료 진단 한 건의
+     * 열린 추천만 보고 같은 문제의 대안은 절감액이 큰 하나만 센다. 목표 단축일은 추천끼리 효과가 겹쳐 더할 수 없고
+     * 복합 시뮬레이션은 저장 부수효과가 있어 조회에서 돌리지 않으므로, 최댓값을 주고 그 사실을 note로 남긴다.
+     */
+    private RecommendationSummaryResponse.Discovery discovery(Long userId, List<Recommendation> all) {
+        Optional<Diagnosis> latest = diagnoses.findFirstByUserIdAndCompletedAtIsNotNullOrderByCompletedAtDescDiagnosisIdDesc(userId);
+        if (latest.isEmpty()) {
+            return null;
+        }
+        Diagnosis diagnosis = latest.get();
+        List<Recommendation> open = all.stream()
+                .filter(r -> diagnosis.getDiagnosisId().equals(r.getDiagnosisId()) && EXPECTED_STATUSES.contains(r.getStatus()))
+                .toList();
+        List<String> notes = new ArrayList<>();
+        if (open.isEmpty()) {
+            notes.add(RecommendationSummaryResponse.Discovery.NO_OPEN_RECOMMENDATION);
+        }
+
+        // sourceIssueId가 없는 추천(628 이전·여러 문제 합산)은 서로 다른 문제로 보고 각각 센다.
+        Map<Object, Long> bestByIssue = new LinkedHashMap<>();
+        for (Recommendation r : open) {
+            if (r.getAnnualCostSaving() == null) {
+                continue;
+            }
+            Object key = r.getSourceIssueId() == null ? "R" + r.getRecommendationId() : r.getSourceIssueId();
+            bestByIssue.merge(key, r.getAnnualCostSaving(), Math::max);
+        }
+        Long annual = null;
+        if (bestByIssue.isEmpty()) {
+            notes.add(RecommendationSummaryResponse.Discovery.ANNUAL_SAVING_UNAVAILABLE);
+        } else {
+            annual = bestByIssue.values().stream().mapToLong(Long::longValue).sum();
+            notes.add(RecommendationSummaryResponse.Discovery.ANNUAL_SAVING_BEST_ALTERNATIVE_PER_ISSUE);
+        }
+
+        Integer advance = open.stream().map(Recommendation::getAdvancedDays).filter(Objects::nonNull)
+                .max(Comparator.naturalOrder()).orElse(null);
+        notes.add(advance == null
+                ? RecommendationSummaryResponse.Discovery.GOAL_ADVANCE_UNAVAILABLE
+                : RecommendationSummaryResponse.Discovery.GOAL_ADVANCE_IS_MAX_NOT_COMBINED);
+
+        return new RecommendationSummaryResponse.Discovery(diagnosis.getDiagnosisId(), diagnosis.getIssueCount(),
+                open.size(), annual, advance, notes);
     }
 
     /**
