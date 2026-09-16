@@ -7,6 +7,8 @@ export interface LedgerCategory {
   id: string;
   label: string;
   icon: ImageSourcePropType;
+  apiId?: number;
+  code?: string;
 }
 
 export interface LedgerCategorySummary {

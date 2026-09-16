@@ -6,10 +6,12 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
+import java.time.LocalTime;
 
 /**
  * POST /api/v1/transactions — 수동 거래 등록.
  *
+ * @param transactionTime 선택. 거래 시각(HH:mm 또는 HH:mm:ss). 현금거래 추가 화면의 "지출시간"이 보낸다. 없으면 null로 저장한다
  * @param transactionType INCOME / EXPENSE / TRANSFER (대소문자 무시)
  * @param amount          1 이상
  * @param paymentMethod   결제수단 코드(영숫자·밑줄, 예: CASH, CARD, ACCOUNT). 대문자로 저장한다
@@ -18,6 +20,7 @@ import java.time.LocalDate;
 public record CreateManualTransactionRequest(
         @NotNull(message = "거래일은 필수입니다.")
         LocalDate transactionDate,
+        LocalTime transactionTime,
         @NotBlank(message = "거래 유형은 필수입니다.")
         @Size(max = 30)
         String transactionType,

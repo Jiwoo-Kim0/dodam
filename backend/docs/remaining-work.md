@@ -2,7 +2,37 @@
 
 마지막 갱신: 2026-09-16
 
-백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 587, 611이다.
+백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 587, 589, 611이다.
+
+## S15P21D105-589 — AI Coach (API 21)
+
+구현 계약: [ai-coach.md](ai-coach.md)
+
+### 응답 캐시가 없다
+
+- [ ] `(userId, topic, 대상 id, facts 해시)` 키로 짧은 TTL 캐시를 둔다. 같은 진단으로 요약을 반복 호출하면 그때마다 외부 API에 과금된다. 코치는 저장값을 문장으로 옮기는 일이라 같은 입력이면 같은 출력이어도 무방하다.
+- 근거: Redis는 이미 붙어 있고 Java 코드에 사용처가 하나도 없다(`infra/docker-compose.yml` redis 블록 주석). 코치가 첫 사용처로 적합하다.
+
+### 사용자별 호출 레이트 리밋이 없다
+
+- [ ] 코치 3종에 사용자당 호출 제한을 건다. 외부 과금이 걸린 유일한 엔드포인트인데 nginx 레이트 리밋은 로그인 경로에만 걸려 있다.
+
+### 군집 근거가 아직 비어 있다
+
+- [ ] `diagnosis_issue.cluster_context_json`은 항상 null이다(`DiagnosisEvaluator`가 `CLUSTER: UNAVAILABLE/CLUSTER_NOT_CONNECTED`를 남긴다). 545가 군집 신호를 붙이면 코치의 "군집 근거" 구간이 코드 변경 없이 채워진다 — 붙은 뒤 실제로 실리는지 확인한다.
+- 요약(`/financial-summary`)의 군집 구간은 `pattern_analysis`의 완료 행을 읽으므로 이미 동작한다. 두 경로가 다르다.
+
+### 모델 교체 시 파라미터명
+
+- [ ] o-시리즈 모델로 바꾸려면 `max_tokens` → `max_completion_tokens` 변경이 필요하다(`OpenAiCoachTextGenerator`). 현재 기본값 `gpt-4o-mini`는 `max_tokens`를 받는다.
+
+### 명세서 진행상태
+
+- [ ] `docs/API명세서/21 AI Coach ....csv`가 아직 "시작 전"이다. Notion 내보내기 파일이라 레포에서 고치면 다음 내보내기에 덮인다 — Notion에서 갱신할 것.
+
+### Day 11 선공유 계약
+
+- [ ] [improvement-report-contract.md](improvement-report-contract.md)를 FE에 전달하고 필드를 합의받는다. 구현 전 선공유본이라 계산식 세부는 Day 11에 확정된다.
 
 ## S15P21D105-587 — Simulation 전체 통합·추천 연결
 
@@ -629,6 +659,13 @@
 
 구현 계약: [transaction-query.md](transaction-query.md) "수동 거래 등록·수정·삭제"
 
+### 거래 시각 입력
+
+- [x] (2026-09-16) 등록·수정 Body에 `transactionTime?`(HH:mm / HH:mm:ss)을 추가했다. FE 현금거래 추가 화면이 "지출시간"으로 날짜·시각을 함께 고르는데 Body에 시각이 없어 수동 거래가 전부 시각 null로 저장되고, 같은 날 거래가 시간순으로 정렬되지 않았다. 시각을 생략하면 예전처럼 null이라 기존 호출은 그대로 동작한다.
+- [ ] API 명세서(Notion, 6 Transaction) 수동 거래 등록·수정 Body에 `transactionTime?`을 반영한다. 레포의 `docs/API명세서/6 Transaction Spending*.csv`는 Notion 내보내기라 직접 고치지 않았다.
+- [ ] FE 인계: (1) `ledgerMappers.ts`의 시각 변환이 `transactionTime.slice(0, 5)`를 null 확인 없이 호출해 시각 없는 거래(기존 수동 거래·시각 없는 금융망 거래)가 한 건이라도 있으면 목록 로드가 실패할 수 있다. (2) `ledgerApi.ts`에 등록·수정·삭제 호출이 없어 화면의 저장이 로컬 상태만 바꾼다. draft의 `transactionTime`을 Body에 함께 보내야 이 변경이 효과를 낸다.
+- 결정: 시각은 현재 시각과 비교하지 않는다(거래일만 "오늘 이후 불가"). 앱과 서버의 시계가 몇 분 어긋나면 방금 등록한 거래가 거절되기 때문이다. 시각을 지우는(null로 되돌리는) 경로는 두지 않았다. 필요해지면 FE와 빈 문자열 규약을 정한다.
+
 ### 계좌 연결 여부
 
 - [ ] 수동 거래는 계좌·카드에 연결되지 않는다(`account_id` null). 명세 Body에 계좌 필드가 없어서다. 그래서 계좌 거래내역(5)·계좌 잔액·`last_transaction_date`·현금흐름 예측에는 잡히지 않고, 전체 거래 목록(6)과 소비 집계에만 나타난다.
@@ -716,6 +753,12 @@
 
 구현 계약: [goal.md](goal.md) "연결계좌"
 
+### Body를 계좌 ID로 변경
+
+- [x] (2026-09-16) `PUT /goals/{goalId}/accounts` Body를 `accountNos[]`(계좌번호 원문)에서 `accountIds[]`(계좌 응답의 `accountId`)로 바꿨다. FE 요청: 계좌 목록·연결계좌 조회가 `accountId`와 마스킹 번호만 주고 원문은 응답에 없어 `accountNos`를 만들 수 없었다. 서비스는 계좌를 찾은 뒤부터 이미 ID로 동작하므로 조회 한 줄(`findByIdAndUserId`)만 바뀌었고 유형·상태·다른 목표 연결 검증, 이력, 응답은 그대로다. 이 API를 호출하던 클라이언트는 없었다(FE는 로컬 상태만 관리).
+- [ ] API 명세서(Notion, 12 Goal) "목표 연결계좌 변경" Body를 `accountIds[]`로 반영한다. 레포의 `docs/API명세서/12 Goal*.csv`는 Notion 내보내기라 직접 고치지 않았다.
+- [ ] 아래 "기여 금액" 항목의 Body 확장안도 `[{accountId, contributionAmount?}]`로 읽는다.
+
 ### 계좌 잔액 변경 시 모인 금액 재계산
 
 - [x] 510에서 처리했다: progress·required-saving·forecast·risk가 조회 시점에 연결 계좌 잔액 합으로 다시 계산하고 `goal.current_amount`도 갱신한다. 목록·요약(508)은 저장값을 그대로 쓰므로 계산 API를 한 번 부른 뒤에 맞아진다.
@@ -723,7 +766,7 @@
 
 ### 기여 금액(contribution_amount)
 
-- [ ] 명세 Body가 `accountNos[]`만 받아 계좌별 기여 금액을 지정할 수 없다. 급여통장처럼 잔액 일부만 목표에 쓰는 경우를 위해 ERD가 둔 컬럼이다. FE에 입력 UI가 생기면 Body를 `[{accountNo, contributionAmount?}]`로 바꾸고 모인 금액 계산에 반영한다.
+- [ ] 명세 Body가 `accountIds[]`만 받아 계좌별 기여 금액을 지정할 수 없다. 급여통장처럼 잔액 일부만 목표에 쓰는 경우를 위해 ERD가 둔 컬럼이다. FE에 입력 UI가 생기면 Body를 `[{accountId, contributionAmount?}]`로 바꾸고 모인 금액 계산에 반영한다.
 
 ### MySQL 검증
 
@@ -901,7 +944,7 @@
   - u0001 목표 1: `currentAmount` 29,160,000 = 연결 계좌(주거래 19,160,000 + KB 정기예금 10,000,000) 잔액 합, 목표 16,100,000 → 진행률 100%, `paceStatus = ACHIEVED`, 필요 월 저축액 0, 예상 달성일 = 기준일, 위험 NONE. 이력 7건(GOAL_CREATED + 월말 AMOUNT_UPDATED 6, 2026-03~08 선형 증가). 줄이기 전용 API 호출 시 400, 타인 목표 404.
   - u0002 목표 2: 1,800,000 / 32,000,000 → 5.6%, 기대 진행률 45.5%, `BEHIND`, 위험 HIGH(`PACE_INSUFFICIENT`, `BEHIND_SCHEDULE`), 필요 월 저축액 3,775,000. 목표 3(줄이기 1,800,000): 9월 소비 0(거래 seed가 8월까지라 정상), `previousMonthSpending` 4,247,800 = 8월 EXPENSE·비 NON_SPENDING 합과 일치, 위험 LOW. 요약: 모으기 목표 합 32,000,000 / 1,800,000, 월 예산 합 1,800,000.
 - 쓰기 경로(MySQL CHECK·복합 외래키 살아 있는 상태): 모으기 생성 201 → 이름·목표 금액 수정 200 → PAUSED 200 → PAUSED→ACHIEVED 409 `GOAL_STATUS_TRANSITION_NOT_ALLOWED` → 모으기에 월 예산 400 → 이력에 GOAL_CREATED·GOAL_UPDATED·STATUS_CHANGED 기록 → 연결 계좌 0건·진행률·위험(`NO_LINKED_ACCOUNTS`) 200 → 삭제 200(soft, GOAL_DELETED 이력) → 조회 404. 줄이기 생성(예산 0은 400 `VALIDATION_ERROR`) → 소비 진행률 200 → 삭제 200. seed 목표 6,000건은 그대로다.
-- [ ] `PUT /goals/{goalId}/accounts`는 호출하지 못했다. Body가 계좌번호 원문(`accountNos`)을 받아 서버가 해시로 찾는데, seed 계좌의 해시는 검증용 더미라 원문이 없다. 애플리케이션 코덱으로 만든 fixture(491 계약)로 seed를 적재한 환경에서 다시 확인한다. H2 통합 테스트(`GoalAccountApiIntegrationTest`)로는 통과했다.
+- [ ] `PUT /goals/{goalId}/accounts`는 당시 호출하지 못했다. Body가 계좌번호 원문(`accountNos`)을 받아 서버가 해시로 찾는데, seed 계좌의 해시는 검증용 더미라 원문이 없었다. 2026-09-16에 Body를 `accountIds`로 바꿔(509 절) 이 제약은 사라졌다. seed 환경에서 계좌 ID로 한 번 호출해 MySQL 검증을 마무리한다. H2 통합 테스트(`GoalAccountApiIntegrationTest`)는 통과했다.
 - 참고: 계산 API(progress·required-saving·forecast·risk)는 금액이 바뀌지 않으면 `AMOUNT_UPDATED` 이력을 남기지 않아 seed 목표의 이력은 7건 그대로였다. 목표 1은 모인 금액이 목표를 넘었는데 상태는 ACTIVE로 남는다(508 절 "모인 금액 도달 시 상태" 미결 항목과 같음).
 - 검증 중 확인한 도구 문제: Windows Git Bash의 `curl -d '한글'`은 본문을 UTF-8이 아닌 코드페이지로 보내 서버가 400 `INVALID_REQUEST`(본문 해석 실패)를 돌려준다. 앱 문제가 아니며 `--data-binary @utf8파일`로 보내면 정상이다. 시연·수동 테스트 시 주의.
 ## 544·545 진행 현황 (2026-09-13)

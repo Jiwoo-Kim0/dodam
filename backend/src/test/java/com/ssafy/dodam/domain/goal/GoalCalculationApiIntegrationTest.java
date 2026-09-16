@@ -58,6 +58,8 @@ class GoalCalculationApiIntegrationTest {
     private static final String PASSWORD = "password123";
     private static final String MAIN_NO = "1234567890123456";
     private static final String SAVINGS_NO = "3333333344444444";
+    private static final long MAIN_ID = 11L;
+    private static final long SAVINGS_ID = 12L;
     private static final LocalDateTime SEEDED_AT = LocalDateTime.of(2026, 9, 1, 9, 0);
 
     @Autowired
@@ -129,7 +131,7 @@ class GoalCalculationApiIntegrationTest {
         // 10개월 전에 만들어 20개월짜리(총 600일 내외) 목표. 기대 진행률 ≈ 50%, 실제 30%(300만/1000만) → BEHIND
         long goalId = createSaving(10_000_000, today.plusMonths(10));
         backdateCreatedAt(goalId, 10);
-        link(goalId, List.of(MAIN_NO, SAVINGS_NO));
+        link(goalId, List.of(MAIN_ID, SAVINGS_ID));
         // 연결 후 동기화로 잔액이 바뀐 상황
         jdbcTemplate.update("UPDATE account SET balance = 2000000 WHERE account_id = 11");
 
@@ -162,7 +164,7 @@ class GoalCalculationApiIntegrationTest {
     @Test
     void progressReportsAchievedAndAheadStates() throws Exception {
         long achieved = createSaving(2_000_000, today.plusMonths(6));
-        link(achieved, List.of(MAIN_NO, SAVINGS_NO));
+        link(achieved, List.of(MAIN_ID, SAVINGS_ID));
         mockMvc.perform(get("/api/v1/goals/" + achieved + "/progress").header(HttpHeaders.AUTHORIZATION, bearer))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.progressRatePercent").value(100.0))
@@ -172,7 +174,7 @@ class GoalCalculationApiIntegrationTest {
 
         // 방금 만든 목표(기대 0%)에 30% 확보 → AHEAD
         long ahead = createSaving(10_000_000, today.plusMonths(12));
-        link(ahead, List.of(MAIN_NO, SAVINGS_NO));
+        link(ahead, List.of(MAIN_ID, SAVINGS_ID));
         mockMvc.perform(get("/api/v1/goals/" + ahead + "/progress").header(HttpHeaders.AUTHORIZATION, bearer))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.expectedProgressRatePercent").value(0.0))
@@ -196,7 +198,7 @@ class GoalCalculationApiIntegrationTest {
         // 3개월 전 생성, 목표일은 오늘 + 6개월 + 10일 → 남은 개월 7(올림). 확보 300만 → 월평균 100만
         long goalId = createSaving(10_000_000, today.plusMonths(6).plusDays(10));
         backdateCreatedAt(goalId, 3);
-        link(goalId, List.of(MAIN_NO, SAVINGS_NO));
+        link(goalId, List.of(MAIN_ID, SAVINGS_ID));
         mockMvc.perform(patch("/api/v1/users/me/financial-profile").header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("monthlyIncome", 4_000_000))))
                 .andExpect(status().isOk());
@@ -219,7 +221,7 @@ class GoalCalculationApiIntegrationTest {
         // 1개월 경과, 300만 확보(월평균 300만), 남은 700만을 2개월 안에 → 필요 350만 → INSUFFICIENT
         long goalId = createSaving(10_000_000, today.plusMonths(2));
         backdateCreatedAt(goalId, 1);
-        link(goalId, List.of(MAIN_NO, SAVINGS_NO));
+        link(goalId, List.of(MAIN_ID, SAVINGS_ID));
         mockMvc.perform(get("/api/v1/goals/" + goalId + "/required-saving").header(HttpHeaders.AUTHORIZATION, bearer))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.monthsRemaining").value(2))
@@ -246,7 +248,7 @@ class GoalCalculationApiIntegrationTest {
         // 3개월 경과, 300만 확보 → 월 100만. 남은 700만 → 7개월 뒤 달성. 목표일 오늘+6개월 → 1개월 늦음
         long goalId = createSaving(10_000_000, today.plusMonths(6));
         backdateCreatedAt(goalId, 3);
-        link(goalId, List.of(MAIN_NO, SAVINGS_NO));
+        link(goalId, List.of(MAIN_ID, SAVINGS_ID));
 
         LocalDate expected = today.plusMonths(7);
         mockMvc.perform(get("/api/v1/goals/" + goalId + "/forecast").param("months", "8")
@@ -353,7 +355,7 @@ class GoalCalculationApiIntegrationTest {
         // 3개월 경과, 300만 확보(월 100만), 남은 700만/7개월 = 100만 → 속도 충분, 기대 진행률(≈33%) vs 실제 30% → LOW
         long steady = createSaving(10_000_000, today.plusMonths(6).plusDays(10));
         backdateCreatedAt(steady, 3);
-        link(steady, List.of(MAIN_NO, SAVINGS_NO));
+        link(steady, List.of(MAIN_ID, SAVINGS_ID));
         mockMvc.perform(get("/api/v1/goals/" + steady + "/risk").header(HttpHeaders.AUTHORIZATION, bearer))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.riskLevel").value("LOW"))
@@ -362,7 +364,7 @@ class GoalCalculationApiIntegrationTest {
 
         // 목표일이 지났고 남은 금액 있음 → HIGH, DEADLINE_PASSED
         long passed = createSaving(10_000_000, today.plusDays(1));
-        link(passed, List.of(MAIN_NO));
+        link(passed, List.of(MAIN_ID));
         jdbcTemplate.update("UPDATE saving_goal SET target_date = ? WHERE goal_id = ?", today.minusDays(1), passed);
         mockMvc.perform(get("/api/v1/goals/" + passed + "/risk").header(HttpHeaders.AUTHORIZATION, bearer))
                 .andExpect(status().isOk())
@@ -429,11 +431,11 @@ class GoalCalculationApiIntegrationTest {
         jdbcTemplate.update("UPDATE goal SET created_at = ?, updated_at = ? WHERE goal_id = ?", created, created, goalId);
     }
 
-    private void link(long goalId, List<String> accountNos) throws Exception {
+    private void link(long goalId, List<Long> accountIds) throws Exception {
         mockMvc.perform(put("/api/v1/goals/" + goalId + "/accounts")
                         .header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("accountNos", accountNos))))
+                        .content(json(Map.of("accountIds", accountIds))))
                 .andExpect(status().isOk());
     }
 

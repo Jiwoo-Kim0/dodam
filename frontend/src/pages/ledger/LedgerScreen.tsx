@@ -1,15 +1,12 @@
 import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Alert } from 'react-native';
 
 import { AppHeader } from '@/components/appHeader/AppHeader';
+import { ScreenState } from '@/components/screenState/ScreenState';
 import { routes } from '@/constants/routes';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
-import {
-  EMPTY_LEDGER_DRAFT,
-  LEDGER_CATEGORIES,
-} from '@/mocks/ledger';
-import { colors } from '@/styles';
+import { EMPTY_LEDGER_DRAFT } from '@/mocks/ledger';
 import type {
   LedgerTransaction,
   LedgerTransactionDraft,
@@ -51,6 +48,16 @@ function clampToCurrentMonth(month: Date) {
   return month.getTime() > currentMonth.getTime() ? currentMonth : month;
 }
 
+function toPaymentMethodCode(paymentMethod: string | null) {
+  if (!paymentMethod) return 'CASH';
+
+  const normalized = paymentMethod.trim().toUpperCase();
+  if (normalized === '현금') return 'CASH';
+  if (normalized === '카드') return 'CARD';
+  if (normalized === '계좌') return 'ACCOUNT';
+  return /^[A-Z0-9_]+$/.test(normalized) ? normalized : 'CASH';
+}
+
 export function LedgerScreen() {
   const router = useRouter();
   const [view, setView] = useState<LedgerView>('overview');
@@ -59,6 +66,8 @@ export function LedgerScreen() {
   const [currentMonth, setCurrentMonth] = useState(getCurrentMonthStart);
   const visibleMonth = useMemo(() => clampToCurrentMonth(currentMonth), [currentMonth]);
   const {
+    categories,
+    hiddenTransactions,
     transactions,
     monthlySummary,
     dailyTotals,
@@ -67,15 +76,20 @@ export function LedgerScreen() {
     isLoading,
     isRefreshing,
     error,
+    mutationError,
     refetch,
-    updateTransaction,
-    prependTransaction,
-    removeTransaction,
+    isMutating,
+    updateTransactionCategory,
+    updateTransactionMemo,
+    updateTransactionVisibility,
+    createManualTransaction,
+    updateManualTransaction,
+    deleteManualTransaction,
   } = useLedgerData(visibleMonth);
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
   const [draft, setDraft] = useState<LedgerTransactionDraft>({ ...EMPTY_LEDGER_DRAFT });
 
-  const selectedTransaction = transactions.find(
+  const selectedTransaction = [...transactions, ...hiddenTransactions].find(
     (transaction) => transaction.id === selectedTransactionId,
   );
   const merchantHistory = useMemo(() => {
@@ -90,11 +104,11 @@ export function LedgerScreen() {
       );
   }, [selectedTransaction, transactions]);
 
-  const updateSelectedTransaction = (patch: Partial<LedgerTransaction>) => {
-    if (!selectedTransactionId) return;
-
-    updateTransaction(selectedTransactionId, patch);
-  };
+  useEffect(() => {
+    if (mutationError) {
+      Alert.alert('거래 내역을 변경하지 못했어요', mutationError.message);
+    }
+  }, [mutationError]);
 
   const changeMonth = (offset: number) => {
     setCurrentMonth((current) => {
@@ -143,58 +157,82 @@ export function LedgerScreen() {
     setView('category');
   };
 
-  const selectCategory = (categoryId: string) => {
-    updateSelectedTransaction({ categoryId });
-    setView('detail');
-  };
+  const selectCategory = async (categoryId: string) => {
+    if (!selectedTransactionId) return;
 
-  const saveTransaction = () => {
-    const amount = Number(draft.amountText);
-    if (amount <= 0) return;
-
-    if (formMode === 'edit' && selectedTransactionId) {
-      updateSelectedTransaction({
-        transactionDate: draft.transactionDate,
-        transactionTime: draft.transactionTime,
-        transactionType: draft.transactionType,
-        amount,
-        merchantName: draft.merchantName.trim() || '직접 입력한 거래',
-        categoryId: draft.categoryId ?? 'etc',
-        paymentMethod: draft.paymentMethod ?? '현금',
-        memo: draft.memo.trim(),
-      });
-      setView('detail');
+    const apiCategoryId = categories.find(
+      (category) => category.id === categoryId,
+    )?.apiId;
+    if (!apiCategoryId) {
+      Alert.alert('카테고리를 변경하지 못했어요', '카테고리 정보를 다시 불러와주세요.');
       return;
     }
 
-    const transactionId = `manual-${Date.now()}`;
-    const newTransaction: LedgerTransaction = {
-      id: transactionId,
-      transactionDate: draft.transactionDate,
-      transactionTime: draft.transactionTime,
-      transactionType: draft.transactionType,
-      amount,
-      merchantName: draft.merchantName.trim() || '직접 입력한 거래',
-      categoryId: draft.categoryId ?? 'etc',
-      paymentMethod: draft.paymentMethod ?? '현금',
-      memo: draft.memo.trim(),
-      approvalStatus: '수동 등록',
-      includedInExpense: draft.transactionType === 'expense',
-      hidden: false,
-      sourceType: 'manual',
-    };
-
-    prependTransaction(newTransaction);
-    setSelectedTransactionId(transactionId);
-    setView(previousListView);
+    const response = await updateTransactionCategory(
+      selectedTransactionId,
+      apiCategoryId,
+    );
+    if (response) setView('detail');
   };
 
-  const deleteTransaction = () => {
+  const saveTransaction = async () => {
+    const amount = Number(draft.amountText);
+    if (amount <= 0) return;
+
+    const apiCategoryId = categories.find(
+      (category) => category.id === draft.categoryId,
+    )?.apiId;
+    const request = {
+      transactionDate: draft.transactionDate,
+      transactionTime: draft.transactionTime,
+      transactionType:
+        draft.transactionType === 'income' ? ('INCOME' as const) : ('EXPENSE' as const),
+      amount,
+      merchantName: draft.merchantName.trim() || '직접 입력한 거래',
+      categoryId: apiCategoryId,
+      paymentMethod: toPaymentMethodCode(draft.paymentMethod),
+      memo: draft.memo.trim(),
+    };
+
+    if (formMode === 'edit' && selectedTransactionId) {
+      const response = await updateManualTransaction(selectedTransactionId, request);
+      if (response) setView('detail');
+      return;
+    }
+
+    const response = await createManualTransaction(request);
+    if (response) {
+      setSelectedTransactionId(response.transactionId);
+      setView(previousListView);
+    }
+  };
+
+  const deleteTransaction = async () => {
     if (!selectedTransactionId || selectedTransaction?.sourceType !== 'manual') return;
 
-    removeTransaction(selectedTransactionId);
-    setSelectedTransactionId(null);
-    setView(previousListView);
+    const response = await deleteManualTransaction(selectedTransactionId);
+    if (response !== null) {
+      setSelectedTransactionId(null);
+      setView(previousListView);
+    }
+  };
+
+  const toggleTransactionVisibility = async () => {
+    if (!selectedTransactionId || !selectedTransaction) return;
+
+    const response = await updateTransactionVisibility(
+      selectedTransactionId,
+      !selectedTransaction.hidden,
+    );
+    if (response?.hidden) {
+      setSelectedTransactionId(null);
+      setView(previousListView);
+    }
+  };
+
+  const updateMemo = async (memo: string) => {
+    if (!selectedTransactionId) return;
+    await updateTransactionMemo(selectedTransactionId, memo);
   };
 
   const closeForm = () => {
@@ -216,29 +254,18 @@ export function LedgerScreen() {
           showBackButton
           title={view === 'calendar' ? '전체 내역' : '가계부'}
         />
-        <View style={styles.statusContainer}>
-          {error ? (
-            <>
-              <Text style={styles.statusTitle}>가계부를 불러오지 못했어요.</Text>
-              <Text style={styles.statusDescription}>
-                {__DEV__
-                  ? error.message
-                  : '네트워크 상태를 확인한 뒤 다시 시도해주세요.'}
-              </Text>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => void refetch()}
-                style={({ pressed }) => [
-                  styles.retryButton,
-                  pressed && styles.retryButtonPressed,
-                ]}>
-                <Text style={styles.retryButtonLabel}>다시 시도</Text>
-              </Pressable>
-            </>
-          ) : (
-            <ActivityIndicator color={colors.primary.green} size="small" />
-          )}
-        </View>
+        <ScreenState
+          description={
+            error
+              ? __DEV__
+                ? error.message
+                : '네트워크 상태를 확인한 뒤 다시 시도해주세요.'
+              : '가계부를 불러오고 있어요'
+          }
+          isLoading={!error}
+          onRetry={error ? () => void refetch() : undefined}
+          title={error ? '가계부를 불러오지 못했어요.' : undefined}
+        />
       </SafeAreaLayout>
     );
   }
@@ -248,8 +275,9 @@ export function LedgerScreen() {
   if (view === 'calendar') {
     content = (
       <LedgerCalendar
-        categories={LEDGER_CATEGORIES}
+        categories={categories}
         dailyTotals={dailyTotals}
+        hiddenTransactions={hiddenTransactions}
         key={`${year}-${month}`}
         month={month}
         onBackPress={() => setView('overview')}
@@ -268,19 +296,14 @@ export function LedgerScreen() {
   } else if (view === 'detail' && selectedTransaction) {
     content = (
       <TransactionDetail
-        categories={LEDGER_CATEGORIES}
+        categories={categories}
         key={selectedTransaction.id}
         merchantHistory={merchantHistory}
         onBackPress={() => setView(previousListView)}
         onEditPress={openEditForm}
         onOpenCategory={openCategoryFromDetail}
-        onToggleHidden={() => updateSelectedTransaction({ hidden: !selectedTransaction.hidden })}
-        onToggleIncluded={() =>
-          updateSelectedTransaction({
-            includedInExpense: !selectedTransaction.includedInExpense,
-          })
-        }
-        onUpdateMemo={(memo) => updateSelectedTransaction({ memo })}
+        onToggleHidden={() => void toggleTransactionVisibility()}
+        onUpdateMemo={(memo) => void updateMemo(memo)}
         transaction={selectedTransaction}
       />
     );
@@ -288,7 +311,7 @@ export function LedgerScreen() {
     content = (
       <CategorySelection
         amount={selectedTransaction.amount}
-        categories={LEDGER_CATEGORIES}
+        categories={categories}
         merchantName={selectedTransaction.merchantName}
         onBackPress={() => setView('detail')}
         onSelect={selectCategory}
@@ -300,6 +323,7 @@ export function LedgerScreen() {
     content = (
       <TransactionForm
         draft={draft}
+        isSubmitting={isMutating}
         mode={formMode}
         onChange={(patch) => setDraft((current) => ({ ...current, ...patch }))}
         onClose={closeForm}
@@ -310,7 +334,7 @@ export function LedgerScreen() {
   } else {
     content = (
       <LedgerOverview
-        categories={LEDGER_CATEGORIES}
+        categories={categories}
         categorySummaries={categorySummaries}
         dailyTotals={dailyTotals}
         month={month}

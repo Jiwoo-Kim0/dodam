@@ -1,6 +1,6 @@
 # 외부 연동 설정값
 
-각 콘솔에 등록해야 하는 정확한 값과 발급 절차. 최종 갱신 2026-09-11.
+각 콘솔에 등록해야 하는 정확한 값과 발급 절차. 최종 갱신 2026-09-16.
 
 관련 문서: [CI/CD](ci-cd.md) · [보안 방침](../todo/security.md)
 
@@ -70,8 +70,32 @@ API Key는 `.env`에 설정 완료.
 
 API Key는 `.env`에 설정 완료.
 
+**사용처**: API 21 AI Coach (S15P21D105-589, 2026-09-16부터). 구현 문서는
+[`backend/docs/ai-coach.md`](../../backend/docs/ai-coach.md).
+
+```yaml
+app:
+  ai:
+    api-key: ${OPENAI_API_KEY}   # application-prod.yml
+    model: gpt-4o-mini
+```
+
+```yaml
+# infra/docker-compose.yml (backend environment)
+OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+```
+
+> **2026-09-16 이전에는 키가 컨테이너에 전달되지 않았다.** `.env`에는 Day 5부터 있었지만
+> compose의 backend `environment:`에 줄이 없어 앱 입장에서는 없는 것과 같았다. 589에서 추가했다.
+
+`:-` 기본값을 둔 이유: 키가 비어도 백엔드는 정상 기동하고 코치만 템플릿 응답으로 내려간다
+(기획안 11-3의 대체 방법). 배포를 막을 사안이 아니다. 대신 `application-prod.yml`이
+`${OPENAI_API_KEY}`를 참조하므로 `check-env.sh` 3-1이 "compose의 전달 줄이 사라졌는지"는 계속 감시한다.
+
 > 비용 관리는 OpenAI 콘솔에서 사용량 알림을 설정할 것. 인프라 범위 밖이지만
 > 키가 유출되면 과금으로 직결되므로 `.env` 권한(600)과 백업 원칙을 지킬 것.
+> **2026-09-16부터 실제 호출이 나가기 시작했으므로 한도 설정이 더는 미룰 일이 아니다.**
+> 코치에는 아직 응답 캐시도 사용자별 레이트 리밋도 없다(`backend/docs/remaining-work.md` 589).
 
 ---
 
@@ -115,21 +139,25 @@ API Key는 `.env`에 설정 완료.
 
 ## 4. 소셜 로그인 (Kakao / Google)
 
-### 인증 흐름 — 2026-09-11 백엔드 확정
+### 인증 흐름 — 2026-09-11 확정, 2026-09-15 백엔드 구현 완료
+
+> 구현 결과는 `backend/docs/auth-social.md`(S15P21D105-611)가 기준이다.
+> 이 절의 절차는 그대로 유효하지만 **엔드포인트와 환경변수 이름이 확정되면서 바뀌었다.**
 
 **앱이 네이티브 SDK로 로그인하고, 서버는 받은 토큰만 검증한다.**
 
 ```
 앱 ──네이티브 SDK 로그인──> Kakao / Google
-앱 ──POST /api/v1/auth/oauth/{provider} (토큰)──> 서버
+앱 ──POST /api/v1/auth/social/{provider} (토큰)──> 서버
                                                  서버 ──토큰 검증──> provider
                                                  user_oauth_account 매핑
 앱 <──────── 우리 JWT (access/refresh) ────────── 서버
 ```
 
-- 앱이 받는 것: 카카오 access token 또는 OIDC `id_token` / 구글 `id_token`
-- 서버 검증: 카카오 `GET https://kapi.kakao.com/v2/user/me` 또는 `id_token` 검증,
-  구글 `id_token` 서명·`aud`·만료 검증 (RestClient로 직접 호출)
+- 앱이 받는 것: 카카오 **access token** / 구글 **`id_token`**
+- 서버 검증: 카카오 `GET https://kapi.kakao.com/v2/user/me`,
+  구글 `id_token` 서명(JWK)·`iss`·`aud`·만료 검증
+  → **OIDC 방식은 채택하지 않았다.** 카카오는 access token 검증으로 확정
 - 매핑: `user_oauth_account`(provider + `provider_user_id_hash`) → 기존 JWT 발급
 
 **서버 Redirect 방식을 쓰지 않는 이유**: RN 앱에서는 웹뷰·딥링크 왕복이 필요해 UX가 나쁘고,
@@ -176,20 +204,43 @@ Credential Manager가 처리한다.
    - 키 해시: SHA-1을 Base64로 변환한 값 (§5의 조회 절차)
    - **debug keystore를 쓰는 팀원의 키 해시도 각각 등록**
 3. 카카오 로그인 **활성화 ON** (기본 OFF)
-4. 동의항목 — 백엔드가 쓸 항목만 (닉네임/이메일 등)
-5. OIDC `id_token`을 쓸 경우 **OpenID Connect 활성화 ON** (기본 OFF, 안 켜면 발급되지 않음)
+4. 동의항목 — **닉네임만.** 이메일은 쓸 수 없다 (아래 참고)
+5. OIDC는 쓰지 않으므로 **OpenID Connect 활성화는 불필요**
 
-**서버에 필요한 값** — 검증 방식에 따라 다르다.
+#### ⚠️ 이메일 동의항목은 사용할 수 없다 (2026-09-16 확인·결정)
 
-| 방식 | 서버에 필요한 카카오 값 |
-| --- | --- |
-| `GET /v2/user/me` + 사용자 access token | **없음** (사용자 토큰만 Bearer로 실음) |
-| OIDC `id_token` 검증 | 앱 키 1개 (`aud` 비교용) → `.env`의 `KAKAO_APP_KEY` |
+콘솔에서 `카카오계정(이메일)`이 **"권한 없음"**으로 뜬다. 신청하려면 **비즈 앱 전환**이
+선행되어야 하고, 비즈 앱 전환에는 **카카오톡 채널 연결 + 사업자 정보 등록(사업자등록번호)**이
+필요하다. 교육 프로젝트라 쓸 수 있는 사업자 정보가 없어 **전환 자체가 불가능하다.**
 
-> ⚠️ 카카오 앱 키는 **4종**(네이티브 앱 키 / REST API 키 / JavaScript 키 / Admin 키)이다.
-> `aud`에 어느 것이 들어오는지는 **실제 발급된 `id_token`을 디코드해 확인**하고 넣을 것.
-> 잘못 넣으면 "aud 불일치"로만 보여서 원인이 드러나지 않는다.
-> FE의 SDK 초기화에는 **네이티브 앱 키**를 쓴다.
+> "비즈니스 인증 ON"과 "비즈 앱"은 다르다. 인증이 켜져 있어도 앱 유형이 비즈 앱이
+> 아니면 이메일 신청 자격 확인까지 가지 못한다.
+
+**결정: 카카오는 이메일 없이 간다.** 로그인 기능 자체에는 영향이 없다.
+
+| | 카카오 | 구글 |
+| --- | --- | --- |
+| 로그인·토큰 발급·서버 검증 | ✅ | ✅ |
+| 사용자 식별(`id`) / 이름(닉네임) | ✅ | ✅ |
+| 이메일 수집 | ❌ **불가** | ✅ |
+| 이메일 기반 기존 계정 자동 연결 | ❌ | ✅ |
+| 가입 시 금융망 회원 등록 시도 | ❌ (FAILED로 둠) | ✅ |
+
+카카오 가입자는 **예외가 아니라 기본값으로** 대체 이메일
+`kakao.{해시앞20자}@social.dodam.invalid`을 갖고, `finance_connection`이 FAILED로 남는다.
+백엔드가 이 경로를 정상 경로로 구현해 두었다(`auth-social.md` 통합 테스트 1번 케이스).
+→ **이메일이 필요한 시연 시나리오는 구글 로그인으로 보여줄 것.**
+
+**서버에 필요한 카카오 값**
+
+| 값 | 변수 | 필수? |
+| --- | --- | --- |
+| 앱 ID (숫자) | `KAKAO_APP_ID` | 선택 — 비우면 "우리 앱 토큰인지" 검사만 생략 |
+| 앱 키 4종 | — | **필요 없음** |
+
+> ⚠️ 앱 ID는 **앱 키가 아니다.** 앱 생성 시 자동 부여되는 숫자이고
+> 콘솔 URL(`.../console/app/<앱ID>`)에서 확인한다.
+> FE의 SDK 초기화·intent-filter에는 **네이티브 앱 키**를 쓴다 — 서버와 무관한 값이다.
 
 ### Google Cloud Console — 등록할 것
 
@@ -207,7 +258,7 @@ SHA-1 추가 후 `google-services.json`은 **재다운로드**해야 한다.
 
 | 항목 | 내용 |
 | --- | --- |
-| **웹 애플리케이션 유형 클라이언트** | Android SDK(Credential Manager)가 `id_token`을 받으려면 `serverClientId`로 이것이 필요하다. **ID만** 쓰고 Secret은 배포하지 않는다 → `.env`의 `GOOGLE_OAUTH_CLIENT_ID` |
+| **웹 애플리케이션 유형 클라이언트** | Android SDK(Credential Manager)가 `id_token`을 받으려면 `serverClientId`로 이것이 필요하다. **ID만** 쓰고 Secret은 배포하지 않는다 → `.env`의 `GOOGLE_CLIENT_ID` |
 | **Android 유형 클라이언트** | 패키지명 `com.ssafy.d105.dodam` + SHA-1 |
 | **OAuth 동의 화면** | User Type External, 앱 이름/지원 이메일 + **테스트 사용자에 팀원 계정 전부** |
 
@@ -222,14 +273,17 @@ SHA-1 추가 후 `google-services.json`은 **재다운로드**해야 한다.
 Secret은 **0개**다.
 
 ```
-KAKAO_APP_KEY=              # OIDC 검증 방식일 때만 (aud 비교용)
-GOOGLE_OAUTH_CLIENT_ID=     # 웹 클라이언트 ID (aud 비교용)
+KAKAO_APP_ID=        # 카카오 앱 ID(숫자). 선택 — 비우면 앱 대조 검사만 생략
+GOOGLE_CLIENT_ID=    # 구글 OAuth 클라이언트 ID. 여러 개면 쉼표. 비면 구글 로그인 503
 ```
 
-> ⚠️ 백엔드가 이 값을 참조하기 시작하면 `docker-compose.yml`의 backend environment와
-> `application-prod.yml` **양쪽에** 추가해야 한다. 한쪽만 넣으면 `check-env.sh`가 잡아낸다
-> (2026-09-08 `JWT_SECRET` 유실 장애와 같은 유형).
-> 2026-09-11 현재 두 파일 모두 이 변수를 참조하지 않는다.
+2026-09-16 기준 EC2 `.env`에 두 값 모두 설정 완료.
+`KAKAO_CLIENT_ID` / `KAKAO_CLIENT_SECRET` / `GOOGLE_CLIENT_SECRET`은 **쓰지 않으므로 제거했다.**
+
+> ⚠️ 이 변수들을 참조하는 곳은 **`application.yml`**(`-prod`가 아니다)이다.
+> `check-env.sh`의 앱↔compose 대조는 `application-prod.yml`만 읽으므로
+> **compose에서 빠져도 잡아내지 못한다.** 실제로 2026-09-16에 누락이 발견되어 추가했다
+> (`infra/todo/jiw/day-08.md` 17절). 병합 중 유실되지 않도록 주의할 것.
 
 ---
 
@@ -357,11 +411,25 @@ EAS가 keystore를 관리하므로 **인프라가 보관해야 할 서명 키는
 | 항목 | 상태 | 담당 |
 | --- | --- | --- |
 | SSAFY 금융망 API Key | ✅ 설정됨 | 백엔드 |
-| OpenAI API Key | ✅ 설정됨 | ? |
+| OpenAI API Key | ✅ 설정됨 + compose 전달 (2026-09-16, 589) | 인프라 |
+| OpenAI 사용량 한도·결제 알림 | ⬜ **미설정** — 2026-09-16부터 실제 호출 시작 | 사용자 |
 | Firebase 서비스 계정 키 | ✅ 발급·마운트 완료 (2026-09-10) | 인프라 |
-| Kakao 네이티브 앱 키 + Android 플랫폼 등록 | ❌ **미발급** | ? |
-| Google 웹/Android 클라이언트 + 동의화면 | ❌ **미발급** | ? |
+| Kakao 앱 생성 + 앱 ID(`1573091`) | ✅ `.env` 설정 완료 (2026-09-16) | 인프라 |
+| Kakao 네이티브 앱 키 | ✅ FE 전달 완료 | 인프라 |
+| Kakao Android 플랫폼 등록 (패키지명+키 해시) | ⬜ SHA-1 확보됨, 등록 대기 | 인프라 |
+| Kakao 이메일 동의항목 | ❌ **사용 불가** (비즈 앱 전환 불가) | — |
+| Google OAuth 클라이언트 2개 (Android·웹) | ✅ `.env` 설정 완료 (2026-09-16) | 인프라 |
+| Google 동의 화면 테스트 사용자 등록 | ⬜ 팀원 계정 등록 필요 | 인프라 |
 
-미발급 2건(Kakao / Google OAuth)은 **로그인 기능의 선행조건**이다.
-패키지명과 scheme이 확정됐고 SHA-1 조회 절차도 정리됐으므로 바로 발급받을 수 있다.
-발급되면 `.env`에 넣고 backend를 재기동하면 끝난다 — 인프라 쪽 추가 작업은 없다.
+**외부 연동 연결성 (2026-09-16 실측)** — EC2 호스트·backend 컨테이너 양쪽에서 확인.
+
+| 대상 | 결과 |
+| --- | --- |
+| `https://kapi.kakao.com/v2/user/me` | HTTP 401 (토큰 없이 호출 — 도달 확인) |
+| `https://www.googleapis.com/oauth2/v3/certs` | HTTP 200 |
+
+→ 네트워크 차단 없음. 소셜 로그인이 실패하면 네트워크가 아니라
+**설정(클라이언트 ID·키 해시·동의항목)**을 볼 것.
+
+**남은 것은 FE 구현이다.** 라이브러리 설치·`app.json` intent-filter·로그인 화면 연결이
+모두 미착수 상태이고, 인프라·서버 쪽은 17절 커밋 배포만 남았다.

@@ -24,3 +24,4 @@
 - `day-02.md` / `day-02-plan-review.md` — Day 2 진행 기록 및 계획 재검토
 - `day-03.md` ~ `day-07.md` — Day 3~7 실제 진행 기록
 - `day-08.md` — Day 8 실제 진행 기록
+- `day-10.md` — Day 10 실제 진행 기록 (API 21 AI Coach 구현, Day 11 응답 계약 선공유)

@@ -129,15 +129,21 @@ ACHIEVED·CANCELED는 종료 상태다. 어디로도 옮길 수 없고 다른 �
 - `linkedCount`(전체 연결 수), `totalBalance`(연결 계좌 잔액 합)는 페이지와 무관한 전체 값이다.
 - 줄이기 목표나 연결이 없는 목표는 빈 목록(404 아님).
 
-### 변경 `PUT /goals/{goalId}/accounts` Body `{ "accountNos": ["1234567890123456", …] }`
+### 변경 `PUT /goals/{goalId}/accounts` Body `{ "accountIds": [11, 13, …] }`
 
 연결 계좌를 요청 목록으로 **통째로 교체**한다. 빈 배열은 모두 해제다. 중복은 한 번으로 본다. 최대 50개.
 
+계좌는 **ID**(계좌 목록(5)·연결계좌 조회 응답의 `accountId`)로 지정한다. 2026-09-16까지는 계좌번호 원문 `accountNos[]`를 받아
+서버가 HMAC 해시로 찾았는데, 계좌 응답이 `accountId`와 마스킹 번호만 주고 원문은 응답에 돌려주지 않아 FE가 Body를 만들 수 없었다
+(remaining-work.md 515 절에서 seed 환경에서도 같은 이유로 호출하지 못했다고 기록). 원문 계좌번호를 Body로 받는 경로도 함께 없어졌다.
+이전 키 `accountNos`를 보내면 `accountIds` 누락으로 400 `VALIDATION_ERROR`다.
+
 | 검증 | 결과 |
 | --- | --- |
+| `accountIds` 누락, 원소가 null·0 이하, 숫자가 아님 | 400 `VALIDATION_ERROR` / `INVALID_REQUEST` |
 | 줄이기(SPENDING) 목표 | 400 "줄이기 목표에는 계좌를 연결할 수 없습니다." |
 | 종료 상태(ACHIEVED·CANCELED) 목표 | 409 `GOAL_NOT_EDITABLE` |
-| 본인 계좌가 아니거나 없는 계좌번호 | 404 |
+| 본인 계좌가 아니거나 없는 계좌 ID | 404 "계좌를 찾을 수 없습니다." (타인 계좌의 존재 여부를 드러내지 않도록 같은 응답) |
 | 마이너스통장(MINUS) | 400 "입출금·예금·적금 계좌만 목표에 연결할 수 있습니다." (ERD `chk_goal_account_type`) |
 | 해지(CLOSED) 계좌 | 400. INACTIVE는 허용(잔액은 유효) |
 | 다른 살아 있는 목표에 연결된 계좌 | 409 `ACCOUNT_ALREADY_LINKED_TO_GOAL`. 삭제(soft delete)된 목표의 연결은 해제하고 이어받는다 |

@@ -54,6 +54,7 @@ class GoalHistoryApiIntegrationTest {
     private static final String OTHER_EMAIL = "other-goal-history@example.com";
     private static final String PASSWORD = "password123";
     private static final String MAIN_NO = "1234567890123456";
+    private static final long MAIN_ID = 11L;
     private static final LocalDateTime SEEDED_AT = LocalDateTime.of(2026, 9, 1, 9, 0);
 
     @Autowired
@@ -135,7 +136,7 @@ class GoalHistoryApiIntegrationTest {
         long goalId = createSaving(10_000_000, today.plusMonths(10));
         // 1) 생성 → GOAL_CREATED (0원, 0%, 예상일 없음)
         // 2) 계좌 연결 → ACCOUNTS_UPDATED (200만, 20%, 속도 200만/1개월 → 4개월 뒤)
-        link(goalId, List.of(MAIN_NO));
+        link(goalId, List.of(MAIN_ID));
         // 3) 잔액 변화 후 진행률 조회 → AMOUNT_UPDATED (300만, 30%)
         jdbcTemplate.update("UPDATE account SET balance = 3000000 WHERE account_id = 11");
         mockMvc.perform(get("/api/v1/goals/" + goalId + "/progress").header(HttpHeaders.AUTHORIZATION, bearer))
@@ -271,11 +272,11 @@ class GoalHistoryApiIntegrationTest {
         return objectMapper.readTree(result.getResponse().getContentAsString()).path("data").path("goalId").asLong();
     }
 
-    private void link(long goalId, List<String> accountNos) throws Exception {
+    private void link(long goalId, List<Long> accountIds) throws Exception {
         mockMvc.perform(put("/api/v1/goals/" + goalId + "/accounts")
                         .header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("accountNos", accountNos))))
+                        .content(json(Map.of("accountIds", accountIds))))
                 .andExpect(status().isOk());
     }
 

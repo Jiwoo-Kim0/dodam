@@ -16,37 +16,6 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.background,
     flex: 1,
   },
-  statusContainer: {
-    alignItems: 'center',
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: semanticSpacing.screenMargin,
-  },
-  statusTitle: {
-    ...typography.subtitle,
-    color: colors.textPrimary,
-    textAlign: 'center',
-  },
-  statusDescription: {
-    ...typography.body2,
-    color: colors.textSecondary,
-    marginTop: spacing[2],
-    textAlign: 'center',
-  },
-  retryButton: {
-    backgroundColor: colors.primary.green,
-    borderRadius: radius.round,
-    marginTop: spacing[5],
-    paddingHorizontal: spacing[5],
-    paddingVertical: spacing[3],
-  },
-  retryButtonPressed: {
-    opacity: 0.82,
-  },
-  retryButtonLabel: {
-    ...typography.buttonSmall,
-    color: colors.white,
-  },
   fill: {
     flex: 1,
   },
@@ -446,6 +415,29 @@ export const styles = StyleSheet.create({
     fontFamily: fontFamily.regular,
     fontSize: fontSize.body1,
     paddingVertical: spacing[2],
+  },
+  hiddenTransactionsButton: {
+    alignSelf: 'flex-end',
+    backgroundColor: colors.white,
+    borderColor: colors.divider,
+    borderRadius: radius.round,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginTop: spacing[1],
+    paddingHorizontal: spacing[2],
+    paddingVertical: spacing[1],
+  },
+  hiddenTransactionsButtonSelected: {
+    backgroundColor: colors.primary.lightGreen,
+    borderColor: colors.primary.green,
+  },
+  hiddenTransactionsButtonText: {
+    color: colors.textSecondary,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.detail,
+  },
+  hiddenTransactionsButtonTextSelected: {
+    color: colors.primary.green,
+    fontFamily: fontFamily.semiBold,
   },
   calendarCard: {
     paddingHorizontal: spacing[2],
