@@ -26,6 +26,8 @@
 | V32 | `notification` 생성 (API 22 알림) | S15P21D105-519, S15P21D105-520 |
 | V33 | `user_device` 생성 (FCM 푸시 기기 토큰) | S15P21D105-580 |
 | V34 | `user_oauth_account` 생성 (소셜 로그인 카카오·구글 계정 연결) | S15P21D105-611 |
+| V35 | `goal_account` 계좌 단일 연결 제약(`uk_goal_account_account`)을 예·적금에만 적용 — 생성 컬럼 `exclusive_account_id` + UNIQUE, 입출금은 여러 목표에 금액 분할 가능 (BE-B가 BE-A 테이블 변경, 2026-09-16 BE-A 확인·MySQL 8.0 검증) | S15P21D105-626 |
+| V36 | `recommendation.source_issue_id` 추가 (추천-진단 문제 연결) | S15P21D105-628 |
 
 ## 버전 번호 할당
 
@@ -36,7 +38,7 @@
 | V1~V9 | BE-A (Auth/User, Account, Transaction/Spending, Goal 등) — V9로 소진 |
 | V10~V17 | BE-B (금융상품, Card, Installment, Loan, 예적금, Cashflow, Diagnosis) — V17까지 사용 |
 | V18~V29 | **BE-B·Infra 예비 구간** (Recommendation, Simulation, ProductSync, Dashboard, Improvement, Report 등). 2026-09-13 V18(recommendation, S15P21D105-547 브랜치)·V19(simulation) 사용, 다음은 V20 |
-| V30~V49 | **BE-A 2차 구간** (Subscription, Notification, Preference 등). 2026-09-11 V30(subscription), 2026-09-14 V31(pattern_analysis)·V32(notification)·V33(user_device), 2026-09-15 V34(user_oauth_account) 사용, 다음은 V35 |
+| V30~V49 | **BE-A 2차 구간** (Subscription, Notification, Preference 등). 2026-09-11 V30(subscription), 2026-09-14 V31(pattern_analysis)·V32(notification)·V33(user_device), 2026-09-15 V34(user_oauth_account), 2026-09-16 V35(goal_account 할당, 626)·V36(recommendation source_issue_id, 628) 사용 — BE-B가 BE-A 테이블·구간 번호를 쓴 것으로 BE-A가 확인했다. 다음은 **V37** |
 
 2026-09-11 BE-A는 팀원 부재 중에 Subscription 마이그레이션이 필요해 V18을 건너뛰고 **V30**을 잡았다. 돌아온 팀원이 "마지막 다음 번호" V18을
 자연스럽게 잡아도 충돌하지 않게 하기 위한 것이다. `out-of-order: true`라 V17 → V30 다음에 V18이 들어와도 적용에 문제가 없다.
