@@ -4,6 +4,7 @@ import type {
   GoalAccountsApiResponse,
   GoalApiResponse,
   GoalForecastApiResponse,
+  GoalHistoryApiResponse,
   GoalProgressApiResponse,
   GoalRiskApiResponse,
   RequiredSavingApiResponse,
@@ -29,6 +30,13 @@ interface GetGoalAccountsParams {
 interface GetGoalForecastParams {
   baseDate?: string;
   months?: number;
+}
+
+interface GetGoalHistoryParams {
+  startDate?: string;
+  endDate?: string;
+  page?: number;
+  size?: number;
 }
 
 export const goalApi = {
@@ -90,4 +98,13 @@ export const goalApi = {
 
   getRisk: (goalId: number) =>
     apiClient.get<GoalRiskApiResponse>(`/v1/goals/${goalId}/risk`),
+
+  getHistory: (
+    goalId: number,
+    { startDate, endDate, page = 0, size = 100 }: GetGoalHistoryParams = {},
+  ) =>
+    apiClient.get<PageResponse<GoalHistoryApiResponse>>(
+      `/v1/goals/${goalId}/history`,
+      { query: { startDate, endDate, page, size } },
+    ),
 };

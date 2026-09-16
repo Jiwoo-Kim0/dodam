@@ -2,8 +2,13 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { assetApi, goalApi, ledgerApi } from '@/api';
 import type { AccountApiResponse } from '@/types/assetApi.types';
-import type { GoalAccountApiResponse } from '@/types/goalApi.types';
-import type { GoalDetail } from '@/types/goal.types';
+import type { DailySpendingApiResponse } from '@/types/ledgerApi.types';
+import type { GoalDetail, GoalHistoryPoint } from '@/types/goal.types';
+import type {
+  GoalAccountApiResponse,
+  GoalHistoryApiResponse,
+  GoalProgressApiResponse,
+} from '@/types/goalApi.types';
 
 interface GoalDetailData {
   goal: GoalDetail;
@@ -20,6 +25,84 @@ function getSavingAccent(daysDifference: number | null) {
   if (daysDifference > 0) return `${daysDifference}일 늦어요`;
   if (daysDifference < 0) return `${Math.abs(daysDifference)}일 빨라요`;
   return '목표일에 맞춰요';
+}
+
+function toUtcTime(date: string) {
+  const [year, month, day] = date.split('-').map(Number);
+  return Date.UTC(year, month - 1, day);
+}
+
+function toHistoryLabel(date: string) {
+  const [, month, day] = date.split('-').map(Number);
+  return `${month}.${day}`;
+}
+
+function mapSavingHistory(
+  history: readonly GoalHistoryApiResponse[],
+  progress: GoalProgressApiResponse,
+): GoalHistoryPoint[] {
+  const latestByDate = new Map<string, GoalHistoryApiResponse>();
+  history.forEach((item) => {
+    if (!latestByDate.has(item.recordedDate)) {
+      latestByDate.set(item.recordedDate, item);
+    }
+  });
+
+  const startTime = toUtcTime(progress.startDate);
+  const targetTime = toUtcTime(progress.targetDate);
+  const totalDuration = Math.max(targetTime - startTime, 1);
+
+  return [...latestByDate.values()]
+    .sort((left, right) => left.recordedDate.localeCompare(right.recordedDate))
+    .slice(-6)
+    .map((item) => {
+      const elapsed = Math.min(
+        Math.max(toUtcTime(item.recordedDate) - startTime, 0),
+        totalDuration,
+      );
+
+      return {
+        label: toHistoryLabel(item.recordedDate),
+        actualAmount: item.currentAmount,
+        plannedAmount: Math.round(
+          progress.targetAmount * (elapsed / totalDuration),
+        ),
+      };
+    });
+}
+
+function mapSpendingHistory(
+  daily: DailySpendingApiResponse,
+  monthlyBudget: number,
+  daysInMonth: number,
+): GoalHistoryPoint[] {
+  let cumulative = 0;
+
+  return daily.days.reduce<GoalHistoryPoint[]>((points, day, index) => {
+    cumulative += day.totalSpending;
+    const dayOfMonth = Number(day.date.slice(-2));
+    const isLast = index === daily.days.length - 1;
+    const isWeekBoundary = dayOfMonth % 7 === 0;
+
+    if (!isWeekBoundary && !isLast) return points;
+
+    const week = Math.ceil(dayOfMonth / 7);
+    points.push({
+      label: isLast ? '현재' : `${week}주차`,
+      tooltipLabel: isLast ? '현재까지' : `${week}주차 누적`,
+      actualAmount: cumulative,
+      plannedAmount: Math.round(monthlyBudget * (dayOfMonth / daysInMonth)),
+    });
+    return points;
+  }, []);
+}
+
+async function loadGoalHistory(goalId: number) {
+  try {
+    return (await goalApi.getHistory(goalId, { size: 100 })).content;
+  } catch {
+    return [];
+  }
 }
 
 export function useGoalDetail(goalIdValue: string) {
@@ -44,15 +127,23 @@ export function useGoalDetail(goalIdValue: string) {
       const goalResponse = await goalApi.getGoal(goalId);
 
       if (goalResponse.type === 'SAVING') {
-        const [progress, requiredSaving, forecast, risk, accounts, availableAccounts] =
-          await Promise.all([
-            goalApi.getProgress(goalId),
-            goalApi.getRequiredSaving(goalId),
-            goalApi.getForecast(goalId),
-            goalApi.getRisk(goalId),
-            goalApi.getGoalAccounts(goalId, { size: 100 }),
-            assetApi.getAccounts(),
-          ]);
+        const [
+          progress,
+          requiredSaving,
+          forecast,
+          risk,
+          accounts,
+          availableAccounts,
+          history,
+        ] = await Promise.all([
+          goalApi.getProgress(goalId),
+          goalApi.getRequiredSaving(goalId),
+          goalApi.getForecast(goalId),
+          goalApi.getRisk(goalId),
+          goalApi.getGoalAccounts(goalId, { size: 100 }),
+          assetApi.getAccounts(),
+          loadGoalHistory(goalId),
+        ]);
         const monthlyShortfall = Math.max(requiredSaving.monthlyShortfall, 0);
 
         setData({
@@ -75,7 +166,7 @@ export function useGoalDetail(goalIdValue: string) {
             expectedAchievementDate:
               forecast.expectedAchievementDate?.replaceAll('-', '.') ?? '계산 불가',
             monthlyRequiredAmount: requiredSaving.requiredMonthlySaving,
-            history: [],
+            history: mapSavingHistory(history, progress),
             linkedAccountIds: accounts.accounts.map(({ accountId }) => String(accountId)),
           },
           linkedAccounts: accounts.accounts,
@@ -87,10 +178,17 @@ export function useGoalDetail(goalIdValue: string) {
         return;
       }
 
-      const [progress, risk, categories] = await Promise.all([
-        goalApi.getSpendingProgress(goalId),
+      const progressRequest = goalApi.getSpendingProgress(goalId);
+      const [progress, risk, categories, daily] = await Promise.all([
+        progressRequest,
         goalApi.getRisk(goalId),
         ledgerApi.getCategorySpending(),
+        progressRequest.then((spendingProgress) =>
+          ledgerApi.getDailySpending({
+            startDate: `${spendingProgress.yearMonth}-01`,
+            endDate: spendingProgress.asOfDate,
+          }),
+        ),
       ]);
 
       setData({
@@ -110,7 +208,11 @@ export function useGoalDetail(goalIdValue: string) {
               : '앞으로 소비를 조금만 더 줄이면\n목표를 달성할 수 있어요.',
           expectedSavingAmount: progress.expectedSavingAmount,
           dailyBudget: progress.dailyBudgetRemaining ?? 0,
-          history: [],
+          history: mapSpendingHistory(
+            daily,
+            progress.monthlyBudget,
+            progress.daysInMonth,
+          ),
           categories: categories.categories.map((category) => ({
             id: category.code.toLowerCase(),
             label: category.name,
