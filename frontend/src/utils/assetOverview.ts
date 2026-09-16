@@ -1,37 +1,23 @@
-import type {
-  AccountSummaryApiResponse,
-  LoanSummaryApiResponse,
-} from '@/types/assetApi.types';
+import type { AccountSummaryApiResponse } from '@/types/assetApi.types';
 import type { AssetOverview } from '@/types/asset.types';
 
-export function mapAssetOverview(
+/** 부채를 차감하지 않고 사용자가 보유한 계좌 잔액만 보여준다. */
+export function mapOwnedAssetOverview(
   accountSummary: AccountSummaryApiResponse,
-  loanSummary: LoanSummaryApiResponse,
 ): AssetOverview {
-  const savingAmount =
-    accountSummary.depositBalance + accountSummary.savingsBalance;
-  const checkingAmount = accountSummary.demandDepositBalance;
-  const loanAmount =
-    loanSummary.totalBalance + accountSummary.minusUsedAmount;
-
   return {
-    netAsset: accountSummary.netAssets - loanSummary.totalBalance,
+    netAsset: accountSummary.totalAssets,
     changeFromLastMonth: null,
     composition: [
       {
         label: '예·적금',
-        amount: savingAmount,
+        amount: accountSummary.depositBalance + accountSummary.savingsBalance,
         tone: 'strong',
       },
       {
         label: '입출금',
-        amount: checkingAmount,
+        amount: accountSummary.demandDepositBalance,
         tone: 'medium',
-      },
-      {
-        label: '대출',
-        amount: loanAmount,
-        tone: 'light',
       },
     ],
   };

@@ -40,6 +40,9 @@ export function HomeScreen() {
     isRefreshing,
     monthLabel,
     monthlyExpense,
+    goals,
+    briefing,
+    topSpending,
     refetch: refetchSummary,
   } = useHomeSummary();
 
@@ -180,7 +183,12 @@ export function HomeScreen() {
             <Text style={styles.greetingHeadline}>오늘도 목표를{'\n'}향해 한 걸음 더</Text>
           </View>
 
-          <GoalCarousel />
+          <GoalCarousel
+            key={goals.map((goal) => goal.id).join(':')}
+            goals={goals}
+            hasError={summaryError !== null}
+            isLoading={isSummaryLoading}
+          />
         </View>
 
         <View style={styles.body}>
@@ -191,14 +199,24 @@ export function HomeScreen() {
             monthlyExpense={monthlyExpense}
             onDetailPress={() => router.push(routes.ledger)}
           />
-          <BriefingCard onDetailPress={() => router.push(routes.dailyBriefing)} />
+          <BriefingCard
+            briefing={briefing}
+            hasError={summaryError !== null}
+            isLoading={isSummaryLoading}
+            onDetailPress={() => router.push(routes.dailyBriefing)}
+          />
           <AssetSummaryCard
             hasError={summaryError !== null}
             isLoading={isSummaryLoading}
             onDetailPress={() => router.push(routes.assets)}
             overview={assetOverview}
           />
-          <SpendingTopList />
+          <SpendingTopList
+            hasError={summaryError !== null}
+            isLoading={isSummaryLoading}
+            items={topSpending}
+            monthLabel={monthLabel}
+          />
         </View>
       </BouncyScrollView>
     </SafeAreaLayout>

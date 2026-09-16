@@ -1,8 +1,56 @@
 # 백엔드 남은 작업
 
-마지막 갱신: 2026-09-14
+마지막 갱신: 2026-09-16
 
-백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 611이다.
+백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 587, 611이다.
+
+## S15P21D105-587 — Simulation 전체 통합·추천 연결
+
+구현 계약: [simulation.md](simulation.md) §11, [recommendation-api.md](recommendation-api.md) §5.1
+
+### 시연 seed 환경에서 10종 실행 확인
+
+- [x] (616, 2026-09-16) 시연 서버에서 시연 계정 4개로 10종 실행·goal-impact를 실측하고 simulation.md §7 "616 시연 seed 실측"에 기록했다. 9종 201, 대환은 seed 자료 한계로 400 `SIMULATION_PRODUCT_OPTION_UNAVAILABLE`. 계획·근거는 [simulation-616-plan.md](simulation-616-plan.md).
+- 남은 것(코드 아님, 자료 담당에 전달): 523 seed 대출의 `next_repayment_date`가 2026-09 고정값이라 09-21부터 시연 계정에 추가상환·대환 가능한 대출이 없다. 대환 201을 시연하려면 잔여 회차가 옵션 term(6/12/24/36)과 같은 대출을 시연 계정에 두어야 한다. U0001의 목표는 이미 달성 상태다.
+
+### 카드 목록 응답의 `cardId`
+
+- [ ] `GET /cards` 항목에 `cardId`를 추가한다. 리볼빙 시뮬레이션(명세 17)과 `GET /installments?cardId=`가 `cardId`를 받는데 카드 목록은 마스킹 번호·이름·상태만 내려 FE가 값을 얻을 경로가 없다.
+- 근거: 616 실측에서 `GET /installments` 항목의 `cardId`로 역추적해야 했다(simulation.md §7). 카드 상세 경로는 `{cardNo}` 원문 기반이라 대안이 못 된다.
+- 담당 근거: 카드 API는 BE-B. 응답 필드 추가라 루트 명세(카드 목록) 변경 여부를 확인해야 한다.
+- 완료 조건: 카드 목록 항목에 `cardId`가 있고 card-basic-query.md와 FE 146에 공유된다.
+
+### 저축 프리셋의 목표 지정
+
+- [ ] 추천이 겨냥한 `goalId`로 저축 시뮬레이션을 좁히려면 명세 17 `POST /simulations/saving` 본문에 `goalId?`를 추가해야 한다(`accountNo`와 동시 지정 400, 지문·저장 파라미터 포함, 타인 목표 404).
+- 근거: FE는 원문 계좌번호가 없어 `accountNo`를 보낼 수 없다. 현재 프리셋은 계좌 미지정으로 모든 모으기 목표에 비례 배분되며 `TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT`로 드러낸다. 목표가 하나면 결과가 같다.
+- 선행 조건: 루트 API 명세 변경은 사용자 요청이 필요하다. FE 146과 함께 결정한다.
+- 담당 근거: BE-B가 맡는다. 루트 명세 변경이라 FE 146(사용처) 의견을 확인한 뒤 결정하며, 결정 전에는 착수하지 않는다.
+- 완료 조건: `goalId` 지정 실행이 해당 목표만 바꾸고 프리셋 `request.goalId`가 채워진다.
+
+### 테스트 컨텍스트 캐시와 공유 H2
+
+- [ ] 공유 H2(`jdbc:h2:mem:dodam`)와 `create-drop`을 쓰는 기존 통합 테스트(User·Transaction·Spending·Subscription 등)가 Spring 컨텍스트 캐시 축출에 취약하다. `spring.test.context.cache.maxSize` 상향(`junit-platform.properties`) 또는 해당 테스트의 DB URL 분리를 검토한다.
+- 근거: 587에서 새 컨텍스트 2개를 더한 첫 전체 빌드에서 96건이 `Table "auth_session" not found`로 실패했다. 같은 커밋의 깨끗한 worktree는 통과했으므로 컨텍스트 수 증가가 원인이다. 587은 신규 테스트가 기존 컨텍스트(586 URL·같은 MockitoBean)를 공유하도록 바꿔 우회했다.
+- 선행 조건: 공용 테스트 설정 변경이라 팀 확인이 필요하다. 다음에 새 `@SpringBootTest` 컨텍스트를 추가하는 작업에서 같은 문제가 재발할 수 있다.
+- 담당 근거: BE-B 소관이 아니다. 깨지는 테스트는 BE-A 도메인이고 `application-test.yml`(과 새로 둘 `junit-platform.properties`)은 공용 설정이다. 587은 발견·기록만 했으며 담당은 팀에서 정한다(BE-A 113 인계 이슈에 전달).
+- 완료 조건: 컨텍스트를 추가해도 전체 빌드가 순서와 무관하게 통과한다.
+
+### MySQL 검증에서 빠진 항목
+
+- [x] (617, 2026-09-16) 세 항목을 `SimulationMySqlIntegrationTest`에 추가해 MySQL 8.0에서 7건 통과. 결과는 simulation.md §11.3, 계획·결정은 [simulation-617-plan.md](simulation-617-plan.md).
+- 기록만 한 것: `type` 없는 목록 조회는 JPQL `(? IS NULL OR type = ?)` 때문에 `idx_simulation_user_type_created`의 두 번째 컬럼을 못 쓰고 filesort한다(사용자·하루 단위 양이 작아 587 설계 유지). EXPLAIN 실제 선택(`key`)은 단언하지 않았다.
+
+### 계산 일관성 검증(계획 §4) 중 미고정 항목
+
+- [x] (618, 2026-09-16) 소비 추천 효과 = 프리셋 실행 가용자금 증가(`RecommendationApiTest`), 복합 자식 9종 전체(10개) 순서 교환 불변(`SimulationIntegrationApiTest`)을 고정했다. 결과는 simulation.md §11.1·§11.2, 계획·결정은 [simulation-618-plan.md](simulation-618-plan.md).
+- 기록만 한 것 1: 소비 프리셋의 `monthlyReduction`(이번 달 예산 초과분)이 시뮬레이션 기준선 평균 지출(직전 3개월)을 넘으면 실행이 400 `SIMULATION_REDUCTION_EXCEEDS_SPENDING`이다. 587 프리셋 설계의 알려진 제한이며 FE 146은 사용자가 값을 고쳐 실행한다. 프리셋 조립 시 상한을 잘라 넣을지는 팀 결정.
+- 기록만 한 것 2: 복합의 `goalImpacts[].reasons` 원소 순서가 자식 순서를 따른다(집합은 같음). `assumptions`처럼 알파벳순으로 고정하려면 `CombinedCalculator.childReasons`를 정렬하면 되지만 저장 JSON이 바뀌므로 계산 버전과 함께 결정한다.
+
+### Jira 원문 확인
+
+- [ ] Jira 587 원문은 미확인이다. 로컬 내보내기(`SPRINT/Jira (4).csv`)가 572까지라 스프린트 보조 자료 Issue ID 123으로 범위를 정했다(simulation-587-plan.md §1). 제목·완료 조건이 다르면 계획서 §1과 이 절 제목을 갱신한다.
+- 담당 근거: 본인 이슈다. Jira 티켓으로 올리지 않고 직접 확인한다.
 
 ## S15P21D105-535 — 예·적금 ERD 제약 동기화
 

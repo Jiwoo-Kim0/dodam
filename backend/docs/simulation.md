@@ -1,8 +1,8 @@
-# Simulation 공통 모델·소비/저축/예적금/대출/카드/복합 시뮬레이션 (S15P21D105-550 · 551 · 585 · 586)
+# Simulation 공통 모델·소비/저축/예적금/대출/카드/복합 시뮬레이션 (S15P21D105-550 · 551 · 585 · 586 · 587)
 
-작성일: 2026-09-13, 갱신 2026-09-14(585), 2026-09-15(586). API 17 Simulation의 저장 구조·계산 계약·공통 조회 API(550), 소비 감소·저축액 변경 실행 API(551),
-예적금 가입·신규 대출·추가상환·대환 실행 API(585, §9), 할부·리볼빙·현금서비스·복합 실행 API(586, §10)다. 계획과 결정 배경은
-[simulation-plan.md](simulation-plan.md), [simulation-585-plan.md](simulation-585-plan.md), [simulation-586-plan.md](simulation-586-plan.md)에 있다.
+작성일: 2026-09-13, 갱신 2026-09-14(585), 2026-09-15(586·587). API 17 Simulation의 저장 구조·계산 계약·공통 조회 API(550), 소비 감소·저축액 변경 실행 API(551),
+예적금 가입·신규 대출·추가상환·대환 실행 API(585, §9), 할부·리볼빙·현금서비스·복합 실행 API(586, §10), 전체 통합·추천 연결·MySQL 검증(587, §11)이다. 계획과 결정 배경은
+[simulation-plan.md](simulation-plan.md), [simulation-585-plan.md](simulation-585-plan.md), [simulation-586-plan.md](simulation-586-plan.md), [simulation-587-plan.md](simulation-587-plan.md)에 있다.
 
 기준 자료: [API 17](../../docs/API명세서/17%20Simulation%203cdbb6ea356480a38af4c6f56a5280f2.csv),
 [ERD SQL](../../docs/ERD/DODAM_ERDCLOUD_IMPORT.sql) 1089~1150행, [기획안](../../docs/기획안/기획안%20작성%203c3bb6ea35648097a693e0e321b3e9c0.md) 4-5·7-5·9-6.
@@ -177,11 +177,35 @@ H2 (`.\gradlew.bat test --tests 'com.ssafy.dodam.domain.simulation.*'`, 2026-09-
 
 586 보완(2026-09-15): `CombinedSimulationCalculatorTest`에 자식 비례 배분의 산술 범위 초과와 부모 현금 유입 합계 범위 초과 회귀 테스트 2건을 추가했다. 해당 클래스 8건이 통과했으며 두 경로 모두 `SIMULATION_AMOUNT_OUT_OF_RANGE`를 반환한다.
 
-MySQL 통합 검증은 하지 않았다(§8).
+MySQL 통합 검증은 587에서 수행했다(§11.3).
+
+### 616 시연 seed 실측 (2026-09-16, 시연 서버 MySQL)
+
+시연 서버(`j15D105.p.ssafy.io`, seed 1~10번 적재, 기준일 2026-09-16)에서 시연 계정 U0001~U0004로 API를 직접 호출했다. 계획·자료 근거는 [simulation-616-plan.md](simulation-616-plan.md). 계좌·카드번호는 마스킹 값만 적는다.
+
+| # | 유형 | 계정 | HTTP | id | 핵심 금액 | goal-impact (before → after) | 비고 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `spending` 100,000 | U0002 | 201 | 7 | 가용자금 −605,666 → −505,666 | 목표 2: 2035-02-16 → 2033-01-16 | 30,200,000 / 400,000 = 75.5 → 76개월 |
+| 2 | `saving` 300,000 (예금 `…3301`) | U0003 | 201 | 8 | 월 저축 3,333,333 → 300,000, 가용자금 −2,407,633 → 625,700 | 목표 4: 2027-07-16 → 2035-06-16 | 저축액 "변경"이라 기준선보다 작으면 늦어진다. 4,000,000으로 재실행(id 16) → 2027-05-16 |
+| 3 | `saving-product` 상품 1, 10,000,000 × 12개월 | U0003 | 201 | 9 | 세전 이자 360,000, 만기 2027-09-16 수령 10,360,000 | 목표 4: NOT_COMPUTABLE `FUNDING_SOURCE_UNKNOWN` | floor(10,000,000 × 3.60 × 365 / 36500) |
+| 4 | `loan/new` 상품 53, 10,000,000 × 12, `EQUAL_PAYMENT` | U0001 | 201 | 10 | 6.04% 총 이자 330,178, 첫 회차 860,848(2026-10-16), 만기 2027-09-16 | 목표 1: `ALREADY_ACHIEVED` | AUTO 생략 → 400 `REPAYMENT_TYPE_REQUIRED`(term 12 옵션 코드 4종) |
+| 5 | `loan/prepayment` 대출 `…4101` 10,000,000 | U0004 | 201 | 11 | 만기까지 이자 1,333,335 → 1,200,000 (절감 133,335), 잔액 90,000,000 | 목표 5: NOT_COMPUTABLE `FUNDING_SOURCE_UNKNOWN` | BULLET 3.2%, 잔여 5회(09/20·10/20·11/20·12/20·만기 01/19) × 266,667 |
+| 6 | `loan/refinance` 대출 `…4101` → 상품 18 | U0004 | **400** | — | `SIMULATION_PRODUCT_OPTION_UNAVAILABLE` | — | 잔여 5회와 같은 term 옵션이 없다(JEONSE군 옵션 6/12/24/36). 상품 15도 같다. **seed 자료 한계**, 코드 결함 아님 |
+| 7 | `installment` 1,200,000 × 12, 12% | U0002 | 201 | 12 | 수수료 77,820, 첫 회차 111,836(2026-10-16) | 목표 2: NOT_COMPUTABLE `GOAL_ALLOCATION_UNKNOWN` | |
+| 8 | `revolving` 카드 5, 500,000 / 50% / 18% | U0004 | 201 | 13 | 기준일 결제 250,000, 이월 250,000, 완납 2028-03-16까지 이자 7,478 | 목표 5: NOT_COMPUTABLE | 카드 1(U0001)·99999 → 404. 카드 6(EXPIRED) → 201(id 17, 소유권만 검사) |
+| 9 | `cash-advance` 1,000,000 / 18% | U0003 | 201 | 14 | 30일 이자 14,795, 2026-10-16 상환 1,014,795 | 목표 4: NOT_COMPUTABLE | |
+| 10 | `combined` [saving 300,000(적금 `…4401`), #7, #5] | U0004 | 201 | 15 | 2027-09-16까지 금융비용 1,333,335 → 1,277,820 (−55,515) | 목표 5: NOT_COMPUTABLE `COMBINED_GOAL_EFFECT_NOT_COMPUTABLE` | scenarios 3행 |
+
+- **기준선 일치**: 목표 1·2·4·5의 `beforeForecastDate`가 `GET /goals/{id}/forecast`의 `expectedAchievementDate`(2026-09-16 기준 2026-09-16 / 2035-02-16 / 2027-07-16 / 2032-03-16)와 모두 같다.
+- **재사용·소유권·자료 오류**: 10종 전부 같은 요청 재실행 200 `created:false`(행 증가 없음). U0001이 U0004의 id 11 조회 → 404. U0002 주택대출(`next_repayment_date` 2026-09-15, 기준일 이전)·U0004 사잇돌(OVERDUE) 추가상환 → 400 `SIMULATION_LOAN_DATA_UNAVAILABLE`. `GET /simulations/{id}/goal-impact`는 10건 모두 실행 응답의 `goalImpacts`와 동일.
+- **seed 자료 한계**(코드 변경 없음, 담당 BE-A/BE-C에 전달): (1) 523 seed의 `next_repayment_date`는 `'2026-09-01' + 상환일−1`로 고정돼 U0004 전세대출은 09-20까지만, 그 뒤엔 시연 계정 어디에도 추가상환·대환이 가능한 대출이 없다. (2) 대환은 잔여 회차가 카탈로그 옵션 term(6/12/24/36)과 일치하는 대출이 시연 계정에 없어 201을 낼 수 없다. (3) U0001의 유일한 목표는 이미 달성 상태라 저축·소비 시뮬레이션이 목표 변화를 보여주지 못한다.
+- **API 발견**: `GET /cards`가 `cardId`를 내려주지 않아 FE가 리볼빙 `cardId`를 채울 수 없다(실측은 `GET /installments`의 `cardId`로 역추적). remaining-work.md 587 절 참고.
+- 배포 코드가 587(`cf5eb3c`)인지는 시연 계정에 추천이 없어 `simulation` 필드로 확인하지 못했다. 위 10종은 586까지의 계산기라 결과에는 영향이 없다.
+- 실행으로 남은 시뮬레이션 행(id 7~17)은 삭제하지 않았다. 실행 전부터 U0004에 SPENDING id 1·2·3·6이 있었다(다른 팀원의 연동 테스트로 추정).
 
 ## 8. 현재 제한사항과 인계
 
-- [ ] **MySQL 미검증**: V19 DDL·`ddl-auto: validate`·CHECK·복합 FK·JSON 타입은 H2에서 확인되지 않는다. 547의 `RecommendationMySqlIntegrationTest` 방식(`*_MYSQL_TEST_URL` 설정 시만 실행)으로 추가해야 한다. 빈 DB에서 V6이 V11보다 먼저 실행돼 Flyway가 실패하는 develop 기존 문제(recommendation.md §8)도 그대로다.
+- [x] **MySQL 검증**(587, §11.3): `SimulationMySqlIntegrationTest`(`SIMULATION_MYSQL_TEST_URL` 설정 시만 실행)로 V19 DDL·`ddl-auto: validate`·CHECK 3종·복합 FK·JSON 타입·N행 scenario·동시 실행 1건 저장을 MySQL 8.0.46에서 확인했다. 시연 seed 10종 실행은 616에서 실측했다(§7). 빈 DB에서 V6이 V11보다 먼저 실행돼 Flyway가 실패하는 develop 기존 문제(recommendation.md §8)는 그대로다.
 - [ ] `GoalAchievementProjection`은 Goal 계산식의 복제다. 546 병합 후 Goal 도메인에 순수 함수가 생기면 교체한다.
 - [x] 명세 17의 실행 10종이 모두 열렸다(586). 계산기 추가 시 `SimulationCalculator.compute`가 내부 납부 자료(`ScenarioLedger`)도 만들어야 복합에 참여할 수 있다.
 - [ ] 소비 감소분을 목표에 돌리는 가정, 남은 금액 비례 배분, 이자 미반영은 `assumptions`로 노출하는 서비스 결정이다. 팀 합의가 다르면 계산기만 바꾸고 `SimulationCalculationVersion`을 올린다.
@@ -434,3 +458,61 @@ MySQL 통합 검증은 하지 않았다(§8).
 - 복합 요청은 자식 하나의 400/404가 전체 실패다. `scenarios[i]…` 경로는 자식 구조·파싱·DTO 검증 오류에만 제공한다. 자원 존재·소유권 및 계산 오류는 기존 오류 코드와 메시지를 반환하며 실패한 자식 위치는 제공하지 않는다.
 - 복합 계산은 자식 계산·감소액 합산·부모 합성에서 발생한 산술 범위 초과를 모두 `SIMULATION_AMOUNT_OUT_OF_RANGE`로 반환한다.
 - 미검증: MySQL(V19 JSON·N행 scenario·CHECK, `*_MYSQL_TEST_URL` 방식 미추가), 동시 요청 직렬화(사용자 행 잠금은 550 계약 재사용), 실제 seed(491·492·493·522) 계정으로의 앱 통합.
+
+## 11. 전체 통합·추천 연결·MySQL 검증 (587)
+
+2026-09-15. 계산식·응답 계약·지문 규칙·`SimulationCalculationVersion`은 바꾸지 않았다. 이 절은 10종 × 공통 조회의 통합 검증 결과와 추천에서
+시뮬레이션으로 이어지는 흐름을 기록한다.
+
+### 11.1 추천 → 시뮬레이션 프리셋
+
+명세 16·17에 연결 필드가 없고 ERD에 `simulation`↔`recommendation` FK가 없어 **추천 응답에 실행 제안(`simulation`)을 싣는 방식**으로 연결했다.
+DDL·새 엔드포인트 없음. 계약은 [recommendation-api.md](recommendation-api.md) §5.1이 기준이며 요점은 다음과 같다.
+
+| 추천 domain/type | `simulation.type` · `endpoint` | `request` |
+| --- | --- | --- |
+| SPENDING/REDUCE_SPENDING | SPENDING · `POST /api/v1/simulations/spending` | `{category: null, monthlyReduction: effect.monthlyCostSaving, durationMonths: null}` |
+| SAVING/INCREASE_MONTHLY_SAVING | SAVING · `POST /api/v1/simulations/saving` | `{accountNo: null, monthlySavingAmount: R, durationMonths: null}` — R은 근거 `GOAL_SAVING_SHORTFALL` evidence의 `requiredMonthlySaving`(변경 후 절대값이며 `contributionAmount = R − A`가 아니다) |
+| CASHFLOW/SECURE_SHORTAGE_BUFFER | `available=false`, `NO_MATCHING_SIMULATION_TYPE` | — |
+
+- FE는 `request`를 그대로(또는 사용자가 고쳐서) `endpoint`에 POST한다. 응답·저장은 기존 계약 그대로이며 시뮬레이션은 추천 id를 저장하지 않는다(재사용 지문과 충돌하므로 결과 추적은 Improvement/Report 이슈의 계약을 따른다).
+- 계좌 미지정 저축은 모든 모으기 목표에 남은 금액 비례 배분된다(`TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT`). 특정 목표만 겨냥하려면 명세 17 `saving` 본문에 `goalId?`를 더해야 하며 이는 루트 명세 변경이라 보류했다(simulation-587-plan.md §3.2).
+- **일관성**: 진단 기준일 = 시뮬레이션 기준일이고 목표가 하나면 추천 `effect.improvedForecastDate`와 프리셋 실행의 `goalImpacts[0].afterForecastDate`가 같다(같은 `base + ceil(remaining / R)` 식). 기준일이 다르면 그 차이만큼 달라진다 — 추천은 진단 스냅샷 `asOf`, 시뮬레이션은 실행일 기준이다. `RecommendationApiTest.savingRecommendationCarriesPresetEverywhereAndPresetRunMatchesRecommendedForecast`가 고정한다.
+  소비 추천 `effect.monthlyCostSaving` = 프리셋 실행의 `after.monthlyAvailableFunds − before.monthlyAvailableFunds` = `before.monthlySpending − after.monthlySpending`는 618에서 `RecommendationApiTest.spendingRecommendationEffectEqualsPresetRunAvailableFundsGain`으로 고정했다(2026-09-16). fixture: 예산 1,000,000·이번 달 지출 1,300,000(진단 `spent`, `projected = 1,300,000 × 30 / 13 = 3,000,000` → `over` 2,000,000)·직전 3개월 각 2,400,000(시뮬레이션 기준선 평균)·소득 3,000,000 → 가용자금 600,000 → 2,600,000. **진단은 이번 달, 시뮬레이션 기준선은 직전 3개월을 읽으므로** 등식은 `over ≤ 평균 지출`이고 소득이 있을 때만 성립한다. 초과분이 평균 지출을 넘으면 프리셋 실행이 400 `SIMULATION_REDUCTION_EXCEEDS_SPENDING`이며 이는 587 프리셋 설계의 알려진 제한이다(FE 146은 사용자가 값을 고쳐 실행). 저축과 달리 날짜 식이 아니라 진단 기준일과 실행일이 달라도 금액은 같다.
+
+### 11.2 통합 회귀 (`SimulationIntegrationApiTest` 3건, H2)
+
+10종을 한 fixture(2026-09-15 기준, 소득 3,000,000·직전 3개월 소비 600,000·모으기 목표 1건·카드 1장·신용대출 1건·정기예금/신용대출 상품)에서 실행했다.
+
+- 10종 모두 201·`COMPLETED`·`requestHash` 미노출·계좌/대출번호·해시 부재. 상세·comparison·cashflow·goal-impact가 실행 응답과 JSON 동일, assets/debts/costs 페이지 content가 `comparison.<section>`과 동일하고 `totalElements`가 항목 수와 같다. 같은 날 재요청은 10종 모두 200·같은 id, 다음 날은 10종 모두 신규 201. 목록은 10종 type을 모두 담는다.
+- 인증·소유권: 실행 10종 401, 목록·조회 7경로·삭제 401, 타인의 조회 7경로·삭제 404 `RESOURCE_NOT_FOUND`(존재 미노출), 타인 목록 0건. 삭제 후 7경로 404·재삭제 404·목록 제외·같은 요청은 새 id.
+- 빈 결과·경계값: 목표·소득·거래·계좌가 없는 사용자는 `cash-advance`가 실행되고 `goalImpacts=[]`·`monthlyIncome=null`·`coverage` 배열, goal-impact `[]`, 범위를 넘긴 섹션 페이지는 빈 content. 목록·섹션 `page=-1`·`size=0`·`size=101` 400, `size=100` 200. `simulationId` 0·음수·비숫자 400, 없는 id 404, `type=UNKNOWN` 400. 자원 참조 유형(대출·카드)은 자료가 없으면 404, 소비 감소는 소비 0이면 400이며 저장하지 않는다.
+
+복합의 순서 교환 불변은 618에서 자식 9종 전체(10개: 9종 + 금액이 다른 `CASH_ADVANCE`, 추가상환·대환은 서로 다른 대출)를 `SimulationIntegrationApiTest.combinedWithEveryChildTypeIsOrderInvariant`로 고정했다(2026-09-16). 명세 순서·역순·3칸 회전 세 실행이 모두 201·서로 다른 id(지문에 순서 포함)이고 같은 순서 재실행만 200이다. 세 실행에서 `before`, `after`(아래 목록 제외), `comparison`(`items/assets/debts/costs`), `cashflow`, `goalImpacts`, `summary`가 같다.
+
+- 입력 순서를 따르는 것(계약): `scenarios[].sequenceNo`·`scenarioType`, `after.details.children[]`, `after.details.financeCost.children[]`(집합으로는 같음), `title`(자식 제목을 순서대로 이어 붙임).
+- 발견: `goalImpacts[].reasons`·`after.goalImpactDetails[].reasons`의 **원소 순서**가 자식 순서를 따른다(`CombinedCalculator.childReasons`가 "중복 없이 자식 순서대로"로 설계됨). 집합은 같으므로 결함으로 보지 않고 테스트는 정렬해 비교한다. 가정(`assumptions`)처럼 알파벳순으로 고정하고 싶으면 별도 항목이다(remaining-work.md).
+
+기존 검증(§7)과 합쳐 Simulation 72건·Recommendation 58건이 H2에서 통과했고 `gradlew clean build` 전체 1,051건 통과(MySQL 조건부 19건 skip).
+
+### 11.3 MySQL 검증 (`SimulationMySqlIntegrationTest` 587 4건 + 617 3건)
+
+MySQL 8.0.46(Docker `mysql:8.0`), 빈 `dodam_587_test` 스키마에 V1~V17을 V6을 V11 뒤로 돌려 수동 적용한 뒤 `SPRING_FLYWAY_BASELINE_ON_MIGRATE=true SPRING_FLYWAY_BASELINE_VERSION=17`로
+Flyway가 V18·V19·V30~V34를 적용하게 했다(recommendation.md §8과 같은 방식). `ddl-auto: validate` 통과. 2026-09-15 4건 통과.
+
+- 스키마: `flyway_schema_history` V19 성공, `chk_simulation_*` 3종, JSON 컬럼 6개(`simulation` 5 + `simulation_scenario.parameters`), FK 3종(`fk_simulation_scenario_simulation`, `fk_simulation_goal_impact_simulation`, `fk_simulation_goal_impact_goal`).
+- 실행·저장: `POST /saving` 후 `JSON_EXTRACT(after_snapshot, '$.monthlySaving')`가 숫자로 읽히고 `requestHash` 64자, `accountNo` 키 부재, scenario 1행, goal_impact 1행. 같은 날 재사용 200(DATETIME 범위 비교), 다음 날 신규, 상세 = 실행 응답, 타인 404, 삭제 후 `deleted_at` 기록·404·같은 요청 신규.
+- 복합: scenario 2행(sequence 1·2, `JSON_EXTRACT(parameters, '$.purchaseAmount')`), `details.children` 2개. `chk_simulation_type`·`chk_simulation_status`·`chk_simulation_scenario_sequence_no` 위반과 `uk_simulation_scenario_sequence`·`uk_simulation_goal_impact_simulation_goal` 중복, 타인 user_id의 goal_impact 복합 FK 거부.
+- 동시 실행: 같은 사용자 `POST /cash-advance` 4건 동시 → 201 1건·200 3건, `simulation` 1행. `SimulationUserLock`의 `SELECT … FOR UPDATE`가 InnoDB에서 직렬화됨을 확인했다.
+- 하지 않은 것: ~~시연 seed를 적재한 스키마에서의 10종 실행·금액 확인~~(616, §7 실측). ~~롤백·목록 정렬·본인 조건 조회~~(617, 아래). FE 앱 통합.
+
+617 추가 3건(2026-09-16, 같은 방식의 MySQL 8.0 컨테이너, 7건 통과. `gradlew clean build` 전체 1,054건 통과, MySQL 조건부 22건 skip). 계획·결정은 [simulation-617-plan.md](simulation-617-plan.md).
+
+- **저장 중간 실패 롤백**: 테스트가 만든 `BEFORE INSERT` 트리거(`SIGNAL SQLSTATE '45000'`)로 (a) 복합의 3번째 `simulation_scenario` 행, (b) `simulation_goal_impact` 행 INSERT를 거부했다. 두 경우 모두 5xx 응답이고 `simulation`·`simulation_scenario`·`simulation_goal_impact`에 사용자 행 0. 트리거 제거 후 같은 요청은 201(부분 저장 행이 남았다면 같은 날 재사용 200이 됐을 것)이며 scenario 3행·goal_impact 1행이 저장된다. `SimulationUserLock`의 `FOR UPDATE` 잠금이 롤백으로 풀리는 것도 이 201로 확인된다. 운영 코드·마이그레이션 변경 없음.
+- **목록 정렬**: 같은 유형 3건(clock을 하루씩 이동) + 다른 유형 1건 + 타인 1건에서 `?type=` 유무 모두 `created_at DESC, simulation_id DESC`(동률은 `created_at`을 같게 맞춰 확인), 타인 행 미포함. 유형 없는 목록 조회(JPQL `:type is null or …`의 null 바인딩)는 MySQL에서 이번에 처음 실행했고 정상이다. `idx_simulation_user_type_created` 컬럼 순서 `user_id, type, created_at` 확인. EXPLAIN(손으로 쓴 동형 SQL, `possible_keys`까지만 단언) 실측: `type` 지정 시 `key=idx_simulation_user_type_created, Extra=Using where; Backward index scan`(정렬을 인덱스 역순으로 처리, filesort 없음). `type` 미지정 시 `key=uk_simulation_user_simulation_id, Extra=Using where; Using filesort` — `(? IS NULL OR type = ?)`가 인덱스 두 번째 컬럼을 막아 user_id 접두만 쓰고 정렬은 filesort다. 사용자·하루 단위 양이 작아 587 설계대로 두며, 행이 5개뿐인 테스트 테이블의 선택이라 운영 규모의 계획과 다를 수 있다.
+- **`uk_simulation_user_simulation_id`**: `NON_UNIQUE = 0`, 컬럼 순서 `user_id, simulation_id`, `fk_simulation_goal_impact_simulation`의 `UNIQUE_CONSTRAINT_NAME`이 이 키. 본인 상세·goal-impact 200, 타인은 상세·goal-impact·삭제 모두 404 `RESOURCE_NOT_FOUND`(행 불변), 없는 id 404. goal_impact가 달린 시뮬레이션의 `user_id`를 타인으로 UPDATE → FK 위반으로 거부(ON UPDATE 기본 RESTRICT, 소유자 변경 시 자식 고아 방지). 본인 조건 조회 EXPLAIN은 `possible_keys`에 `PRIMARY`와 이 키가 함께 오르고 실제 선택은 `PRIMARY`다. 본인 삭제 204 후 goal-impact 404.
+
+### 11.4 FE 인계
+
+- FE 595의 `simulationApi.types.ts`는 `SimulationResponse`·`SimulationRunResponse`·`SimulationSummaryResponse`·`SimulationGoalImpactResponse`(status/reasons optional)·comparison·cashflow 확장 필드와 일치한다. 이번 작업으로 바뀐 응답은 없다.
+- FE에 필요한 변경(백엔드에서 수정하지 않음): (1) 발견 상세의 추천 목록을 `mocks/discovery.ts`에서 `GET /recommendations/priorities`로 교체하고 항목의 `simulation` 프리셋으로 시뮬레이션 입력을 채운 뒤 사용자가 수정·실행, (2) 실행 후 `/goal-impact`·`/cashflow` 조회로 전후 비교·목표 영향 화면 연결, (3) 미연동 8종 실행 함수·타입 추가(§9.1·§10.1), (4) `paidOff=false`·`NOT_COMPUTABLE`·`costComplete=false`·`truncated` 표시(§9.8·§10.6).

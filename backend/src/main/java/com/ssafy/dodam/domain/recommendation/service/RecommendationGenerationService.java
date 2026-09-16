@@ -4,6 +4,7 @@ import com.ssafy.dodam.domain.recommendation.dto.CandidateGenerationResult;
 import com.ssafy.dodam.domain.recommendation.dto.RecommendationInput;
 import com.ssafy.dodam.domain.recommendation.dto.response.RecommendationGenerationResponse;
 import com.ssafy.dodam.domain.recommendation.dto.response.RecommendationResponse;
+import com.ssafy.dodam.domain.recommendation.dto.response.RecommendationSimulationPreset;
 import com.ssafy.dodam.domain.recommendation.service.RecommendationPriorityPolicy.Scored;
 import com.ssafy.dodam.domain.recommendation.service.RecommendationStore.PrioritizedCandidate;
 import com.ssafy.dodam.domain.recommendation.service.RecommendationStore.SaveRequest;
@@ -12,6 +13,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.springframework.stereotype.Service;
 
 /**
@@ -27,13 +29,15 @@ public class RecommendationGenerationService {
     private final RecommendationCandidateCollector collector;
     private final RecommendationStore store;
     private final RecommendationClock clock;
+    private final RecommendationSimulationPresetAssembler presets;
 
     public RecommendationGenerationService(RecommendationInputReader reader, RecommendationCandidateCollector collector,
-            RecommendationStore store, RecommendationClock clock) {
+            RecommendationStore store, RecommendationClock clock, RecommendationSimulationPresetAssembler presets) {
         this.reader = reader;
         this.collector = collector;
         this.store = store;
         this.clock = clock;
+        this.presets = presets;
     }
 
     public RecommendationGenerationResponse generate(Long userId, Long diagnosisId, Long requestedGoalId) {
@@ -45,6 +49,8 @@ public class RecommendationGenerationService {
                 .map(s -> new PrioritizedCandidate(s.candidate(), s.priority())).toList();
         List<Saved> saved = store.save(new SaveRequest(userId, input.diagnosisId(), input.goalId(), prioritized), now);
 
+        Map<Long, RecommendationSimulationPreset> presetById = presets.assembleAll(userId,
+                saved.stream().map(Saved::recommendation).toList());
         List<RecommendationGenerationResponse.Item> items = new ArrayList<>();
         int created = 0;
         for (int i = 0; i < saved.size(); i++) {
@@ -52,7 +58,8 @@ public class RecommendationGenerationService {
             if (s.created()) {
                 created++;
             }
-            items.add(new RecommendationGenerationResponse.Item(RecommendationResponse.from(s.recommendation()),
+            items.add(new RecommendationGenerationResponse.Item(RecommendationResponse.from(s.recommendation(),
+                    presetById.get(s.recommendation().getRecommendationId())),
                     ranked.get(i).score(), s.created()));
         }
         return new RecommendationGenerationResponse(input.diagnosisId(), input.goalId(), created, saved.size() - created,

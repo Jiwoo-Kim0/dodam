@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import type { AccessibilityActionEvent, LayoutChangeEvent } from 'react-native';
-import { View } from 'react-native';
+import { ActivityIndicator, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   cancelAnimation,
@@ -17,8 +17,8 @@ import {
   withRubberBand,
 } from '@/components/bouncyScrollView/scrollPhysics';
 import { routes } from '@/constants/routes';
-import { HOME_GOALS } from '@/mocks/home';
-import { semanticSpacing, spacing } from '@/styles';
+import { colors, semanticSpacing, spacing } from '@/styles';
+import type { HomeGoal } from '@/types/goal.types';
 
 import { GoalCard } from './GoalCard';
 import { styles } from './GoalCarousel.styles';
@@ -26,14 +26,20 @@ import { styles } from './GoalCarousel.styles';
 const NEXT_CARD_PEEK = spacing[3];
 const PAGE_TRAILING_SPACE = semanticSpacing.screenMargin + NEXT_CARD_PEEK;
 
-export function GoalCarousel() {
+interface GoalCarouselProps {
+  goals: readonly HomeGoal[];
+  hasError: boolean;
+  isLoading: boolean;
+}
+
+export function GoalCarousel({ goals, hasError, isLoading }: GoalCarouselProps) {
   const router = useRouter();
   const [pageWidth, setPageWidth] = useState(0);
   const [activeIndex, setActiveIndex] = useState(0);
   const translateX = useSharedValue(0);
   const dragStartX = useSharedValue(0);
 
-  const maxIndex = Math.max(0, HOME_GOALS.length - 1);
+  const maxIndex = Math.max(0, goals.length - 1);
   const maxScroll = maxIndex * pageWidth;
 
   const handleLayout = (event: LayoutChangeEvent) => {
@@ -53,7 +59,7 @@ export function GoalCarousel() {
   };
 
   const openActiveGoal = () => {
-    const goal = HOME_GOALS[activeIndex];
+    const goal = goals[activeIndex];
 
     if (goal) {
       router.push(routes.goalDetail(goal.id));
@@ -114,6 +120,24 @@ export function GoalCarousel() {
     transform: [{ translateX: translateX.value }],
   }));
 
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.status]}>
+        <ActivityIndicator color={colors.primary.green} />
+      </View>
+    );
+  }
+
+  if (goals.length === 0) {
+    return (
+      <View style={[styles.container, styles.status]}>
+        <Text style={styles.statusText}>
+          {hasError ? '목표를 불러오지 못했어요' : '진행 중인 목표가 없어요'}
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View
       onLayout={handleLayout}
@@ -122,7 +146,7 @@ export function GoalCarousel() {
         <GestureDetector gesture={carouselGesture}>
           <View style={styles.viewport}>
             <Animated.View style={[styles.track, animatedTrackStyle]}>
-              {HOME_GOALS.map((goal) => (
+              {goals.map((goal) => (
                 <View key={goal.id} style={[styles.page, { width: pageWidth }]}>
                   <GoalCard goal={goal} />
                 </View>
@@ -142,15 +166,15 @@ export function GoalCarousel() {
         accessibilityLabel="목표 카드 선택"
         accessibilityRole="adjustable"
         accessibilityValue={{
-          max: HOME_GOALS.length,
+          max: goals.length,
           min: 1,
           now: activeIndex + 1,
-          text: HOME_GOALS[activeIndex]?.title,
+          text: goals[activeIndex]?.title,
         }}
         accessible
         onAccessibilityAction={handleAccessibilityAction}
         style={styles.dots}>
-        {HOME_GOALS.map((goal, index) => (
+        {goals.map((goal, index) => (
           <View
             key={goal.id}
             style={[styles.dot, index === activeIndex && styles.dotActive]}

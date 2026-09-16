@@ -4,8 +4,13 @@ import type { PageResponse } from './api.types';
 import type {
   CategorySpendingApiResponse,
   CreateManualTransactionRequest,
+  CategorySpendingTrendApiResponse,
   DailySpendingApiResponse,
+  PaymentMethodSpendingApiResponse,
+  SavingRatioApiResponse,
+  SpendingAnomalyApiResponse,
   SpendingMonthlySummaryApiResponse,
+  SpendingTypeBreakdownApiResponse,
   TransactionApiResponse,
   TransactionCategoryApiResponse,
   UpdateManualTransactionRequest,
@@ -104,5 +109,37 @@ export const ledgerApi = {
   getCategorySpending: (yearMonth?: string) =>
     apiClient.get<CategorySpendingApiResponse>('/v1/spending/categories', {
       query: { yearMonth },
+    }),
+
+  getCategoryTrend: (startMonth: string, endMonth: string) =>
+    apiClient.get<CategorySpendingTrendApiResponse>(
+      '/v1/spending/categories/trend',
+      { query: { startMonth, endMonth } },
+    ),
+
+  getSavingRatio: (yearMonth: string) =>
+    apiClient.get<SavingRatioApiResponse>('/v1/spending/saving-ratio', {
+      query: { yearMonth },
+    }),
+
+  getFixedSpending: (startMonth: string, endMonth: string) =>
+    apiClient.get<SpendingTypeBreakdownApiResponse>('/v1/spending/fixed', {
+      query: { startMonth, endMonth },
+    }),
+
+  getVariableSpending: (startMonth: string, endMonth: string) =>
+    apiClient.get<SpendingTypeBreakdownApiResponse>('/v1/spending/variable', {
+      query: { startMonth, endMonth },
+    }),
+
+  getPaymentMethodSpending: (yearMonth: string) =>
+    apiClient.get<PaymentMethodSpendingApiResponse>(
+      '/v1/spending/payment-methods',
+      { query: { yearMonth } },
+    ),
+
+  getSpendingAnomalies: (startMonth: string, endMonth: string) =>
+    apiClient.get<SpendingAnomalyApiResponse>('/v1/spending/anomalies', {
+      query: { startMonth, endMonth },
     }),
 };
