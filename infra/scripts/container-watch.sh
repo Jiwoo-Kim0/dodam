@@ -14,6 +14,10 @@
 #   - 실행 중이어야 하는데 멈춘 컨테이너
 #   - health check가 unhealthy인 컨테이너
 #   - 재시작이 반복되는 컨테이너 (크래시 루프)
+#   - cron 작업이 너무 오래 성공하지 못한 경우 (2026-09-16 추가)
+#     `cron-notify.sh`는 작업이 "실패"할 때 알린다. 그러나 cron 자체가 멈추거나
+#     crontab에서 줄이 사라지면 작업이 아예 실행되지 않고, 그때는 실패 알림도 없다.
+#     그래서 성공 시각(heartbeat)을 여기서 따로 본다.
 set -uo pipefail
 
 APP_DIR="${APP_DIR:-/home/ubuntu/app}"
@@ -22,6 +26,10 @@ STATE_FILE="${STATE_FILE:-/home/ubuntu/.container-watch.state}"
 # 이 컨테이너들은 항상 떠 있어야 한다.
 EXPECTED="${EXPECTED:-nginx jenkins certbot mysql redis backend prometheus node-exporter loki promtail grafana}"
 RESTART_THRESHOLD="${RESTART_THRESHOLD:-3}"
+# cron heartbeat — `cron-notify.sh`가 작업 성공 시 남긴다.
+# 형식: 작업이름:허용지연(분). backup은 매일 04:00이므로 26시간(1560분)을 허용치로 둔다.
+HEARTBEAT_DIR="${HEARTBEAT_DIR:-/home/ubuntu/.cron-heartbeat}"
+CRON_JOBS="${CRON_JOBS:-backup:1560}"
 
 problems=""
 
@@ -50,6 +58,24 @@ for c in $EXPECTED; do
     fi
 done
 
+# cron 작업이 최근에 성공했는지 확인한다.
+now="$(date +%s)"
+for spec in $CRON_JOBS; do
+    job="${spec%%:*}"
+    max_min="${spec##*:}"
+    hb="$HEARTBEAT_DIR/$job"
+    if [ ! -f "$hb" ]; then
+        problems="${problems}- cron \`${job}\`: 성공 기록이 없음 (래퍼 미적용이거나 한 번도 성공하지 않음)\n"
+        continue
+    fi
+    last="$(cat "$hb" 2>/dev/null || echo 0)"
+    case "$last" in ''|*[!0-9]*) last=0 ;; esac
+    age_min=$(( (now - last) / 60 ))
+    if [ "$age_min" -gt "$max_min" ]; then
+        problems="${problems}- cron \`${job}\`: 마지막 성공이 ${age_min}분 전 (허용 ${max_min}분 초과 — 실행 자체가 안 되고 있을 수 있음)\n"
+    fi
+done
+
 # 현재 재시작 횟수를 기록해 다음 실행과 비교한다.
 : > "$STATE_FILE"
 for c in $EXPECTED; do
@@ -69,7 +95,7 @@ if [ -z "$WEBHOOK" ]; then
     exit 1
 fi
 
-TEXT=":warning: **컨테이너 이상 감지** — 도담 인프라\n${problems}\n확인: \`ssh ssafy-ec2\` 후 \`docker ps -a\`"
+TEXT=":warning: **인프라 이상 감지** — 도담\n${problems}\n확인: \`ssh ssafy-ec2\` 후 \`docker ps -a\` / \`tail ~/backups/backup.log\`"
 python3 - "$WEBHOOK" "$TEXT" <<'PY'
 import json, sys, urllib.request
 url, text = sys.argv[1], sys.argv[2].replace("\\n", "\n")

@@ -808,6 +808,70 @@ docker compose run --rm --no-deps \
 develop 병합으로 들어온 변경이다. check-env의 필수 변수가 15개 → 16개가 됐고,
 `.env`에 이미 설정돼 있어 11:33 배포가 정상 통과했다. 조치 불필요.
 
+### 25. cron 작업 실패 알림 경로 신설 (16:5x) — `cron-notify.sh`
+
+2026-09-15에 일일 백업이 실패했는데 `backup.log`에만 남고 아무도 몰랐던 문제를 닫는다.
+cron은 기본적으로 결과를 메일로 보내지만 **이 서버에는 MTA가 없어 그대로 버려진다.**
+`container-watch.sh`는 컨테이너만 보므로 cron 작업의 실패는 감지 대상이 아니었다.
+
+#### `infra/scripts/cron-notify.sh` (신규)
+
+cron 작업을 감싸는 래퍼다. `cron-notify.sh <작업이름> <명령...>` 형태로 쓴다.
+
+- 명령 출력을 **그대로 표준출력에 흘린다** → 기존 로그 리다이렉션이 달라지지 않는다
+- 종료 코드가 0이 아니면 Mattermost로 작업명·종료 코드·시작 시각·출력 끝 20줄 전송
+- 종료 코드를 그대로 반환한다
+- 성공하면 `~/.cron-heartbeat/<작업이름>`에 시각을 남긴다
+
+알림 전송은 `container-watch.sh`에서 이미 검증된 python3 urllib 패턴을 그대로 썼다.
+출력은 **인자가 아니라 파일에서 읽는다** — 길이 제한에 걸리고 프로세스 목록에도 남기 때문.
+
+#### `container-watch.sh` — heartbeat 확인 추가
+
+**실패 알림만으로는 부족하다.** cron 자체가 멈추거나 crontab에서 줄이 사라지면
+작업이 아예 실행되지 않고, 그러면 실패할 일도 없어서 알림도 없다.
+그래서 5분마다 도는 `container-watch.sh`에서 "마지막 성공이 얼마나 오래됐는지"를 같이 본다.
+
+```
+CRON_JOBS="backup:1560"   # 작업이름:허용지연(분). 매일 04:00이므로 26시간
+```
+
+알림 제목도 `컨테이너 이상 감지` → `인프라 이상 감지`로 넓혔다.
+
+#### 검증 (EC2에서 실제 실행, 알림은 전송하지 않음)
+
+| 테스트 | 결과 |
+| --- | --- |
+| 성공 케이스 | exit 0, heartbeat 파일 생성됨 |
+| 실패 케이스 (exit 7) | 출력 통과, `exit=7` 그대로 반환, webhook 미설정 시 정상 생략 |
+| `container-watch` heartbeat 없음 | `- cron \`backup\`: 성공 기록이 없음` 감지 |
+
+webhook을 비운 임시 `.env`로 돌려 **팀 채널에 테스트 알림이 가지 않게 했다.**
+실제 전송 경로는 아직 이 스크립트로 검증하지 않았다(같은 코드가 `container-watch.sh`에서
+운영 중이라 동작은 하지만, 한 번 실제로 쏴보는 것이 남아 있다).
+
+#### heartbeat 시드 (선반영)
+
+`container-watch.sh`가 배포되는 순간 heartbeat 파일이 없으면 5분마다 "성공 기록 없음"을
+알리게 된다. 그래서 **마지막 성공 백업 시각으로 미리 시드했다.**
+
+```
+/home/ubuntu/.cron-heartbeat/backup = 1789498804 (2026-09-16 04:00, 최신 덤프 mtime)
+```
+
+#### ⚠️ crontab 수정은 배포 후에 한다
+
+crontab이 가리킬 `cron-notify.sh`가 EC2에 아직 없다. 먼저 crontab을 바꾸면
+04:00에 "파일 없음"으로 **백업이 아예 돌지 않는다.** 순서는 배포 → crontab 수정이다.
+
+```
+# 배포 후 적용할 crontab
+0 4 * * * /home/ubuntu/app/infra/scripts/cron-notify.sh backup /home/ubuntu/app/infra/scripts/backup.sh >> /home/ubuntu/backups/backup.log 2>&1
+```
+
+`deploy.sh`가 `git reset --hard`로 맞추므로 신규 파일이 충돌할 일은 없다
+(EC2에는 `/tmp`에만 복사해 테스트했고 레포 경로에는 두지 않았다).
+
 ## 남은 것
 - [ ] 이 수정 develop 머지 후 첫 배포에서 `infra-backend:deployed` 태그 생성 확인
 - [ ] 롤백 경로 실제 검증 — 일부러 깨는 커밋으로 "코드+이미지가 함께 되돌아오는지" 확인
@@ -817,7 +881,9 @@ develop 병합으로 들어온 변경이다. check-env의 필수 변수가 15개
 - [ ] 배포 후 로그인 레이트 리밋이 실제로 걸리는지 확인 (연속 요청으로 429 유도)
 - [x] ~~`backup.sh` SIGPIPE 버그 수정~~ — 완주 표식 검증으로 교체, 11:53 백업 성공으로 공백 해소 (16절)
 - [x] ~~`*.sql.gz.partial` 보관 정리 대상 포함~~ — 16절에서 함께 수정
-- [ ] **cron 작업 실패를 알릴 경로가 없다** — 09-15 백업 실패가 `backup.log`에만 남고 아무도 몰랐다. `container-watch.sh`는 컨테이너만 본다
+- [x] ~~cron 작업 실패를 알릴 경로가 없다~~ — 25절, `cron-notify.sh` 신설 + `container-watch.sh` heartbeat 확인
+- [ ] **배포 후 crontab을 `cron-notify.sh` 경유로 수정** (25절 마지막 블록. 배포 전에 바꾸면 백업이 안 돈다)
+- [ ] `cron-notify.sh`의 실제 Mattermost 전송 1회 검증 (팀 채널에 테스트 알림이 가므로 사전 합의 필요)
 - [ ] 시연 비밀번호를 `backend/database/seeds/README.md`에 문서화 (**백엔드 담당자**)
 - [ ] `DODAM_DEMO_PASSWORD_SEED.sql`을 레포에 포함 (**백엔드 담당자**)
 - [ ] FE가 Expo 웹으로 붙을 계획이면 `CORS_ALLOWED_ORIGINS` 추가 (현재 `http://localhost:8081` 하나)
