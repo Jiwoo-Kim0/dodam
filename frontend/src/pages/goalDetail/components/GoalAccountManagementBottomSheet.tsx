@@ -2,11 +2,12 @@ import { Modal, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { GoalAccountSelectionList } from '@/components/goalAccountSelectionList/GoalAccountSelectionList';
-import { MOCK_GOAL_ACCOUNTS } from '@/mocks/goalAccounts';
+import type { AccountApiResponse } from '@/types/assetApi.types';
 
 import { styles } from './GoalAccountManagementBottomSheet.styles';
 
 interface GoalAccountManagementBottomSheetProps {
+  accounts: readonly AccountApiResponse[];
   selectedAccountIds: readonly string[];
   visible: boolean;
   onClose: () => void;
@@ -15,6 +16,7 @@ interface GoalAccountManagementBottomSheetProps {
 }
 
 export function GoalAccountManagementBottomSheet({
+  accounts,
   selectedAccountIds,
   visible,
   onClose,
@@ -60,7 +62,7 @@ export function GoalAccountManagementBottomSheet({
 
           <View style={styles.accountSelection}>
             <GoalAccountSelectionList
-              accounts={MOCK_GOAL_ACCOUNTS}
+              accounts={accounts}
               onToggle={onToggle}
               selectedAccountIds={selectedAccountIds}
             />
