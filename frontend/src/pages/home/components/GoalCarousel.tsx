@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import type { AccessibilityActionEvent, LayoutChangeEvent } from 'react-native';
-import { ActivityIndicator, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   cancelAnimation,
@@ -132,8 +132,19 @@ export function GoalCarousel({ goals, hasError, isLoading }: GoalCarouselProps) 
     return (
       <View style={[styles.container, styles.status]}>
         <Text style={styles.statusText}>
-          {hasError ? '목표를 불러오지 못했어요' : '진행 중인 목표가 없어요'}
+          {hasError ? '목표를 불러오지 못했어요' : '설정된 목표가 없습니다'}
         </Text>
+        {/* 조회 실패는 목표가 없는 것과 다르다. 이때 목표를 새로 만들게 안내하면 중복 생성이 된다. */}
+        {!hasError ? (
+          <Pressable
+            accessibilityLabel="목표 추가하기"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={() => router.push(routes.goalSetup)}
+            style={({ pressed }) => pressed && styles.addGoalPressed}>
+            <Text style={styles.addGoalLabel}>목표 추가하기</Text>
+          </Pressable>
+        ) : null}
       </View>
     );
   }
