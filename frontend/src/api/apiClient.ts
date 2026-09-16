@@ -1,7 +1,13 @@
-import { clearAuthTokens, getAuthTokens, setAuthTokens } from '@/services/authTokenStorage';
+import { getAuthTokens, setAuthTokens } from '@/services/authTokenStorage';
+import {
+  endAuthSession,
+  expireAuthSession,
+  getAuthSessionVersion,
+  isAuthSessionVersionCurrent,
+} from '@/services/authSessionService';
 import type { AuthResponse, AuthTokens } from '@/types/auth.types';
 
-import { ApiError, isApiError } from './ApiError';
+import { ApiError } from './ApiError';
 import type {
   ApiQuery,
   ApiRequestOptions,
@@ -188,8 +194,17 @@ export async function refreshAuthTokens(): Promise<AuthTokens> {
   if (refreshRequest) return refreshRequest;
 
   refreshRequest = (async () => {
-    const currentTokens = await getAuthTokens();
+    const sessionVersion = getAuthSessionVersion();
+    let currentTokens: AuthTokens | null;
+    try {
+      currentTokens = await getAuthTokens();
+    } catch (error) {
+      await expireAuthSession();
+      throw error;
+    }
+
     if (!currentTokens) {
+      await expireAuthSession();
       throw new ApiError({
         status: 401,
         code: 'UNAUTHENTICATED',
@@ -197,21 +212,44 @@ export async function refreshAuthTokens(): Promise<AuthTokens> {
       });
     }
 
+    let response: AuthResponse;
     try {
       const request = await fetchOnce<AuthResponse>('POST', AUTH_REFRESH_PATH, {
         auth: false,
         body: { refreshToken: currentTokens.refreshToken },
       });
-      const response = await request.data();
-      const nextTokens = toAuthTokens(response);
-      await setAuthTokens(nextTokens);
-      return nextTokens;
+      response = await request.data();
     } catch (error) {
-      if (isApiError(error) && error.isUnauthorized) {
-        await clearAuthTokens();
-      }
+      await expireAuthSession();
       throw error;
     }
+
+    if (!isAuthSessionVersionCurrent(sessionVersion)) {
+      throw new ApiError({
+        status: 401,
+        code: 'AUTH_SESSION_ENDED',
+        message: '로그인 세션이 종료되었습니다.',
+      });
+    }
+
+    const nextTokens = toAuthTokens(response);
+    try {
+      await setAuthTokens(nextTokens);
+    } catch (error) {
+      await expireAuthSession();
+      throw error;
+    }
+
+    if (!isAuthSessionVersionCurrent(sessionVersion)) {
+      await endAuthSession();
+      throw new ApiError({
+        status: 401,
+        code: 'AUTH_SESSION_ENDED',
+        message: '로그인 세션이 종료되었습니다.',
+      });
+    }
+
+    return nextTokens;
   })().finally(() => {
     refreshRequest = null;
   });
@@ -233,12 +271,15 @@ async function requestWithStatus<T>(
     tokens?.accessToken,
   );
 
-  if (
-    firstRequest.response.status !== 401 ||
-    !requiresAuth ||
-    !tokens ||
-    options.retryOnUnauthorized === false
-  ) {
+  if (firstRequest.response.status !== 401 || !requiresAuth) {
+    return {
+      data: await firstRequest.data(),
+      status: firstRequest.response.status,
+    };
+  }
+
+  if (!tokens || options.retryOnUnauthorized === false) {
+    await expireAuthSession();
     return {
       data: await firstRequest.data(),
       status: firstRequest.response.status,
@@ -258,7 +299,7 @@ async function requestWithStatus<T>(
   );
 
   if (retryRequest.response.status === 401) {
-    await clearAuthTokens();
+    await expireAuthSession();
   }
 
   return {

@@ -7,11 +7,13 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { initialWindowMetrics, SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { useAuthSessionBoundary } from '@/hooks/useAuthSessionBoundary';
 import { colors } from '@/styles';
 
 void SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
+  useAuthSessionBoundary();
   const [fontsLoaded, fontError] = useFonts({
     'Pretendard-Regular': require('@/assets/fonts/Pretendard-Regular.otf'),
     'Pretendard-Medium': require('@/assets/fonts/Pretendard-Medium.otf'),
