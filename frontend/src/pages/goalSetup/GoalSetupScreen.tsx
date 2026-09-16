@@ -2,7 +2,7 @@ import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Text, View } from 'react-native';
 
-import { assetApi, goalApi } from '@/api';
+import { assetApi, goalApi, isApiError } from '@/api';
 import { BottomActionButton } from '@/components/bottomActionButton/BottomActionButton';
 import { GoalAccountSelectionList } from '@/components/goalAccountSelectionList/GoalAccountSelectionList';
 import { routes } from '@/constants/routes';
@@ -37,6 +37,22 @@ interface GoalSetupScreenProps {
   editGoalId?: string;
 }
 
+async function findLinkedGoal(accountIds: readonly number[]) {
+  const selectedIds = new Set(accountIds);
+  const response = await goalApi.getGoals({ size: 100 });
+  const savingGoals = response.content.filter((goal) => goal.type === 'SAVING');
+  const goalsWithAccounts = await Promise.all(
+    savingGoals.map(async (goal) => ({
+      goal,
+      accounts: (await goalApi.getGoalAccounts(goal.goalId, { size: 100 })).accounts,
+    })),
+  );
+
+  return goalsWithAccounts.find(({ accounts }) =>
+    accounts.some(({ accountId }) => selectedIds.has(accountId)),
+  )?.goal;
+}
+
 export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
   const router = useRouter();
   const isEditing = editGoalId !== undefined;
@@ -48,6 +64,7 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   const [reductionAmount, setReductionAmount] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [createdSavingGoalId, setCreatedSavingGoalId] = useState<number | null>(null);
   const [isLoadingGoal, setIsLoadingGoal] = useState(isEditing);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [availableAccounts, setAvailableAccounts] = useState<AccountApiResponse[]>([]);
@@ -156,6 +173,107 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
         error instanceof Error
           ? error.message
           : '잠시 후 다시 시도해주세요.',
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const createSavingGoal = async () => {
+    if (
+      !savingDeadline ||
+      goalName.trim().length === 0 ||
+      savingAmount <= 0 ||
+      selectedAccountIds.length === 0 ||
+      isSubmitting
+    ) {
+      return;
+    }
+
+    const accountIds = selectedAccountIds.map(Number);
+    if (accountIds.some((accountId) => !Number.isSafeInteger(accountId) || accountId <= 0)) {
+      Alert.alert('목표를 만들지 못했어요', '계좌 정보를 다시 확인해주세요.');
+      return;
+    }
+
+    const targetDate = `${savingDeadline.getFullYear()}-${String(savingDeadline.getMonth() + 1).padStart(2, '0')}-${String(savingDeadline.getDate()).padStart(2, '0')}`;
+
+    let goalId = createdSavingGoalId;
+    let isLinkingAccounts = false;
+    setIsSubmitting(true);
+    try {
+      if (goalId === null) {
+        const createdGoal = await goalApi.createGoal({
+          name: goalName.trim(),
+          type: 'SAVING',
+          targetAmount: savingAmount,
+          targetDate,
+        });
+        goalId = createdGoal.goalId;
+        setCreatedSavingGoalId(goalId);
+      } else {
+        await goalApi.updateGoal(goalId, {
+          name: goalName.trim(),
+          targetAmount: savingAmount,
+          targetDate,
+        });
+      }
+
+      isLinkingAccounts = true;
+      await goalApi.replaceGoalAccounts(goalId, { accountIds });
+      setStep('savingComplete');
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : '잠시 후 다시 시도해주세요.';
+      let rollbackFailed = false;
+
+      if (goalId !== null) {
+        try {
+          await goalApi.deleteGoal(goalId);
+          setCreatedSavingGoalId(null);
+        } catch {
+          rollbackFailed = true;
+        }
+      }
+
+      if (
+        isLinkingAccounts &&
+        isApiError(error) &&
+        error.code === 'ACCOUNT_ALREADY_LINKED_TO_GOAL'
+      ) {
+        let linkedGoal = null;
+        try {
+          linkedGoal = await findLinkedGoal(accountIds);
+        } catch {
+          // 연결된 목표 조회 실패는 원래 계좌 충돌 안내를 막지 않는다.
+        }
+
+        Alert.alert(
+          '이미 다른 목표에 연결된 계좌예요',
+          linkedGoal
+            ? `이 계좌는 '${linkedGoal.name}' 목표에서 사용하고 있어요.`
+            : message,
+          [
+            { text: '다른 계좌 선택', style: 'cancel' },
+            ...(linkedGoal
+              ? [{
+                  text: '연결된 목표 보기',
+                  onPress: () =>
+                    router.replace(routes.goalDetail(String(linkedGoal.goalId))),
+                }]
+              : []),
+          ],
+        );
+        return;
+      }
+
+      Alert.alert(
+        isLinkingAccounts
+          ? '계좌를 연결하지 못했어요'
+          : '목표를 만들지 못했어요',
+        rollbackFailed
+          ? `${message}\n목표만 생성되었어요. 목표 목록에서 삭제해주세요.`
+          : message,
       );
     } finally {
       setIsSubmitting(false);
@@ -280,9 +398,9 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
         onBackPress={() => setStep('savingDeadline')}
         footer={
           <BottomActionButton
-            label="선택 완료"
-            disabled={selectedAccountIds.length === 0}
-            onPress={() => setStep('savingComplete')}
+            label={isSubmitting ? '저장 중...' : '선택 완료'}
+            disabled={selectedAccountIds.length === 0 || isSubmitting}
+            onPress={() => void createSavingGoal()}
           />
         }>
         <GoalAccountSelectionList

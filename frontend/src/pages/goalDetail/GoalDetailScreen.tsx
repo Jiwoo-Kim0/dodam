@@ -33,7 +33,38 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
   const [draftAccountIds, setDraftAccountIds] = useState<string[]>([]);
   const [isAccountManagementVisible, setIsAccountManagementVisible] =
     useState(false);
+  const [isSavingAccounts, setIsSavingAccounts] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const saveLinkedAccounts = async () => {
+    const parsedGoalId = Number(goalId);
+    const accountIds = draftAccountIds.map(Number);
+
+    if (
+      !Number.isSafeInteger(parsedGoalId) ||
+      parsedGoalId <= 0 ||
+      accountIds.some((accountId) => !Number.isSafeInteger(accountId) || accountId <= 0)
+    ) {
+      Alert.alert('계좌를 저장하지 못했어요', '계좌 정보를 다시 확인해주세요.');
+      return;
+    }
+
+    setIsSavingAccounts(true);
+    try {
+      await goalApi.replaceGoalAccounts(parsedGoalId, { accountIds });
+      setIsAccountManagementVisible(false);
+      await refetch();
+    } catch (saveError) {
+      Alert.alert(
+        '계좌를 저장하지 못했어요',
+        saveError instanceof Error
+          ? saveError.message
+          : '잠시 후 다시 시도해주세요.',
+      );
+    } finally {
+      setIsSavingAccounts(false);
+    }
+  };
 
   const confirmDelete = () => {
     Alert.alert('목표를 삭제할까요?', '삭제한 목표는 되돌릴 수 없어요.', [
@@ -225,10 +256,9 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
 
       <GoalAccountManagementBottomSheet
         accounts={data.availableAccounts}
+        isSubmitting={isSavingAccounts}
         onClose={() => setIsAccountManagementVisible(false)}
-        onComplete={() => {
-          setIsAccountManagementVisible(false);
-        }}
+        onComplete={() => void saveLinkedAccounts()}
         onToggle={(accountId) =>
           setDraftAccountIds((currentIds) =>
             currentIds.includes(accountId)

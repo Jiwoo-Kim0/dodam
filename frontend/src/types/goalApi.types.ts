@@ -138,6 +138,22 @@ export interface GoalRiskApiResponse {
   };
 }
 
+export interface GoalHistoryApiResponse {
+  historyId: number;
+  recordedDate: string;
+  currentAmount: number;
+  progressRatePercent: number | null;
+  forecastDate: string | null;
+  event:
+    | 'GOAL_CREATED'
+    | 'GOAL_UPDATED'
+    | 'STATUS_CHANGED'
+    | 'ACCOUNTS_UPDATED'
+    | 'AMOUNT_UPDATED'
+    | 'GOAL_DELETED';
+  createdAt: string;
+}
+
 export interface GoalAccountApiResponse {
   accountId: number;
   bankCode: string;
@@ -162,5 +178,5 @@ export interface GoalAccountsApiResponse {
 }
 
 export interface UpdateGoalAccountsRequest {
-  accountNos: string[];
+  accountIds: number[];
 }

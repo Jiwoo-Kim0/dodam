@@ -8,6 +8,7 @@ import { styles } from './GoalAccountManagementBottomSheet.styles';
 
 interface GoalAccountManagementBottomSheetProps {
   accounts: readonly AccountApiResponse[];
+  isSubmitting: boolean;
   selectedAccountIds: readonly string[];
   visible: boolean;
   onClose: () => void;
@@ -17,14 +18,13 @@ interface GoalAccountManagementBottomSheetProps {
 
 export function GoalAccountManagementBottomSheet({
   accounts,
+  isSubmitting,
   selectedAccountIds,
   visible,
   onClose,
   onComplete,
   onToggle,
 }: GoalAccountManagementBottomSheetProps) {
-  const isCompleteDisabled = selectedAccountIds.length === 0;
-
   return (
     <Modal
       animationType="slide"
@@ -70,16 +70,18 @@ export function GoalAccountManagementBottomSheet({
 
           <Pressable
             accessibilityRole="button"
-            accessibilityState={{ disabled: isCompleteDisabled }}
-            disabled={isCompleteDisabled}
+            accessibilityState={{ disabled: isSubmitting }}
+            disabled={isSubmitting}
             onPress={onComplete}
             style={({ pressed }) => [
               styles.completeButton,
-              isCompleteDisabled && styles.disabledButton,
-              pressed && !isCompleteDisabled && styles.pressedButton,
+              isSubmitting && styles.disabledButton,
+              pressed && !isSubmitting && styles.pressedButton,
             ]}
           >
-            <Text style={styles.completeButtonLabel}>완료</Text>
+            <Text style={styles.completeButtonLabel}>
+              {isSubmitting ? '저장 중...' : '완료'}
+            </Text>
           </Pressable>
         </SafeAreaView>
       </View>
