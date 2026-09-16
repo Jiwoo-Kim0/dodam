@@ -96,6 +96,7 @@ class CardQueryApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data", hasSize(2)))
+                .andExpect(jsonPath("$.data[0].cardId").value(1))
                 .andExpect(jsonPath("$.data[0].cardNoMasked").value("1111-22**-****-4444"))
                 .andExpect(jsonPath("$.data[0].cardName").value("KB 톡톡카드"))
                 .andExpect(jsonPath("$.data[0].status").value("ACTIVE"))
@@ -146,6 +147,7 @@ class CardQueryApiIntegrationTest {
     void getsCardDetailByCardNumber() throws Exception {
         mockMvc.perform(get("/api/v1/cards/{cardNo}", OWNED_CARD_NO))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.cardId").value(1))
                 .andExpect(jsonPath("$.data.cardNoMasked").value("1111-22**-****-4444"))
                 .andExpect(jsonPath("$.data.cardName").value("KB 톡톡카드"))
                 .andExpect(jsonPath("$.data.financialProductId").value(402))

@@ -4,6 +4,7 @@ import com.ssafy.dodam.domain.card.entity.Card;
 import java.time.LocalDateTime;
 
 public record CardDetailResponse(
+        Long cardId,
         String cardNoMasked,
         String cardName,
         String issuerCode,
@@ -23,6 +24,7 @@ public record CardDetailResponse(
 
     public static CardDetailResponse from(Card card) {
         return new CardDetailResponse(
+                card.getId(),
                 card.getCardNoMasked(),
                 card.getCardName(),
                 card.getIssuerCode(),
