@@ -12,6 +12,7 @@ import {
 import { subscribeHomeTabReselect } from '@/components/bottomNavigation/homeTabReselectEvents';
 import { routes } from '@/constants/routes';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useUnreadNotificationCount } from '@/hooks/useUnreadNotificationCount';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import { colors } from '@/styles';
 import { getFinanceErrorMessage } from '@/utils/financeErrorMessage';
@@ -30,6 +31,7 @@ export function HomeScreen() {
   const scrollRef = useRef<BouncyScrollViewHandle>(null);
   const [sectionSize, setSectionSize] = useState({ width: 0, height: 0 });
   const { user, reload: reloadUser } = useCurrentUser();
+  const unreadNotificationCount = useUnreadNotificationCount();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const {
@@ -121,6 +123,7 @@ export function HomeScreen() {
         onLogoPress={handleHomeRefresh}
         onMenuPress={openMenu}
         onNotificationPress={() => router.push(routes.notifications)}
+        unreadNotificationCount={unreadNotificationCount}
       />
 
       <BouncyScrollView
