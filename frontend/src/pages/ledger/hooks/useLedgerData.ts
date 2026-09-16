@@ -3,6 +3,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ledgerApi } from '@/api';
 import { fetchAllPages } from '@/api/pagination';
 import type {
+  CreateManualTransactionRequest,
+  UpdateManualTransactionRequest,
+} from '@/types/ledgerApi.types';
+import type {
+  LedgerCategory,
   LedgerCategorySummary,
   LedgerDailyTotal,
   LedgerMonthlySummary,
@@ -13,10 +18,13 @@ import {
   mapCategorySpending,
   mapDailySpending,
   mapMonthlySummary,
+  mapTransactionCategories,
   mapTransactions,
 } from '../utils/ledgerMappers';
 
 interface LedgerData {
+  categories: LedgerCategory[];
+  hiddenTransactions: LedgerTransaction[];
   transactions: LedgerTransaction[];
   monthlySummary: LedgerMonthlySummary | null;
   dailyTotals: LedgerDailyTotal[];
@@ -25,6 +33,8 @@ interface LedgerData {
 }
 
 const EMPTY_LEDGER_DATA: LedgerData = {
+  categories: [],
+  hiddenTransactions: [],
   transactions: [],
   monthlySummary: null,
   dailyTotals: [],
@@ -41,7 +51,10 @@ export function useLedgerData(currentMonth: Date) {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const [mutationError, setMutationError] = useState<Error | null>(null);
+  const [isMutating, setIsMutating] = useState(false);
   const requestIdRef = useRef(0);
+  const mutationInFlightRef = useRef(false);
 
   const dateParams = useMemo(() => {
     const year = currentMonth.getFullYear();
@@ -86,6 +99,8 @@ export function useLedgerData(currentMonth: Date) {
       try {
         const [
           transactionResponses,
+          hiddenTransactionResponses,
+          transactionCategoryResponses,
           monthlySummaryResponse,
           dailySpendingResponse,
           categorySpendingResponse,
@@ -99,6 +114,16 @@ export function useLedgerData(currentMonth: Date) {
               size,
             }),
           ),
+          fetchAllPages((page, size) =>
+            ledgerApi.getTransactions({
+              startDate: dateParams.startDate,
+              endDate: dateParams.endDate,
+              hidden: true,
+              page,
+              size,
+            }),
+          ),
+          ledgerApi.getTransactionCategories(),
           ledgerApi.getMonthlySummary(dateParams.yearMonth),
           ledgerApi.getDailySpending({
             startDate: dateParams.startDate,
@@ -133,6 +158,8 @@ export function useLedgerData(currentMonth: Date) {
         );
 
         setData({
+          categories: mapTransactionCategories(transactionCategoryResponses),
+          hiddenTransactions: mapTransactions(hiddenTransactionResponses),
           transactions: mapTransactions(transactionResponses),
           monthlySummary: mapMonthlySummary(monthlySummaryResponse, income),
           dailyTotals: mapDailySpending(dailySpendingResponse, incomeByDate),
@@ -175,44 +202,87 @@ export function useLedgerData(currentMonth: Date) {
     [loadLedgerData],
   );
 
-  const updateTransaction = useCallback(
-    (transactionId: string, patch: Partial<LedgerTransaction>) => {
-      setData((current) => ({
-        ...current,
-        transactions: current.transactions.map((transaction) =>
-          transaction.id === transactionId
-            ? { ...transaction, ...patch }
-            : transaction,
-        ),
-      }));
+  const executeMutation = useCallback(
+    async <T>(request: () => Promise<T>): Promise<T | null> => {
+      if (mutationInFlightRef.current) return null;
+
+      mutationInFlightRef.current = true;
+      setIsMutating(true);
+      setMutationError(null);
+      try {
+        const response = await request();
+        await loadLedgerData(true);
+        return response;
+      } catch (mutationFailure) {
+        setMutationError(
+          mutationFailure instanceof Error
+            ? mutationFailure
+            : new Error('거래 내역을 변경하지 못했어요.'),
+        );
+        return null;
+      } finally {
+        mutationInFlightRef.current = false;
+        setIsMutating(false);
+      }
     },
-    [],
+    [loadLedgerData],
   );
 
-  const prependTransaction = useCallback((transaction: LedgerTransaction) => {
-    setData((current) => ({
-      ...current,
-      transactions: [transaction, ...current.transactions],
-    }));
-  }, []);
-
-  const removeTransaction = useCallback((transactionId: string) => {
-    setData((current) => ({
-      ...current,
-      transactions: current.transactions.filter(
-        (transaction) => transaction.id !== transactionId,
+  const updateTransactionCategory = useCallback(
+    (transactionId: string, categoryId: number) =>
+      executeMutation(() =>
+        ledgerApi.updateTransactionCategory(transactionId, categoryId),
       ),
-    }));
-  }, []);
+    [executeMutation],
+  );
+
+  const updateTransactionMemo = useCallback(
+    (transactionId: string, memo: string) =>
+      executeMutation(() => ledgerApi.updateTransactionMemo(transactionId, memo)),
+    [executeMutation],
+  );
+
+  const updateTransactionVisibility = useCallback(
+    (transactionId: string, hidden: boolean) =>
+      executeMutation(() =>
+        ledgerApi.updateTransactionVisibility(transactionId, hidden),
+      ),
+    [executeMutation],
+  );
+
+  const createManualTransaction = useCallback(
+    (request: CreateManualTransactionRequest) =>
+      executeMutation(() => ledgerApi.createManualTransaction(request)),
+    [executeMutation],
+  );
+
+  const updateManualTransaction = useCallback(
+    (transactionId: string, request: UpdateManualTransactionRequest) =>
+      executeMutation(() =>
+        ledgerApi.updateManualTransaction(transactionId, request),
+      ),
+    [executeMutation],
+  );
+
+  const deleteManualTransaction = useCallback(
+    (transactionId: string) =>
+      executeMutation(() => ledgerApi.deleteManualTransaction(transactionId)),
+    [executeMutation],
+  );
 
   return {
     ...data,
     isLoading,
     isRefreshing,
     error,
+    mutationError,
     refetch,
-    updateTransaction,
-    prependTransaction,
-    removeTransaction,
+    isMutating,
+    updateTransactionCategory,
+    updateTransactionMemo,
+    updateTransactionVisibility,
+    createManualTransaction,
+    updateManualTransaction,
+    deleteManualTransaction,
   };
 }

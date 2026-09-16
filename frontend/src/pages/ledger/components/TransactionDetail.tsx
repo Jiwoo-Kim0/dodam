@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, Switch, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import { colors } from '@/styles';
@@ -33,7 +33,6 @@ interface TransactionDetailProps {
   categories: readonly LedgerCategory[];
   onBackPress: () => void;
   onToggleHidden: () => void;
-  onToggleIncluded: () => void;
   onOpenCategory: () => void;
   onEditPress: () => void;
   onUpdateMemo: (memo: string) => void;
@@ -45,7 +44,6 @@ export function TransactionDetail({
   categories,
   onBackPress,
   onToggleHidden,
-  onToggleIncluded,
   onOpenCategory,
   onEditPress,
   onUpdateMemo,
@@ -66,8 +64,8 @@ export function TransactionDetail({
     <View style={styles.fill}>
       <LedgerHeader
         onBackPress={onBackPress}
-        onRightPress={isManual ? onEditPress : onToggleHidden}
-        rightLabel={isManual ? '수정' : transaction.hidden ? '보이기' : '숨기기'}
+        onRightPress={onToggleHidden}
+        rightLabel={transaction.hidden ? '보이기' : '숨기기'}
         title="상세 내역"
       />
 
@@ -102,6 +100,19 @@ export function TransactionDetail({
             <Text style={styles.rowChevron}>›</Text>
           </Pressable>
 
+          {isManual ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={onEditPress}
+              style={({ pressed }) => [
+                styles.detailSettingRow,
+                pressed && styles.rowPressed,
+              ]}>
+              <Text style={styles.detailSettingLabel}>거래 정보 수정</Text>
+              <Text style={styles.rowChevron}>›</Text>
+            </Pressable>
+          ) : null}
+
           {isMemoEditing ? (
             <View style={styles.detailMemoEditor}>
               <TextInput
@@ -129,17 +140,6 @@ export function TransactionDetail({
               <Text style={styles.rowChevron}>›</Text>
             </Pressable>
           )}
-
-          <View style={styles.detailSettingRow}>
-            <Text style={styles.detailSettingLabel}>지출 합계에 포함</Text>
-            <Switch
-              accessibilityLabel="지출 합계에 포함"
-              onValueChange={onToggleIncluded}
-              thumbColor={colors.white}
-              trackColor={{ false: colors.border, true: colors.primary.green }}
-              value={transaction.includedInExpense}
-            />
-          </View>
 
           <View style={styles.divider} />
 

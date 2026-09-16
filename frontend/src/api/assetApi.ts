@@ -1,5 +1,6 @@
 import type {
   AccountApiResponse,
+  AccountBalanceSummaryApiResponse,
   AccountSummaryApiResponse,
   CardApiResponse,
   CardPaymentSchedulesApiResponse,
@@ -7,6 +8,7 @@ import type {
   DepositSavingSummaryApiResponse,
   InstallmentApiResponse,
   InstallmentScheduleApiResponse,
+  InactiveAccountsApiResponse,
   LoanApiResponse,
   LoanSummaryApiResponse,
 } from '@/types/assetApi.types';
@@ -43,6 +45,12 @@ export const assetApi = {
 
   getAccountSummary: () =>
     apiClient.get<AccountSummaryApiResponse>('/v1/accounts/summary'),
+
+  getAccountBalanceSummary: () =>
+    apiClient.get<AccountBalanceSummaryApiResponse>('/v1/accounts/balance-summary'),
+
+  getInactiveAccounts: () =>
+    apiClient.get<InactiveAccountsApiResponse>('/v1/accounts/inactive'),
 
   getCards: () => apiClient.get<CardApiResponse[]>('/v1/cards'),
 

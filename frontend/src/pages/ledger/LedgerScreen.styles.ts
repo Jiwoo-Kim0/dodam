@@ -447,6 +447,29 @@ export const styles = StyleSheet.create({
     fontSize: fontSize.body1,
     paddingVertical: spacing[2],
   },
+  hiddenTransactionsButton: {
+    alignSelf: 'flex-end',
+    backgroundColor: colors.white,
+    borderColor: colors.divider,
+    borderRadius: radius.round,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginTop: spacing[1],
+    paddingHorizontal: spacing[2],
+    paddingVertical: spacing[1],
+  },
+  hiddenTransactionsButtonSelected: {
+    backgroundColor: colors.primary.lightGreen,
+    borderColor: colors.primary.green,
+  },
+  hiddenTransactionsButtonText: {
+    color: colors.textSecondary,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.detail,
+  },
+  hiddenTransactionsButtonTextSelected: {
+    color: colors.primary.green,
+    fontFamily: fontFamily.semiBold,
+  },
   calendarCard: {
     paddingHorizontal: spacing[2],
     paddingVertical: spacing[3],
