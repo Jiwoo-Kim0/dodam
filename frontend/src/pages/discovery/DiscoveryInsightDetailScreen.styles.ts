@@ -66,18 +66,6 @@ export const styles = StyleSheet.create({
     color: colors.textPrimary,
     lineHeight: 21,
   },
-  coachContent: {
-    gap: spacing[2],
-    marginTop: spacing[3],
-  },
-  coachHighlight: {
-    ...typography.body2,
-    color: colors.textPrimary,
-  },
-  factSection: {
-    gap: spacing[1],
-    marginTop: spacing[2],
-  },
   disclaimer: {
     ...typography.caption,
     color: colors.textTertiary,

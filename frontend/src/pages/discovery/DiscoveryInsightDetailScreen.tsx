@@ -22,31 +22,6 @@ function coachMessage(response: CoachMessageResponse | null) {
   return response?.message.trim() || null;
 }
 
-function CoachFacts({ response }: { response: CoachMessageResponse }) {
-  // 수치 구간은 데이터 상태에 따라 통째로 빠진다(ai-coach-fe-guide.md 렌더링 규칙 ③).
-  const highlights = response.highlights ?? [];
-  const sections = response.facts?.sections ?? [];
-
-  return (
-    <View style={styles.coachContent}>
-      {highlights.map((highlight, index) => (
-        <Text key={`${index}-${highlight}`} style={styles.coachHighlight}>• {highlight}</Text>
-      ))}
-      {sections.map((section, index) => (
-        <View key={`${index}-${section.title}`} style={styles.factSection}>
-          <Text style={styles.recommendationTitle}>{section.title}</Text>
-          {section.facts.map((fact, factIndex) => (
-            <Text key={`${factIndex}-${fact.label}`} style={styles.recommendationDetail}>
-              {fact.label}: {fact.value}
-            </Text>
-          ))}
-        </View>
-      ))}
-      <Text style={styles.disclaimer}>{response.disclaimer}</Text>
-    </View>
-  );
-}
-
 export function DiscoveryInsightDetailScreen({ insightId }: DiscoveryInsightDetailScreenProps) {
   const router = useRouter();
   const routeIds = parseIssueRouteId(insightId);
@@ -132,7 +107,7 @@ export function DiscoveryInsightDetailScreen({ insightId }: DiscoveryInsightDeta
                 <Text style={styles.adviceText}>{coachMessage(explanation) ?? explanationError ?? 'AI 설명을 확인하고 있어요.'}</Text>
               </View>
             </View>
-            {explanation ? <CoachFacts response={explanation} /> : null}
+            {explanation ? <Text style={styles.disclaimer}>{explanation.disclaimer}</Text> : null}
             {explanationError ? <Pressable accessibilityRole="button" onPress={() => { void load(); }}><Text style={styles.emptyAction}>다시 시도하기</Text></Pressable> : null}
 
             <View style={styles.recommendationSection}>
@@ -152,7 +127,7 @@ export function DiscoveryInsightDetailScreen({ insightId }: DiscoveryInsightDeta
                     </Pressable>
                     {selectedRecommendationId === recommendation.recommendationId ? (
                       <View style={styles.recommendationExplanation}>
-                        {recommendationExplanation ? <><Text style={styles.adviceText}>{coachMessage(recommendationExplanation) ?? '이 추천의 근거를 아래 수치로 확인해 주세요.'}</Text><CoachFacts response={recommendationExplanation} /></> : <Text style={styles.recommendationDetail}>{recommendationError ?? '추천 설명을 확인하고 있어요.'}</Text>}
+                        {recommendationExplanation ? <Text style={styles.adviceText}>{coachMessage(recommendationExplanation) ?? '이 추천을 왜 권하는지 설명을 준비하지 못했어요.'}</Text> : <Text style={styles.recommendationDetail}>{recommendationError ?? '추천 설명을 확인하고 있어요.'}</Text>}
                       </View>
                     ) : null}
                   </View>
