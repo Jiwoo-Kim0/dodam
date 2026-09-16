@@ -1,4 +1,8 @@
-import { clearAuthTokens, getAuthTokens, setAuthTokens } from '@/services/authTokenStorage';
+import { getAuthTokens, setAuthTokens } from '@/services/authTokenStorage';
+import {
+  endAuthSession,
+  markAuthSessionActive,
+} from '@/services/authSessionService';
 import type {
   AuthSession,
   AuthSessionRestoreResult,
@@ -25,6 +29,7 @@ function getTokensFromResponse(response: AuthResponse): AuthTokens {
 
 export async function persistAuthResponse(response: AuthResponse) {
   await setAuthTokens(getTokensFromResponse(response));
+  markAuthSessionActive();
 }
 
 export async function loginWithPassword(request: PasswordLoginRequest) {
@@ -44,7 +49,7 @@ export async function logout() {
       await apiClient.post<null>(`${AUTH_PATH}/logout`);
     }
   } finally {
-    await clearAuthTokens();
+    await endAuthSession();
   }
 }
 
@@ -58,10 +63,11 @@ export async function restoreAuthSession(): Promise<AuthSessionRestoreResult> {
 
   try {
     const session = await getSession();
+    markAuthSessionActive();
     return { status: 'authenticated', session };
   } catch (error) {
     if (isApiError(error) && error.isUnauthorized) {
-      await clearAuthTokens();
+      await endAuthSession();
       return { status: 'unauthenticated', session: null };
     }
 
@@ -79,7 +85,7 @@ export async function deleteSessions(sessionId?: number) {
   );
 
   if (sessionId === undefined || sessionId === currentSessionId) {
-    await clearAuthTokens();
+    await endAuthSession();
   }
 
   return response;
