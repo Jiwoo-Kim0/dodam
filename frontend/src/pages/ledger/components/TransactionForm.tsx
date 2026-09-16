@@ -1,3 +1,4 @@
+import { SymbolView } from 'expo-symbols';
 import { useEffect, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Pressable, Text, TextInput, View } from 'react-native';
 import Animated, {
@@ -101,7 +102,7 @@ export function TransactionForm({
         onRightPress={mode === 'edit' ? confirmDelete : undefined}
         rightLabel={mode === 'edit' ? '삭제' : undefined}
         rightDisabled={isSubmitting}
-        title={mode === 'edit' ? '거래 내역 수정' : '현금거래 추가'}
+        title={mode === 'edit' ? '거래 내역 수정' : '거래 추가'}
       />
 
       <BouncyScrollView contentContainerStyle={styles.formScrollContent}>
@@ -155,15 +156,19 @@ export function TransactionForm({
             onPress={() => setIsDatePickerVisible(true)}
             style={({ pressed }) => [styles.formRow, pressed && styles.rowPressed]}>
             <Animated.Text style={[styles.formLabel, labelAnimatedStyle]}>
-              {typeLabel}시간
+              {typeLabel} 시간
             </Animated.Text>
             <Text style={styles.formValue}>
               {formatFormDateTime(draft.transactionDate, draft.transactionTime)}
             </Text>
-            <Text style={styles.rowChevron}>›</Text>
+            <SymbolView
+              name={{ android: 'chevron_right', ios: 'chevron.right', web: 'chevron_right' }}
+              size={18}
+              tintColor={colors.textSecondary}
+            />
           </Pressable>
 
-          <View style={styles.formRow}>
+          <View style={[styles.formRow, styles.formRowLast]}>
             <Animated.Text style={[styles.formLabel, labelAnimatedStyle]}>
               {typeLabel}처
             </Animated.Text>
