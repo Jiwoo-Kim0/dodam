@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, type AlertButton, Text, View } from 'react-native';
 
@@ -28,6 +28,7 @@ import { useHomeSummary } from './hooks/useHomeSummary';
 export function HomeScreen() {
   const router = useRouter();
   const scrollRef = useRef<BouncyScrollViewHandle>(null);
+  const hasFocusedRef = useRef(false);
   const [sectionSize, setSectionSize] = useState({ width: 0, height: 0 });
   const { user, reload: reloadUser } = useCurrentUser();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -48,6 +49,16 @@ export function HomeScreen() {
   }, [refetchSummary]);
 
   useEffect(() => subscribeHomeTabReselect(handleHomeRefresh), [handleHomeRefresh]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (hasFocusedRef.current) {
+        void refetchSummary();
+      } else {
+        hasFocusedRef.current = true;
+      }
+    }, [refetchSummary]),
+  );
 
   const handleLogout = async () => {
     if (isLoggingOut) return;
