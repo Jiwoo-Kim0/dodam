@@ -14,4 +14,11 @@ public interface GoalHistoryRepository extends JpaRepository<GoalHistory, Long> 
             Long goalId, LocalDate startDate, LocalDate endDate, Pageable pageable);
 
     Optional<GoalHistory> findTopByGoalIdOrderByRecordedDateDescIdDesc(Long goalId);
+
+    /**
+     * 그 날짜까지의 마지막 기록. 월간 리포트가 "그 달 시작 직전"과 "그 달 마지막" 상태를 복원하는 데 쓴다
+     * (S15P21D105-590). 현재 잔액으로 과거 달을 다시 계산하면 그 달의 변화가 아니라 오늘의 값이 나온다.
+     */
+    Optional<GoalHistory> findTopByGoalIdAndRecordedDateLessThanEqualOrderByRecordedDateDescIdDesc(
+            Long goalId, LocalDate recordedDate);
 }
