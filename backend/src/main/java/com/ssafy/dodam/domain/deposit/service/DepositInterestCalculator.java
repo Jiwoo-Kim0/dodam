@@ -1,5 +1,6 @@
 package com.ssafy.dodam.domain.deposit.service;
 
+import com.ssafy.dodam.global.policy.InterestIncomeTaxPolicy;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import org.springframework.stereotype.Component;
@@ -21,9 +22,8 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class DepositInterestCalculator {
-    /** 이자소득세 15.4% = 소득세 14% + 지방소득세 1.4%. 2026년 일반 과세 기준이다. */
-    static final BigDecimal TAX_RATE_PERCENT = new BigDecimal("15.4");
-    static final String TAX_POLICY = "GENERAL_INTEREST_INCOME_TAX_15_4";
+    /** 세율·절사 규칙은 적금과 공유하는 {@link InterestIncomeTaxPolicy}를 따른다. */
+    static final String TAX_POLICY = InterestIncomeTaxPolicy.POLICY_CODE;
     static final String DAY_COUNT = "ACT_365_SIMPLE";
     private static final BigDecimal DAYS_IN_YEAR = new BigDecimal("365");
     private static final BigDecimal PERCENT = new BigDecimal("100");
@@ -41,10 +41,7 @@ public class DepositInterestCalculator {
                 .multiply(BigDecimal.valueOf(days))
                 .divide(PERCENT.multiply(DAYS_IN_YEAR), 0, RoundingMode.DOWN);
         long grossInterest = gross.longValueExact();
-        // 원천징수는 원 단위 절사다. 세후이자를 먼저 만들지 않고 세액을 절사해야 세전 = 세액 + 세후가 된다.
-        long tax = gross.multiply(TAX_RATE_PERCENT)
-                .divide(PERCENT, 0, RoundingMode.DOWN)
-                .longValueExact();
+        long tax = InterestIncomeTaxPolicy.withhold(grossInterest);
         long netInterest = grossInterest - tax;
         long payout = Math.addExact(principal, netInterest);
         return new DepositInterest(grossInterest, tax, netInterest, payout);

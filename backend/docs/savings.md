@@ -130,19 +130,25 @@ expectedMonthlyAmount = paidAmount + scheduledAmount + estimatedAmount
 
 ```text
 가중원금 = Σ(회차 납입액 × 그 회차부터 계산종료일까지의 일수)
-예상이자 = floor(가중원금 × 적용이율 ÷ 36500)
-예상수령액 = 예상원금 + 예상이자
+예상이자(expectedInterest, 세전) = floor(가중원금 × 적용이율 ÷ 36500)
+세액(tax) = floor(예상이자 × 15.4%)
+세후이자(expectedNetInterest) = 예상이자 − 세액
+예상수령액(expectedAmount) = 예상원금 + 세후이자
 ```
 
 - **회차마다 실제 예치일수를 따로 적용한다.** 모든 원금이 가입일에 예치된 것으로 계산하지 않는다. 적금은 납입이 나뉘어 들어오므로 이 구분이 금액을 크게 바꾼다.
 - 계산종료일은 중도해지가 기준일, 만기 예상이 만기일이다.
 - 만기 예상은 남은 회차를 납입 예정 계산으로 채워 `futurePrincipal`에 넣는다. 중도해지는 0이다.
 - 단리이며 원 단위 절사다. 윤년에도 365로 나눈다.
-- **세금과 수수료를 반영하지 않는다**(`EXCLUDES_TAX_AND_FEES`). 예금(536)이 이자소득세 15.4%를 반영하는 것과 다르다. 두 API의 수령액을 나란히 비교할 때 이 차이를 감안해야 하며, 통일은 remaining-work에 남겼다.
+- **이자소득세 15.4%를 원천징수한다**(`GENERAL_INTEREST_INCOME_TAX_15_4`, 2026-09-16). 예금(536)과 같은
+  `InterestIncomeTaxPolicy`를 쓰며 세액을 절사해 `세전 = 세액 + 세후`가 성립한다. 그 전에는 세전 합계만 주어
+  (`EXCLUDES_TAX_AND_FEES`) 예금 수령액과 나란히 놓으면 적금이 유리해 보였다. `expectedAmount`의 뜻이 세전 합계에서
+  세후 합계로 바뀌었고, 세전이자는 `expectedInterest`에 그대로 있다. 수수료는 여전히 반영하지 않는다(`EXCLUDES_FEES`).
+  비과세·세금우대는 사용자 과세 구분 자료가 없어 반영하지 않는다.
 
 ### 중도해지이율 (`TIERED_CONTRACT_RATE_RATIO`)
 
-명세·ERD·기획안에 계산식이 없다. `deposit_saving`에는 계약이율만 있고 중도해지이율 컬럼이 없다. 국내 시중은행 관행인 **경과기간 구간별 계약이율 차등**을 기본안으로 삼았고 예금(536)과 같은 표다.
+명세·ERD·기획안에 계산식이 없다. `deposit_saving`에는 계약이율만 있고 중도해지이율 컬럼이 없다. 국내 시중은행 관행인 **경과기간 구간별 계약이율 차등**을 기본안으로 삼았고 예금(536)과 같은 표다. 2026-09-16에 두 도메인의 표를 `global/policy/EarlyTerminationRatePolicy` 하나로 합쳤다.
 
 | 경과 개월 (`rateTier`) | 적용 이율 |
 | --- | --- |
