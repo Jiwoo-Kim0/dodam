@@ -2,9 +2,9 @@ import { Image } from 'expo-image';
 import { useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
-import type { DailyBriefingTransaction } from '@/mocks/dailyBriefing';
 import { formatCurrency } from '@/utils/currency';
 
+import type { DailyBriefingTransaction } from '../dailyBriefing.types';
 import { styles as screenStyles } from '../DailyBriefingScreen.styles';
 import { styles } from './TransactionsCard.styles';
 
@@ -12,9 +12,10 @@ const INITIAL_TRANSACTION_COUNT = 5;
 
 type TransactionsCardProps = {
   transactions: readonly DailyBriefingTransaction[];
+  message?: string | null;
 };
 
-export function TransactionsCard({ transactions }: TransactionsCardProps) {
+export function TransactionsCard({ transactions, message }: TransactionsCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   const visibleTransactions = useMemo(
@@ -26,10 +27,12 @@ export function TransactionsCard({ transactions }: TransactionsCardProps) {
     <View style={[screenStyles.card, styles.transactionsCard]}>
       <View style={styles.sectionHeadingRow}>
         <Text style={screenStyles.sectionTitle}>어제 결제 내역</Text>
-        <Text style={styles.transactionCount}>{transactions.length}건</Text>
+        <Text style={styles.transactionCount}>{message ? '—' : `${transactions.length}건`}</Text>
       </View>
 
-      <View style={styles.transactionList}>
+      {transactions.length === 0 ? (
+        <Text style={screenStyles.emptyMessage}>{message ?? '어제 결제한 내역이 없어요.'}</Text>
+      ) : <View style={styles.transactionList}>
         {visibleTransactions.map((transaction) => (
           <View key={transaction.id} style={styles.transactionRow}>
             <Text style={styles.transactionTime}>{transaction.time}</Text>
@@ -37,7 +40,7 @@ export function TransactionsCard({ transactions }: TransactionsCardProps) {
               <Image
                 contentFit="contain"
                 source={transaction.icon}
-                style={[styles.paymentIcon, { transform: [{ scale: transaction.iconScale }] }]}
+                style={styles.paymentIcon}
               />
             </View>
             <View style={styles.transactionInfo}>
@@ -51,15 +54,15 @@ export function TransactionsCard({ transactions }: TransactionsCardProps) {
             <Text style={styles.transactionAmount}>{formatCurrency(transaction.amount)}</Text>
           </View>
         ))}
-      </View>
+      </View>}
 
-      <Pressable
+      {transactions.length > INITIAL_TRANSACTION_COUNT ? <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded: isExpanded }}
         onPress={() => setIsExpanded((current) => !current)}
         style={({ pressed }) => [styles.expandButton, pressed && screenStyles.pressed]}>
         <Text style={styles.expandButtonText}>{isExpanded ? '접기' : '펼치기'}</Text>
-      </Pressable>
+      </Pressable> : null}
     </View>
   );
 }
