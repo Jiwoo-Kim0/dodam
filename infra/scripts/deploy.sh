@@ -154,6 +154,91 @@ for svc in $ALL_SERVICES; do
         || log "WARN: '$svc' 가 compose에 있으나 배포 대상이 아닙니다 — DEPLOY_SERVICES 확인 필요"
 done
 
+# ── 사전 검증: 새 이미지가 실제로 기동하는지 운영 교체 전에 확인한다 ──────────
+#
+# 왜 필요한가 (2026-09-17 장애, day-08.md 31절):
+#   아래 `up -d --build`는 **기존 컨테이너를 먼저 교체**한다. 새 이미지가 기동에
+#   실패하면 그 순간부터 롤백이 끝날 때까지 서비스가 중단된다. 실제로 V38 스키마
+#   불일치로 60분간 외부 502가 났다. 롤백은 정상 동작했지만, 롤백이 자리를 잡을
+#   때마다 다음 배포가 다시 교체를 실행해 장애가 반복됐다.
+#   → "교체하고 검증"이 아니라 "검증하고 교체" 순서로 바꾼다.
+#     기동 실패는 이 단계에서 걸러지고, 운영 컨테이너는 손도 대지 않는다.
+#
+# 알아둘 점:
+#   - 이 일회용 컨테이너에서도 Flyway가 돌아 마이그레이션이 적용된다. 어차피 본
+#     배포에서 적용될 것이라 달라지는 것은 없고, 오히려 마이그레이션 자체의 실패를
+#     서비스를 건드리기 전에 잡는다. (Flyway는 전진 전용이라 되돌아가지 않는다)
+#   - 포트를 열지 않으므로(--service-ports 미사용) 운영 컨테이너와 충돌하지 않는다.
+#   - 성공 판정은 종료 코드가 아니라 **로그**로 한다. 서버는 정상일수록 끝나지 않는다.
+#   - PREFLIGHT=0 으로 끌 수 있다. 끄면 2026-09-17 장애와 같은 노출이 생긴다.
+PREFLIGHT="${PREFLIGHT:-1}"
+PREFLIGHT_TIMEOUT="${PREFLIGHT_TIMEOUT:-180}"
+PREFLIGHT_MARKER="${PREFLIGHT_MARKER:-Started DodamApplication}"
+
+preflight_abort() {
+    # 운영 컨테이너는 건드리지 않았으므로 되돌릴 것은 코드뿐이다.
+    # (102행에서 이미 새 커밋으로 reset된 상태라, 그대로 두면 코드와 실행 중 이미지가 어긋난다)
+    log "코드를 직전 커밋으로 되돌린다: $(git -C "$APP_DIR" rev-parse --short "$PREV_COMMIT")"
+    git -C "$APP_DIR" reset --hard "$PREV_COMMIT" || log "WARN: 코드 되돌리기 실패 — 수동 확인 필요"
+    log "───────────────────────────────────────────────"
+    log "★ 사전 검증에서 걸러졌습니다. 서비스는 중단되지 않았습니다."
+    log "  develop이 깨진 상태이므로 원인을 수정한 뒤 다시 배포하세요."
+    exit 1
+}
+
+if [ "$PREFLIGHT" = "1" ]; then
+    log "사전 검증 ①: backend 이미지 빌드"
+    if ! docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build backend; then
+        log "이미지 빌드 실패"
+        preflight_abort
+    fi
+
+    log "사전 검증 ②: 일회용 컨테이너로 기동 확인 (최대 ${PREFLIGHT_TIMEOUT}초)"
+    # `compose run -d`는 진행 로그를 함께 출력하므로 마지막 줄만 취하고,
+    # 그 값이 실제 컨테이너 ID(64자리 hex)인지 확인한다.
+    # (2026-09-17 실측: 진행 로그를 그대로 잡으면 여러 줄이 들어온다)
+    PF_CID="$(docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" \
+                run -d --no-deps backend 2>/dev/null | tail -1 | tr -d '[:space:]')" || PF_CID=""
+    case "$PF_CID" in
+        *[!0-9a-f]* | "") 
+            log "일회용 컨테이너를 띄우지 못했다 (반환값: '${PF_CID:-없음}')"
+            # 이름 규칙으로 혹시 떠 있을 잔여 컨테이너를 정리한다
+            docker ps -aq --filter "name=infra-backend-run" | xargs -r docker rm -f >/dev/null 2>&1 || true
+            preflight_abort
+            ;;
+    esac
+
+    PF_OK=0
+    PF_WAITED=0
+    while [ "$PF_WAITED" -lt "$PREFLIGHT_TIMEOUT" ]; do
+        if docker logs "$PF_CID" 2>&1 | grep -q "$PREFLIGHT_MARKER"; then
+            PF_OK=1
+            break
+        fi
+        # 컨테이너가 이미 죽었으면 더 기다릴 이유가 없다 (기동 실패는 대개 즉시 드러난다)
+        if [ "$(docker inspect -f '{{.State.Running}}' "$PF_CID" 2>/dev/null)" != "true" ]; then
+            break
+        fi
+        sleep 3
+        PF_WAITED=$((PF_WAITED + 3))
+    done
+
+    if [ "$PF_OK" != "1" ]; then
+        log "사전 검증 실패 — 새 이미지가 기동하지 못했습니다. 로그 마지막 60줄:"
+        docker logs --tail 60 "$PF_CID" 2>&1 | sed 's/^/  /'
+        docker rm -f "$PF_CID" >/dev/null 2>&1 || true
+        preflight_abort
+    fi
+
+    log "사전 검증 통과 (${PF_WAITED}초) — 운영 컨테이너 교체를 진행한다"
+    docker rm -f "$PF_CID" >/dev/null 2>&1 || true
+    # 이전 배포가 중간에 죽어 남겼을 수 있는 고아 컨테이너까지 함께 정리한다.
+    # 떠 있는 채로 방치되면 운영 DB에 붙은 백엔드가 둘이 된다.
+    docker ps -aq --filter "name=infra-backend-run" | xargs -r docker rm -f >/dev/null 2>&1 || true
+else
+    log "WARN: PREFLIGHT=0 — 사전 검증을 건너뜁니다 (기동 실패 시 서비스가 중단됩니다)"
+fi
+
 log "이미지 빌드 및 컨테이너 기동 ($DEPLOY_SERVICES)"
 # --no-deps: depends_on을 타고 jenkins 같은 비대상 서비스가 재생성되는 것을 막는다.
 # (DEPLOY_SERVICES에서 제외해도 의존성으로 끌려 들어오면 배포가 자기 자신을 죽인다)
