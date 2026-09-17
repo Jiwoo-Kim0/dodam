@@ -6,6 +6,7 @@ import type { HomeGoal } from '@/types/goal.types';
 import type { GoalApiResponse } from '@/types/goalApi.types';
 import { mapOwnedAssetOverview } from '@/utils/assetOverview';
 import { formatCurrency } from '@/utils/currency';
+import { calculateProgressPercent } from '@/utils/goal';
 import { shiftDateKey, toDateKey } from '@/utils/date';
 
 export interface HomeBriefing {
@@ -57,7 +58,10 @@ function monthInfo(offsetFromCurrent: number) {
 }
 
 function mapSavingGoal(goal: GoalApiResponse): HomeGoal {
-  const progress = Math.round(goal.progressRatePercent ?? 0);
+  const progress = calculateProgressPercent(
+    goal.currentAmount,
+    goal.targetAmount ?? 0,
+  );
   return {
     id: String(goal.goalId),
     type: 'saving',

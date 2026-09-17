@@ -153,6 +153,20 @@ export function GoalCarousel({ goals, hasError, isLoading }: GoalCarouselProps) 
     <View
       onLayout={handleLayout}
       style={styles.container}>
+      <View style={styles.headerActions}>
+        <Pressable
+          accessibilityLabel="새 목표 추가"
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={() => router.push(routes.goalSetup)}
+          style={({ pressed }) => [
+            styles.headerAddButton,
+            pressed && styles.addGoalPressed,
+          ]}>
+          <Text style={styles.headerAddIcon}>+</Text>
+          <Text style={styles.headerAddLabel}>목표 추가</Text>
+        </Pressable>
+      </View>
       {pageWidth > 0 ? (
         <GestureDetector gesture={carouselGesture}>
           <View style={styles.viewport}>

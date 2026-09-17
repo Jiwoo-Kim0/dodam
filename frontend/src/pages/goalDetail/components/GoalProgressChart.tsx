@@ -22,7 +22,7 @@ interface GoalProgressChartProps {
 const CHART_WIDTH = 320;
 const CHART_HEIGHT = 180;
 const PLOT_LEFT = 48;
-const PLOT_RIGHT = 270;
+const PLOT_RIGHT = 316;
 const PLOT_TOP = 64;
 const PLOT_BOTTOM = 144;
 const GRID_LINE_COUNT = 5;
@@ -76,9 +76,11 @@ export function GoalProgressChart({ goal }: GoalProgressChartProps) {
       ? '지금까지 이렇게 모았어요'
       : '이번 달 이렇게 줄였어요';
   const lineColor =
-    goal.type === 'saving' ? colors.primary.green : colors.primary.orange;
+    goal.type === 'saving' ? colors.primary.yellow : colors.primary.orange;
   const barColor =
-    goal.type === 'saving' ? colors.home.secondaryRank : colors.primary.yellow;
+    goal.type === 'saving'
+      ? colors.goal.savingCharacterBackground
+      : colors.primary.yellow;
   const axisMaximum = calculateAxisMaximum(goal.history);
   const points = createPointCoordinates(goal.history, axisMaximum);
   const linePath = points
@@ -149,7 +151,7 @@ export function GoalProgressChart({ goal }: GoalProgressChartProps) {
         {points.map((point, index) => (
           <Rect
             fill={
-              goal.type === 'reducing' && index === points.length - 1
+              index === points.length - 1
                 ? colors.home.secondaryRank
                 : barColor
             }

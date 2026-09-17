@@ -1,6 +1,8 @@
 import { Image } from 'expo-image';
+import { useRef } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -9,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { goalApi } from '@/api';
 import { colors } from '@/styles';
 import { formatCurrency } from '@/utils/currency';
 import { calculateProgressPercent } from '@/utils/goal';
@@ -21,6 +24,7 @@ interface OtherGoalsBottomSheetProps {
   visible: boolean;
   onClose: () => void;
   onCreateGoal: () => void;
+  onCurrentGoalDeleted: () => void;
   onSelectGoal: (goalId: string) => void;
 }
 
@@ -29,13 +33,49 @@ export function OtherGoalsBottomSheet({
   visible,
   onClose,
   onCreateGoal,
+  onCurrentGoalDeleted,
   onSelectGoal,
 }: OtherGoalsBottomSheetProps) {
   const { error, goals, isLoading, refetch } = useOtherGoals(visible);
+  const longPressedGoalIdRef = useRef<string | null>(null);
+
+  const confirmDeleteGoal = (goalId: string, goalTitle: string) => {
+    Alert.alert(
+      '목표를 삭제할까요?',
+      `${goalTitle} 목표는 삭제 후 되돌릴 수 없어요.`,
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '삭제',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              try {
+                await goalApi.deleteGoal(Number(goalId));
+                if (goalId === currentGoalId) {
+                  onClose();
+                  onCurrentGoalDeleted();
+                  return;
+                }
+                await refetch();
+              } catch (deleteError) {
+                Alert.alert(
+                  '목표를 삭제하지 못했어요',
+                  deleteError instanceof Error
+                    ? deleteError.message
+                    : '잠시 후 다시 시도해주세요.',
+                );
+              }
+            })();
+          },
+        },
+      ],
+    );
+  };
 
   return (
     <Modal
-      animationType="slide"
+      animationType="fade"
       onRequestClose={onClose}
       statusBarTranslucent
       transparent
@@ -124,7 +164,18 @@ export function OtherGoalsBottomSheet({
                   accessibilityRole="button"
                   accessibilityState={{ selected: isCurrent }}
                   key={goal.id}
-                  onPress={() => onSelectGoal(goal.id)}
+                  delayLongPress={450}
+                  onLongPress={() => {
+                    longPressedGoalIdRef.current = goal.id;
+                    confirmDeleteGoal(goal.id, goal.title);
+                  }}
+                  onPress={() => {
+                    if (longPressedGoalIdRef.current === goal.id) {
+                      longPressedGoalIdRef.current = null;
+                      return;
+                    }
+                    onSelectGoal(goal.id);
+                  }}
                   style={({ pressed }) => [
                     styles.goalCard,
                     { borderLeftColor: accentColor },
