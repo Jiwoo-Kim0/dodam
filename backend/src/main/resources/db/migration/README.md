@@ -65,6 +65,34 @@ Flyway는 버전이 연속일 필요가 없으므로 빈 번호는 그대로 둡
 
 `card`와 `loan`은 ERD 정의대로 `account`를 복합 외래키로 참조합니다. FK를 빼고 나중에 추가하는 방식은 데이터 적재 후 제약 추가가 어려워 택하지 않았습니다.
 
+## 엔티티와 타입이 맞는지 먼저 확인하세요
+
+운영·local은 `ddl-auto: validate`입니다. **컬럼 타입이 하나라도 어긋나면 Hibernate가 기동을 막습니다.**
+더 나쁜 것은 validate가 **첫 번째 불일치에서 멈춘다**는 점입니다 — 하나를 고쳐 배포하면 다음 컬럼에서 또
+같은 장애가 납니다. 2026-09-17에 `monthly_report.year_month`(DDL `CHAR(7)` vs 엔티티 기대 `varchar(7)`)로
+실제로 기동이 막혔습니다.
+
+`SchemaTypeConsistencyTest`(`backend/src/test/java/com/ssafy/dodam/global/schema/`)가 DB 없이 이것을
+검사합니다. 엔티티 매핑과 이 폴더의 DDL을 타입 계열 단위로 맞춰 보고, 어긋나는 컬럼을 **전부 한 번에**
+보여 줍니다. `./gradlew test`에 포함되므로 따로 실행할 필요는 없습니다.
+
+가장 자주 나오는 것이 **고정 길이 문자열**입니다. 엔티티에서 `String`을 그냥 매핑하면 Hibernate는
+`varchar`를 기대하므로, DDL이 `CHAR(n)`이면 엔티티에도 알려 줘야 합니다.
+
+```java
+@Column(name = "account_no_hash", nullable = false, length = 64, columnDefinition = "CHAR(64)")
+private String accountNoHash;
+
+// 또는
+@JdbcTypeCode(SqlTypes.CHAR)
+@Column(name = "member_email_hash", length = 64)
+private String memberEmailHash;
+```
+
+이미 적용된 마이그레이션 파일은 고치지 않습니다(Flyway 체크섬이 깨져 기동이 아예 안 됩니다).
+DDL을 바꿔야 한다면 새 버전으로 `ALTER TABLE ... MODIFY`를 추가하고, 엔티티만 고쳐도 되는 경우라면
+그쪽이 운영 DDL을 건드리지 않아 더 안전합니다.
+
 각 도메인 티켓은 자기 테이블만 다음 버전으로 추가합니다. DDL은 `docs/ERD/DODAM_ERDCLOUD_IMPORT.sql`의 해당 테이블 정의를 그대로 옮기고, 변경이 필요하면 ERD를 먼저 고칩니다. local/prod는 `ddl-auto: validate`이므로 엔티티와 DDL이 어긋나면 기동에 실패합니다.
 
 2026-09-07 기준으로 ERD Markdown과 `docs/ERD/DODAM_ERDCLOUD_IMPORT.sql`의 구조 차이는 동기화했습니다.

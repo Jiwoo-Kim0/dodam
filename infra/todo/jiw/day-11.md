@@ -214,3 +214,90 @@ ERD 대비 추가한 컬럼과 이유:
 4. 측정이 조회 시점에 일어난다. 사용자가 오래 안 들어오면 그동안 측정이 밀린다 —
    배치가 생기면 `ImprovementMeasurementService.refresh`를 그대로 스케줄에 걸면 된다.
 5. 6개월 소비 추이 전용 엔드포인트(협의안 "지난 소비")는 이번 범위에 넣지 않았다. 필요하면 별도 티켓.
+
+---
+
+## 2026-09-17
+
+### 12. 운영 기동 실패 대응 — `monthly_report.year_month` 타입 불일치
+
+인프라에서 9/16에 `ddl-auto`를 `none` → `validate`로 되돌린 뒤 backend가 기동하지 못했다.
+
+```
+Schema-validation: wrong column type encountered in column [year_month]
+in table [monthly_report]; found [char], but expecting [varchar(7)]
+```
+
+원인은 내가 Day 11에 만든 매핑이다. V38은 ERD대로 `CHAR(7)`로 선언했는데 엔티티에는
+`@Column(length = 7)`만 붙여 Hibernate가 `varchar(7)`을 기대했다. `none`이었을 때는 그냥 넘어가던 것이
+`validate` 복구와 함께 드러났다.
+
+### 13. 먼저 한 일 — "이것 하나뿐인가"를 증거로 확인
+
+**validate는 첫 번째 불일치에서 멈춘다.** year_month만 고쳐 배포하면 다음 컬럼에서 같은 장애가 반복된다.
+요청받은 MySQL 게이트 테스트를 돌리려 했으나 이 개발기에는 Docker도 sudo도 없어(MySQL을 띄울 수 없다)
+DB 없이 같은 결론을 내는 방법을 썼다.
+
+1. Hibernate metadata를 MySQLDialect로 띄워 **엔티티가 기대하는 컬럼 타입 465개**를 뽑았다.
+2. 마이그레이션 28개를 파싱해 **DDL이 선언한 컬럼 타입 502개**를 뽑았다.
+3. 둘을 대조했다.
+
+결과: **실제 불일치는 `monthly_report.year_month` 하나뿐이다.** 나머지 후보 39개는 전부
+`@Enumerated(STRING)` 컬럼(DDL `VARCHAR`, Hibernate 표기 `enum (...)`)과 `TINYINT(1)` 불리언으로,
+저장·검증이 같은 계열이라 통과한다 — `account`·`user`·`transaction`처럼 몇 주째 운영 중인 테이블들이
+같은 모양이라는 점이 그 증거다.
+
+중간에 한 번 잘못 짚었다. `finance_connection`의 해시 컬럼 2개가 `CHAR(64)` DDL에 `columnDefinition`이
+없어 두 번째 장애로 보였는데, 실제로는 `@JdbcTypeCode(SqlTypes.CHAR)`를 쓰고 있었다.
+`@Column` 줄만 grep해서 놓친 것이다 — 그래서 눈으로 훑지 않고 metadata를 뽑아 대조하는 쪽으로 바꿨다.
+
+### 14. 고친 방향 — DB가 아니라 엔티티
+
+요청은 `V39 ALTER TABLE ... MODIFY VARCHAR(7)`이었고 판단은 맡겨 주셨다. **엔티티에
+`columnDefinition = "CHAR(7)"`을 붙이는 쪽**을 골랐다.
+
+| 근거 | 내용 |
+| --- | --- |
+| 저장소 관례 | CHAR 컬럼 16개가 **전부** 이미 이 방식이다(`columnDefinition` 14개, `@JdbcTypeCode(SqlTypes.CHAR)` 2개). 여러 엔티티에 "빼면 validate에 실패한다"는 주석까지 달려 있다 |
+| 같은 모양의 선례 | `card.expiry_month`가 똑같은 `yyyy-MM` CHAR(7)이고 `columnDefinition = "CHAR(7)"`을 쓴다 |
+| ERD 일치 | ERD가 CHAR(7)이다. DB를 바꾸면 ERD도 또 고쳐야 하고, 월 컬럼 중 이것만 VARCHAR이 된다 |
+| 범위 | `yearMonth`는 `MonthlyReport` 한 곳에서만 쓴다(제안에 적힌 "엔티티가 여러 곳에서 쓰이면"에 해당하지 않는다) |
+| 위험 | 운영 DDL·데이터를 건드리지 않는다. 어차피 양쪽 다 재배포가 필요하므로 복구 속도 차이는 없다 |
+
+> **둘을 같이 넣으면 안 된다.** V39로 컬럼을 VARCHAR로 바꾸고 엔티티에 CHAR(7)을 붙이면 반대 방향으로
+> 다시 어긋나 같은 장애가 난다. 한쪽만 적용한다.
+
+### 15. 재발 방지 — `SchemaTypeConsistencyTest`
+
+13에서 한 대조를 일회성으로 두지 않고 상시 테스트로 만들었다.
+(`backend/src/test/java/com/ssafy/dodam/global/schema/SchemaTypeConsistencyTest.java`)
+
+- 엔티티 metadata(MySQLDialect)와 마이그레이션 DDL을 **타입 계열** 단위로 대조하고, 어긋나는 컬럼을
+  **전부 한 번에** 보여 준다(validate처럼 첫 개에서 멈추지 않는다).
+- **DB가 필요 없다.** `*MySqlIntegrationTest`는 로컬 MySQL이 있을 때만 돌아 정작 마이그레이션을 추가하는
+  순간에는 아무도 실행하지 않는다. 이 테스트는 `./gradlew test`에 그냥 포함된다.
+- 처음에는 Hibernate `AbstractSchemaValidator`의 판정식을 글자 그대로 옮겼는데, 드라이버가
+  메타데이터를 보고하는 방식까지 재현해야 해서(`TINYINT(1)` → `BIT`, STRING enum → `enum (...)`)
+  없는 문제를 40개 만들어 냈다. **계열 비교로 바꿨다** — 우리를 문 사고(CHAR ↔ VARCHAR)와 누락 컬럼은
+  그대로 잡으면서 잡음이 없다. 길이는 보지 않는다(Hibernate 검증도 타입만 본다).
+- 모르는 타입이 나오면 조용히 넘기지 않고 실패한다(표를 늘리라는 뜻).
+
+**가드가 실제로 잡는지 확인**: 수정을 잠시 되돌리고 돌려서 운영과 같은 컬럼이 나오는지 봤다.
+
+```
+monthly_report.year_month — DDL은 CHAR(7)(TEXT_FIXED)인데 엔티티는 varchar(7)(TEXT_VARIABLE)을 기대한다
+```
+
+한 건만 나온다 = 다른 불일치가 없다는 것도 같이 확인된다. 이후 수정을 복구하고 전체 스위트 통과
+(`BUILD SUCCESSFUL in 1m 44s`).
+
+`db/migration/README.md`에도 규칙과 두 가지 매핑 예시를 적었다.
+
+### 16. 남은 것
+
+1. **재배포 필요.** DB 변경은 없다(엔티티만 고쳤다). 배포 후 기동 로그에 validate 오류가 없는지 확인.
+2. MySQL 게이트 테스트는 이번에 돌리지 못했다(개발기에 Docker·sudo 없음). 로컬 MySQL이 있는 환경에서
+   `PATTERN_MYSQL_TEST_URL`을 걸고 V1~V38 적용 후 한 번 확인해 주면 좋겠다. `SchemaTypeConsistencyTest`가
+   타입은 덮지만 제약·인덱스는 여전히 게이트 테스트의 몫이다.
+3. 이번 대조에서 **엔티티가 없는 테이블**(`card_billing_statement`, `loan_repayment`)은 validate 대상이
+   아니라 검사에서 빠진다. 이 테이블들은 JDBC로만 읽으므로 타입이 어긋나도 기동은 되지만 런타임에 깨진다.

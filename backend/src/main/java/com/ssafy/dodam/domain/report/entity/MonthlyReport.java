@@ -23,6 +23,7 @@ import org.hibernate.type.SqlTypes;
  * (ERD의 {@code upcoming_summary}·{@code llm_comment} 컬럼을 매핑하지 않는 이유다).
  *
  * <p>{@code year_month}는 MySQL의 {@code INTERVAL} 단위 키워드와 철자가 같아 항상 따옴표로 감싼다.
+ * 타입은 CHAR(7)이며 {@code columnDefinition}으로 고정한다(아래 주석 참고).
  */
 @Getter
 @Entity
@@ -37,7 +38,10 @@ public class MonthlyReport {
     @Column(name = "report_type", nullable = false, length = 20)
     private String reportType;
 
-    @Column(name = "`year_month`", nullable = false, length = 7)
+    // DDL이 CHAR(7)다(ERD·V38). `columnDefinition`을 빼면 Hibernate가 VARCHAR(7)을 기대해
+    // `ddl-auto: validate`가 기동을 막는다 — 2026-09-17 운영 장애의 원인이었다.
+    // 해시·연월 컬럼이 전부 쓰는 방식이며 `card.expiry_month`(같은 yyyy-MM CHAR(7))와 같다.
+    @Column(name = "`year_month`", nullable = false, length = 7, columnDefinition = "CHAR(7)")
     private String yearMonth;
 
     @Enumerated(EnumType.STRING)

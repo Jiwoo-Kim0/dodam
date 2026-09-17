@@ -25,4 +25,4 @@
 - `day-03.md` ~ `day-07.md` — Day 3~7 실제 진행 기록
 - `day-08.md` — Day 8 실제 진행 기록
 - `day-10.md` — Day 10 실제 진행 기록 (API 21 AI Coach 구현, Day 11 응답 계약 선공유)
-- `day-11.md` — Day 11 실제 진행 기록 (API 19 Improvement·API 20 Report 구현, 응답 계약 확정 및 FE 협의안 회신)
+- `day-11.md` — Day 11 실제 진행 기록 (API 19 Improvement·API 20 Report 구현, 응답 계약 확정 및 FE 협의안 회신, 09-17 스키마 타입 불일치 기동 장애 대응)
