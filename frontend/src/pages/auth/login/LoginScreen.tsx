@@ -71,7 +71,7 @@ export function LoginScreen() {
 
     try {
       await authApi.loginWithPassword({ email, password: demoPassword });
-      router.replace(routes.terms);
+      router.replace(routes.home);
     } catch (error) {
       showError(error, '데모 로그인에 실패했어요. 다시 시도해주세요.');
     } finally {
