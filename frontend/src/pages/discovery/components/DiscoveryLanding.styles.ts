@@ -137,10 +137,47 @@ export const styles = StyleSheet.create({
     textAlign: 'center',
     ...typography.caption,
   },
-  financeImage: {
+  financeVisual: {
     aspectRatio: 362 / 434,
-    maxHeight: 430,
+    maxWidth: 358,
+    position: 'relative',
     width: '88%',
+  },
+  financeImage: {
+    height: '100%',
+    width: '100%',
+  },
+  financePhoneScreen: {
+    gap: spacing[4],
+    height: '65%',
+    justifyContent: 'center',
+    left: '19.5%',
+    position: 'absolute',
+    top: '17%',
+    width: '46%',
+  },
+  financeLogoRow: {
+    height: 44,
+    overflow: 'hidden',
+    width: '100%',
+  },
+  financeLogoTrack: {
+    flexDirection: 'row',
+    width: 448,
+  },
+  financeLogoGroup: {
+    flexDirection: 'row',
+    width: 224,
+  },
+  financeLogoSlot: {
+    alignItems: 'center',
+    height: 44,
+    justifyContent: 'center',
+    width: 56,
+  },
+  financeLogoImage: {
+    height: 36,
+    width: 36,
   },
   diagnosisImage: {
     aspectRatio: 400 / 344,
