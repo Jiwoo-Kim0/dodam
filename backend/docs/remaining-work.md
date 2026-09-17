@@ -20,13 +20,25 @@
 
 ### 서비스 초기값으로 둔 기준
 
-- [ ] 소비 증가 심각도 경계(증가율 50% → HIGH), 고금리 심각도 경계(편차 2.0%p 또는 연체 → HIGH), 최근/이전 3개월 고정, 미분류 제외, 대환 후보의 같은 업권 한정은 팀 확정값이 아니다. 바뀌면 `DiagnosisRuleVersion`을 올린다.
+- [ ] 소비 증가 심각도 경계(증가율 50% → HIGH), 고금리 심각도 경계(편차 2.0%p 또는 연체 → HIGH), 비교 기간(631부터 지난달 vs 직전 3개월 평균), 미분류 제외, 대환 후보의 같은 업권 한정은 팀 확정값이 아니다. 바뀌면 `DiagnosisRuleVersion`을 올린다.
 - [ ] 대환 절감액은 잔여 회차와 정확히 같은 `term` 옵션이 있는 상품만 대상이다(시뮬레이션과 같은 제약). 시연 seed의 대출 상품 옵션이 12·24·36·60개월 위주라 잔여 회차가 그 값과 다른 대출은 대부분 `NO_ELIGIBLE_PRODUCT`가 된다. seed 환경에서 실제 판정 건수를 확인하고, 필요하면 인접 기간 옵션 허용 여부를 시뮬레이션(585)과 함께 정한다.
 - [ ] 대출 판정은 API 11 `highInterest`를 재호출하므로 대출 상품 전량을 진단마다 읽는다(76개 상품·319 옵션 규모라 문제없음). 상품 수가 크게 늘면 재검토.
 
 ### MySQL 검증
 
 - [ ] 스키마 변경은 없다. H2 통합 테스트만 통과했고 MySQL JSON 컬럼(`current_value`의 BigDecimal·LocalDate 직렬화)은 기존 규칙과 같은 경로라 별도 실측하지 않았다. seed 환경에서 `POST /diagnoses` 한 번으로 두 규칙의 실제 결과를 확인한다.
+
+### 소비 증가 기준 변경 (S15P21D105-631, 2026-09-17)
+
+결정·검토 표: [diagnosis-627-plan.md](diagnosis-627-plan.md) §소비 증가 기준 변경. 계약: [diagnosis-api.md](diagnosis-api.md) 627 절, [recommendation-api.md](recommendation-api.md) §2·§5.1.
+
+- [x] 지난달 vs 직전 3개월 평균으로 변경. `DiagnosisRuleVersion` `v6-last-month-vs-3m`, 생성기 `627.3`. 기존 v5 진단·추천은 보존된다.
+- [x] 프리셋 400 방지: 감소액을 시뮬레이션 기준선 상한으로 자름(`REDUCTION_CAPPED_TO_SIMULATION_BASELINE`), 기준선 소비 없으면 `SIMULATION_BASELINE_UNAVAILABLE`.
+- [ ] **임계값 재검토**: 단월 비교는 탐지 건수가 늘 수 있다. 시연 서버(9월 거래 seed 적재 완료, 625)에서 `POST /diagnoses {forceRefresh:true}` 뒤 `CATEGORY_SPENDING_INCREASE` 건수를 v5 결과와 비교해 월 1만 원·20% 유지 여부를 정한다.
+- [ ] **연 절감액 표기**: `annualCostSaving = 단월 증가 × 12` 유지 + evidence `annualizationBasis`. FE·기획이 "지속 시 연간" 표기 또는 미표시를 정하면 `627.4`로 올린다. 추천 요약 `discovery.expectedAnnualCostSaving`도 같은 값을 합산한다.
+- [ ] FE 인계: `description` 문구 변경("지난달 소비가 직전 3개월 평균보다 N% 높아요."), `currentValue.lastMonthAmount` 신규, `recentPeriod.months = 1`·`baselinePeriod.months = 3`, `evidence.monthly[]` 4개월, 프리셋 `assumptions`에 새 코드 2종. v5 진단은 `ruleVersion`으로 구분해 문구를 분기할 것.
+- [ ] 별도 협의(FE): 가맹점별 증가 원인(`topMerchants[]`, 가맹점명 정규화 선행), 3단계 절약 계획(서버 데이터 아님), 목표 달성일 단축(추천 goal-impact 연결). 계획서 표 아래 판단 참고.
+- [ ] API 6 `GET /spending/anomalies`는 여전히 N개월 평균 대 N개월 평균이다. 두 화면 판정이 갈라지는 것을 FE·기획에 알리고, 가계부 화면도 단월 기준으로 맞출지 정한다.
 
 ## S15P21D105-589 — AI Coach (API 21)
 

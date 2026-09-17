@@ -58,7 +58,7 @@ goalId 없는 latest는 목표 연계 여부와 관계없이 본인의 최신 �
 | GOAL/SAVING_GOAL_RISK | GoalCalculationService 위험 요인. 기한 경과·연결계좌 없음·저축속도 부족·일정 지연을 목표당 한 문제의 근거로 보존 |
 | GOAL/SPENDING_GOAL_RISK | 기존 Goal 계산의 실제/예상 월 소비 초과. 목표당 한 문제 |
 | CASHFLOW/BALANCE_SHORTAGE | 최신 완료 예측의 baseDate가 진단 기준일과 같은 경우 저장된 위험을 변환. 예측별 위험당 한 문제 |
-| SPENDING/CATEGORY_SPENDING_INCREASE (627) | `SpendingIncreaseRule`. 카테고리별 최근 3개월 월평균 vs 이전 3개월 월평균(API 6 소비 급증과 같은 식·임계값 20% 초과·월 1만 원 이상). 카테고리당 한 문제 |
+| SPENDING/CATEGORY_SPENDING_INCREASE (627, 기준 변경 631) | `SpendingIncreaseRule`. 카테고리별 **지난달**(마지막 완료 월) vs **직전 3개월 월평균**(규칙 버전 `v6-last-month-vs-3m`부터. v5까지는 최근 3개월 평균 vs 이전 3개월 평균). 임계값은 API 6 소비 급증과 같은 20% 초과·월 1만 원 이상. 카테고리당 한 문제 |
 | LOAN/HIGH_INTEREST_RATE (627) | `HighInterestLoanRule`. API 11 고금리 점검(`LoanRateComparisonService.highInterest`)의 대상 대출 + 대환 절감액 추정. 대출당 한 문제 |
 
 목표 계산은 접수 기준일을 전달하는 readOnly 경로를 추가했다. 기존 Goal API의 잔액 갱신·이력 기록 계약은 유지하고 진단 경로는 이를 수행하지 않는다.
@@ -69,16 +69,26 @@ GoalCalculationService의 실제 판정 상수는 benchmarkValue에 보존한다
 당일 저장 예측에서도 원래 수집 단계의 누락 사유가 영속화되지 않으므로 coverage에 STORED_FORECAST_INPUT_COMPLETENESS_UNKNOWN을 기록한다.
 원본 forecastId·기간·위험 수치와 계산 버전을 inputSnapshot에 보존한다. 신규 규칙으로 기존 현금흐름 계산을 복제하지 않는다.
 
-### 627 카테고리 소비 증가 (SPENDING/CATEGORY_SPENDING_INCREASE)
+### 627 카테고리 소비 증가 (SPENDING/CATEGORY_SPENDING_INCREASE) — 631 기준 변경
 
-- 기간: **진행 중인 달을 뺀** 최근 3개월(기준월 −3 ~ −1) vs 이전 3개월(기준월 −6 ~ −4). 기준일이 속한 달은 며칠치 거래만 있어 월평균을 끌어내리므로 제외한다. API 6 `GET /spending/anomalies` 기본 조회(요청 기간 그대로)와 같은 달에 결과가 다를 수 있다.
-- 판정: `increaseAmount = 최근 월평균 − 이전 월평균 ≥ 10,000` 그리고 `increaseRatePercent > 20.0`(`SpendingAnalysisService`의 상수 재사용). 이전 기간 소비가 0인 카테고리(새 카테고리)는 판정 대상이 아니다. **미분류 거래(category_id NULL)는 판정하지 않는다** — 카테고리를 특정할 수 없어 추천·시뮬레이션 대상이 되지 못한다.
-- `consecutiveMonths`: 6개월 월별 금액을 최근 달부터 거슬러 올라가며 전달보다 큰 달이 이어진 수(최대 5, 거래 없는 달은 0원). 제목은 2 이상이면 "N개월째 늘고 있어요", 아니면 "늘었어요".
+- 기간(631, `v6-last-month-vs-3m`): **최근 기간 = 지난달 1개월**(기준월 −1, 마지막 완료 월), **기준 기간 = 직전 3개월**(기준월 −4 ~ −2). 예: 9월 진단 → 8월 vs 5~7월 평균.
+  기준일이 속한 달(진행 중)은 며칠치 거래만 있어 넣지 않는다. 627 최초 구현(v5까지)은 최근 3개월 평균(−3 ~ −1) vs 이전 3개월 평균(−6 ~ −4)이었다.
+  API 6 `GET /spending/anomalies`(N개월 평균 대 N개월 평균)와는 비교 기간이 다르므로 같은 달에 결과가 다를 수 있다.
+- 판정: `increaseAmount = 지난달 금액 − 직전 3개월 월평균 ≥ 10,000` 그리고 `increaseRatePercent > 20.0`(`SpendingAnalysisService`의 상수 재사용, 631에서도 유지).
+  단월 비교는 한 달 튄 값에 그대로 반응해 3개월 평균 비교보다 탐지 건수가 늘 수 있다. 임계값 조정은 시연 데이터 실측 뒤 결정(remaining-work 627 절).
+  기준 기간 평균이 0인 카테고리(새 카테고리)는 판정 대상이 아니다. **기준 3개월 중 거래가 없는 달은 0원으로 평균에 들어간다**(평균 희석 — 빼고 평균 내지 않는다).
+  **미분류 거래(category_id NULL)는 판정하지 않는다** — 카테고리를 특정할 수 없어 추천·시뮬레이션 대상이 되지 못한다.
+- `consecutiveMonths`: 기준 기간 첫 달부터 지난달까지 4개월 월별 금액을 최근 달부터 거슬러 올라가며 전달보다 큰 달이 이어진 수(최대 3, 거래 없는 달은 0원).
+  제목은 2 이상이면 "N개월째 늘고 있어요", 아니면 "늘었어요". **지난달이 전달보다 줄었어도 직전 3개월 평균보다 높으면 판정되며** 그때 이 값은 0이다.
+- 설명 문구: "지난달 소비가 직전 3개월 평균보다 N% 높아요." (v5: "최근 3개월 평균보다 N% 높아요.")
 - 심각도: `increaseRatePercent ≥ 50.0`이면 HIGH, 그 외 MEDIUM. **서비스 초기값이며 검증된 기준이 아니다.**
-- `currentValue`: `categoryId, categoryCode, categoryName, monthlyAverage, increaseAmount, increaseRatePercent, consecutiveMonths, recentPeriod{startMonth,endMonth,months}`.
-  `benchmarkValue`: `previousMonthlyAverage, thresholdRatePercent, minimumIncrease, highSeverityRatePercent, baselinePeriod`.
-  `evidence`: `ruleKey, targetId(=categoryId), categoryCode, monthly[]{month, amount}`(6개월). 546 `changes` 키는 `SPENDING:CATEGORY_SPENDING_INCREASE:<categoryId>`.
-- coverage `CATEGORY_SPENDING_INCREASE`: 이전 기간 소비가 있는 카테고리가 하나라도 있으면 `EVALUATED`, 없으면 `UNAVAILABLE/NO_BASELINE_SPENDING`. 스냅샷 `spendingIncrease`에 기간·임계값·판정 항목을 보존한다.
+- `currentValue`: `categoryId, categoryCode, categoryName, monthlyAverage, lastMonthAmount, increaseAmount, increaseRatePercent, consecutiveMonths, recentPeriod{startMonth,endMonth,months=1}`.
+  **JSON 키 이름은 v5와 같다.** `monthlyAverage`는 최근 기간 월평균이라 631부터 지난달 금액과 같고, 뜻을 드러내기 위해 `lastMonthAmount`를 같은 값으로 함께 싣는다(631 신규 키).
+  `benchmarkValue`: `previousMonthlyAverage`(직전 3개월 월평균)`, thresholdRatePercent, minimumIncrease, highSeverityRatePercent, baselinePeriod{…, months=3}`.
+  `evidence`: `ruleKey, targetId(=categoryId), categoryCode, monthly[]{month, amount}`(4개월: 기준 3 + 지난달 1. v5는 6개월). 546 `changes` 키는 `SPENDING:CATEGORY_SPENDING_INCREASE:<categoryId>`.
+- coverage `CATEGORY_SPENDING_INCREASE`: 기준 기간 소비가 있는 카테고리가 하나라도 있으면 `EVALUATED`, 없으면 `UNAVAILABLE/NO_BASELINE_SPENDING`. 스냅샷 `spendingIncrease`에 기간·임계값·판정 항목을 보존한다.
+- 버전 구분: 진단 `ruleVersion`이 `v6-last-month-vs-3m`이면 새 기준, `v5-copy-tone` 이하면 3개월 대 3개월이다. 진단 캐시는 버전별이라 v6 배포 뒤 첫 `POST /diagnoses`는 새 진단을 만들고
+  이전 진단·추천은 그대로 남는다. 546 `changes`는 두 버전 비교 시 `ruleVersionChanged = true`를 표시한다. 추천 생성기 버전은 `627.3`(recommendation-api.md).
 
 ### 627 고금리 대출 (LOAN/HIGH_INTEREST_RATE)
 

@@ -21,8 +21,11 @@ import com.ssafy.dodam.domain.recommendation.service.generator.HighInterestLoanG
 import com.ssafy.dodam.domain.recommendation.service.generator.SavingGoalRiskGenerator;
 import com.ssafy.dodam.domain.simulation.dto.request.LoanRefinanceSimulationRequest;
 import com.ssafy.dodam.domain.simulation.dto.request.SavingSimulationRequest;
+import com.ssafy.dodam.domain.simulation.dto.SimulationBaseline;
 import com.ssafy.dodam.domain.simulation.dto.request.SpendingSimulationRequest;
 import com.ssafy.dodam.domain.simulation.entity.SimulationType;
+import com.ssafy.dodam.domain.simulation.service.SimulationBaselineReader;
+import com.ssafy.dodam.domain.simulation.service.SimulationClock;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -35,7 +38,17 @@ class RecommendationSimulationPresetAssemblerTest {
     private static final String KEY = "0".repeat(64);
     private final ObjectMapper json = new ObjectMapper();
     private final RecommendationReasonRepository reasons = mock(RecommendationReasonRepository.class);
-    private final RecommendationSimulationPresetAssembler assembler = new RecommendationSimulationPresetAssembler(reasons);
+    private final SimulationBaselineReader baselines = mock(SimulationBaselineReader.class);
+    private final SimulationClock clock = mock(SimulationClock.class);
+    private final RecommendationSimulationPresetAssembler assembler = new RecommendationSimulationPresetAssembler(reasons, baselines, clock);
+
+    /** (631) 카테고리 소비 추천이 있을 때만 읽는 시뮬레이션 기준선. 직전 3개월 카테고리 월평균. */
+    private void baselineWith(Map<String, Long> spendingByCategory) {
+        given(clock.now()).willReturn(NOW);
+        given(baselines.read(7L, NOW.toLocalDate())).willReturn(new SimulationBaseline(
+                NOW.toLocalDate(), 3_000_000L, spendingByCategory.values().stream().mapToLong(Long::longValue).sum(),
+                spendingByCategory, List.of(), List.of(), List.of()));
+    }
 
     @Test
     void spendingPresetUsesMonthlyCostSavingWithoutCategory() {
@@ -128,6 +141,7 @@ class RecommendationSimulationPresetAssemblerTest {
         Map<Long, RecommendationSimulationPreset> presets = assembler.assembleAll(7L, List.of(spending, savingA, savingB));
 
         verify(reasons, times(1)).findAllOwnedIn(7L, List.of(2L, 5L));
+        verify(baselines, never()).read(anyLong(), any());
         assertThat(presets).hasSize(3);
         assertThat(presets.get(1L).type()).isEqualTo(SimulationType.SPENDING);
         assertThat(presets.get(2L).request()).isEqualTo(new SavingSimulationRequest(null, 3L, 400_000L, null));
@@ -142,6 +156,7 @@ class RecommendationSimulationPresetAssemblerTest {
         evidence.put("categoryCode", "FOOD").put("increaseAmount", 40_000L);
         given(reasons.findAllOwnedIn(7L, List.of(6L))).willReturn(List.of(
                 RecommendationReason.of(6L, CategorySpendingIncreaseGenerator.REASON_INCREASE, "증가", evidence)));
+        baselineWith(Map.of("FOOD", 140_000L));
 
         RecommendationSimulationPreset preset = assembler.assemble(7L, r);
 
@@ -149,12 +164,38 @@ class RecommendationSimulationPresetAssemblerTest {
         assertThat(preset.type()).isEqualTo(SimulationType.SPENDING);
         assertThat(preset.request()).isEqualTo(new SpendingSimulationRequest("FOOD", 40_000L, null));
         assertThat(preset.assumptions()).isEmpty();
+        verify(baselines, times(1)).read(7L, NOW.toLocalDate());
 
         given(reasons.findAllOwnedIn(7L, List.of(6L))).willReturn(List.of(
                 RecommendationReason.of(6L, CategorySpendingIncreaseGenerator.REASON_INCREASE, "증가", json.createObjectNode())));
         assertThat(assembler.assemble(7L, r).unavailableReason()).isEqualTo(RecommendationSimulationPreset.SNAPSHOT_FIELD_MISSING);
         Recommendation noAmount = recommendation(6L, "SPENDING", "REDUCE_CATEGORY_SPENDING", Recommendation.Effect.NONE);
         assertThat(assembler.assemble(7L, noAmount).unavailableReason()).isEqualTo(RecommendationSimulationPreset.EFFECT_AMOUNT_MISSING);
+    }
+
+    /** 631: 지난달만 튄 카테고리는 증가액이 시뮬레이션 기준선(직전 3개월 평균)을 넘을 수 있다. 그대로 보내면 400이라 상한으로 자른다. */
+    @Test
+    void categorySpendingPresetIsCappedToSimulationBaselineOrUnavailableWithoutBaseline() {
+        // 6·7월 0원, 8월 300,000 → 진단 증가액 290,000(기준 5~7월 평균 10,000). 시뮬레이션 기준선 6~8월 평균은 100,000.
+        Recommendation r = recommendation(8L, "SPENDING", "REDUCE_CATEGORY_SPENDING",
+                new Recommendation.Effect(290_000L, 3_480_000L, null, null, null, null, null, null));
+        ObjectNode evidence = json.createObjectNode();
+        evidence.put("categoryCode", "GAME").put("increaseAmount", 290_000L);
+        given(reasons.findAllOwnedIn(7L, List.of(8L))).willReturn(List.of(
+                RecommendationReason.of(8L, CategorySpendingIncreaseGenerator.REASON_INCREASE, "증가", evidence)));
+        baselineWith(Map.of("GAME", 100_000L, "FOOD", 140_000L));
+
+        RecommendationSimulationPreset capped = assembler.assemble(7L, r);
+
+        assertThat(capped.available()).isTrue();
+        assertThat(capped.request()).isEqualTo(new SpendingSimulationRequest("GAME", 100_000L, null));
+        assertThat(capped.assumptions()).containsExactly(RecommendationSimulationPreset.REDUCTION_CAPPED_TO_SIMULATION_BASELINE);
+
+        // 기준선에 그 카테고리 소비가 없으면(직전 3개월 거래 없음) 어떤 감소액도 400이라 프리셋을 만들지 않는다
+        baselineWith(Map.of("FOOD", 140_000L));
+        RecommendationSimulationPreset unavailable = assembler.assemble(7L, r);
+        assertThat(unavailable.available()).isFalse();
+        assertThat(unavailable.unavailableReason()).isEqualTo(RecommendationSimulationPreset.SIMULATION_BASELINE_UNAVAILABLE);
     }
 
     @Test
