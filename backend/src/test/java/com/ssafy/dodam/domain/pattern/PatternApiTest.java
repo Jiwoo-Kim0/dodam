@@ -299,7 +299,7 @@ class PatternApiTest {
         mvc.perform(post("/api/v1/patterns/analyze").with(user(owner.toString()))).andExpect(status().isCreated());
         Long other = newUser("타인");
 
-        for (String path : List.of("/me", "/me/spending", "/me/cashflow", "/me/priority-profile")) {
+        for (String path : List.of("/me", "/me/spending", "/me/cashflow", "/me/priority-profile", "/me/peer-comparison")) {
             mvc.perform(get("/api/v1/patterns" + path)).andExpect(status().isUnauthorized());
         }
         mvc.perform(post("/api/v1/patterns/analyze")).andExpect(status().isUnauthorized());
@@ -334,6 +334,90 @@ class PatternApiTest {
     // ---------- fixture ----------
 
     private enum Archetype { OWNER, SAVER, SPENDER, VOLATILE, BALANCED }
+
+    /** 632: 군집 안 위치(백분위·구간·문장)와 동년배 비교. 모집단 48명 + 본인은 모두 30대이고 성별은 교대로, 본인은 여성이다. */
+    @Test
+    void 군집_내_위치와_동년배_비교를_저장하고_축별로_조회한다() throws Exception {
+        seedPopulation();
+        // 인구통계가 없는 상태에서 분석하면 군집 위치는 있지만 동년배 비교는 DEMOGRAPHICS_MISSING이다
+        String first = mvc.perform(post("/api/v1/patterns/analyze").with(user(owner.toString())))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.analysis.clusterProfile.clusterLabel").value("저축 중심형"))
+                .andExpect(jsonPath("$.data.analysis.clusterProfile.positionSummary.feature").value("savingRate"))
+                .andExpect(jsonPath("$.data.analysis.clusterProfile.positionSummary.rankBand").isNotEmpty())
+                .andExpect(jsonPath("$.data.analysis.clusterProfile.features[1].percentileInCluster").isNumber())
+                .andExpect(jsonPath("$.data.analysis.clusterProfile.features[1].rankBand").isNotEmpty())
+                .andExpect(jsonPath("$.data.analysis.clusterProfile.insights").isArray())
+                .andReturn().getResponse().getContentAsString();
+        long firstId = json.readTree(first).at("/data/analysis/analysisId").asLong();
+        mvc.perform(get("/api/v1/patterns/me/peer-comparison").with(user(owner.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.analysisId").value(firstId))
+                .andExpect(jsonPath("$.data.modelVersion").value(ClusterModelProvider.MODEL_VERSION))
+                .andExpect(jsonPath("$.data.unavailableReason").value("DEMOGRAPHICS_MISSING"))
+                .andExpect(jsonPath("$.data.peerGroup").isEmpty())
+                .andExpect(jsonPath("$.data.features").isEmpty());
+        assertThat(analyses.findById(firstId).orElseThrow().getPeerStats().get("AGE_BAND_GENDER").get("unavailableReason").asText())
+                .isEqualTo("DEMOGRAPHICS_MISSING");
+
+        // 모집단·본인에게 생년월일(30대)·성별을 준 뒤 다시 분석하면 동년배 비교가 채워진다. 30대 여성 = 24 + 본인 = 25 < 30 → 30대(49)로 확장
+        jdbc.update("UPDATE `user` SET birth_date = '1990-05-01', gender = CASE WHEN MOD(user_id, 2) = 0 THEN 'FEMALE' ELSE 'MALE' END");
+        jdbc.update("UPDATE `user` SET gender = 'FEMALE' WHERE user_id = ?", owner);
+        modelProvider.invalidate();
+        String second = mvc.perform(post("/api/v1/patterns/analyze").with(user(owner.toString()))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"forceRefresh\":true}"))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        long secondId = json.readTree(second).at("/data/analysis/analysisId").asLong();
+
+        String body = mvc.perform(get("/api/v1/patterns/me/peer-comparison").with(user(owner.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.analysisId").value(secondId))
+                .andExpect(jsonPath("$.data.unavailableReason").doesNotExist())
+                .andExpect(jsonPath("$.data.peerGroup.dimension").value("AGE_BAND"))
+                .andExpect(jsonPath("$.data.peerGroup.fallbackFrom").value("AGE_BAND_GENDER"))
+                .andExpect(jsonPath("$.data.peerGroup.ageBand").value("30S"))
+                .andExpect(jsonPath("$.data.peerGroup.gender").isEmpty())
+                .andExpect(jsonPath("$.data.peerGroup.sampleSize").value(PER_ARCHETYPE * 4 + 1))
+                .andExpect(jsonPath("$.data.features.length()").value(5))
+                .andExpect(jsonPath("$.data.features[1].feature").value("savingRate"))
+                .andExpect(jsonPath("$.data.features[1].percentileInPeer").isNumber())
+                .andExpect(jsonPath("$.data.clusterShare.length()").value(4))
+                .andReturn().getResponse().getContentAsString();
+        JsonNode peer = json.readTree(body).at("/data");
+        // 저축률 0.3333은 저축형 12명(같은 값)만 같거나 높다 → 상위 25% 안
+        assertThat(peer.at("/features/1/percentileInPeer").asDouble()).isGreaterThanOrEqualTo(70.0);
+        assertThat(peer.at("/clusterShare")).anySatisfy(share -> {
+            assertThat(share.get("mine").asBoolean()).isTrue();
+            assertThat(share.get("clusterLabel").asText()).isEqualTo("저축 중심형");
+        });
+        assertThat(peer.at("/insights")).extracting(node -> node.get("code").asText()).contains("PEER_CLUSTER_SHARE");
+
+        // 군집 × 나이대: 30대 저축 중심형 13명 ≥ 10
+        mvc.perform(get("/api/v1/patterns/me/peer-comparison?dimension=CLUSTER_AGE_BAND").with(user(owner.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.peerGroup.dimension").value("CLUSTER_AGE_BAND"))
+                .andExpect(jsonPath("$.data.peerGroup.fallbackFrom").isEmpty())
+                .andExpect(jsonPath("$.data.peerGroup.sampleSize").value(PER_ARCHETYPE + 1));
+        // 성별만: 여성 25 < 30 → 전체 모집단으로 넓히고 사유를 남긴다
+        mvc.perform(get("/api/v1/patterns/me/peer-comparison?dimension=gender").with(user(owner.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.peerGroup.dimension").value("ALL"))
+                .andExpect(jsonPath("$.data.peerGroup.sampleSize").value(PER_ARCHETYPE * 4 + 1))
+                .andExpect(jsonPath("$.data.unavailableReason").value("PEER_GROUP_TOO_SMALL"));
+        mvc.perform(get("/api/v1/patterns/me/peer-comparison?dimension=ALL").with(user(owner.toString())))
+                .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/v1/patterns/me/peer-comparison?dimension=nope").with(user(owner.toString())))
+                .andExpect(status().isBadRequest());
+
+        // 규칙 기반 분석이 최신이면 군집이 없어 CLUSTER_NOT_ASSIGNED
+        mvc.perform(post("/api/v1/patterns/analyze").with(user(owner.toString()))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"analysisMode\":\"RULE_ONLY\",\"forceRefresh\":true}"))
+                .andExpect(status().isCreated());
+        mvc.perform(get("/api/v1/patterns/me/peer-comparison").with(user(owner.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.unavailableReason").value("CLUSTER_NOT_ASSIGNED"));
+    }
 
     private void seedPopulation() {
         for (int i = 0; i < PER_ARCHETYPE; i++) {

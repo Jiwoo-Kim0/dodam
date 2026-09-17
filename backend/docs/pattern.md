@@ -102,13 +102,15 @@ seed 사용자(`seed.kmeans.u0001` ~ `u4000`)는 `finance_connection` 행이 없
 
 ### 모델
 
-`spending-kmeans-v1`. **학습은 Python(scikit-learn), 배정·근거 생성은 Spring**이다. 입력은 전체 사용자(삭제 제외)의 월별 집계에서 만든 **비율 특징 5종**이고,
-거래 원문·식별정보·소득 절대값·연령·성별은 쓰지 않는다(기획안 14-6). 사용자 ID는 표본 수 계산에만 쓴다.
+`spending-kmeans-v2`(632. v1은 2026-09-14~09-17). **학습은 Python(scikit-learn), 배정·근거 생성은 Spring**이다. 입력은 전체 사용자(삭제 제외)의 월별 집계에서 만든 **비율 특징 5종**이고,
+거래 원문·식별정보·소득 절대값·연령·성별은 쓰지 않는다(기획안 14-6). 사용자 ID는 표본 수 계산과 동년배 집단 키(632)에만 쓴다.
+**연령·성별은 K-Means 입력이 아니라 비교 축이다**(632): 배정 뒤 "군집 안에서 내 위치"와 "같은 나이대 안에서 내 위치"를 분위 격자로 계산한다.
 
 ```
 MySQL 집계 ─▶ backend/ml/pattern/train_cluster_model.py (표준화 → 실루엣으로 k 선택 → KMeans k-means++)
-          ─▶ 모델 아티팩트 JSON (버전·학습 시각·기간·표본 수·표준화 파라미터·중심·군집별 p5~p95·라벨·실루엣)
-          ─▶ Spring ClusterModelArtifactLoader (app.pattern.model-location, 기본 classpath:ml/spending-kmeans-v1.json)
+          ─▶ 모델 아티팩트 JSON (버전·학습 시각·기간·표본 수·표준화 파라미터·중심·군집별 p5~p95·라벨·실루엣
+                              + v2: quantileGrid·군집별 quantiles·peerGroups[나이대·성별·군집×나이대]·population·demographics)
+          ─▶ Spring ClusterModelArtifactLoader (app.pattern.model-location, 기본 classpath:ml/spending-kmeans-v2.json)
           ─▶ ClusterModelProvider → ClusterAssigner 배정 → clusterProfile
 ```
 
@@ -170,6 +172,10 @@ seed 성향 4종(BALANCED·SPENDING_FOCUSED·SAVING_FOCUSED·VOLATILE)에 맞춘
 - `deviationScore`(기획안 군집 이탈 점수) = 특징별 deviation 평균(가중치 균등). 기획안의 특징별 가중치는 문서에 값이 없어 균등으로 둔다.
 - `modelSource`·`trainedBy`는 어느 경로의 모델이 배정했는지 남긴다(2026-09-14 이전 저장분은 null).
 - 이 JSON이 `cluster_stats_json`에 그대로 저장된다. 아티팩트의 `window`가 모델 기준 기간이므로 사용자 분석 기간과 다를 수 있다(비율 특징이라 비교는 유효).
+- (632) 모델에 분위 격자가 있으면(v2·인프로세스) `features[].percentileInCluster`(0~100)·`rankBand`, 라벨 대표 특징 1개의 `positionSummary{feature, displayName, percentileInCluster, rankBand}`,
+  `insights[]`(`CLUSTER_TOP_DECILE_SPENDING`: 소비율 ≥ 90, `CLUSTER_BOTTOM_DECILE_SAVING`: 저축률 < 10, `CLUSTER_VOLATILITY_HIGH`: 변동성 ≥ 90)가 붙는다.
+  "과소비 집단 중에서도 특히 많이" = 소비 집중형 + 소비율 백분위 ≥ 90. 대표 특징은 라벨을 준 특징(저축 중심형 → 저축률 등, 균형형은 소비율). v1 모델·이전 저장분은 null.
+  `deviation`(범위 밖 이탈)과 달리 백분위는 범위 안 순위라 두 값을 함께 준다.
 
 ### Fallback (HYBRID → RULE_ONLY 자동 전환)
 
@@ -232,6 +238,41 @@ clusterDeviationAlpha = 군집 결과가 있으면 0.2 × confidence, 없으면 
 
 적용한 규칙은 `assumptions`에 문장으로 나간다. 추천 엔진(API 16)이 이 값을 쓸지, 쓰면 어느 필드를 쓸지는 BE-B와 맞춘다(remaining-work 517 절).
 
+### GET /patterns/me/peer-comparison?dimension (632)
+
+최근 완료 분석에 **저장된** 동년배 비교를 돌려준다(`pattern_analysis.peer_stats_json`, V40). 분석 완료 시점에 네 축을 모두 계산해 굳혀 두므로 조회는
+재계산하지 않고, 모델을 다시 학습해도 과거 분석 결과가 바뀌지 않는다. 분석이 없으면 404 `PATTERN_ANALYSIS_NOT_FOUND`, 그 외는 모두 200이다.
+
+| `dimension` | 집단 | 표본 부족 시 |
+| --- | --- | --- |
+| `AGE_BAND_GENDER` (기본) | 같은 나이대·같은 성별 | → `AGE_BAND` → `ALL` |
+| `AGE_BAND` | 같은 나이대(10세 단위 `10S`~`60S_PLUS`, 분석 기준일의 만 나이) | → `ALL` |
+| `GENDER` | 같은 성별 | → `ALL` |
+| `CLUSTER_AGE_BAND` | 내 군집 안에서 같은 나이대 | → `AGE_BAND` → `ALL` |
+
+- 최소 표본은 `peer-min-sample-size`(30), 군집 × 나이대는 `cluster-peer-min-sample-size`(10). 실제로 쓴 축은 `peerGroup.dimension`, 원래 요청은
+  `peerGroup.fallbackFrom`. 전체 모집단(`ALL`)까지 넓혔으면 값은 주되 `unavailableReason = PEER_GROUP_TOO_SMALL`.
+- `features[]`: 특징별 `userValue`, 집단 `peerP25`·`peerMedian`·`peerP75`, `percentileInPeer`(0~100), `rankBand`(TOP_10 ≥ 90 / UPPER ≥ 75 / MIDDLE / LOWER < 25 / BOTTOM_10 < 10).
+  백분위는 "그 값 이하인 표본의 비율"이라 소비율 TOP_10은 많이 쓰는 쪽, 저축률 TOP_10은 많이 모으는 쪽이다. 같은 값이 여러 격자점에 걸친 평탄 구간은 가운데 백분위를 준다
+  (저축 0원이 표본 40%면 0이 아니라 20).
+- `clusterShare[]`: 집단 안 군집 구성비(`clusterId`, `clusterLabel`, `peerRatio`, `mine`). "20대 여성 10명 중 3명이 소비 집중형이고, 당신도 그중 한 명이에요"의 근거.
+- `insights[]`: 서버 템플릿 문장(`PatternInsightPolicy`). 코드 `PEER_TOP_DECILE_SPENDING`(소비율 ≥ 90), `PEER_ABOVE_MEDIAN_SPENDING`(≥ 50), `PEER_TOP_QUARTILE_SAVING`(저축률 ≥ 75),
+  `PEER_VOLATILITY_HIGH`(변동성 ≥ 90), `PEER_CLUSTER_SHARE`. FE 아이콘 분기와 AI 코치(589) 근거 키로 쓴다. 임계값은 서비스 초기값.
+- `unavailableReason`: `DEMOGRAPHICS_MISSING`(생년월일·성별 없음 — 나이대 축은 생년월일만, 성별 축은 성별만 필요), `PEER_GROUP_TOO_SMALL`, `MODEL_NOT_SUPPORTED`(v1 모델, 격자 없음),
+  `CLUSTER_NOT_ASSIGNED`(규칙 기반 분석), `NOT_COMPUTED`(632 이전 분석 — `forceRefresh`로 다시 분석하면 채워짐).
+- 나이대는 분석 시점 나이로 굳힌다. 생일이 지나 나이대가 바뀌면 다음 분석에서 갱신된다.
+
+```json
+{ "analysisId": 123, "modelVersion": "spending-kmeans-v2",
+  "peerGroup": { "dimension": "AGE_BAND", "ageBand": "30S", "gender": null, "clusterId": null, "sampleSize": 1052, "fallbackFrom": "AGE_BAND_GENDER" },
+  "features": [ { "feature": "spendingToIncomeRatio", "displayName": "소득 대비 소비율", "userValue": 0.95,
+                  "peerP25": 0.7, "peerMedian": 0.83, "peerP75": 0.94, "percentileInPeer": 77.4, "rankBand": "UPPER" } ],
+  "clusterShare": [ { "clusterId": 2, "clusterLabel": "소비 집중형", "peerRatio": 0.2554, "mine": true } ],
+  "insights": [ { "code": "PEER_ABOVE_MEDIAN_SPENDING", "feature": "spendingToIncomeRatio", "percentile": 77.4,
+                  "message": "같은 30대의 절반보다 소득 대비 소비율이 높아요(상위 23%)." },
+                { "code": "PEER_CLUSTER_SHARE", "clusterId": 2, "ratio": 0.2554, "message": "30대 10명 중 3명이 소비 집중형이고, 당신도 그중 한 명이에요." } ] }
+```
+
 ## 설정 (`app.pattern`)
 
 | 키 | 기본 | 의미 |
@@ -244,13 +285,17 @@ clusterDeviationAlpha = 군집 결과가 있으면 0.2 × confidence, 없으면 
 | `cluster-count` | 4 | K-Means k |
 | `model-ttl` | PT1H | 인프로세스 학습 모델 메모리 재사용 |
 | `lease-duration` | PT5M | 진행 중 접수 유효 시간 |
-| `model-location` | `classpath:ml/spending-kmeans-v1.json` | Python 학습 아티팩트 위치(Spring Resource). 비우면 사용 안 함 |
+| `model-location` | `classpath:ml/spending-kmeans-v2.json` | Python 학습 아티팩트 위치(Spring Resource). 비우면 사용 안 함 |
 | `train-in-process` | true | 아티팩트가 없을 때 Java 학습 허용. 운영 권장값 false |
+| `peer-min-sample-size` | 30 | (632) 동년배 집단(나이대·성별·나이대×성별) 최소 표본. 미달이면 더 넓은 축으로 확장 |
+| `cluster-peer-min-sample-size` | 10 | (632) 군집 × 나이대 집단 최소 표본 |
 
 ## 테스트
 
 - 단위: `KMeansClustererTest`(분리된 집단·결정성·표준편차 0), `ClusterLabelPolicyTest`, `PatternFeatureCalculatorTest`(기간·지표 정의·소득 출처·모집단 특징 조건),
   `PriorityProfileCalculatorTest`, `ClusterModelArtifactLoaderTest`(아티팩트 파싱·배정·출처·MODEL_NOT_AVAILABLE·형식 오류).
+  (632) `StatsPercentileRankTest`(분위 격자 보간·평탄 구간·격자 밖), `PeerComparisonCalculatorTest`(인프로세스 모델의 격자·집단, 축별 비교·표본 부족 확장·전체 모집단 fallback·
+  인구통계 없음·v1 모델, 나이대·구간 경계). `ClusterModelArtifactLoaderTest`가 배포 아티팩트 v2의 격자·집단·모집단 존재를 고정한다.
 - Python: `backend/ml/pattern/test_pattern_features.py` — Java 단위 테스트와 같은 입력·기대값(기간, 특징 벡터 0.6/0.25/0.5556/0.2222/0, 라벨 순서).
   `test_evaluate_cluster_model.py` — seed 라벨 복원·purity·혼동행렬·아티팩트 배정 계산.
 
@@ -275,7 +320,9 @@ clusterDeviationAlpha = 군집 결과가 있으면 0.2 × confidence, 없으면 
 | 배포 아티팩트 배정 | 4,000명 전원 설계 성향과 일치(혼동행렬 대각 1,000×4). 신뢰도 평균 0.61, p10 0.37, 신뢰도 < 0.2 비율 1.2% → 군집 노출 98.8% |
 | 학습·평가 시간 | 4,000명 집계 + 학습 약 7초, 평가(k 탐색·ablation·안정성 포함) 약 12초 |
 
-이 아티팩트가 `src/main/resources/ml/spending-kmeans-v1.json`으로 커밋되어 있고 prod 프로필은 `train-in-process: false`다.
+v1 아티팩트는 `spending-kmeans-v1.json`으로 커밋됐었고, **2026-09-17(632) 같은 seed(491에 생년월일·성별 보강 후 재적재)·같은 `--k 4`·기준일 2026-09-14로 다시 학습한 `spending-kmeans-v2.json`으로 교체했다.**
+군집 결과는 v1과 같다(4 × 1,000명, 실루엣 0.51, 라벨 4종). 추가된 것은 분위 격자·동년배 집단 34개(나이대 4종 × 전체·성별 2·군집 4 + 성별 2, 각 419~1,053명)·모집단 통계이며 파일은 95 KB다.
+prod 프로필은 `train-in-process: false`다.
 seed 사용자의 `finance_connection`이 없어도 분석은 되며(데이터 존재 우선). **2026-09-14 시연 서버 DB에 같은 seed를 적재한 뒤 서버 DB로 평가를 다시 돌려
 같은 결과(4,000명 전원 일치, 노출 98.8%)를 확인했다.**
 **주의**: seed는 성향별 소비 비율을 규칙으로 만든 합성 데이터라 ARI 1.0은 "설계를 되찾았다"는 뜻이지 실사용자 성능이 아니다.

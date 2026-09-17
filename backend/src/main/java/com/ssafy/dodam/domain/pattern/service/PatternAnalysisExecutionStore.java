@@ -78,6 +78,9 @@ public class PatternAnalysisExecutionStore {
             ClusterAttachment c = completion.cluster();
             analysis.attachCluster(c.modelVersion(), c.clusterId(), c.clusterLabel(), c.featureWindowMonths(), c.sampleSize(),
                     c.confidence(), c.clusterStats());
+            if (c.peerStats() != null) {
+                analysis.attachPeerStats(c.peerStats());
+            }
         }
         return analysis;
     }
@@ -118,6 +121,9 @@ public class PatternAnalysisExecutionStore {
     public record Completion(PatternFeatures features, JsonNode featureSummary, ClusterAttachment cluster) {
     }
 
+    /**
+     * @param peerStats (632) 차원별 동년배 비교 JSON. 모델에 분위 격자가 없어도 사유가 담긴 응답을 저장하므로 null이 아니다
+     */
     public record ClusterAttachment(
             String modelVersion,
             int clusterId,
@@ -125,7 +131,12 @@ public class PatternAnalysisExecutionStore {
             int featureWindowMonths,
             int sampleSize,
             double confidence,
-            JsonNode clusterStats
+            JsonNode clusterStats,
+            JsonNode peerStats
     ) {
+        public ClusterAttachment(String modelVersion, int clusterId, String clusterLabel, int featureWindowMonths, int sampleSize,
+                double confidence, JsonNode clusterStats) {
+            this(modelVersion, clusterId, clusterLabel, featureWindowMonths, sampleSize, confidence, clusterStats, null);
+        }
     }
 }

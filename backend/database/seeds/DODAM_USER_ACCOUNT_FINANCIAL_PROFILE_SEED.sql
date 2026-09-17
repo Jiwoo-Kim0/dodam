@@ -87,10 +87,17 @@ CREATE TABLE tmp_dodam_491_users (
   payday INT NOT NULL,
   fixed_expense BIGINT NOT NULL,
   emergency_fund_target BIGINT NOT NULL,
+  -- 632: demographics for peer comparison (user.birth_date / user.gender, V39).
+  -- Deterministic from sequence_no so every rerun yields the same values; both
+  -- alternate independently of the behavior cohort so no age band or gender
+  -- carries a cluster signal. Ages 22..59 at the 2026-09-07 snapshot.
+  birth_date DATE NOT NULL,
+  gender VARCHAR(10) NOT NULL,
   PRIMARY KEY (sequence_no),
   UNIQUE KEY uk_tmp_dodam_491_user_code (synthetic_user_code),
   UNIQUE KEY uk_tmp_dodam_491_user_email (email),
   CHECK (sequence_no BETWEEN 1 AND 4000),
+  CHECK (gender IN ('MALE', 'FEMALE')),
   CHECK (expected_behavior_code IN (
     'BALANCED', 'SPENDING_FOCUSED', 'SAVING_FOCUSED', 'VOLATILE'
   )),
@@ -119,7 +126,9 @@ INSERT INTO tmp_dodam_491_users (
   annual_income,
   payday,
   fixed_expense,
-  emergency_fund_target
+  emergency_fund_target,
+  birth_date,
+  gender
 )
 SELECT
   base.sequence_no,
@@ -152,7 +161,16 @@ SELECT
   END,
   FLOOR(base.monthly_income * (25 + MOD(base.sequence_no * 13, 41)) / 100),
   FLOOR(base.monthly_income * (25 + MOD(base.sequence_no * 13, 41)) / 100)
-    * (3 + MOD(base.sequence_no * 7, 4))
+    * (3 + MOD(base.sequence_no * 7, 4)),
+  -- Age 22..59 (22 + seq*7 mod 38) then a 0..364 day offset so birthdays spread
+  -- across the year. Bands at the snapshot: 20S 8/38, 30S·40S·50S 10/38 each.
+  DATE_SUB(
+    DATE_SUB('2026-09-07', INTERVAL (22 + MOD(base.sequence_no * 7, 38)) YEAR),
+    INTERVAL MOD(base.sequence_no * 11, 365) DAY
+  ),
+  -- Gender flips every block of four users so each gender holds all four
+  -- behavior cohorts (MOD(seq, 2) would pair FEMALE with cohorts 1·3 only).
+  CASE WHEN MOD(FLOOR((base.sequence_no - 1) / 4), 2) = 0 THEN 'MALE' ELSE 'FEMALE' END
 FROM (
   SELECT
     numbers.sequence_no,
@@ -306,10 +324,15 @@ START TRANSACTION;
 
 -- 1. User: email is the stable natural key. password_hash remains NULL for new
 -- rows because the application PasswordEncoder contract is not implemented.
+-- birth_date / gender (V39, 632) are written on insert and backfilled on rerun
+-- so a database seeded before V39 picks them up without re-creating users.
+-- credit_rating stays NULL: seed users are not finance-network members.
 INSERT INTO `user` (
   email,
   password_hash,
   name,
+  birth_date,
+  gender,
   role,
   created_at,
   updated_at,
@@ -319,6 +342,8 @@ SELECT
   seed.email,
   NULL,
   seed.name,
+  seed.birth_date,
+  seed.gender,
   'USER',
   '2026-09-07 09:00:00',
   '2026-09-07 09:00:00',
@@ -329,6 +354,8 @@ WHERE EXISTS (
 )
 ON DUPLICATE KEY UPDATE
   name = VALUES(name),
+  birth_date = VALUES(birth_date),
+  gender = VALUES(gender),
   role = VALUES(role),
   updated_at = VALUES(updated_at),
   deleted_at = NULL;
@@ -488,6 +515,24 @@ SELECT
 FROM tmp_dodam_491_users seed
 GROUP BY seed.expected_behavior_code
 ORDER BY seed.expected_behavior_code;
+
+-- Expected (632): every seeded user has birth_date and gender; four age bands
+-- (20S about 842, 30S/40S/50S about 1,053 each) split evenly by gender, and
+-- each band x gender cell holds all four behavior cohorts (no cluster signal).
+SELECT
+  CONCAT(FLOOR(TIMESTAMPDIFF(YEAR, user_row.birth_date, '2026-09-07') / 10) * 10, 'S') AS age_band,
+  user_row.gender,
+  COUNT(*) AS user_count,
+  COUNT(DISTINCT seed.expected_behavior_code) AS behavior_cohort_count
+FROM tmp_dodam_491_users seed
+JOIN `user` user_row ON user_row.email = seed.email
+GROUP BY age_band, user_row.gender
+ORDER BY age_band, user_row.gender;
+
+SELECT COUNT(*) AS missing_demographics_count
+FROM tmp_dodam_491_users seed
+JOIN `user` user_row ON user_row.email = seed.email
+WHERE user_row.birth_date IS NULL OR user_row.gender IS NULL;
 
 -- Expected: 0 missing 1:1 relationships and 0 missing primary accounts.
 SELECT COUNT(*) AS missing_user_relationship_count

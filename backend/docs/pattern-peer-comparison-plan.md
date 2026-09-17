@@ -121,7 +121,10 @@
 
 개인 식별 위험은 분포(분위)만 공개하므로 없다. 집단 최소 표본은 통계 신뢰성 때문이다.
 
-## 6. 선행 조건과 순서
+## 6. 선행 조건과 순서 — 2026-09-17 구현 상태
+
+1~6은 632 브랜치에서 구현했다(§2 응답 형식은 구현과 일치하며 `insights` 코드는 `CLUSTER_VOLATILITY_HIGH`가 추가됐다). 7의 코치 연동은 "또래 비교(서버 계산)" 섹션으로 들어갔고, FE 연동과 시연 서버 seed 재적재는 remaining-work §632에 남겼다.
+
 
 1. **seed 보강 (491)** — seed 4,000명에 생년월일·성별이 없다. 지금 학습하면 `peerGroups`가 비어 `DEMOGRAPHICS_MISSING`만 나온다. 코호트(BALANCED /
    SPENDING_FOCUSED / SAVING_FOCUSED / VOLATILE)별로 나이대·성별을 배분해 `DODAM_USER_ACCOUNT_FINANCIAL_PROFILE_SEED.sql`에 넣고 서버에 재적재한다.

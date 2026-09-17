@@ -12,6 +12,11 @@ import com.ssafy.dodam.domain.diagnosis.entity.IssueSeverity;
 import com.ssafy.dodam.domain.diagnosis.repository.DiagnosisIssueRepository;
 import com.ssafy.dodam.domain.diagnosis.repository.DiagnosisRepository;
 import com.ssafy.dodam.domain.pattern.dto.response.ClusterProfileResponse;
+import com.ssafy.dodam.domain.pattern.dto.response.PatternInsight;
+import com.ssafy.dodam.domain.pattern.dto.response.PeerComparisonResponse;
+import com.ssafy.dodam.domain.pattern.service.PeerComparisonCalculator;
+import com.ssafy.dodam.domain.pattern.service.PeerDimension;
+import com.ssafy.dodam.domain.user.entity.Gender;
 import com.ssafy.dodam.domain.pattern.entity.PatternAnalysis;
 import com.ssafy.dodam.domain.pattern.entity.PatternAnalysisStatus;
 import com.ssafy.dodam.domain.pattern.repository.PatternAnalysisRepository;
@@ -130,6 +135,7 @@ public class CoachFactAssembler {
         }
         clusterSection(userId).ifPresentOrElse(sections::add,
                 () -> notes.add("저장된 소비패턴 군집 결과가 없다. 또래·평균과의 비교를 언급하지 말 것."));
+        peerSection(userId).ifPresent(sections::add);
 
         return new CoachFacts(CoachTopic.FINANCIAL_SUMMARY,
                 "금융 진단 결과 요약(" + CoachFormat.dateTime(diagnosis.getCompletedAt()) + " 기준)", sections, notes);
@@ -311,6 +317,47 @@ public class CoachFactAssembler {
         addIfNotNull(facts, "분류 신뢰도", CoachFormat.percent(analysis.getConfidence()));
         facts.addAll(clusterFeatureFacts(analysis.getClusterStats()));
         return Optional.of(new Section("소비패턴 군집(서버 계산)", facts));
+    }
+
+    /**
+     * 632 동년배 비교. 분석 완료 시점에 저장된 {@code peer_stats_json}의 기본 축(나이대×성별, 표본 부족 시 확장된 축)만 옮긴다.
+     * 서버가 만든 문장·백분위를 그대로 사실로 주고, 비교할 수 없는 사유가 있으면 그 사실만 준다 — 모델이 또래 비교를 지어내지 않게.
+     */
+    private Optional<Section> peerSection(Long userId) {
+        Optional<PatternAnalysis> latest =
+                patterns.findFirstByUserIdAndStatusOrderByAnalyzedAtDescIdDesc(userId, PatternAnalysisStatus.COMPLETED);
+        if (latest.isEmpty() || latest.get().getPeerStats() == null || latest.get().getPeerStats().isNull()) {
+            return Optional.empty();
+        }
+        JsonNode node = latest.get().getPeerStats().get(PeerDimension.DEFAULT.name());
+        if (node == null || node.isNull()) {
+            return Optional.empty();
+        }
+        PeerComparisonResponse peer;
+        try {
+            peer = json.treeToValue(node, PeerComparisonResponse.class);
+        } catch (Exception exception) {
+            log.warn("Stored peer comparison is not readable; peer section is skipped");
+            return Optional.empty();
+        }
+        List<Fact> facts = new ArrayList<>();
+        if (peer.peerGroup() == null) {
+            facts.add(new Fact("또래 비교 불가 사유(서버 판정)", peer.unavailableReason()));
+            return Optional.of(new Section("또래 비교(서버 계산)", facts));
+        }
+        facts.add(new Fact("비교 집단", PeerComparisonCalculator.groupDisplay(PeerDimension.valueOf(peer.peerGroup().dimension()),
+                peer.peerGroup().ageBand(), peer.peerGroup().gender() == null ? null : Gender.valueOf(peer.peerGroup().gender()),
+                latest.get().getClusterLabel()) + " " + CoachFormat.count(peer.peerGroup().sampleSize()) + "명"));
+        if (peer.unavailableReason() != null) {
+            facts.add(new Fact("비교 집단 참고", "요청 집단 표본이 부족해 더 넓은 집단으로 비교함"));
+        }
+        for (PeerComparisonResponse.PeerFeature feature : peer.features()) {
+            facts.add(new Fact(feature.displayName() + " 또래 백분위", CoachFormat.number(feature.percentileInPeer())));
+        }
+        for (PatternInsight insight : peer.insights()) {
+            facts.add(new Fact("또래 비교 문장(서버 생성)", insight.message()));
+        }
+        return Optional.of(new Section("또래 비교(서버 계산)", facts));
     }
 
     private List<Fact> clusterFeatureFacts(JsonNode clusterStats) {

@@ -3,6 +3,7 @@ package com.ssafy.dodam.domain.pattern.service;
 import com.ssafy.dodam.domain.pattern.dto.response.CashflowPatternResponse;
 import com.ssafy.dodam.domain.pattern.dto.response.ClusterProfileResponse;
 import com.ssafy.dodam.domain.pattern.dto.response.PatternAnalysisResponse;
+import com.ssafy.dodam.domain.pattern.dto.response.PeerComparisonResponse;
 import com.ssafy.dodam.domain.pattern.dto.response.PatternFeatureSummary;
 import com.ssafy.dodam.domain.pattern.dto.response.PriorityProfileResponse;
 import com.ssafy.dodam.domain.pattern.dto.response.SpendingPatternResponse;
@@ -142,6 +143,25 @@ public class PatternQueryService {
         return priority.calculate("LIVE_CALCULATION", null, clock.now(), new PriorityProfileCalculator.Inputs(
                 f.debtBurden(), f.liquidityLevel(), f.discretionarySpendingRatio(), spendingToIncome, savingRate,
                 f.savingConsistency(), f.fixedExpenseRatio(), null, null));
+    }
+
+    /**
+     * 632 동년배 비교. 분석 완료 시점에 굳힌 {@code peer_stats_json}만 읽는다. 군집이 없는 분석은 {@code CLUSTER_NOT_ASSIGNED},
+     * 632 이전 분석(저장값 없음)은 {@code NOT_COMPUTED} — 다시 분석하면 채워진다.
+     */
+    public PeerComparisonResponse getPeerComparison(Long userId, String dimension) {
+        PeerDimension requested = PeerDimension.parseOrDefault(dimension);
+        PatternAnalysis analysis = latestCompleted(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PATTERN_ANALYSIS_NOT_FOUND));
+        if (!analysis.hasCluster()) {
+            return PeerComparisonResponse.unavailable(analysis.getId(), analysis.getModelVersion(), PeerComparisonResponse.CLUSTER_NOT_ASSIGNED);
+        }
+        if (analysis.getPeerStats() == null || analysis.getPeerStats().isNull()) {
+            return PeerComparisonResponse.unavailable(analysis.getId(), analysis.getModelVersion(), PeerComparisonResponse.NOT_COMPUTED);
+        }
+        return assembler.read(analysis.getPeerStats().get(requested.name()), PeerComparisonResponse.class)
+                .orElseGet(() -> PeerComparisonResponse.unavailable(analysis.getId(), analysis.getModelVersion(),
+                        PeerComparisonResponse.NOT_COMPUTED));
     }
 
     private Optional<PatternAnalysis> latestCompleted(Long userId) {

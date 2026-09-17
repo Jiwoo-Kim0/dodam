@@ -4,6 +4,7 @@ import com.ssafy.dodam.domain.pattern.dto.request.AnalyzePatternRequest;
 import com.ssafy.dodam.domain.pattern.dto.response.AnalyzePatternResult;
 import com.ssafy.dodam.domain.pattern.dto.response.CashflowPatternResponse;
 import com.ssafy.dodam.domain.pattern.dto.response.PatternAnalysisResponse;
+import com.ssafy.dodam.domain.pattern.dto.response.PeerComparisonResponse;
 import com.ssafy.dodam.domain.pattern.dto.response.PriorityProfileResponse;
 import com.ssafy.dodam.domain.pattern.dto.response.SpendingPatternResponse;
 import com.ssafy.dodam.domain.pattern.service.PatternAnalysisRunner;
@@ -67,5 +68,15 @@ public class PatternController {
     @GetMapping("/me/priority-profile")
     public ApiResponse<PriorityProfileResponse> priorityProfile(Authentication authentication) {
         return ApiResponse.success(query.getPriorityProfile(users.resolve(authentication)));
+    }
+
+    /**
+     * 632 동년배 비교. 최근 완료 분석에 저장된 값을 축별로 돌려준다. {@code dimension}은 AGE_BAND / GENDER / AGE_BAND_GENDER(기본) /
+     * CLUSTER_AGE_BAND. 분석이 없으면 404, 군집 미배정·인구통계 없음·표본 부족은 200 + {@code unavailableReason}이다.
+     */
+    @GetMapping("/me/peer-comparison")
+    public ApiResponse<PeerComparisonResponse> peerComparison(
+            @RequestParam(required = false) String dimension, Authentication authentication) {
+        return ApiResponse.success(query.getPeerComparison(users.resolve(authentication), dimension));
     }
 }
