@@ -2,6 +2,7 @@ import { StyleSheet } from 'react-native';
 
 import {
   colors,
+  componentSize,
   fontFamily,
   fontSize,
   radius,
@@ -162,6 +163,62 @@ export const styles = StyleSheet.create({
   },
   categoryItem: {
     gap: spacing[2],
+    borderRadius: radius.small,
+    paddingVertical: spacing[1],
+  },
+  fixedMonthSelector: {
+    zIndex: 12,
+    backgroundColor: colors.background,
+    paddingVertical: spacing[1],
+  },
+  headerMore: {
+    color: colors.textPrimary,
+    fontFamily: fontFamily.semiBold,
+    fontSize: 18,
+    lineHeight: 22,
+    letterSpacing: 2,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+  },
+  headerIconAction: {
+    width: componentSize.touchTarget,
+    height: componentSize.touchTarget,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerMenu: {
+    position: 'absolute',
+    right: semanticSpacing.screenMargin,
+    top: 52,
+    zIndex: 20,
+    minWidth: 148,
+    paddingVertical: spacing[1],
+    borderRadius: radius.default,
+    backgroundColor: colors.white,
+    elevation: 8,
+    shadowColor: colors.textPrimary,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+  },
+  headerMenuItem: {
+    minHeight: componentSize.touchTarget,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing[4],
+  },
+  headerMenuIcon: {
+    width: 28,
+    color: colors.textSecondary,
+    fontSize: 16,
+  },
+  headerMenuLabel: {
+    ...typography.body2,
+    color: colors.textPrimary,
+    fontFamily: fontFamily.medium,
   },
   categoryItemHeader: {
     alignItems: 'center',
@@ -486,6 +543,31 @@ export const styles = StyleSheet.create({
   calendarDaySelected: {
     backgroundColor: colors.primary.lightGreen,
   },
+  overviewCalendar: {
+    paddingHorizontal: spacing[1],
+  },
+  overviewCalendarCell: {
+    alignItems: 'center',
+    minHeight: 52,
+    paddingTop: spacing[1],
+    width: '14.2857%',
+  },
+  stickyCalendar: {
+    position: 'absolute',
+    top: 104,
+    right: semanticSpacing.screenMargin,
+    left: semanticSpacing.screenMargin,
+    zIndex: 15,
+    paddingHorizontal: spacing[5],
+    paddingTop: spacing[3],
+    paddingBottom: spacing[2],
+    borderRadius: radius.card,
+    backgroundColor: colors.white,
+  },
+  calendarDayToday: {
+    borderColor: colors.primary.green,
+    borderWidth: 1,
+  },
   calendarDaySelectedText: {
     color: colors.home.assetChart.strong,
     fontFamily: fontFamily.semiBold,
@@ -497,6 +579,9 @@ export const styles = StyleSheet.create({
   },
   calendarDayOutside: {
     color: colors.ledger.calendarMuted,
+  },
+  calendarDayDisabled: {
+    color: colors.textTertiary,
   },
   calendarTotal: {
     fontFamily: fontFamily.regular,
@@ -510,6 +595,31 @@ export const styles = StyleSheet.create({
   },
   calendarNeutral: {
     color: colors.textTertiary,
+  },
+  calendarToggle: {
+    width: 32,
+    height: 28,
+    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.round,
+  },
+  calendarDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginHorizontal: spacing[2],
+    backgroundColor: colors.divider,
+  },
+  activeFilterChip: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[1],
+    borderRadius: radius.round,
+    backgroundColor: colors.primary.lightGreen,
+  },
+  activeFilterLabel: {
+    ...typography.caption,
+    color: colors.primary.green,
+    fontFamily: fontFamily.semiBold,
   },
   calendarFeedGroup: {
     paddingHorizontal: spacing[2],

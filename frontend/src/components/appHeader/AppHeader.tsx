@@ -17,6 +17,7 @@ type AppHeaderProps = {
   backDisabled?: boolean;
   titleAccessory?: ReactNode;
   onBackPress?: () => void;
+  sideWidth?: number;
 };
 
 export function AppHeader({
@@ -28,6 +29,7 @@ export function AppHeader({
   backDisabled = false,
   titleAccessory,
   onBackPress,
+  sideWidth,
 }: AppHeaderProps) {
   const router = useRouter();
 
@@ -61,7 +63,7 @@ export function AppHeader({
 
   return (
     <View style={styles.container}>
-      <View style={styles.side}>{leftContent}</View>
+      <View style={[styles.side, sideWidth ? { width: sideWidth } : undefined]}>{leftContent}</View>
       <View style={styles.titleGroup}>
         <View style={styles.titleLine}>
           <Text numberOfLines={1} style={styles.title}>
@@ -71,7 +73,7 @@ export function AppHeader({
         </View>
         {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
       </View>
-      <View style={[styles.side, styles.right]}>{right}</View>
+      <View style={[styles.side, styles.right, sideWidth ? { width: sideWidth } : undefined]}>{right}</View>
     </View>
   );
 }
