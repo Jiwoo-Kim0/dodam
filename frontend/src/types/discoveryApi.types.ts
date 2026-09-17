@@ -82,3 +82,21 @@ export interface RecommendationGenerationApiResponse {
   created: number;
   reused: number;
 }
+
+export interface RecommendationDiscoverySummaryApiResponse {
+  diagnosisId: number;
+  issueCount: number;
+  openRecommendationCount: number;
+  expectedAnnualCostSaving: number | null;
+  expectedGoalAdvanceDays: number | null;
+  notes: readonly string[];
+}
+
+export interface RecommendationSummaryApiResponse {
+  total: number;
+  byStatus: Readonly<Record<string, number>>;
+  byDomain: Readonly<Record<string, number>>;
+  expectedMonthlyCostSaving: number;
+  expectedContributionAmount: number;
+  discovery: RecommendationDiscoverySummaryApiResponse | null;
+}
