@@ -5,18 +5,24 @@ import { colors } from '@/styles';
 import { styles } from './ScreenState.styles';
 
 interface ScreenStateProps {
+  actionLabel?: string;
   description: string;
   isLoading?: boolean;
+  onAction?: () => void;
   title?: string;
   onRetry?: () => void;
 }
 
 export function ScreenState({
+  actionLabel,
   description,
   isLoading = false,
+  onAction,
   title,
   onRetry,
 }: ScreenStateProps) {
+  const handleAction = onAction ?? onRetry;
+
   return (
     <View style={styles.container}>
       {isLoading ? (
@@ -26,12 +32,12 @@ export function ScreenState({
       <Text accessibilityRole={onRetry ? 'alert' : undefined} style={styles.description}>
         {description}
       </Text>
-      {onRetry ? (
+      {handleAction ? (
         <Pressable
           accessibilityRole="button"
-          onPress={onRetry}
+          onPress={handleAction}
           style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}>
-          <Text style={styles.retryLabel}>다시 시도</Text>
+          <Text style={styles.retryLabel}>{actionLabel ?? '다시 시도'}</Text>
         </Pressable>
       ) : null}
     </View>
