@@ -15,6 +15,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ssafy.dodam.domain.coach.service.CoachAnswerCache;
+import com.ssafy.dodam.domain.coach.service.CoachCallRateLimiter;
 import com.ssafy.dodam.domain.coach.service.CoachGenerationException;
 import com.ssafy.dodam.domain.coach.service.CoachTextGenerator;
 import com.ssafy.dodam.domain.diagnosis.entity.Diagnosis;
@@ -65,6 +66,7 @@ class CoachApiTest {
     @Autowired RecommendationReasonRepository reasons;
     @MockitoBean CoachTextGenerator generator;
     @MockitoBean CoachAnswerCache cache;
+    @MockitoBean CoachCallRateLimiter budget;
 
     private Long owner;
     private Long other;
@@ -76,6 +78,7 @@ class CoachApiTest {
     void setup() {
         given(generator.isAvailable()).willReturn(false);
         given(generator.modelName()).willReturn("gpt-5.4-mini");
+        given(budget.tryAcquire(any())).willReturn(true);
 
         owner = users.save(User.createLocalUser(UUID.randomUUID() + "@example.com", "unused", "코치")).getId();
         other = users.save(User.createLocalUser(UUID.randomUUID() + "@example.com", "unused", "다른 사용자")).getId();
@@ -287,6 +290,37 @@ class CoachApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.source").value("TEMPLATE"))
                 .andExpect(jsonPath("$.data.degradedReason").value("AI_UNVERIFIED_NUMBER"));
+    }
+
+    // ---------- 호출 예산 (사용자별 레이트 리밋) ----------
+
+    @Test
+    void usesTemplateWhenTheUserRanOutOfCallBudget() throws Exception {
+        given(generator.isAvailable()).willReturn(true);
+        given(budget.tryAcquire(owner)).willReturn(false);
+
+        mvc.perform(post("/api/v1/coach/financial-summary").with(user(owner.toString())).contentType(JSON).content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.source").value("TEMPLATE"))
+                .andExpect(jsonPath("$.data.degradedReason").value("RATE_LIMITED"))
+                // 막혀도 화면은 그대로 그려진다. 달라지는 것은 문장을 누가 썼는지뿐이다.
+                .andExpect(jsonPath("$.data.message").isNotEmpty())
+                .andExpect(jsonPath("$.data.highlights").isNotEmpty())
+                .andExpect(jsonPath("$.data.facts.sections[0].facts[3].value").value("2건"));
+        verify(generator, never()).generate(any(), any());
+    }
+
+    @Test
+    void cacheHitDoesNotSpendCallBudget() throws Exception {
+        given(generator.isAvailable()).willReturn(true);
+        given(cache.find(any())).willReturn(
+                Optional.of(new CoachAnswerCache.Entry("저장해 둔 설명입니다.", "gpt-5.4-mini")));
+
+        mvc.perform(post("/api/v1/coach/financial-summary").with(user(owner.toString())).contentType(JSON).content("{}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.source").value("AI"));
+        // 캐시 적중은 과금이 없다. 예산을 깎으면 화면을 다시 열었다는 이유로 사용자를 막게 된다.
+        verify(budget, never()).tryAcquire(any());
     }
 
     // ---------- 응답 캐시 ----------

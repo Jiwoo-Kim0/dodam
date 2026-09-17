@@ -68,6 +68,13 @@ app:
     # TTL은 무효화 수단이 아니라 "이상한 문장이 생성됐을 때의 잔존 상한"이다.
     cache-enabled: true
     cache-ttl: PT1H
+    # 사용자별 외부 AI 호출 상한(backend/docs/ai-coach.md 12절). 코치는 외부 과금이 걸린 유일한 경로인데
+    # nginx 레이트 리밋은 IP 기준이고 일반 API 버킷이 초당 20건이라 비용 관점의 제한이 아니었다.
+    # 캐시 적중은 과금이 없으므로 세지 않는다 — 새로 생성하는 호출만 이 상한을 쓴다.
+    rate-limit:
+      enabled: true
+      permits: 40
+      window: PT1H
 
   idempotency:
     # 쓰기 API 재전송 방지(backend/docs/minus-account.md "재전송 방지"). Idempotency-Key 처리 결과를 Redis에 두는 기간이다.

@@ -622,3 +622,221 @@ FE 문서의 "기대 결과"와 사실상 같은 형태다. 3종 모두 `source=
 월 347만원 저축·월 364만원 감축은 소득(400만원) 대비 실행 불가능한 수치다. 문구가 아니라
 **시드의 목표 금액이 소득에 비해 과하게 설정된 것**으로 보인다. 589 범위 밖이며 목표 시드(493) 소관.
 시연에서 눈에 띌 항목이라 아래 남은 것에 등록한다.
+
+## 2026-09-17 — 589 하드닝 (S15P21D105-589)
+
+두 항목이다. 둘 다 "동작은 하는데 확인할 방법이 없다"는 같은 성격의 문제다.
+
+| 항목 | 내용 |
+| --- | --- |
+| Redis 연결 확인 | 프로젝트 첫 Redis 사용인데 **실패를 삼켜** 틀려도 티가 안 난다 |
+| 코치 레이트 리밋 | **외부 과금이 걸린 유일한 엔드포인트**인데 사용자별 호출 제한이 없다 |
+
+### 4. Redis 연결 확인 — 삼켜진 실패를 어떻게 관측하나
+
+#### 문제
+
+Redis를 쓰는 곳은 두 군데다: 코치 응답 캐시(`RedisCoachAnswerCache`)와 멱등 키 가드
+(`IdempotencyKeyGuard`). **둘 다 예외를 삼킨다.** 캐시는 기능이 아니라 비용 절감 장치이므로 옳은
+설계지만, 대가가 있다.
+
+- 비밀번호·호스트가 틀려도 **응답은 전부 정상이다.** 캐시가 100% 미스로 돌며 요금만 는다.
+- H2로 도는 테스트는 이걸 절대 잡지 못한다. 접속 설정은 프로젝트 초기부터 있었지만 Java 사용처가
+  없어, **실제로 연결되는지 한 번도 검증된 적이 없었다.**
+
+#### 확인 방법 4가지를 놓고 고른 것
+
+| 방법 | 판단 |
+| --- | --- |
+| 로그에서 `Coach cache lookup failed` grep | **불완전하다.** 0건이 "정상"인지 "그 경로를 아무도 안 탐"인지 구분이 안 된다 |
+| `redis-cli`로 `coach:*` 키 직접 조회 | 가장 직접적이지만 **비밀번호를 읽어야 한다** → 이번 환경에서 운영 읽기 권한에 막혀 실행 못 함 |
+| `/actuator/health` | 간접 증거로 유효 (아래) |
+| **같은 요청을 연달아 보내 응답 시간 비교** | **채택.** 캐시 적중 여부가 지연으로 드러난다 |
+
+#### 실행과 결과
+
+시연 계정(U0002)으로 `POST /api/v1/coach/financial-summary`를 세 번 연속 호출했다.
+
+```
+call1  http=200  time=2.294054s
+call2  http=200  time=0.108664s
+call3  http=200  time=0.105029s
+call1..3  source=AI  model=gpt-5.4-mini  len=78  (문장 동일)
+```
+
+**1회차만 2.29초, 이후 0.10초. 문장은 세 번 모두 같다.** 저장과 조회가 모두 동작한다는 뜻이다.
+Redis 쓰기가 실패했다면 매 호출이 2초대에 매번 과금됐을 것이고, 읽기가 실패했다면 문장이 매번
+달라졌을 것이다(모델 출력은 완전히 결정적이지 않다).
+
+보조 증거도 맞아떨어진다.
+
+- `docker logs backend --since 24h | grep -c "Coach cache lookup failed"` → **0**, write 실패도 **0**
+- `/actuator/health` → `{"status":"UP"}`. Spring Boot는 `RedisConnectionFactory` 빈이 있으면
+  Redis 헬스 인디케이터를 자동으로 켠다 — 실제로 우리 `application-test.yml`은 테스트를 위해
+  `management.health.redis.enabled: false`로 **꺼야 했다.** 즉 운영에서 UP은 PING이 통과했다는 뜻이다.
+- `docker compose`가 redis 컨테이너의 `--requirepass`와 backend의 `REDIS_PASSWORD`에 **같은 `.env`
+  변수**를 넣는다 → 비밀번호 불일치는 구조적으로 발생하기 어렵다.
+
+#### 확인으로 끝내지 않고 관측 가능하게 만들었다 — `RedisStartupCheck`
+
+이번엔 확인했지만, **다음 배포에서 또 같은 질문을 하게 된다.** 그리고 로그 grep은 여전히 0건의 의미를
+구분하지 못한다. 그래서 기동 직후 PING 한 번을 남기는 컴포넌트를 추가했다.
+
+```
+INFO  Redis is reachable (ping=PONG). Coach answer cache and idempotency guard are backed by Redis.
+WARN  Redis is NOT reachable: ... The coach answer cache will miss on every call (each call is billed)
+      and the idempotency guard will pass requests through unprotected.
+```
+
+- 배포마다 `docker logs backend | grep "Redis "` **한 줄**로 끝난다. "안 써서 조용한 것"과 "붙어서
+  조용한 것"이 구분된다.
+- **기동은 막지 않는다.** Redis는 어떤 기능에도 필수가 아니다 — 없으면 비싸고 보호가 약해질 뿐
+  화면은 전부 동작한다. 기동을 막으면 대가가 훨씬 크다. 그래서 ERROR가 아니라 WARN이다.
+- 테스트에서는 끈다(`app.redis.startup-check.enabled: false`). 안 끄면 모든 `@SpringBootTest`가
+  Redis 연결 타임아웃만큼 느려진다.
+
+#### 덤으로 드러난 것 — 멱등 키 가드의 주석이 이제 낡았다
+
+`IdempotencyKeyGuard`의 주석에는 *"Redis 연결이 실제로 검증된 적이 없어 닫아 두면 상환 자체가 막힐 수
+있다"*가 fail-open의 근거로 적혀 있다. 그 전제가 오늘 깨졌다. 다만 지금 바꾸면 상환 API의 실패 모드가
+달라지므로 589 범위 밖으로 두고 아래 남은 것에 적는다.
+
+### 5. 코치 레이트 리밋 — 무엇을 막으려는 것인지부터
+
+#### 위협 모델
+
+공격자가 아니다. 세 엔드포인트 모두 인증이 필요하다. 실제로 일어날 일은 **FE의 렌더 루프나 재시도
+스크립트가 같은 호출을 반복해 요금이 폭주하는 것**이다. 즉 이건 보안 문제라기보다 **비용 문제**다.
+
+nginx에 레이트 리밋이 있지만 이 문제를 풀지 못한다.
+
+| | nginx `api_general` | 필요한 것 |
+| --- | --- | --- |
+| 기준 | IP(`$binary_remote_addr`) | 로그인한 **사용자** |
+| 한도 | 초당 20건 = **시간당 72,000건** | 비용이 되는 수준 |
+| 세는 대상 | 모든 HTTP 요청 | **과금되는 호출** |
+| 목적 | 플러딩 차단 | 비용 상한 |
+
+게다가 IP 기준은 캠퍼스망처럼 팀 전체가 같은 공인 IP로 나가는 환경에서 엉뚱한 사람을 막는다
+(day-08 13절에서 로그인 버킷 때문에 이미 겪은 문제다).
+
+#### 결정 1 — 구현 위치와 방식
+
+| 선택지 | 버린 이유 / 고른 이유 |
+| --- | --- |
+| nginx `limit_req`에 `/api/v1/coach/` 버킷 추가 | 30초면 끝나지만 **IP 기준**이라 사용자별이 안 되고, 재시작·창 관리가 없어 비용 상한이 되지 못한다 |
+| Bucket4j (+ Redis) | 기능은 충분하나 **이 하나를 위해 의존성을 추가**한다. 토큰 버킷의 정교함이 필요한 상황이 아니다 |
+| Resilience4j `RateLimiter` | 인메모리 전용이라 **재시작하면 초기화**되고 사용자별 키 관리를 결국 직접 해야 한다 |
+| **Redis 고정 창 카운터 직접 구현** | **채택.** 이미 있는 Redis를 쓰고(오늘 검증도 끝났다) 코드가 40줄이다. 재시작·다중 인스턴스에서도 한도가 유지된다 |
+
+#### 결정 2 — 무엇을 셀 것인가: 요청이 아니라 "돈이 나가는 호출"
+
+이게 이번 구현에서 제일 중요한 판단이다. 컨트롤러나 서블릿 필터에서 HTTP 요청 단위로 세는 게 훨씬
+쉽지만, 그렇게 하면 **과금되지 않는 호출까지 세어 정상 사용자를 먼저 막는다.**
+
+- 캐시 적중은 돈이 들지 않는다 → 화면을 다시 열었다는 이유로 429를 주게 된다.
+- `app.ai.enabled=false`거나 민감정보 검사에 걸려 **애초에 외부로 나가지 않은** 요청도 마찬가지다.
+
+그래서 예산은 `CoachService`가 **외부 호출 직전에만** 깎는다. 상한의 목적이 비용이면 세는 단위도
+비용이어야 한다. (호출이 실패해도 되돌리지는 않는다 — 공급자 입장에선 시도된 호출이다.)
+
+#### 결정 3 — 한도를 넘으면 429가 아니라 200 + 템플릿
+
+코치는 원래부터 "어떤 실패에서도 200"이다. 문장은 데이터의 표현 계층이고 수치는 전부 서버에 있다.
+같은 원칙을 여기에도 적용해 `source=TEMPLATE`, `degradedReason=RATE_LIMITED`로 내려간다.
+
+429를 버린 이유:
+
+1. FE에 **에러 분기를 새로 요구**한다. 지금 화면엔 그 분기가 없어 사용자에겐 "코치가 깨진 것"으로 보인다.
+2. 템플릿 문장은 같은 상황에서 **정상 화면으로 보인다.** 수치·판정은 어차피 동일하다.
+3. FE는 이미 모든 `TEMPLATE` 상태를 같은 화면으로 그린다 → **FE 추가 작업이 없다.** 타입 유니온에
+   값 하나만 더하면 된다.
+
+#### 결정 4 — Redis가 죽으면? 캐시와 **정반대**로 판단했다
+
+캐시는 실패를 삼키고 그냥 통과시킨다. 레이트 리밋에서 같은 선택을 하면 안 된다.
+
+> Redis가 죽은 순간은 **캐시도 함께 죽어 모든 호출이 과금되는**, 상한이 가장 필요한 상황이다.
+> 여기서 열어 두면 레이트 리밋은 정확히 필요한 때에 없는 것과 같아진다.
+
+그렇다고 전부 막으면(fail-closed) 코치가 통째로 템플릿이 된다. 그래서 **프로세스 내 카운터로 내려가
+같은 한도를 계속 건다**(`InProcessCallCounter`).
+
+- 인스턴스가 하나인 지금 배포에서는 Redis 카운터와 **결과가 같다.**
+- 여러 대로 늘면 인스턴스 수만큼 느슨해진다 — 한도가 없는 것보다 낫다는 판단이다.
+- 재시작하면 초기화되는 것도 같은 이유로 받아들인다. 맵은 1만 명에서 통째로 비운다(메모리 상한).
+
+#### 결정 5 — `INCR` + `EXPIRE`를 Lua 한 스크립트로 묶었다
+
+두 명령을 따로 보내면 그 사이에 연결이 끊겼을 때 **TTL 없는 카운터**가 남는다. 값이 한도를 넘은 채
+만료되지 않으므로 그 사용자는 **영구히 묶인다**(축출 정책이 지워주기를 기다리는 수밖에 없다).
+한 스크립트로 묶으면 그 창 자체가 사라진다.
+
+```lua
+local used = redis.call('INCR', KEYS[1])
+if used == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+return used
+```
+
+첫 증가에만 TTL을 건다. 호출마다 갱신하면 창이 영원히 끝나지 않는다.
+
+슬라이딩 윈도우(정렬 집합)는 창 경계에서 최악 2배가 몰리는 문제를 없애주지만, 호출마다 원소를 쌓고
+지워야 한다. 필요한 것은 정밀한 트래픽 정형이 아니라 비용 상한이라 **고정 창**으로 갔다.
+
+#### 기본값: 사용자당 시간당 40건
+
+한 화면을 처음 여는 데 필요한 **생성** 호출은 요약 1 + 문제 설명 최대 6 + 추천 설명 5로 12건 남짓이고,
+같은 사실을 다시 부르면 캐시 적중이라 예산을 쓰지 않는다. 40건은 "한 시간에 재진단을 세 번 하고 모든
+항목을 새로 펼쳐 보는" 사용보다도 넉넉하다. 반대로 폭주하는 코드는 사용자당 시간당 40건으로 묶인다.
+
+이 값에 닿는 호출 패턴은 사람이 아니라 코드일 가능성이 높아, 막힐 때 WARN을 남긴다
+(`Coach call refused by the per-user budget: userId=.. topic=..`).
+
+### 6. 검증
+
+| 항목 | 결과 |
+| --- | --- |
+| 전체 테스트 | **1,196건 통과 / 실패 0** |
+| 신규 `RedisCoachCallRateLimiterTest` | 6건 — 한도 이내/초과, 키 형태, off일 때 Redis 무접촉, **Redis 장애 시 한도 유지**, 스크립트 무응답 |
+| 신규 `InProcessCallCounterTest` | 2건 — 사용자별 격리, 창 롤오버 |
+| `CoachApiTest` | 15 → **17건** — 한도 초과 시 200 + `RATE_LIMITED` + 수치 그대로, **캐시 적중은 예산을 쓰지 않는다** |
+| 운영 Redis 연결 | 실호출 지연 비교로 확인 (4절) |
+
+### 7. 산출물
+
+**신규**
+
+- `backend/src/main/java/.../domain/coach/service/CoachCallRateLimiter.java` — 포트
+- `backend/src/main/java/.../domain/coach/service/CoachRateLimitProperties.java` — `app.coach.rate-limit`
+- `backend/src/main/java/.../infrastructure/ratelimit/RedisCoachCallRateLimiter.java` — Redis 고정 창 + Lua
+- `backend/src/main/java/.../infrastructure/ratelimit/InProcessCallCounter.java` — 장애 시 대체 카운터
+- `backend/src/main/java/.../global/health/RedisStartupCheck.java` — 기동 PING 로그
+- 테스트 2종 (`RedisCoachCallRateLimiterTest`, `InProcessCallCounterTest`)
+
+**수정**
+
+- `CoachService` — 외부 호출 직전 예산 확인 / `CoachDegradedReason` — `RATE_LIMITED` 추가
+- `application.yml` (`app.coach.rate-limit`), `application-test.yml` (둘 다 off)
+- `CoachApiTest` — 예산 시나리오 2건
+- `backend/docs/ai-coach.md` — 12절 신설, 7·10·11절 갱신(연결 확인 결과 포함)
+- `backend/docs/ai-coach-fe-guide.md`, `frontend/src/types/coachApi.types.ts` — `RATE_LIMITED` 추가
+- `infra/todo/security.md` R6 — 애플리케이션 레벨 사용자별 예산 항목 추가
+
+**환경변수 추가 없음** → `.env`·compose·`check-env.sh` 변경 불필요. 코드 배포만으로 적용된다.
+
+### 8. 남은 것 / 개선할 점
+
+- [ ] **FE에 `RATE_LIMITED` 전달** — 타입 유니온은 추가해 뒀고 화면 동작은 그대로지만, 값이 생겼다는
+      사실은 공유해야 한다(배지 문구를 따로 둘지는 FE 판단).
+- [ ] **배포 후 확인 2줄** — `docker logs backend | grep "Redis "`(PONG 확인),
+      `grep "refused by the per-user budget"`(정상 사용자가 막히면 한도를 올린다).
+- [ ] **멱등 키 가드 fail-open 재검토** — 근거였던 "Redis 연결 미검증"이 오늘 해소됐다. 단 상환 API의
+      실패 모드가 바뀌므로 별도 판단이 필요하다.
+- [ ] **호출량 자체가 관측되지 않는다.** 성공 경로에 로그도 메트릭도 없어 "이번 달 코치를 몇 번 불렀나"에
+      답할 수 없다. 지금은 한도가 상한을 보장할 뿐이다. → 아래 Prometheus 항목과 함께 풀어야 한다.
+- [ ] **⚠️ 범위 밖 발견 — Prometheus의 backend 잡이 계속 실패하고 있다.**
+      `up{job="backend"} = 0`(node·prometheus 잡은 1). 원인은 두 가지가 겹쳐 있다:
+      `management.endpoints.web.exposure.include: health`라 `/actuator/prometheus`가 열려 있지 않고
+      (`docker exec backend curl` → **401**), 애초에 `micrometer-registry-prometheus` 의존성이 없다.
+      Day 6에 대시보드를 붙인 이래 **백엔드 지표는 한 번도 수집된 적이 없다.** 고치려면 의존성 +
+      노출 설정 + 내부 경로 인증 예외가 필요해 별도 작업으로 뺀다(nginx는 이미 외부 `/actuator/`를 404로 막는다).

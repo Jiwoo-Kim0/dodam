@@ -100,6 +100,7 @@
 | `TEMPLATE` | `AI_UNAVAILABLE` | 〃 |
 | `TEMPLATE` | `AI_EMPTY_RESPONSE` | 〃 |
 | `TEMPLATE` | `AI_UNVERIFIED_NUMBER` | 〃 (모델이 근거 없는 숫자를 써서 서버가 걸러낸 경우) |
+| `TEMPLATE` | `RATE_LIMITED` | 〃 (사용자별 호출 예산 초과. 시간당 40건이라 정상 사용으로는 닿지 않는다) |
 | `TEMPLATE` | `SENSITIVE_DATA_BLOCKED` | 〃 (정상 흐름에서는 발생하지 않는다) |
 
 **모든 경우 화면은 같다.** 달라지는 것은 배지 하나뿐이다.
@@ -129,6 +130,7 @@ export type CoachDegradedReason =
   | 'AI_UNAVAILABLE'
   | 'AI_EMPTY_RESPONSE'
   | 'AI_UNVERIFIED_NUMBER'
+  | 'RATE_LIMITED'
   | 'SENSITIVE_DATA_BLOCKED';
 
 export interface CoachFact {

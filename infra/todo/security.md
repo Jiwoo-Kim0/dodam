@@ -81,6 +81,13 @@
           `location ~ ^/api/v1/auth/(login|signup)$`로 수정. 경위: [[jiw/day-08.md]] 13절
         - `refresh`·`logout`·`session`은 의도적으로 제외 — 자동 호출이라 막으면 정상 사용이 끊긴다
         - 버킷 기준이 `$binary_remote_addr`라 팀이 같은 공인 IP(캠퍼스망)로 나가면 공유된다
+  - [x] **애플리케이션 레벨 사용자별 호출 예산 — AI 코치 (2026-09-17)**
+        - nginx 레이트 리밋으로는 못 막는 위험이다: 기준이 IP라 로그인한 사용자를 구분하지 못하고,
+          일반 버킷 초당 20건은 **시간당 72,000건**이라 비용 관점의 상한이 아니다
+        - 코치 3종은 이 서비스에서 **외부 과금이 걸린 유일한 경로**다 → 사용자별 시간당 40건
+          (`app.coach.rate-limit`). 과금되는 생성 호출만 세고 캐시 적중은 세지 않는다
+        - Redis 장애 시 프로세스 내 카운터로 내려가 한도를 유지한다 — 캐시와 정반대의 선택이며
+          근거는 `backend/docs/ai-coach.md` 12절. 경위: [[jiw/day-11.md]] 4~6절
   - [ ] 보안 헤더: `HSTS`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`
   - [ ] `server_tokens off` (nginx 버전 숨김)
   - [ ] `/actuator/`가 외부로 새어나가지 않도록 nginx에서 차단 (Prometheus는 컨테이너 네트워크로만)
