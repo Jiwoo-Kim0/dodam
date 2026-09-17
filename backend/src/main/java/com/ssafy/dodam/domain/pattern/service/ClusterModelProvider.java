@@ -1,9 +1,12 @@
 package com.ssafy.dodam.domain.pattern.service;
 
 import com.ssafy.dodam.domain.pattern.repository.JdbcPatternFeatureReader;
+import com.ssafy.dodam.domain.pattern.repository.JdbcPatternFeatureReader.Demographics;
 import com.ssafy.dodam.domain.pattern.repository.JdbcPatternFeatureReader.MonthlyPatternRow;
 import com.ssafy.dodam.domain.pattern.service.ClusterModel.ClusterSummary;
 import com.ssafy.dodam.domain.pattern.service.ClusterModel.FeatureStats;
+import com.ssafy.dodam.domain.pattern.service.ClusterModel.GroupStats;
+import com.ssafy.dodam.domain.pattern.service.ClusterModel.PeerGroup;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -29,7 +32,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class ClusterModelProvider {
 
-    public static final String MODEL_VERSION = "spending-kmeans-v1";
+    public static final String MODEL_VERSION = "spending-kmeans-v2";
     static final String IN_PROCESS_TRAINER = "java-kmeans";
 
     private static final Logger log = LoggerFactory.getLogger(ClusterModelProvider.class);
@@ -82,8 +85,12 @@ public class ClusterModelProvider {
             byUser.computeIfAbsent(row.userId(), key -> new ArrayList<>()).add(row);
         }
         List<double[]> vectors = new ArrayList<>();
-        for (List<MonthlyPatternRow> userRows : byUser.values()) {
-            calculator.clusterVector(window, userRows, properties.minUserMonths()).ifPresent(vectors::add);
+        List<Long> userIds = new ArrayList<>();
+        for (Map.Entry<Long, List<MonthlyPatternRow>> entry : byUser.entrySet()) {
+            calculator.clusterVector(window, entry.getValue(), properties.minUserMonths()).ifPresent(vector -> {
+                vectors.add(vector);
+                userIds.add(entry.getKey());
+            });
         }
         int populationSize = vectors.size();
         if (populationSize < properties.minPopulation() || populationSize < properties.clusterCount()) {
@@ -92,14 +99,21 @@ public class ClusterModelProvider {
             return new Lookup(null, populationSize, FallbackReason.INSUFFICIENT_POPULATION);
         }
         KMeansClusterer.Result result = clusterer.cluster(vectors, properties.clusterCount());
-        ClusterModel model = build(window, vectors, result, now);
-        log.info("Pattern cluster model trained in process: version={} population={} clusters={} iterations={} window={}~{}",
-                MODEL_VERSION, populationSize, model.clusterCount(), result.iterations(), window.start(), window.end());
+        // 632: 동년배 집단 통계는 학습 표본의 생년월일·성별로 만든다. 나이대는 학습 기준일(창의 다음 달 1일 = 오늘) 기준.
+        Map<Long, Demographics> demographics = reader.readDemographics();
+        ClusterModel model = build(window, vectors, userIds, demographics, result, now);
+        log.info("Pattern cluster model trained in process: version={} population={} clusters={} peerGroups={} iterations={} window={}~{}",
+                MODEL_VERSION, populationSize, model.clusterCount(), model.peerGroups().size(), result.iterations(),
+                window.start(), window.end());
         return new Lookup(model, populationSize, null);
     }
 
-    private static ClusterModel build(PatternWindow window, List<double[]> vectors, KMeansClusterer.Result result,
-            LocalDateTime now) {
+    /**
+     * 학습 결과를 모델로 만든다. v1 통계(p5·p95·평균·표준편차)에 632의 분위 격자·동년배 집단·모집단 통계를 더한다.
+     * Python `train_cluster_model.py`의 `build_artifact`와 같은 정의라 아티팩트 모델과 인프로세스 모델의 응답 형태가 같다.
+     */
+    public static ClusterModel build(PatternWindow window, List<double[]> vectors, List<Long> userIds, Map<Long, Demographics> demographics,
+            KMeansClusterer.Result result, LocalDateTime now) {
         int k = result.clusterCount();
         int dimension = ClusterFeature.dimension();
         double[][] rawCentroids = new double[k][dimension];
@@ -133,10 +147,86 @@ public class ClusterModelProvider {
                         Stats.round4(Stats.mean(column)),
                         Stats.round4(Stats.std(column))));
             }
-            summaries.add(new ClusterSummary(c, labels.get(c), members.get(c).size(), stats));
+            summaries.add(new ClusterSummary(c, labels.get(c), members.get(c).size(), stats, quantiles(members.get(c))));
+        }
+
+        // 전체 모집단
+        int[] assignments = result.assignments();
+        GroupStats population = groupStats(vectors, indices(vectors.size(), i -> true), assignments, k);
+
+        // 동년배 집단: 나이대 × 성별(성별 null = 나이대 전체), 성별만, 군집 × 나이대. 학습 기준일은 창의 다음 달 1일이다.
+        java.time.LocalDate referenceDate = window.end().plusMonths(1).atDay(1);
+        String[] ageBands = new String[vectors.size()];
+        String[] genders = new String[vectors.size()];
+        for (int i = 0; i < vectors.size(); i++) {
+            Demographics d = userIds == null || demographics == null ? null : demographics.get(userIds.get(i));
+            ageBands[i] = d == null ? null : AgeBand.of(d.birthDate(), referenceDate);
+            genders[i] = d == null ? null : d.gender();
+        }
+        List<PeerGroup> peerGroups = new ArrayList<>();
+        for (String band : AgeBand.ORDERED) {
+            addGroup(peerGroups, vectors, assignments, k, band, null, null,
+                    indices(vectors.size(), i -> band.equals(ageBands[i])));
+            for (String gender : List.of("MALE", "FEMALE")) {
+                addGroup(peerGroups, vectors, assignments, k, band, gender, null,
+                        indices(vectors.size(), i -> band.equals(ageBands[i]) && gender.equals(genders[i])));
+            }
+            for (int c = 0; c < k; c++) {
+                int clusterId = c;
+                addGroup(peerGroups, vectors, assignments, k, band, null, clusterId,
+                        indices(vectors.size(), i -> band.equals(ageBands[i]) && assignments[i] == clusterId));
+            }
+        }
+        for (String gender : List.of("MALE", "FEMALE")) {
+            addGroup(peerGroups, vectors, assignments, k, null, gender, null, indices(vectors.size(), i -> gender.equals(genders[i])));
         }
         return new ClusterModel(MODEL_VERSION, window, vectors.size(), result.means(), result.stds(), result.centroids(),
-                summaries, now, ClusterModel.SOURCE_IN_PROCESS, IN_PROCESS_TRAINER);
+                summaries, now, ClusterModel.SOURCE_IN_PROCESS, IN_PROCESS_TRAINER, ClusterModel.DEFAULT_QUANTILE_GRID.clone(),
+                peerGroups, population);
+    }
+
+    private static void addGroup(List<PeerGroup> into, List<double[]> vectors, int[] assignments, int k, String ageBand, String gender,
+            Integer clusterId, int[] indices) {
+        if (indices.length == 0) {
+            return;
+        }
+        into.add(new PeerGroup(ageBand, gender, clusterId, groupStats(vectors, indices, assignments, k)));
+    }
+
+    private static int[] indices(int size, java.util.function.IntPredicate include) {
+        return java.util.stream.IntStream.range(0, size).filter(include).toArray();
+    }
+
+    private static GroupStats groupStats(List<double[]> vectors, int[] indices, int[] assignments, int k) {
+        List<double[]> members = new ArrayList<>(indices.length);
+        int[] counts = new int[k];
+        for (int i : indices) {
+            members.add(vectors.get(i));
+            counts[assignments[i]]++;
+        }
+        Map<Integer, Double> share = new LinkedHashMap<>();
+        for (int c = 0; c < k; c++) {
+            share.put(c, indices.length == 0 ? 0.0 : Stats.round4((double) counts[c] / indices.length));
+        }
+        return new GroupStats(indices.length, quantiles(members), share);
+    }
+
+    /** 특징별 분위 격자 값({@link ClusterModel#DEFAULT_QUANTILE_GRID}). 표본이 없으면 빈 맵. */
+    static Map<ClusterFeature, double[]> quantiles(List<double[]> members) {
+        if (members.isEmpty()) {
+            return Map.of();
+        }
+        Map<ClusterFeature, double[]> result = new EnumMap<>(ClusterFeature.class);
+        for (ClusterFeature feature : ClusterFeature.ordered()) {
+            int d = feature.ordinal();
+            double[] column = members.stream().mapToDouble(v -> v[d]).toArray();
+            double[] values = new double[ClusterModel.DEFAULT_QUANTILE_GRID.length];
+            for (int q = 0; q < values.length; q++) {
+                values[q] = Stats.round4(Stats.percentile(column, ClusterModel.DEFAULT_QUANTILE_GRID[q] / 100.0));
+            }
+            result.put(feature, values);
+        }
+        return result;
     }
 
     private record Cached(PatternWindow window, Lookup lookup, LocalDateTime builtAt) {

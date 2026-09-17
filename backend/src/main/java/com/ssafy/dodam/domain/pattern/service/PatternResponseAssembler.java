@@ -9,12 +9,14 @@ import com.ssafy.dodam.domain.pattern.dto.response.ClusterProfileResponse.Featur
 import com.ssafy.dodam.domain.pattern.dto.response.PatternAnalysisResponse;
 import com.ssafy.dodam.domain.pattern.dto.response.PatternAnalysisResponse.Metrics;
 import com.ssafy.dodam.domain.pattern.dto.response.PatternFeatureSummary;
+import com.ssafy.dodam.domain.pattern.dto.response.PatternInsight;
 import com.ssafy.dodam.domain.pattern.entity.AnalysisMode;
 import com.ssafy.dodam.domain.pattern.entity.PatternAnalysis;
 import com.ssafy.dodam.domain.pattern.service.ClusterAssigner.ClusterResult;
 import com.ssafy.dodam.domain.pattern.service.ClusterModel.FeatureStats;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -55,10 +57,16 @@ public class PatternResponseAssembler {
                 clusterFeatures, months);
     }
 
-    /** 배정된 군집의 프로필. 사용자 값과 군집 기준 범위, 특징별 범위 이탈을 함께 만든다. */
+    /**
+     * 배정된 군집의 프로필. 사용자 값과 군집 기준 범위, 특징별 범위 이탈을 함께 만든다.
+     * 632: 모델에 분위 격자가 있으면 특징별 군집 안 백분위·구간, 라벨 대표 특징의 위치 요약, 문장을 더한다. 격자가 없으면(v1) 모두 null.
+     */
     public ClusterProfileResponse clusterProfile(ClusterResult cluster) {
         ClusterModel model = cluster.model();
+        int clusterId = cluster.summary().clusterId();
+        boolean percentiles = model.supportsPercentiles();
         List<FeatureRange> ranges = new ArrayList<>();
+        Map<ClusterFeature, Double> percentileByFeature = new EnumMap<>(ClusterFeature.class);
         double deviationSum = 0.0;
         for (ClusterFeature feature : ClusterFeature.ordered()) {
             FeatureStats stats = cluster.summary().stats().get(feature);
@@ -66,14 +74,31 @@ public class PatternResponseAssembler {
             double deviation = Stats.round4(ClusterModel.rangeDeviation(userValue, stats));
             deviationSum += deviation;
             String direction = userValue < stats.p5() ? "BELOW" : userValue > stats.p95() ? "ABOVE" : "WITHIN";
+            Double percentile = percentiles ? model.percentileInCluster(clusterId, feature, Stats.round4(userValue)) : null;
+            if (percentile != null) {
+                percentileByFeature.put(feature, percentile);
+            }
             ranges.add(new FeatureRange(feature.key(), feature.displayName(), Stats.round4(userValue), stats.centroid(),
-                    stats.min(), stats.max(), stats.p5(), stats.p95(), stats.mean(), stats.std(), deviation, direction));
+                    stats.min(), stats.max(), stats.p5(), stats.p95(), stats.mean(), stats.std(), deviation, direction,
+                    percentile, percentile == null ? null : RankBand.of(percentile).name()));
+        }
+        ClusterProfileResponse.PositionSummary position = null;
+        List<PatternInsight> insights = null;
+        if (percentiles) {
+            ClusterFeature representative = ClusterLabelPolicy.representativeFeature(cluster.summary().label());
+            Double percentile = percentileByFeature.get(representative);
+            if (percentile != null) {
+                position = new ClusterProfileResponse.PositionSummary(representative.key(), representative.displayName(), percentile,
+                        RankBand.of(percentile).name());
+            }
+            insights = PatternInsightPolicy.clusterInsights(cluster.summary().label(), percentileByFeature);
         }
         return new ClusterProfileResponse(
-                cluster.summary().clusterId(), cluster.summary().label(), model.modelVersion(),
+                clusterId, cluster.summary().label(), model.modelVersion(),
                 cluster.summary().sampleSize(), model.populationSize(), cluster.assignment().confidence(),
                 model.window().months(), model.window().start().toString(), model.window().end().toString(),
-                Stats.round4(deviationSum / ClusterFeature.dimension()), ranges, model.source(), model.trainedBy());
+                Stats.round4(deviationSum / ClusterFeature.dimension()), ranges, model.source(), model.trainedBy(),
+                position, insights);
     }
 
     public JsonNode toJson(Object value) {
@@ -119,7 +144,7 @@ public class PatternResponseAssembler {
         return read(analysis.getClusterStats(), ClusterProfileResponse.class);
     }
 
-    private <T> Optional<T> read(JsonNode node, Class<T> type) {
+    public <T> Optional<T> read(JsonNode node, Class<T> type) {
         if (node == null || node.isNull() || node.isMissingNode()) {
             return Optional.empty();
         }

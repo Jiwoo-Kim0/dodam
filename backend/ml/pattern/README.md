@@ -1,4 +1,4 @@
-# 소비 유형 군집 모델 학습 (`spending-kmeans-v1`)
+# 소비 유형 군집 모델 학습 (`spending-kmeans-v2`)
 
 API 3 Preference(S15P21D105-518)의 군집 모델을 **Python(scikit-learn)으로 학습**하고, Spring은 그 결과(아티팩트 JSON)를 읽어 **배정·근거 생성만** 한다.
 런타임 Python 서비스는 없다. 계약 전체는 [`backend/docs/pattern.md`](../../docs/pattern.md) "군집 메타데이터·Fallback".
@@ -86,3 +86,20 @@ python backend/ml/pattern/evaluate_cluster_model.py \
 2. 커밋하면 jar에 포함돼 `app.pattern.model-location: classpath:ml/spending-kmeans-v1.json`으로 읽힌다. 파일로 따로 두려면 `file:/opt/dodam/models/spending-kmeans-v1.json`.
 3. 운영에서는 `app.pattern.train-in-process: false`로 두어 아티팩트가 없을 때 Java가 임의로 학습하지 않게 한다(RULE_ONLY로 전환, 사유 `MODEL_NOT_AVAILABLE`).
 4. 재학습 주기(월 1회 등)·자동화(Jenkins 단계)는 remaining-work 518 절에 남긴 결정 사항이다.
+
+## v2 추가 항목 (S15P21D105-632, 2026-09-17)
+
+`train_cluster_model.py`가 v1 항목에 더해 아래를 쓴다. 군집 수·중심·표준화·라벨 규칙은 v1과 같아 라벨은 안정적이다. Spring `ClusterModelArtifact`는 이 항목이
+없는 v1 파일도 그대로 읽는다(격자 없는 모델은 위치 계산이 null).
+
+| 항목 | 형식 | 용도 |
+| --- | --- | --- |
+| `quantileGrid` | `[0, 5, …, 100]` (21점) | 분위 격자 백분위점. Java `ClusterModel.DEFAULT_QUANTILE_GRID`와 같다 |
+| `clusters[].quantiles[feature]` | 격자 길이의 값 배열(비감소) | 군집 안 백분위(`percentileInCluster`) |
+| `peerGroups[]` | `{ ageBand, gender, clusterId, sampleSize, quantiles, clusterShare }` — 각 키는 null이면 "그 축으로 나누지 않음" | 동년배 비교. 나이대 × (전체·MALE·FEMALE·군집별), 성별 전체 |
+| `population` | `{ sampleSize, quantiles, clusterShare }` | 최종 fallback |
+| `demographics` | `{ ageBands, referenceDate, usersWithBirthDate, usersWithGender, peerGroupCount }` | 결측 규모 기록 |
+
+- 나이대는 `--reference-date` 기준 만 나이 10세 단위(`10S`~`60S_PLUS`), Java `AgeBand`와 같은 정의다. `user.birth_date`·`gender`(V39)를 `DEMOGRAPHICS_SQL`로 읽고
+  K-Means 입력에는 넣지 않는다. 생년월일이 없는 사용자는 군집 학습에는 들어가고 집단 통계에서만 빠진다.
+- 2026-09-17 seed 4,000명(491 보강 후) 결과: 군집 4 × 1,000, 실루엣 0.51(v1과 동일), 집단 34개, 배포 파일 95 KB. 학습 약 5초.

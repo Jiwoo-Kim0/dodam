@@ -102,6 +102,11 @@ public class PatternAnalysis {
     @Column(name = "cluster_stats_json", columnDefinition = "JSON")
     private JsonNode clusterStats;
 
+    /** 632: 차원별 동년배 비교 결과. 군집이 배정된 분석에만 있다(V40). */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "peer_stats_json", columnDefinition = "JSON")
+    private JsonNode peerStats;
+
     @Column(name = "sample_size")
     private Integer sampleSize;
 
@@ -196,6 +201,21 @@ public class PatternAnalysis {
         this.sampleSize = sampleSize;
         this.confidence = BigDecimal.valueOf(confidence).setScale(RATIO_SCALE, RoundingMode.HALF_UP);
         this.clusterStats = clusterStats;
+    }
+
+    /**
+     * 동년배 비교 결과(632, V40). 차원별 {@code PeerComparisonResponse}를 담은 JSON 객체. 군집이 배정된 분석에만 붙이며
+     * 규칙 기반 분석·632 이전 분석은 NULL이다.
+     */
+    public void attachPeerStats(JsonNode peerStats) {
+        if (!hasCluster()) {
+            throw new IllegalStateException("동년배 비교는 군집이 배정된 분석에만 붙일 수 있습니다.");
+        }
+        this.peerStats = peerStats;
+    }
+
+    public JsonNode getPeerStats() {
+        return peerStats;
     }
 
     /** 예상하지 못한 계산 오류. 원인 요약만 남기고 지표는 비운다. */

@@ -2,7 +2,25 @@
 
 마지막 갱신: 2026-09-17
 
-백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 629, 587, 589, 611, 627, 628이다.
+백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 629, 632, 587, 589, 611, 627, 628이다.
+
+## S15P21D105-632 — K-Means 군집 내 위치·동년배 비교 (V40)
+
+설계·결정: [pattern-peer-comparison-plan.md](pattern-peer-comparison-plan.md). 계약: [pattern.md](pattern.md) §clusterProfile(632)·§GET /patterns/me/peer-comparison. 아티팩트: [ml/pattern/README.md](../ml/pattern/README.md) §v2.
+
+### 구현 완료 (2026-09-17)
+
+- [x] seed 491 생년월일·성별 보강(성별·나이대가 군집 신호를 갖지 않게 배분), 아티팩트 `spending-kmeans-v2`(격자·집단 34개·모집단), `ClusterModel`/`ClusterModelArtifact` v2 파싱(v1 하위 호환), 인프로세스 학습도 같은 격자 생성.
+- [x] `clusterProfile`에 `percentileInCluster`·`rankBand`·`positionSummary`·`insights`, `GET /patterns/me/peer-comparison?dimension=` 4축 + 자동 확장, V40 `peer_stats_json` 저장, AI 코치 "또래 비교(서버 계산)" 섹션.
+- [x] 검증: H2 `PeerComparisonCalculatorTest` 4·`StatsPercentileRankTest` 2·`PatternApiTest` +1·`ClusterModelArtifactLoaderTest` v2 단언, MySQL 8.0 게이트 `PatternMySqlIntegrationTest`(V40 validate).
+
+### 남은 것
+
+- [ ] **시연 서버 적재**: 632 병합·배포(Flyway가 V40 적용) 뒤 서버 MySQL 컨테이너에서 `backend/database/seeds/DODAM_USER_DEMOGRAPHICS_BACKFILL.sql`(12번)을 실행한다 — fixture·491 재적재 불필요, 두 컬럼만 갱신, 0.3초. 491을 다시 돌리는 방식은 fixture 재생성과 492 재실행(`last_transaction_date` 복구)이 필요해 쓰지 않는다. 그 전까지 서버의 동년배 비교는 seed 사용자에게 `DEMOGRAPHICS_MISSING`이다(아티팩트 v2의 집단 통계는 이미 들어 있어 모델은 정상). 시연 계정 U0001~U0004는 여·남·여·남, 29·36·43·50세로 채워진다(629 남은 작업 해소). 적재 뒤 시연 계정으로 `POST /patterns/analyze {"forceRefresh":true}` → `GET /patterns/me/peer-comparison`으로 확인한다.
+- [ ] FE 연동: 패턴 API는 FE가 아직 하나도 호출하지 않는다(fe-be-api-integration-status §5). `positionSummary`·`insights`·`peer-comparison`을 발견/리포트 화면 어디에 붙일지 정한다. `insights[].code` 분기표를 FE에 전달.
+- [ ] 임계값(TOP 90 / UPPER 75 / LOWER 25 / BOTTOM 10, 문장 임계 90·75·50, 최소 표본 30·10)은 서비스 초기값. 기획과 확정하면 `app.pattern.*`·`RankBand`를 조정한다.
+- [ ] 632 이전 분석 행은 `peer_stats_json`이 NULL이라 `NOT_COMPUTED`다. 시연 계정은 배포 뒤 `forceRefresh` 분석을 한 번 돌려 채운다(`be-a-server-smoke.sh`에 추가 검토).
+- [ ] 신용등급(A~E)을 비교 축에 추가하는 것은 실회원 등급이 쌓인 뒤 재검토(seed 회원은 등급 없음). 재학습 주기·위치는 518 절과 같다.
 
 ## S15P21D105-629 — User 생년월일·성별·신용등급 (V39)
 
@@ -20,7 +38,7 @@
 
 ### 시연 데이터
 
-- [ ] seed(491)는 컬럼을 명시한 INSERT라 V39 뒤에도 그대로 실행되지만 U0001~U0004의 생년월일·성별은 NULL이다. 시연 화면에서 나이·성별을 보이려면 seed 또는 서버 UPDATE로 4명 값을 채운다. 신용등급은 시연 서버에서 동기화 1회로 채워진다(금융망 키는 2026-09-15 교체 완료).
+- [x] (632, 2026-09-17) seed 491이 전원의 생년월일·성별을 채우도록 보강했다(서버 재적재는 632 절). 원문: seed(491)는 컬럼을 명시한 INSERT라 V39 뒤에도 그대로 실행되지만 U0001~U0004의 생년월일·성별은 NULL이다. 시연 화면에서 나이·성별을 보이려면 seed 또는 서버 UPDATE로 4명 값을 채운다. 신용등급은 시연 서버에서 동기화 1회로 채워진다(금융망 키는 2026-09-15 교체 완료).
 
 ### 정책 기본값
 

@@ -31,6 +31,7 @@
 | V37 | `improvement_action` 생성 (API 19 개선 행동) | S15P21D105-590 |
 | V38 | `report`, `daily_report`, `monthly_report` 생성 (API 20 리포트) | S15P21D105-590 |
 | V39 | `user.birth_date`, `gender`(CHECK MALE/FEMALE), `credit_rating`(금융망 등급명 A~E), `credit_rating_updated_at` 추가 — 모두 NULL 허용 | S15P21D105-629 |
+| V40 | `pattern_analysis.peer_stats_json` 추가 (632 동년배 비교 결과 JSON, NULL 허용) | S15P21D105-632 |
 
 ## 버전 번호 할당
 

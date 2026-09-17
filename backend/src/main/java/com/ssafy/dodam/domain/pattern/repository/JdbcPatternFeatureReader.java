@@ -3,6 +3,7 @@ package com.ssafy.dodam.domain.pattern.repository;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -93,6 +94,12 @@ public class JdbcPatternFeatureReader {
             SELECT monthly_income FROM financial_profile WHERE user_id = :userId
             """;
 
+    private static final String DEMOGRAPHICS_SQL = """
+            SELECT user_id, birth_date, gender
+            FROM `user`
+            WHERE deleted_at IS NULL AND (birth_date IS NOT NULL OR gender IS NOT NULL)
+            """;
+
     private final NamedParameterJdbcTemplate jdbcTemplate;
 
     public JdbcPatternFeatureReader(NamedParameterJdbcTemplate jdbcTemplate) {
@@ -119,6 +126,19 @@ public class JdbcPatternFeatureReader {
     public LiquidityRow readLiquidity(Long userId) {
         return jdbcTemplate.queryForObject(LIQUIDITY_SQL, new MapSqlParameterSource("userId", userId),
                 (rs, i) -> new LiquidityRow(rs.getLong("liquid_balance"), rs.getLong("account_count")));
+    }
+
+    /**
+     * 삭제되지 않은 사용자의 생년월일·성별(632). 인프로세스 학습이 동년배 집단 통계를 만들 때 쓴다. 둘 다 없는 사용자는 빼고 돌려준다.
+     * Python 학습 스크립트의 DEMOGRAPHICS_SQL과 같은 조회다.
+     */
+    public Map<Long, Demographics> readDemographics() {
+        Map<Long, Demographics> result = new java.util.HashMap<>();
+        jdbcTemplate.query(DEMOGRAPHICS_SQL, new MapSqlParameterSource(), rs -> {
+            java.sql.Date birth = rs.getDate("birth_date");
+            result.put(rs.getLong("user_id"), new Demographics(birth == null ? null : birth.toLocalDate(), rs.getString("gender")));
+        });
+        return result;
     }
 
     /** 금융 기본정보의 월 소득. 없거나 0이면 null. */
@@ -161,6 +181,10 @@ public class JdbcPatternFeatureReader {
             long loanRepayment,
             long transactionCount
     ) {
+    }
+
+    /** 632 동년배 비교용 인구통계. 값이 없는 항목은 null. */
+    public record Demographics(LocalDate birthDate, String gender) {
     }
 
     public record CategoryPatternRow(String code, String name, long total, long count) {

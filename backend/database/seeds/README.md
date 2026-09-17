@@ -19,6 +19,7 @@
 | 9 | `DODAM_NOTIFICATION_SEED.sql` | 519, 520 | 491, 523, 493, 8번, V32 (`notification`, 2026-09-14 추가). 시연 사용자 U0001~U0004의 알림함 최대 6건씩(원천 행이 없는 유형은 생략), `dedupe_key LIKE 'SEED-%'`로 재실행 시 지우고 다시 만든다 |
 | 10 | `DODAM_DEMO_PASSWORD_SEED.sql` | 521 | 491, V1. 시연 사용자 U0001~U0004에만 시연 비밀번호의 BCrypt 해시를 넣는다(2026-09-15 추가). 나머지 사용자는 NULL 유지, 재실행 안전 |
 | 11 | `DODAM_DEMO_SEPTEMBER_SEED.sql` | 625 | 6번, 8번, V6·V30. 시연 사용자 U0001~U0004에만 2026-09-01~09-27 거래 90건과 9월 구독 결제 이력 6건을 추가하고 구독 `next_payment_date`를 10월로 옮긴다(2026-09-16 추가). 6번·8번을 다시 실행하면 이 파일도 다시 실행한다 |
+| 12 | `DODAM_USER_DEMOGRAPHICS_BACKFILL.sql` | 632 | V39. 2026-09-17 이전에 491로 적재한 DB에서 seed 사용자 4,000명의 `birth_date`·`gender`만 채운다(fixture·재적재 불필요, 멱등, 실회원 미접촉). 491 최신판을 새로 돌린 DB에는 필요 없다 |
 
 2~5는 계좌·카드번호 원문을 파일에 두지 않기 위해 애플리케이션 코덱으로 만든 fixture 테이블(`tmp_dodam_*_crypto`, `*_account_keys`)이
 같은 스키마에 있어야 한다. 각 파일 머리말에 정확한 계약이 있다. 6~8은 fixture 없이 자연키(사용자 이메일, 계좌 유형·이름)로 참조한다.
@@ -32,6 +33,9 @@
 
 - 사용자: `seed.kmeans.u0001@dodam.invalid` ~ `u4000`. 성향 코드 `MOD(순번-1, 4)`: 0 BALANCED, 1 SPENDING_FOCUSED, 2 SAVING_FOCUSED, 3 VOLATILE.
   이 코드는 생성 규칙에만 쓰이고 어떤 테이블에도 저장되지 않는다(K-Means 라벨 누출 방지).
+- (632, 2026-09-17) 491이 `user.birth_date`·`gender`(V39)를 채운다. 나이 22~59세(`22 + MOD(순번×7, 38)`, 생일은 `MOD(순번×11, 365)`일 분산, 2026-09-07 기준),
+  성별은 8명 주기 `F M F M M F M F`(`MOD(순번 + FLOOR((순번−1)/4), 2)`)라 각 성별·나이대에 성향 4종이 모두 들어가고(성별·나이대가 군집 신호를 갖지 않게) 시연 계정 U0001~U0004는 여·남·여·남이다. V39 이전에 적재한 DB는 12번 `DODAM_USER_DEMOGRAPHICS_BACKFILL.sql`(fixture 불필요, 두 컬럼만 갱신)로 채운다. 재실행 시 `ON DUPLICATE KEY UPDATE`로
+  기존 행도 채워지므로 V39 이전에 적재한 DB는 491만 다시 돌리면 된다(fixture 테이블은 다시 만들어야 한다 — 파일 끝 cleanup이 지운다). 나이대별 약 20S 842·30S~50S 1,053명, 성별 2,000명씩.
 - 기준 시각: 적재 행의 `created_at`은 `2026-09-07 09:00:00`(목표·구독은 창 시작일 `2026-03-01 09:00:00`). 거래·이력 창은 `2026-03-01 ~ 2026-08-31`.
   시연 사용자 U0001~U0004만 11번이 `2026-09-27`까지 확장한다(`created_at = '2026-09-16 09:00:00'`).
 - `source_type = 'SEED'`인 계좌·거래는 금융망 동기화(ACCOUNT scope)가 덮어쓰지 않는다.
@@ -110,3 +114,6 @@ seed 목표는 `created_at = '2026-03-01 09:00:00'`으로 식별해 재실행 �
 
 U0004에는 시드와 별개로 손으로 만든 `source_type='MANUAL'` 거래 4건(9월 1건 포함)이 있으며,
 11번의 DELETE는 `source_type='SEED' AND transaction_id LIKE 'SEED-SEP-U%'`로 한정되어 그대로 보존됐다.
+
+2026-09-17 (632) 로컬 Docker `mysql:8.0`에 V1~V40 적용 후 1·2(491 보강판)·3·6번을 적재해 사용자 4,000(생년월일·성별 결측 0)·거래 348,192건을 만들고
+`train_cluster_model.py`로 v2 아티팩트를 학습했다. 491 재실행은 `account.last_transaction_date`를 NULL로 되돌리므로 6번(492)을 다시 돌려 채운다.

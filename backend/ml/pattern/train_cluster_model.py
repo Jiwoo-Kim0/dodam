@@ -1,14 +1,16 @@
-"""소비 유형 군집 모델(`spending-kmeans-v1`) 학습 스크립트.
+"""소비 유형 군집 모델(`spending-kmeans-v2`) 학습 스크립트.
 
 MySQL의 거래 집계에서 사용자별 비율 특징 5종을 만들고(Java `PatternFeatureCalculator.clusterVector`와 같은 정의), 표준화 후
 scikit-learn KMeans(k-means++)로 학습해 모델 아티팩트 JSON을 만든다. Spring `ClusterModelArtifactLoader`가 이 JSON을 읽어 배정에 쓴다.
 
     python train_cluster_model.py --db-url jdbc:mysql://127.0.0.1:3307/dodam_516_test --db-user root --db-password root \
-        --reference-date 2026-09-14 --k-range 2 6 --output ../../src/main/resources/ml/spending-kmeans-v1.json
+        --reference-date 2026-09-14 --k-range 2 6 --output ../../src/main/resources/ml/spending-kmeans-v2.json
 
 - 입력은 익명 집계값(사용자·월별 합계)만 읽고 거래 원문·식별정보는 읽지 않는다(기획안 14-6). 사용자 ID는 표본 수 계산에만 쓴다.
 - `--k`를 주면 그 k로 학습하고, `--k-range MIN MAX`면 실루엣 점수가 가장 높은 k를 고른다(동점이면 작은 k).
-- 아티팩트에는 모델 버전·학습 시각·기간·표본 수·표준화 파라미터·중심·군집별 기준 범위(p5~p95)·라벨·평가 지표가 들어간다.
+- 아티팩트에는 모델 버전·학습 시각·기간·표본 수·표준화 파라미터·중심·군집별 기준 범위(p5~p95)·라벨·평가 지표가 들어간
+- v2(S15P21D105-632): 군집별·동년배 집단별(나이대·성별·군집×나이대)·전체 모집단의 특징 분위 격자(5% 간격 21점)와 군집 구성비를
+  더한다. 나이대·성별은 `user.birth_date`·`gender`(V39)에서 읽고 K-Means 입력에는 넣지 않는다(비교 축으로만 쓴다).다.
 """
 
 from __future__ import annotations
@@ -41,7 +43,12 @@ from pattern_features import (  # noqa: E402
     round4,
 )
 
-MODEL_VERSION = "spending-kmeans-v1"
+MODEL_VERSION = "spending-kmeans-v2"
+# 632: 분위 격자(5% 간격 21점). Java ClusterModel.DEFAULT_QUANTILE_GRID와 같다.
+QUANTILE_GRID = [float(v) for v in range(0, 101, 5)]
+# 632: 나이대 정의. Java AgeBand와 같다.
+AGE_BANDS = ["10S", "20S", "30S", "40S", "50S", "60S_PLUS"]
+GENDERS = ("MALE", "FEMALE")
 DEFAULT_RANDOM_STATE = 20260914
 
 # Java JdbcPatternFeatureReader.POPULATION_MONTHLY_SQL과 같은 집계.
@@ -66,6 +73,55 @@ GROUP BY entry.user_id, YEAR(entry.transaction_date), MONTH(entry.transaction_da
 ORDER BY uid, y, m
 """
 
+# Java JdbcPatternFeatureReader.DEMOGRAPHICS_SQL과 같은 조회. 군집 특징이 아니라 동년배 집단 키에만 쓴다.
+DEMOGRAPHICS_SQL = """
+SELECT user_id, birth_date, gender
+FROM `user`
+WHERE deleted_at IS NULL AND (birth_date IS NOT NULL OR gender IS NOT NULL)
+"""
+
+
+def age_band(birth_date: dt.date | None, reference: dt.date) -> str | None:
+    """Java AgeBand.of. 20세 미만 10S, 60세 이상 60S_PLUS."""
+    if birth_date is None:
+        return None
+    age = reference.year - birth_date.year - ((reference.month, reference.day) < (birth_date.month, birth_date.day))
+    if age < 20:
+        return "10S"
+    if age >= 60:
+        return "60S_PLUS"
+    return f"{age // 10 * 10}S"
+
+
+def read_demographics(connection: pymysql.Connection) -> dict[int, tuple[dt.date | None, str | None]]:
+    with connection.cursor() as cursor:
+        cursor.execute(DEMOGRAPHICS_SQL)
+        result: dict[int, tuple[dt.date | None, str | None]] = {}
+        for r in cursor.fetchall():
+            birth = r["birth_date"]
+            if isinstance(birth, dt.datetime):
+                birth = birth.date()
+            result[int(r["user_id"])] = (birth, r["gender"])
+        return result
+
+
+def quantiles(column: np.ndarray) -> list[float]:
+    """5% 간격 21점 분위 값(선형 보간). Java Stats.percentile과 같은 정의."""
+    if len(column) == 0:
+        return [0.0] * len(QUANTILE_GRID)
+    return [round4(float(np.percentile(column, q))) for q in QUANTILE_GRID]
+
+
+def group_stats(matrix: np.ndarray, labels: np.ndarray, mask: np.ndarray, k: int) -> dict:
+    members = matrix[mask]
+    member_labels = labels[mask]
+    n = int(len(members))
+    return {
+        "sampleSize": n,
+        "quantiles": {key: quantiles(members[:, d]) for d, key in enumerate(FEATURE_KEYS)},
+        "clusterShare": {str(c): (round4(float((member_labels == c).sum()) / n) if n else 0.0) for c in range(k)},
+    }
+
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -83,8 +139,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                        help="실루엣 점수로 고를 k 범위. 기본 2 6")
     parser.add_argument("--random-state", type=int, default=DEFAULT_RANDOM_STATE)
     parser.add_argument("--n-init", type=int, default=10, help="KMeans 초기화 반복 수")
-    parser.add_argument("--output", type=Path, default=Path(__file__).resolve().parent / "spending-kmeans-v1.json",
-                        help="아티팩트 JSON 경로. 배포용은 backend/src/main/resources/ml/spending-kmeans-v1.json")
+    parser.add_argument("--output", type=Path, default=Path(__file__).resolve().parent / "spending-kmeans-v2.json",
+                        help="아티팩트 JSON 경로. 배포용은 backend/src/main/resources/ml/spending-kmeans-v2.json")
     parser.add_argument("--export-features", type=Path, default=None,
                         help="사용자별 특징 벡터를 CSV로 남긴다(user_id 없이 순번만). 검증·탐색용")
     parser.add_argument("--dry-run", action="store_true", help="파일을 쓰지 않고 요약만 출력")
@@ -129,9 +185,16 @@ def read_population(connection: pymysql.Connection, window: Window) -> dict[int,
         return by_user
 
 
-def build_matrix(by_user: dict[int, list[MonthlyRow]], window: Window, min_months: int) -> np.ndarray:
-    vectors = [v for rows in by_user.values() if (v := cluster_vector(rows, window, min_months)) is not None]
-    return np.array(vectors, dtype=float).reshape(-1, len(FEATURE_KEYS))
+def build_matrix(by_user: dict[int, list[MonthlyRow]], window: Window, min_months: int) -> tuple[np.ndarray, list[int]]:
+    """특징 행렬과 같은 순서의 사용자 id. id는 동년배 집단 키를 붙이는 데만 쓰고 아티팩트에는 넣지 않는다."""
+    vectors: list[list[float]] = []
+    user_ids: list[int] = []
+    for uid, rows in by_user.items():
+        v = cluster_vector(rows, window, min_months)
+        if v is not None:
+            vectors.append(v)
+            user_ids.append(uid)
+    return np.array(vectors, dtype=float).reshape(-1, len(FEATURE_KEYS)), user_ids
 
 
 def standardize(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -161,7 +224,9 @@ def select_k(points: np.ndarray, k_min: int, k_max: int, random_state: int, n_in
 
 
 def build_artifact(matrix: np.ndarray, points: np.ndarray, means: np.ndarray, stds: np.ndarray, model: KMeans,
-                   window: Window, evaluation: dict, args: argparse.Namespace) -> dict:
+                   window: Window, evaluation: dict, args: argparse.Namespace,
+                   user_ids: list[int] | None = None,
+                   demographics: dict[int, tuple[dt.date | None, str | None]] | None = None) -> dict:
     k = model.n_clusters
     centroids_std = model.cluster_centers_
     centroids_raw = centroids_std * stds + means
@@ -181,8 +246,39 @@ def build_artifact(matrix: np.ndarray, points: np.ndarray, means: np.ndarray, st
                 "mean": round4(float(column.mean())),
                 "std": round4(float(column.std(ddof=0))),
             }
-        clusters.append({"clusterId": c, "label": labels[c], "sampleSize": int(len(members)), "stats": stats})
+        clusters.append({"clusterId": c, "label": labels[c], "sampleSize": int(len(members)), "stats": stats,
+                         "quantiles": {key: quantiles(members[:, d]) for d, key in enumerate(FEATURE_KEYS)}})
     import sklearn  # noqa: PLC0415
+
+    # 632: 동년배 집단·모집단 통계. 나이대는 학습 기준일 기준 만 나이.
+    assignments = np.asarray(model.labels_)
+    bands = np.array([None] * len(matrix), dtype=object)
+    genders = np.array([None] * len(matrix), dtype=object)
+    with_birth = with_gender = 0
+    if user_ids and demographics:
+        for i, uid in enumerate(user_ids):
+            birth, gender = demographics.get(uid, (None, None))
+            bands[i] = age_band(birth, args.reference_date)
+            genders[i] = gender if gender in GENDERS else None
+            with_birth += birth is not None
+            with_gender += genders[i] is not None
+    peer_groups: list[dict] = []
+
+    def add_group(mask: np.ndarray, band: str | None, gender: str | None, cluster_id: int | None) -> None:
+        if not mask.any():
+            return
+        peer_groups.append({"ageBand": band, "gender": gender, "clusterId": cluster_id, **group_stats(matrix, assignments, mask, k)})
+
+    for band in AGE_BANDS:
+        band_mask = bands == band
+        add_group(band_mask, band, None, None)
+        for gender in GENDERS:
+            add_group(band_mask & (genders == gender), band, gender, None)
+        for c in range(k):
+            add_group(band_mask & (assignments == c), band, None, c)
+    for gender in GENDERS:
+        add_group(genders == gender, None, gender, None)
+    population = group_stats(matrix, assignments, np.ones(len(matrix), dtype=bool), k)
 
     return {
         "modelVersion": MODEL_VERSION,
@@ -199,6 +295,16 @@ def build_artifact(matrix: np.ndarray, points: np.ndarray, means: np.ndarray, st
         "standardization": {"means": [float(v) for v in means], "stds": [float(v) for v in stds]},
         "centroids": [[float(v) for v in row] for row in centroids_std],
         "clusters": clusters,
+        "quantileGrid": QUANTILE_GRID,
+        "peerGroups": peer_groups,
+        "population": population,
+        "demographics": {
+            "ageBands": AGE_BANDS,
+            "referenceDate": args.reference_date.isoformat(),
+            "usersWithBirthDate": int(with_birth),
+            "usersWithGender": int(with_gender),
+            "peerGroupCount": len(peer_groups),
+        },
     }
 
 
@@ -210,7 +316,9 @@ def main(argv: list[str] | None = None) -> int:
 
     with connect(args.db_url, args.db_user, args.db_password) as connection:
         by_user = read_population(connection, window)
-    matrix = build_matrix(by_user, window, args.min_user_months)
+        demographics = read_demographics(connection)
+    matrix, user_ids = build_matrix(by_user, window, args.min_user_months)
+    print(f"[train] demographics: users with birth_date or gender={len(demographics)}")
     print(f"[train] users with rows={len(by_user)}, usable samples={len(matrix)}")
     if len(matrix) < 2:
         raise SystemExit("학습할 표본이 2개 미만입니다.")
@@ -239,11 +347,13 @@ def main(argv: list[str] | None = None) -> int:
     if k >= 2 and len(set(model.labels_)) >= 2:
         evaluation["silhouette"] = round(float(silhouette_score(points, model.labels_)), 4)
 
-    artifact = build_artifact(matrix, points, means, stds, model, window, evaluation, args)
+    artifact = build_artifact(matrix, points, means, stds, model, window, evaluation, args, user_ids, demographics)
     for cluster in artifact["clusters"]:
         print(f"[train] cluster {cluster['clusterId']} {cluster['label']}: n={cluster['sampleSize']}, "
               + ", ".join(f"{key}={cluster['stats'][key]['centroid']}" for key in FEATURE_KEYS))
     print(f"[train] k={k}, silhouette={evaluation.get('silhouette')}, inertia={evaluation['inertia']}")
+    print(f"[train] peer groups={len(artifact['peerGroups'])}, users with birth_date={artifact['demographics']['usersWithBirthDate']}, "
+          f"with gender={artifact['demographics']['usersWithGender']}")
 
     if args.dry_run:
         print("[train] dry-run: 파일을 쓰지 않았습니다.")

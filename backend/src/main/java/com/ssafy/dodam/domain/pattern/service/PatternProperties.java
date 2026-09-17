@@ -2,6 +2,7 @@ package com.ssafy.dodam.domain.pattern.service;
 
 import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 
 /**
  * 패턴 분석 정책값(`app.pattern`). 명세·기획안에 수치가 없는 항목은 여기 기본값을 **서비스 기본안**으로 쓰고 문서에 기록한다.
@@ -16,6 +17,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param leaseDuration         진행 중 접수가 유효한 시간. 지나면 죽은 접수로 보고 새 요청을 받는다
  * @param modelLocation         Python 학습 스크립트가 만든 모델 아티팩트 위치(Spring Resource 표기). 비우면 아티팩트를 쓰지 않는다
  * @param trainInProcess        아티팩트가 없을 때 Java 안에서 K-Means를 학습할지. 운영에서는 false로 두고 아티팩트만 쓰는 것을 권장
+ * @param peerMinSampleSize     (632) 동년배 비교에 필요한 집단 최소 표본 수(나이대·성별·나이대×성별). 미달이면 더 넓은 축으로 확장한다
+ * @param clusterPeerMinSampleSize (632) 군집 × 나이대 집단의 최소 표본 수
  */
 @ConfigurationProperties(prefix = "app.pattern")
 public record PatternProperties(
@@ -28,14 +31,27 @@ public record PatternProperties(
         Duration modelTtl,
         Duration leaseDuration,
         String modelLocation,
-        Boolean trainInProcess
+        Boolean trainInProcess,
+        Integer peerMinSampleSize,
+        Integer clusterPeerMinSampleSize
 ) {
 
     public static final int DEFAULT_LOOKBACK_MONTHS = 6;
     public static final int MAX_LOOKBACK_MONTHS = 12;
-    public static final String DEFAULT_MODEL_LOCATION = "classpath:ml/spending-kmeans-v1.json";
+    public static final String DEFAULT_MODEL_LOCATION = "classpath:ml/spending-kmeans-v2.json";
 
+    /** 632 이전 형식(동년배 표본 하한 없음). */
+    public PatternProperties(Integer lookbackMonths, Integer minUserMonths, Integer minPopulation, Integer minClusterSampleSize,
+            Double minConfidence, Integer clusterCount, Duration modelTtl, Duration leaseDuration, String modelLocation,
+            Boolean trainInProcess) {
+        this(lookbackMonths, minUserMonths, minPopulation, minClusterSampleSize, minConfidence, clusterCount, modelTtl, leaseDuration,
+                modelLocation, trainInProcess, null, null);
+    }
+
+    @ConstructorBinding
     public PatternProperties {
+        peerMinSampleSize = peerMinSampleSize == null ? 30 : peerMinSampleSize;
+        clusterPeerMinSampleSize = clusterPeerMinSampleSize == null ? 10 : clusterPeerMinSampleSize;
         modelLocation = modelLocation == null ? DEFAULT_MODEL_LOCATION : modelLocation.strip();
         trainInProcess = trainInProcess == null || trainInProcess;
         lookbackMonths = lookbackMonths == null ? DEFAULT_LOOKBACK_MONTHS : lookbackMonths;
