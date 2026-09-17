@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
  *   사실 조립(소유권 검증 포함)
  *     → 프롬프트 생성
  *     → 민감정보 검사   ─ 걸리면 호출하지 않고 템플릿
+ *     → 호출 예산 확인  ─ 넘었으면 호출하지 않고 템플릿
  *     → 외부 AI 호출    ─ 실패하면 템플릿
  *     → 숫자 검증       ─ 지어낸 숫자가 있으면 템플릿
  *     → 응답(수치·판정은 어느 경로든 서버 계산값)
@@ -41,11 +42,12 @@ public class CoachService {
     private final CoachSensitiveDataGuard sensitive;
     private final CoachAnswerCache cache;
     private final CoachCacheKey cacheKey;
+    private final CoachCallRateLimiter rateLimiter;
     private final CoachClock clock;
 
     public CoachService(CoachFactAssembler assembler, CoachPromptFactory prompts, CoachTextGenerator generator,
             CoachTemplateWriter template, CoachNumberGuard numbers, CoachSensitiveDataGuard sensitive,
-            CoachAnswerCache cache, CoachCacheKey cacheKey, CoachClock clock) {
+            CoachAnswerCache cache, CoachCacheKey cacheKey, CoachCallRateLimiter rateLimiter, CoachClock clock) {
         this.assembler = assembler;
         this.prompts = prompts;
         this.generator = generator;
@@ -54,6 +56,7 @@ public class CoachService {
         this.sensitive = sensitive;
         this.cache = cache;
         this.cacheKey = cacheKey;
+        this.rateLimiter = rateLimiter;
         this.clock = clock;
     }
 
@@ -90,6 +93,14 @@ public class CoachService {
             // 조립기가 거르지 못한 값이 있다는 뜻이므로 회귀로 보고 ERROR로 남긴다. 프롬프트 본문은 남기지 않는다.
             log.error("Coach prompt blocked before the external call: topic={} violations={}", facts.topic(), violations);
             return respond(facts, CoachSource.TEMPLATE, CoachDegradedReason.SENSITIVE_DATA_BLOCKED, null, template.write(facts));
+        }
+
+        // 예산은 "돈이 나가기 직전"에만 깎는다. 캐시 적중과 AI 비활성은 과금이 없으므로 여기까지 오지 않고,
+        // 민감정보로 막힌 요청도 외부로 나가지 않으므로 이 줄 뒤에 둔다.
+        if (!rateLimiter.tryAcquire(userId)) {
+            // 정상 사용으로는 닿기 어려운 한도다. 반복해서 찍히면 FE 루프나 스크립트를 의심한다.
+            log.warn("Coach call refused by the per-user budget: userId={} topic={}", userId, facts.topic());
+            return respond(facts, CoachSource.TEMPLATE, CoachDegradedReason.RATE_LIMITED, null, template.write(facts));
         }
 
         String generated;

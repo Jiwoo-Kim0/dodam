@@ -10,6 +10,7 @@ export type CoachDegradedReason =
   | 'AI_UNAVAILABLE'
   | 'AI_EMPTY_RESPONSE'
   | 'AI_UNVERIFIED_NUMBER'
+  | 'RATE_LIMITED'
   | 'SENSITIVE_DATA_BLOCKED';
 
 export interface CoachFact {
