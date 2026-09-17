@@ -1,5 +1,12 @@
 import type { PropsWithChildren } from 'react';
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { NativeScrollEvent, NativeSyntheticEvent, StyleProp, ViewStyle } from 'react-native';
 import {
   AccessibilityInfo,
@@ -29,7 +36,7 @@ import {
 } from './scrollPhysics';
 
 const END_REACHED_RESET_MARGIN = 40;
-const SCROLL_OFFSET_REPORT_DELTA = 4;
+const SCROLL_OFFSET_REPORT_DELTA = 16;
 const DEFAULT_REFRESH_THRESHOLD = 44;
 const REFRESH_HOLD_OFFSET = 48;
 
@@ -158,58 +165,90 @@ export const BouncyScrollView = forwardRef<
     }
   }, [refreshing, translateY]);
 
-  const panGesture = Gesture.Pan()
-    .enabled(!refreshing)
-    .activeOffsetY([-10, 10])
-    .failOffsetX([-15, 15])
-    .onStart(() => {
-      dragStartY.value = translateY.value;
-    })
-    .onUpdate((event) => {
-      const next = dragStartY.value + event.translationY;
-      translateY.value = withRubberBand(next, -maxScroll, 0, RUBBER_BAND_RESISTANCE);
-    })
-    .onEnd((event) => {
-      if (onRefresh && translateY.value >= refreshThreshold) {
-        translateY.value = withSpring(REFRESH_HOLD_OFFSET, SPRING_BACK_CONFIG);
-        runOnJS(onRefresh)();
-        return;
-      }
+  const panGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .enabled(!refreshing && containerHeight > 0 && contentHeight > 0)
+        .activeOffsetY([-10, 10])
+        .failOffsetX([-15, 15])
+        .onStart(() => {
+          dragStartY.value = translateY.value;
+        })
+        .onUpdate((event) => {
+          const next = dragStartY.value + event.translationY;
+          translateY.value = withRubberBand(
+            next,
+            -maxScroll,
+            0,
+            RUBBER_BAND_RESISTANCE,
+          );
+        })
+        .onEnd((event) => {
+          if (onRefresh && translateY.value >= refreshThreshold) {
+            translateY.value = withSpring(
+              REFRESH_HOLD_OFFSET,
+              SPRING_BACK_CONFIG,
+            );
+            runOnJS(onRefresh)();
+            return;
+          }
 
-      if (translateY.value > 0) {
-        translateY.value = withSpring(0, SPRING_BACK_CONFIG);
-        return;
-      }
+          if (translateY.value > 0) {
+            translateY.value = withSpring(0, SPRING_BACK_CONFIG);
+            return;
+          }
 
-      if (translateY.value < -maxScroll) {
-        translateY.value = withSpring(-maxScroll, SPRING_BACK_CONFIG);
-        return;
-      }
+          if (translateY.value < -maxScroll) {
+            translateY.value = withSpring(-maxScroll, SPRING_BACK_CONFIG);
+            return;
+          }
 
-      if (pagingEnabled && pageSize > 0) {
-        const startPage = Math.round(-dragStartY.value / pageSize);
-        const swipeThreshold = pageSize * 0.2;
-        const flingThreshold = 500;
+          if (pagingEnabled && pageSize > 0) {
+            const startPage = Math.round(-dragStartY.value / pageSize);
+            const swipeThreshold = pageSize * 0.2;
+            const flingThreshold = 500;
 
-        let targetPage = startPage;
-        if (event.translationY < -swipeThreshold || event.velocityY < -flingThreshold) {
-          targetPage = startPage + 1;
-        } else if (event.translationY > swipeThreshold || event.velocityY > flingThreshold) {
-          targetPage = startPage - 1;
-        }
+            let targetPage = startPage;
+            if (
+              event.translationY < -swipeThreshold ||
+              event.velocityY < -flingThreshold
+            ) {
+              targetPage = startPage + 1;
+            } else if (
+              event.translationY > swipeThreshold ||
+              event.velocityY > flingThreshold
+            ) {
+              targetPage = startPage - 1;
+            }
 
-        const maxPage = Math.round(maxScroll / pageSize);
-        targetPage = Math.min(Math.max(targetPage, 0), maxPage);
-        translateY.value = withSpring(-targetPage * pageSize, SPRING_BACK_CONFIG);
-        return;
-      }
+            const maxPage = Math.round(maxScroll / pageSize);
+            targetPage = Math.min(Math.max(targetPage, 0), maxPage);
+            translateY.value = withSpring(
+              -targetPage * pageSize,
+              SPRING_BACK_CONFIG,
+            );
+            return;
+          }
 
-      translateY.value = withDecay({
-        velocity: event.velocityY,
-        deceleration: DECAY_DECELERATION,
-        clamp: [-maxScroll, 0],
-      });
-    });
+          translateY.value = withDecay({
+            velocity: event.velocityY,
+            deceleration: DECAY_DECELERATION,
+            clamp: [-maxScroll, 0],
+          });
+        }),
+    [
+      containerHeight,
+      contentHeight,
+      dragStartY,
+      maxScroll,
+      onRefresh,
+      pageSize,
+      pagingEnabled,
+      refreshThreshold,
+      refreshing,
+      translateY,
+    ],
+  );
 
   const animatedContentStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
