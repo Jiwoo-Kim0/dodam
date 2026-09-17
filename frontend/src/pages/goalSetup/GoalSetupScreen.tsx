@@ -1,13 +1,13 @@
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, View } from 'react-native';
 
 import { assetApi, goalApi, isApiError } from '@/api';
 import { BottomActionButton } from '@/components/bottomActionButton/BottomActionButton';
 import { GoalAccountSelectionList } from '@/components/goalAccountSelectionList/GoalAccountSelectionList';
+import { ScreenState } from '@/components/screenState/ScreenState';
 import { routes } from '@/constants/routes';
 import { AuthScreenLayout } from '@/layout/authScreenLayout/AuthScreenLayout';
-import { colors } from '@/styles';
 import type { AccountApiResponse } from '@/types/assetApi.types';
 
 import {
@@ -32,6 +32,25 @@ type GoalSetupStep =
   | 'savingComplete'
   | 'reductionAmount'
   | 'reductionComplete';
+
+const MAX_LINKED_ACCOUNTS = 50;
+
+function isValidAmount(value: number) {
+  return Number.isSafeInteger(value) && value > 0;
+}
+
+function isFutureDate(value: Date | null): value is Date {
+  if (!value || Number.isNaN(value.getTime())) return false;
+
+  const selected = new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return selected.getTime() > today.getTime();
+}
+
+function toGoalDateKey(value: Date) {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+}
 
 interface GoalSetupScreenProps {
   editGoalId?: string;
@@ -68,70 +87,93 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
   const [isLoadingGoal, setIsLoadingGoal] = useState(isEditing);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [availableAccounts, setAvailableAccounts] = useState<AccountApiResponse[]>([]);
+  const [isLoadingAccounts, setIsLoadingAccounts] = useState(true);
+  const [accountLoadError, setAccountLoadError] = useState<string | null>(null);
+  const submissionInFlightRef = useRef(false);
+  const accountRequestIdRef = useRef(0);
+  const goalRequestIdRef = useRef(0);
+  const parsedEditGoalId = Number(editGoalId);
+  const hasValidEditGoalId = !isEditing || (
+    Number.isSafeInteger(parsedEditGoalId) && parsedEditGoalId > 0
+  );
 
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      const loadAccounts = async () => {
-        try {
-          const accounts = await assetApi.getAccounts();
-          setAvailableAccounts(
-            accounts.filter(
-              ({ accountType, status }) =>
-                accountType !== 'MINUS' && status !== 'CLOSED',
-            ),
-          );
-        } catch {
-          setAvailableAccounts([]);
-        }
-      };
+  const loadAccounts = useCallback(async () => {
+    const requestId = ++accountRequestIdRef.current;
+    setIsLoadingAccounts(true);
+    setAccountLoadError(null);
 
-      void loadAccounts();
-    }, 0);
+    try {
+      const accounts = await assetApi.getAccounts();
+      if (requestId !== accountRequestIdRef.current) return;
 
-    return () => clearTimeout(timeout);
+      setAvailableAccounts(
+        accounts.filter(
+          ({ accountType, status }) =>
+            accountType !== 'MINUS' && status !== 'CLOSED',
+        ),
+      );
+    } catch {
+      if (requestId !== accountRequestIdRef.current) return;
+      setAvailableAccounts([]);
+      setAccountLoadError('계좌를 불러오지 못했어요. 네트워크 상태를 확인해주세요.');
+    } finally {
+      if (requestId === accountRequestIdRef.current) setIsLoadingAccounts(false);
+    }
   }, []);
 
+  const loadGoal = useCallback(async () => {
+    if (!isEditing) return;
+
+    const requestId = ++goalRequestIdRef.current;
+    setIsLoadingGoal(true);
+    setLoadError(null);
+
+    if (!hasValidEditGoalId) {
+      setLoadError('목표 번호를 확인하거나 이전 화면에서 다시 선택해주세요.');
+      setIsLoadingGoal(false);
+      return;
+    }
+
+    try {
+      const goal = await goalApi.getGoal(parsedEditGoalId);
+      if (requestId !== goalRequestIdRef.current) return;
+
+      setGoalName(goal.name);
+      if (goal.type === 'SAVING') {
+        setSelectedType('saving');
+        setSavingAmount(goal.targetAmount ?? 0);
+        setSavingDeadline(
+          goal.targetDate ? new Date(`${goal.targetDate}T00:00:00`) : null,
+        );
+        setStep('savingPurpose');
+      } else {
+        setSelectedType('spendingReduction');
+        setReductionAmount(goal.monthlyBudget ?? 0);
+        setStep('reductionAmount');
+      }
+    } catch (error) {
+      if (requestId !== goalRequestIdRef.current) return;
+      setLoadError(
+        error instanceof Error ? error.message : '목표를 불러오지 못했어요.',
+      );
+    } finally {
+      if (requestId === goalRequestIdRef.current) setIsLoadingGoal(false);
+    }
+  }, [hasValidEditGoalId, isEditing, parsedEditGoalId]);
+
   useEffect(() => {
-    if (!editGoalId) return;
+    void Promise.resolve().then(loadAccounts);
+    return () => {
+      accountRequestIdRef.current += 1;
+    };
+  }, [loadAccounts]);
 
-    const timeout = setTimeout(() => {
-      const loadGoal = async () => {
-        const goalId = Number(editGoalId);
-        if (!Number.isSafeInteger(goalId) || goalId <= 0) {
-          setLoadError('올바르지 않은 목표입니다.');
-          setIsLoadingGoal(false);
-          return;
-        }
-
-        try {
-          const goal = await goalApi.getGoal(goalId);
-          setGoalName(goal.name);
-          if (goal.type === 'SAVING') {
-            setSelectedType('saving');
-            setSavingAmount(goal.targetAmount ?? 0);
-            setSavingDeadline(
-              goal.targetDate ? new Date(`${goal.targetDate}T00:00:00`) : null,
-            );
-            setStep('savingPurpose');
-          } else {
-            setSelectedType('spendingReduction');
-            setReductionAmount(goal.monthlyBudget ?? 0);
-            setStep('reductionAmount');
-          }
-        } catch (error) {
-          setLoadError(
-            error instanceof Error ? error.message : '목표를 불러오지 못했어요.',
-          );
-        } finally {
-          setIsLoadingGoal(false);
-        }
-      };
-
-      void loadGoal();
-    }, 0);
-
-    return () => clearTimeout(timeout);
-  }, [editGoalId]);
+  useEffect(() => {
+    void Promise.resolve().then(loadGoal);
+    return () => {
+      goalRequestIdRef.current += 1;
+    };
+  }, [loadGoal]);
 
   const handleGoalTypeSelect = (type: GoalType) => {
     setSelectedType(type);
@@ -145,23 +187,43 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
   };
 
   const handleAccountToggle = (accountId: string) => {
-    setSelectedAccountIds((currentIds) =>
-      currentIds.includes(accountId)
-        ? currentIds.filter((id) => id !== accountId)
-        : [...currentIds, accountId],
-    );
+    if (submissionInFlightRef.current) return;
+
+    if (selectedAccountIds.includes(accountId)) {
+      setSelectedAccountIds((currentIds) =>
+        currentIds.filter((id) => id !== accountId),
+      );
+      return;
+    }
+    if (selectedAccountIds.length >= MAX_LINKED_ACCOUNTS) {
+      Alert.alert(
+        '계좌를 더 선택할 수 없어요',
+        `계좌는 최대 ${MAX_LINKED_ACCOUNTS}개까지 연결할 수 있어요.`,
+      );
+      return;
+    }
+    setSelectedAccountIds((currentIds) => [...currentIds, accountId]);
   };
 
   const createSpendingGoal = async () => {
-    if (reductionAmount <= 0 || isSubmitting) return;
+    if (submissionInFlightRef.current) return;
+    if (!isValidAmount(reductionAmount)) {
+      Alert.alert('금액을 확인해주세요', '목표 소비 금액은 1원 이상이어야 해요.');
+      return;
+    }
 
+    submissionInFlightRef.current = true;
     setIsSubmitting(true);
     try {
-      if (isEditing && editGoalId) {
-        await goalApi.updateGoal(Number(editGoalId), {
+      if (isEditing) {
+        if (!hasValidEditGoalId) {
+          Alert.alert('목표를 수정하지 못했어요', '올바르지 않은 목표입니다.');
+          return;
+        }
+        await goalApi.updateGoal(parsedEditGoalId, {
           monthlyBudget: reductionAmount,
         });
-        router.replace(routes.goalDetail(editGoalId));
+        router.replace(routes.goalDetail(String(parsedEditGoalId)));
         return;
       }
 
@@ -175,18 +237,28 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
           : '잠시 후 다시 시도해주세요.',
       );
     } finally {
+      submissionInFlightRef.current = false;
       setIsSubmitting(false);
     }
   };
 
   const createSavingGoal = async () => {
     if (
-      !savingDeadline ||
+      submissionInFlightRef.current ||
+      !isFutureDate(savingDeadline) ||
       goalName.trim().length === 0 ||
-      savingAmount <= 0 ||
+      !isValidAmount(savingAmount) ||
       selectedAccountIds.length === 0 ||
-      isSubmitting
+      selectedAccountIds.length > MAX_LINKED_ACCOUNTS
     ) {
+      if (!submissionInFlightRef.current) {
+        Alert.alert(
+          '목표 정보를 확인해주세요',
+          !isFutureDate(savingDeadline)
+            ? '목표 날짜는 내일 이후로 선택해주세요.'
+            : '목표 이름, 금액과 연결 계좌를 다시 확인해주세요.',
+        );
+      }
       return;
     }
 
@@ -196,10 +268,11 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
       return;
     }
 
-    const targetDate = `${savingDeadline.getFullYear()}-${String(savingDeadline.getMonth() + 1).padStart(2, '0')}-${String(savingDeadline.getDate()).padStart(2, '0')}`;
+    const targetDate = toGoalDateKey(savingDeadline);
 
     let goalId = createdSavingGoalId;
     let isLinkingAccounts = false;
+    submissionInFlightRef.current = true;
     setIsSubmitting(true);
     try {
       if (goalId === null) {
@@ -276,27 +349,44 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
           : message,
       );
     } finally {
+      submissionInFlightRef.current = false;
       setIsSubmitting(false);
     }
   };
 
   const updateSavingGoal = async () => {
-    if (!editGoalId || !savingDeadline || isSubmitting) return;
+    if (submissionInFlightRef.current) return;
+    if (
+      !hasValidEditGoalId ||
+      !isFutureDate(savingDeadline) ||
+      goalName.trim().length === 0 ||
+      !isValidAmount(savingAmount)
+    ) {
+      Alert.alert(
+        '목표 정보를 확인해주세요',
+        !isFutureDate(savingDeadline)
+          ? '목표 날짜는 내일 이후로 선택해주세요.'
+          : '목표 이름과 금액을 다시 확인해주세요.',
+      );
+      return;
+    }
 
+    submissionInFlightRef.current = true;
     setIsSubmitting(true);
     try {
-      await goalApi.updateGoal(Number(editGoalId), {
+      await goalApi.updateGoal(parsedEditGoalId, {
         name: goalName.trim(),
         targetAmount: savingAmount,
-        targetDate: `${savingDeadline.getFullYear()}-${String(savingDeadline.getMonth() + 1).padStart(2, '0')}-${String(savingDeadline.getDate()).padStart(2, '0')}`,
+        targetDate: toGoalDateKey(savingDeadline),
       });
-      router.replace(routes.goalDetail(editGoalId));
+      router.replace(routes.goalDetail(String(parsedEditGoalId)));
     } catch (error) {
       Alert.alert(
         '목표를 수정하지 못했어요',
         error instanceof Error ? error.message : '잠시 후 다시 시도해주세요.',
       );
     } finally {
+      submissionInFlightRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -304,13 +394,16 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
   if (isLoadingGoal || loadError) {
     return (
       <AuthScreenLayout title="목표 수정" showBackButton onBackPress={() => router.back()}>
-        <View style={styles.statusContent}>
-          {isLoadingGoal ? (
-            <ActivityIndicator color={colors.primary.green} />
-          ) : (
-            <Text style={styles.statusText}>{loadError}</Text>
-          )}
-        </View>
+        <ScreenState
+          description={
+            isLoadingGoal
+              ? '목표 정보를 불러오고 있어요'
+              : loadError ?? '목표 정보를 불러오지 못했어요.'
+          }
+          isLoading={isLoadingGoal}
+          onRetry={!isLoadingGoal && hasValidEditGoalId ? () => void loadGoal() : undefined}
+          title={!isLoadingGoal ? '목표를 불러오지 못했어요.' : undefined}
+        />
       </AuthScreenLayout>
     );
   }
@@ -351,7 +444,7 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
         footer={
           <BottomActionButton
             label="다음"
-            disabled={savingAmount === 0}
+            disabled={!isValidAmount(savingAmount)}
             onPress={() => setStep('savingDeadline')}
           />
         }>
@@ -374,7 +467,7 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
         footer={
           <BottomActionButton
             label={isSubmitting ? '저장 중...' : isEditing ? '수정 완료' : '다음'}
-            disabled={savingDeadline === null || isSubmitting}
+            disabled={!isFutureDate(savingDeadline) || isSubmitting}
             onPress={() =>
               isEditing ? void updateSavingGoal() : setStep('savingAccount')
             }
@@ -389,6 +482,8 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
   }
 
   if (step === 'savingAccount') {
+    const canSelectAccount = !isLoadingAccounts && !accountLoadError && availableAccounts.length > 0;
+
     return (
       <AuthScreenLayout
         title="어디에 모을까요?"
@@ -396,18 +491,35 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
         headerAccessory={<GoalStepProgress currentStep={4} totalSteps={4} />}
         showBackButton
         onBackPress={() => setStep('savingDeadline')}
-        footer={
+        footer={canSelectAccount ? (
           <BottomActionButton
             label={isSubmitting ? '저장 중...' : '선택 완료'}
             disabled={selectedAccountIds.length === 0 || isSubmitting}
             onPress={() => void createSavingGoal()}
           />
-        }>
-        <GoalAccountSelectionList
-          accounts={availableAccounts}
-          selectedAccountIds={selectedAccountIds}
-          onToggle={handleAccountToggle}
-        />
+        ) : undefined}>
+        {isLoadingAccounts ? (
+          <ScreenState description="연결할 계좌를 불러오고 있어요" isLoading />
+        ) : accountLoadError ? (
+          <ScreenState
+            description={accountLoadError}
+            onRetry={() => void loadAccounts()}
+            title="계좌를 불러오지 못했어요."
+          />
+        ) : availableAccounts.length === 0 ? (
+          <ScreenState
+            description="입출금 또는 예·적금 계좌를 연결한 뒤 다시 시도해주세요."
+            onRetry={() => void loadAccounts()}
+            title="선택할 수 있는 계좌가 없어요."
+          />
+        ) : (
+          <GoalAccountSelectionList
+            accounts={availableAccounts}
+            disabled={isSubmitting}
+            selectedAccountIds={selectedAccountIds}
+            onToggle={handleAccountToggle}
+          />
+        )}
       </AuthScreenLayout>
     );
   }
@@ -435,7 +547,7 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
         footer={
           <BottomActionButton
             label={isSubmitting ? '저장 중...' : isEditing ? '수정 완료' : '다음'}
-            disabled={reductionAmount === 0 || isSubmitting}
+            disabled={!isValidAmount(reductionAmount) || isSubmitting}
             onPress={() => void createSpendingGoal()}
           />
         }>

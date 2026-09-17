@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { assetApi, goalApi, ledgerApi } from '@/api';
 import type { AccountApiResponse } from '@/types/assetApi.types';
@@ -110,17 +110,24 @@ export function useGoalDetail(goalIdValue: string) {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const requestIdRef = useRef(0);
 
   const load = useCallback(async (refreshing = false) => {
+    const requestId = ++requestIdRef.current;
     const goalId = Number(goalIdValue);
     if (!Number.isSafeInteger(goalId) || goalId <= 0) {
+      setData(null);
       setError(new Error('올바르지 않은 목표입니다.'));
       setIsLoading(false);
+      setIsRefreshing(false);
       return;
     }
 
     if (refreshing) setIsRefreshing(true);
-    else setIsLoading(true);
+    else {
+      setData(null);
+      setIsLoading(true);
+    }
     setError(null);
 
     try {
@@ -144,6 +151,7 @@ export function useGoalDetail(goalIdValue: string) {
           assetApi.getAccounts(),
           loadGoalHistory(goalId),
         ]);
+        if (requestId !== requestIdRef.current) return;
         const monthlyShortfall = Math.max(requiredSaving.monthlyShortfall, 0);
 
         setData({
@@ -190,6 +198,7 @@ export function useGoalDetail(goalIdValue: string) {
           }),
         ),
       ]);
+      if (requestId !== requestIdRef.current) return;
 
       setData({
         goal: {
@@ -223,6 +232,7 @@ export function useGoalDetail(goalIdValue: string) {
         availableAccounts: [],
       });
     } catch (loadError) {
+      if (requestId !== requestIdRef.current) return;
       setData(null);
       setError(
         loadError instanceof Error
@@ -230,22 +240,29 @@ export function useGoalDetail(goalIdValue: string) {
           : new Error('목표를 불러오지 못했어요.'),
       );
     } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
+      if (requestId === requestIdRef.current) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
     }
   }, [goalIdValue]);
 
   useEffect(() => {
     const timeout = setTimeout(() => void load(), 0);
 
-    return () => clearTimeout(timeout);
+    return () => {
+      clearTimeout(timeout);
+      requestIdRef.current += 1;
+    };
   }, [load]);
+
+  const refetch = useCallback(() => load(true), [load]);
 
   return {
     data,
     error,
     isLoading,
     isRefreshing,
-    refetch: () => load(true),
+    refetch,
   };
 }

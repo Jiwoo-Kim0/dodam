@@ -37,6 +37,8 @@ export function GoalAccountManagementBottomSheet({
         <Pressable
           accessibilityLabel="연결 계좌 관리 닫기"
           accessibilityRole="button"
+          accessibilityState={{ disabled: isSubmitting }}
+          disabled={isSubmitting}
           onPress={onClose}
           style={styles.backdrop}
         />
@@ -52,6 +54,8 @@ export function GoalAccountManagementBottomSheet({
             <Pressable
               accessibilityLabel="닫기"
               accessibilityRole="button"
+              accessibilityState={{ disabled: isSubmitting }}
+              disabled={isSubmitting}
               hitSlop={8}
               onPress={onClose}
               style={styles.closeButton}
@@ -63,6 +67,7 @@ export function GoalAccountManagementBottomSheet({
           <View style={styles.accountSelection}>
             <GoalAccountSelectionList
               accounts={accounts}
+              disabled={isSubmitting}
               onToggle={onToggle}
               selectedAccountIds={selectedAccountIds}
             />

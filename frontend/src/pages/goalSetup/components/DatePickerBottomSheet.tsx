@@ -48,6 +48,13 @@ interface PickerDate {
 
 const ITEM_HEIGHT = componentSize.touchTarget;
 
+function getMinimumGoalDate() {
+  const minimum = new Date();
+  minimum.setHours(0, 0, 0, 0);
+  minimum.setDate(minimum.getDate() + 1);
+  return minimum;
+}
+
 const PickerColumn = memo(function PickerColumn({
   options,
   selectedValue,
@@ -128,7 +135,10 @@ function DatePickerContent({
   initialDate,
   onConfirm,
 }: DatePickerContentProps) {
-  const currentYear = new Date().getFullYear();
+  const minimumDate = getMinimumGoalDate();
+  const minimumYear = minimumDate.getFullYear();
+  const minimumMonth = minimumDate.getMonth() + 1;
+  const minimumDay = minimumDate.getDate();
   const [selectedDate, setSelectedDate] = useState<PickerDate>(() => ({
     year: initialDate.getFullYear(),
     month: initialDate.getMonth() + 1,
@@ -138,40 +148,62 @@ function DatePickerContent({
     selectedDate;
 
   const years = useMemo(
-    () => Array.from({ length: 11 }, (_, index) => currentYear + index),
-    [currentYear],
+    () => Array.from({ length: 11 }, (_, index) => minimumYear + index),
+    [minimumYear],
   );
+  const firstMonth = selectedYear === minimumYear ? minimumMonth : 1;
   const months = useMemo(
-    () => Array.from({ length: 12 }, (_, index) => index + 1),
-    [],
+    () => Array.from(
+      { length: 13 - firstMonth },
+      (_, index) => firstMonth + index,
+    ),
+    [firstMonth],
   );
   const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+  const firstDay =
+    selectedYear === minimumYear && selectedMonth === minimumMonth
+      ? minimumDay
+      : 1;
   const days = useMemo(
-    () => Array.from({ length: daysInMonth }, (_, index) => index + 1),
-    [daysInMonth],
+    () => Array.from(
+      { length: daysInMonth - firstDay + 1 },
+      (_, index) => firstDay + index,
+    ),
+    [daysInMonth, firstDay],
   );
 
   const handleYearSelect = useCallback((year: number) => {
-    setSelectedDate((currentDate) => ({
-      ...currentDate,
-      year,
-      day: Math.min(
-        currentDate.day,
-        new Date(year, currentDate.month, 0).getDate(),
-      ),
-    }));
-  }, []);
+    setSelectedDate((currentDate) => {
+      const month = year === minimumYear
+        ? Math.max(currentDate.month, minimumMonth)
+        : currentDate.month;
+      const firstValidDay =
+        year === minimumYear && month === minimumMonth ? minimumDay : 1;
+      const lastValidDay = new Date(year, month, 0).getDate();
+
+      return {
+        year,
+        month,
+        day: Math.max(firstValidDay, Math.min(currentDate.day, lastValidDay)),
+      };
+    });
+  }, [minimumDay, minimumMonth, minimumYear]);
 
   const handleMonthSelect = useCallback((month: number) => {
-    setSelectedDate((currentDate) => ({
-      ...currentDate,
-      month,
-      day: Math.min(
-        currentDate.day,
-        new Date(currentDate.year, month, 0).getDate(),
-      ),
-    }));
-  }, []);
+    setSelectedDate((currentDate) => {
+      const firstValidDay =
+        currentDate.year === minimumYear && month === minimumMonth
+          ? minimumDay
+          : 1;
+      const lastValidDay = new Date(currentDate.year, month, 0).getDate();
+
+      return {
+        ...currentDate,
+        month,
+        day: Math.max(firstValidDay, Math.min(currentDate.day, lastValidDay)),
+      };
+    });
+  }, [minimumDay, minimumMonth, minimumYear]);
 
   const handleDaySelect = useCallback((day: number) => {
     setSelectedDate((currentDate) => ({ ...currentDate, day }));
@@ -238,7 +270,10 @@ export function DatePickerBottomSheet({
   onClose,
   onConfirm,
 }: DatePickerBottomSheetProps) {
-  const initialDate = value ?? new Date();
+  const minimumDate = getMinimumGoalDate();
+  const initialDate = value && value.getTime() >= minimumDate.getTime()
+    ? value
+    : minimumDate;
   const contentKey = visible
     ? `open-${value?.getTime() ?? 'today'}`
     : 'hidden';

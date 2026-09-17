@@ -7,12 +7,14 @@ import { styles } from './GoalAccountSelectionList.styles';
 
 interface GoalAccountSelectionListProps {
   accounts: readonly AccountApiResponse[];
+  disabled?: boolean;
   selectedAccountIds: readonly string[];
   onToggle: (accountId: string) => void;
 }
 
 export function GoalAccountSelectionList({
   accounts,
+  disabled = false,
   selectedAccountIds,
   onToggle,
 }: GoalAccountSelectionListProps) {
@@ -41,12 +43,13 @@ export function GoalAccountSelectionList({
               ]}>
               <Pressable
                 onPress={() => onToggle(accountId)}
+                disabled={disabled}
                 accessibilityRole="checkbox"
                 accessibilityLabel={`${account.bankName} ${account.accountNoMasked}`}
-                accessibilityState={{ checked: isSelected }}
+                accessibilityState={{ checked: isSelected, disabled }}
                 style={({ pressed }) => [
                   styles.accountRow,
-                  pressed && styles.pressedRow,
+                  pressed && !disabled && styles.pressedRow,
                 ]}>
                 {institution ? (
                   <Image
