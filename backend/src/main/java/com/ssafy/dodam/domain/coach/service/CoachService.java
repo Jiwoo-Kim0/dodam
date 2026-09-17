@@ -115,6 +115,12 @@ public class CoachService {
         }
 
         String message = generated.trim();
+        int limit = prompts.maxMessageLength(facts.topic());
+        if (message.length() > limit) {
+            // 버리지 않는다. 조금 긴 좋은 문장이 템플릿보다 낫다. 프롬프트가 먹히는지만 관측한다.
+            log.warn("Coach answer is longer than the prompt asked: topic={} length={} limit={}",
+                    facts.topic(), message.length(), limit);
+        }
         // 성공한 AI 문장만 저장한다. 템플릿을 저장하면 공급자가 복구된 뒤에도 TTL 내내 템플릿만 나간다.
         cache.put(key, new CoachAnswerCache.Entry(message, generator.modelName()));
         return respond(facts, CoachSource.AI, null, generator.modelName(), message);
