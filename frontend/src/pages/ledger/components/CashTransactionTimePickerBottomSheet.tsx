@@ -126,7 +126,7 @@ export function CashTransactionTimePickerBottomSheet({
     <Modal
       visible={visible}
       transparent
-      animationType="slide"
+      animationType="fade"
       statusBarTranslucent
       onRequestClose={onClose}>
       <View style={styles.overlay}>
