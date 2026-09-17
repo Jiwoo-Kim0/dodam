@@ -18,6 +18,7 @@ type DiscoveryHomeProps = {
   diagnosis: { completedAt: string } | null;
   insights: DiscoveryInsight[];
   isLoading: boolean;
+  isRunningAnalysis: boolean;
   error: string | null;
   cooldown: DiagnosisCooldown;
   canRetryRecommendations: boolean;
@@ -38,6 +39,7 @@ export function DiscoveryHome({
   error,
   insights,
   isLoading,
+  isRunningAnalysis,
   load,
   onBack,
   onInsightPress,
@@ -162,9 +164,15 @@ export function DiscoveryHome({
             </Text>
           </View>
 
-          {(error || !diagnosis || canRetryRecommendations) && !isLoading ? (
+          {(isRunningAnalysis || error || !diagnosis || canRetryRecommendations) &&
+          (!isLoading || isRunningAnalysis) ? (
             <Pressable
               accessibilityRole="button"
+              accessibilityState={{
+                busy: isRunningAnalysis,
+                disabled: isRunningAnalysis,
+              }}
+              disabled={isRunningAnalysis}
               onPress={() => {
                 void (canRetryRecommendations
                   ? retryRecommendationGeneration()
@@ -172,9 +180,14 @@ export function DiscoveryHome({
                     ? load()
                     : runAnalysis());
               }}
-              style={styles.viewAllButton}>
+              style={[
+                styles.viewAllButton,
+                isRunningAnalysis && styles.viewAllButtonDisabled,
+              ]}>
               <Text style={styles.viewAllButtonLabel}>
-                {canRetryRecommendations
+                {isRunningAnalysis
+                  ? '진단 중...'
+                  : canRetryRecommendations
                   ? '추천 생성 다시 시도'
                   : error
                     ? '다시 시도하기'
@@ -183,27 +196,35 @@ export function DiscoveryHome({
             </Pressable>
           ) : null}
 
-          {diagnosis && !isLoading ? (
+          {diagnosis ? (
             <View style={styles.diagnosisFooter}>
               {cooldown.label ? (
                 <Text style={styles.cooldownLabel}>{cooldown.label}</Text>
               ) : null}
               <Pressable
                 accessibilityRole="button"
-                accessibilityState={{ disabled: !cooldown.canRun }}
-                disabled={!cooldown.canRun}
+                accessibilityState={{
+                  busy: isRunningAnalysis,
+                  disabled: isLoading || !cooldown.canRun,
+                }}
+                disabled={isLoading || !cooldown.canRun}
                 onPress={() => { void runAnalysis(true); }}
                 style={({ pressed }) => [
                   styles.diagnosisAction,
-                  !cooldown.canRun && styles.diagnosisActionDisabled,
-                  pressed && cooldown.canRun && styles.diagnosisActionPressed,
+                  (isLoading || !cooldown.canRun) &&
+                    styles.diagnosisActionDisabled,
+                  pressed &&
+                    !isLoading &&
+                    cooldown.canRun &&
+                    styles.diagnosisActionPressed,
                 ]}>
                 <Text
                   style={[
                     styles.diagnosisActionText,
-                    !cooldown.canRun && styles.diagnosisActionTextDisabled,
+                    (isLoading || !cooldown.canRun) &&
+                      styles.diagnosisActionTextDisabled,
                   ]}>
-                  새로 진단하기
+                  {isRunningAnalysis ? '진단 중...' : '새로 진단하기'}
                 </Text>
               </Pressable>
             </View>

@@ -2,7 +2,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, type AlertButton, Text, View } from 'react-native';
+import { Alert, type AlertButton, Pressable, Text, View } from 'react-native';
 
 import { authApi, financeDataApi } from '@/api';
 import {
@@ -46,6 +46,7 @@ export function HomeScreen() {
     briefing,
     topSpending,
     refetch: refetchSummary,
+    sectionErrors,
   } = useHomeSummary();
 
   const handleHomeRefresh = useCallback(() => {
@@ -194,14 +195,30 @@ export function HomeScreen() {
           <GoalCarousel
             key={goals.map((goal) => goal.id).join(':')}
             goals={goals}
-            hasError={summaryError !== null}
+            hasError={sectionErrors.goals}
             isLoading={isSummaryLoading}
           />
         </View>
 
         <View style={styles.body}>
+          {summaryError && !isSummaryLoading ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ disabled: isRefreshing }}
+              disabled={isRefreshing}
+              onPress={() => void refetchSummary()}
+              style={({ pressed }) => [
+                styles.retryBanner,
+                pressed && !isRefreshing && styles.retryBannerPressed,
+              ]}>
+              <Text style={styles.retryMessage}>일부 정보를 불러오지 못했어요.</Text>
+              <Text style={styles.retryAction}>
+                {isRefreshing ? '다시 불러오는 중...' : '다시 시도'}
+              </Text>
+            </Pressable>
+          ) : null}
           <ExpenseSummaryCard
-            hasError={summaryError !== null}
+            hasError={sectionErrors.monthlyExpense}
             isLoading={isSummaryLoading}
             monthLabel={monthLabel}
             monthlyExpense={monthlyExpense}
@@ -209,18 +226,18 @@ export function HomeScreen() {
           />
           <BriefingCard
             briefing={briefing}
-            hasError={summaryError !== null}
+            hasError={sectionErrors.briefing}
             isLoading={isSummaryLoading}
             onDetailPress={() => router.push(routes.dailyBriefing)}
           />
           <AssetSummaryCard
-            hasError={summaryError !== null}
+            hasError={sectionErrors.assetOverview}
             isLoading={isSummaryLoading}
             onDetailPress={() => router.push(routes.assets)}
             overview={assetOverview}
           />
           <SpendingTopList
-            hasError={summaryError !== null}
+            hasError={sectionErrors.topSpending}
             isLoading={isSummaryLoading}
             items={topSpending}
             monthLabel={monthLabel}

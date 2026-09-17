@@ -32,7 +32,16 @@ function TimePickerContent({
   onConfirm: (time: string) => void;
 }) {
   const [selected, setSelected] = useState<PickerTime>(() => {
-    const [initHour, initMinute] = initialValue.split(':').map(Number);
+    const [rawHour, rawMinute] = initialValue.split(':').map(Number);
+    const hasValidParts =
+      Number.isInteger(rawHour) &&
+      Number.isInteger(rawMinute) &&
+      rawHour >= 0 &&
+      rawHour <= 23 &&
+      rawMinute >= 0 &&
+      rawMinute <= 59;
+    const initHour = hasValidParts ? rawHour : maxHour;
+    const initMinute = hasValidParts ? rawMinute : maxMinuteForMaxHour;
     const clampedHour = Math.min(initHour, maxHour);
     const minuteCap = clampedHour === maxHour ? maxMinuteForMaxHour : 59;
     return { hour: clampedHour, minute: Math.min(initMinute, minuteCap) };

@@ -66,6 +66,9 @@ export const styles = StyleSheet.create({
   actionPressed: {
     opacity: componentSize.bottomSheet.pressedOpacity,
   },
+  actionDisabled: {
+    opacity: 0.5,
+  },
   acornIcon: {
     width: 22,
     height: 22,
@@ -134,25 +137,5 @@ export const styles = StyleSheet.create({
     width: spacing[8],
     color: colors.textSecondary,
     textAlign: 'right',
-  },
-  notFound: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing[4],
-    paddingHorizontal: semanticSpacing.screenMargin,
-  },
-  notFoundTitle: {
-    ...typography.title,
-    color: colors.textPrimary,
-  },
-  notFoundDescription: {
-    ...typography.body1,
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
-  notFoundAction: {
-    ...typography.body1,
-    color: colors.primary.green,
   },
 });

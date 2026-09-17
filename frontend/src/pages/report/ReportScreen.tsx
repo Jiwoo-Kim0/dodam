@@ -77,11 +77,11 @@ export function ReportScreen() {
           <ScreenState
             description={
               error
-                ? '금융 데이터를 다시 불러와 주세요.'
-                : '완료된 월의 금융 데이터가 없어요.'
+                ? '네트워크 상태를 확인한 뒤 금융 데이터를 다시 불러와 주세요.'
+                : '지난달 거래가 쌓이면 월간 금융 리포트를 확인할 수 있어요.'
             }
             onRetry={error ? () => void refetch() : undefined}
-            title="리포트를 표시할 수 없어요"
+            title={error ? '리포트를 불러오지 못했어요.' : '아직 리포트가 없어요.'}
           />
         )}
       </RefreshableBouncyScrollView>

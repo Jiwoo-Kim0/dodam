@@ -190,6 +190,11 @@ export const styles = StyleSheet.create({
     color: colors.textSecondary,
     lineHeight: 20,
   },
+  inlineRetry: {
+    ...typography.buttonSmall,
+    color: colors.primary.green,
+    marginTop: spacing[2],
+  },
   recommendedBadge: {
     backgroundColor: colors.primary.lightGreen,
     borderRadius: radius.round,
@@ -217,14 +222,6 @@ export const styles = StyleSheet.create({
     color: colors.primary.green,
     fontFamily: fontFamily.semiBold,
     fontSize: fontSize.body1,
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingTop: semanticSpacing.screenTitleTop,
-  },
-  emptyTitle: {
-    ...typography.title,
-    color: colors.textPrimary,
   },
   emptyAction: {
     ...typography.body1,

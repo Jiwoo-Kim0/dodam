@@ -39,6 +39,11 @@ export const styles = StyleSheet.create({
   list: {
     gap: spacing[3],
   },
+  inlineError: {
+    alignItems: 'center',
+    gap: spacing[3],
+    paddingVertical: spacing[4],
+  },
   status: {
     alignItems: 'center',
     gap: spacing[4],

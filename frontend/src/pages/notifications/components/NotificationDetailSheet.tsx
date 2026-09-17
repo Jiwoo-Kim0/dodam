@@ -117,11 +117,12 @@ export function NotificationDetailSheet({
               <View style={styles.actions}>
                 <Pressable
                   accessibilityRole="button"
-                  disabled={isDeleting}
+                  accessibilityState={{ disabled: isDeleting || isMoving }}
+                  disabled={isDeleting || isMoving}
                   onPress={onDelete}
                   style={({ pressed }) => [
                     styles.deleteButton,
-                    (pressed || isDeleting) && styles.pressed,
+                    (pressed || isDeleting || isMoving) && styles.pressed,
                   ]}>
                   {isDeleting ? (
                     <ActivityIndicator color={colors.textSecondary} size="small" />

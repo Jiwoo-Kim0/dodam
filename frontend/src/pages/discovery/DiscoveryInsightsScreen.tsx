@@ -24,6 +24,7 @@ export function DiscoveryInsightsScreen() {
     error,
     insights,
     isLoading,
+    isRunningAnalysis,
     load,
     retryRecommendationGeneration,
     runAnalysis,
@@ -95,9 +96,15 @@ export function DiscoveryInsightsScreen() {
                 현재 진단에서 발견된 항목이 없어요. 분석되지 않은 항목은 제외됩니다.
               </Text>
             ) : null}
-            {(error || !diagnosis || canRetryRecommendations) && !isLoading ? (
+            {(isRunningAnalysis || error || !diagnosis || canRetryRecommendations) &&
+            (!isLoading || isRunningAnalysis) ? (
               <Pressable
                 accessibilityRole="button"
+                accessibilityState={{
+                  busy: isRunningAnalysis,
+                  disabled: isRunningAnalysis,
+                }}
+                disabled={isRunningAnalysis}
                 onPress={() => {
                   void (canRetryRecommendations
                     ? retryRecommendationGeneration()
@@ -105,9 +112,14 @@ export function DiscoveryInsightsScreen() {
                       ? load()
                       : runAnalysis());
                 }}
-                style={styles.summaryPill}>
+                style={[
+                  styles.summaryPill,
+                  isRunningAnalysis && styles.disabledButton,
+                ]}>
                 <Text style={styles.summaryPillValue}>
-                  {canRetryRecommendations
+                  {isRunningAnalysis
+                    ? '진단 중...'
+                    : canRetryRecommendations
                     ? '추천 생성 다시 시도'
                     : error
                       ? '다시 시도하기'
@@ -119,22 +131,30 @@ export function DiscoveryInsightsScreen() {
         </View>
       </RefreshableBouncyScrollView>
 
-      {diagnosis && !isLoading ? (
+      {diagnosis ? (
         <View style={styles.fixedFooter}>
           {cooldown.label ? (
             <Text style={styles.cooldownLabel}>{cooldown.label}</Text>
           ) : null}
           <Pressable
             accessibilityRole="button"
-            accessibilityState={{ disabled: !cooldown.canRun }}
-            disabled={!cooldown.canRun}
+            accessibilityState={{
+              busy: isRunningAnalysis,
+              disabled: isLoading || !cooldown.canRun,
+            }}
+            disabled={isLoading || !cooldown.canRun}
             onPress={() => { void runAnalysis(true); }}
             style={({ pressed }) => [
               styles.diagnosisButton,
-              !cooldown.canRun && styles.disabledButton,
-              pressed && cooldown.canRun && styles.diagnosisButtonPressed,
+              (isLoading || !cooldown.canRun) && styles.disabledButton,
+              pressed &&
+                !isLoading &&
+                cooldown.canRun &&
+                styles.diagnosisButtonPressed,
             ]}>
-            <Text style={styles.diagnosisButtonText}>새로 진단하기</Text>
+            <Text style={styles.diagnosisButtonText}>
+              {isRunningAnalysis ? '진단 중...' : '새로 진단하기'}
+            </Text>
           </Pressable>
         </View>
       ) : null}

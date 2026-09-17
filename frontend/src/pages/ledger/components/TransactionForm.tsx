@@ -13,6 +13,11 @@ import type { LedgerTransactionDraft, LedgerTransactionType } from '@/types/ledg
 import { formatNumber } from '@/utils/currency';
 
 import { styles } from '../LedgerScreen.styles';
+import {
+  getTransactionAmountError,
+  isValidTransactionDate,
+  isValidTransactionTime,
+} from '../utils/ledgerTransactionValidation';
 import { CashTransactionDatePickerBottomSheet } from './CashTransactionDatePickerBottomSheet';
 import { CashTransactionTimePickerBottomSheet } from './CashTransactionTimePickerBottomSheet';
 import { LedgerHeader } from './LedgerShared';
@@ -28,6 +33,10 @@ interface TransactionFormProps {
 }
 
 function formatFormDateTime(dateValue: string, timeValue: string) {
+  if (!isValidTransactionDate(dateValue) || !isValidTransactionTime(timeValue)) {
+    return '날짜와 시간을 다시 선택해 주세요';
+  }
+
   const date = new Date(`${dateValue}T00:00:00`);
   const weekday = ['일', '월', '화', '수', '목', '금', '토'][date.getDay()];
   return `${dateValue.replaceAll('-', '.')} (${weekday}) ${timeValue}`;
@@ -50,12 +59,15 @@ export function TransactionForm({
   const [isDatePickerVisible, setIsDatePickerVisible] = useState(false);
   const [isTimePickerVisible, setIsTimePickerVisible] = useState(false);
   const [selectorWidth, setSelectorWidth] = useState(0);
-  const canSave = Number(draft.amountText) > 0;
-  const amountError = hasTouchedAmount && !canSave
-    ? draft.amountText
-      ? '금액은 1원 이상 입력해 주세요.'
-      : '금액을 입력해 주세요.'
-    : null;
+  const amountValidationError = getTransactionAmountError(draft.amountText);
+  const dateError = isValidTransactionDate(draft.transactionDate)
+    ? null
+    : '오늘까지의 올바른 날짜를 선택해 주세요.';
+  const timeError = isValidTransactionTime(draft.transactionTime)
+    ? null
+    : '올바른 거래 시간을 선택해 주세요.';
+  const amountError = hasTouchedAmount ? amountValidationError : null;
+  const canSave = !amountValidationError && !dateError && !timeError;
   const typeLabel = draft.transactionType === 'income' ? '수입' : '지출';
 
   const pillProgress = useSharedValue(draft.transactionType === 'income' ? 1 : 0);
@@ -95,10 +107,13 @@ export function TransactionForm({
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.formKeyboardArea}>
       <LedgerHeader
-        onBackPress={onClose}
+        backDisabled={isSubmitting}
+        onBackPress={() => {
+          if (!isSubmitting) onClose();
+        }}
         onRightPress={mode === 'edit' ? confirmDelete : undefined}
         rightLabel={mode === 'edit' ? '삭제' : undefined}
         rightDisabled={isSubmitting}
@@ -117,7 +132,8 @@ export function TransactionForm({
             return (
               <Pressable
                 accessibilityRole="tab"
-                accessibilityState={{ selected: isSelected }}
+                accessibilityState={{ disabled: isSubmitting, selected: isSelected }}
+                disabled={isSubmitting}
                 key={type}
                 onPress={() => selectType(type)}
                 style={styles.typeOption}>
@@ -134,7 +150,9 @@ export function TransactionForm({
               <TextInput
                 accessibilityHint={amountError ?? undefined}
                 accessibilityLabel="거래 금액"
+                editable={!isSubmitting}
                 keyboardType="number-pad"
+                maxLength={16}
                 onBlur={() => setHasTouchedAmount(true)}
                 onChangeText={(value) => onChange({ amountText: getDigits(value) })}
                 placeholder="금액을 입력하세요"
@@ -151,28 +169,42 @@ export function TransactionForm({
             ) : null}
           </View>
 
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => setIsDatePickerVisible(true)}
-            style={({ pressed }) => [styles.formRow, pressed && styles.rowPressed]}>
-            <Animated.Text style={[styles.formLabel, labelAnimatedStyle]}>
-              {typeLabel} 시간
-            </Animated.Text>
-            <Text style={styles.formValue}>
-              {formatFormDateTime(draft.transactionDate, draft.transactionTime)}
-            </Text>
-            <SymbolView
-              name={{ android: 'chevron_right', ios: 'chevron.right', web: 'chevron_right' }}
-              size={18}
-              tintColor={colors.textSecondary}
-            />
-          </Pressable>
+          <View style={styles.amountFieldSection}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ disabled: isSubmitting }}
+              disabled={isSubmitting}
+              onPress={() => setIsDatePickerVisible(true)}
+              style={({ pressed }) => [
+                styles.formRow,
+                styles.formRowWithoutDivider,
+                pressed && !isSubmitting && styles.rowPressed,
+              ]}>
+              <Animated.Text style={[styles.formLabel, labelAnimatedStyle]}>
+                {typeLabel} 시간
+              </Animated.Text>
+              <Text style={styles.formValue}>
+                {formatFormDateTime(draft.transactionDate, draft.transactionTime)}
+              </Text>
+              <SymbolView
+                name={{ android: 'chevron_right', ios: 'chevron.right', web: 'chevron_right' }}
+                size={18}
+                tintColor={colors.textSecondary}
+              />
+            </Pressable>
+            {dateError || timeError ? (
+              <Text accessibilityLiveRegion="polite" style={styles.formValidationText}>
+                {dateError ?? timeError}
+              </Text>
+            ) : null}
+          </View>
 
           <View style={[styles.formRow, styles.formRowLast]}>
             <Animated.Text style={[styles.formLabel, labelAnimatedStyle]}>
               {typeLabel}처
             </Animated.Text>
             <TextInput
+              editable={!isSubmitting}
               maxLength={255}
               onChangeText={(merchantName) => onChange({ merchantName })}
               placeholder={
@@ -211,7 +243,7 @@ export function TransactionForm({
           setIsTimePickerVisible(true);
         }}
         value={draft.transactionDate}
-        visible={isDatePickerVisible}
+        visible={isDatePickerVisible && !isSubmitting}
       />
 
       <CashTransactionTimePickerBottomSheet
@@ -222,7 +254,7 @@ export function TransactionForm({
           setIsTimePickerVisible(false);
         }}
         value={draft.transactionTime}
-        visible={isTimePickerVisible}
+        visible={isTimePickerVisible && !isSubmitting}
       />
     </KeyboardAvoidingView>
   );

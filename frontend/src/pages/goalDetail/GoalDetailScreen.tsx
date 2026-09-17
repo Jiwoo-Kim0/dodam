@@ -1,11 +1,12 @@
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { Alert, Pressable, Text, View } from 'react-native';
 
 import { goalApi } from '@/api';
 import { AppHeader } from '@/components/appHeader/AppHeader';
 import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
+import { ScreenState } from '@/components/screenState/ScreenState';
 import { routes } from '@/constants/routes';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import { colors } from '@/styles';
@@ -35,20 +36,35 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
     useState(false);
   const [isSavingAccounts, setIsSavingAccounts] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const isSavingAccountsRef = useRef(false);
+  const isDeletingRef = useRef(false);
+  const parsedGoalId = Number(goalId);
+  const hasValidGoalId = Number.isSafeInteger(parsedGoalId) && parsedGoalId > 0;
+
+  const handleBackPress = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+
+    router.replace(routes.home);
+  };
 
   const saveLinkedAccounts = async () => {
-    const parsedGoalId = Number(goalId);
+    if (isSavingAccountsRef.current) return;
+
     const accountIds = draftAccountIds.map(Number);
 
     if (
-      !Number.isSafeInteger(parsedGoalId) ||
-      parsedGoalId <= 0 ||
+      !hasValidGoalId ||
+      accountIds.length > 50 ||
       accountIds.some((accountId) => !Number.isSafeInteger(accountId) || accountId <= 0)
     ) {
       Alert.alert('계좌를 저장하지 못했어요', '계좌 정보를 다시 확인해주세요.');
       return;
     }
 
+    isSavingAccountsRef.current = true;
     setIsSavingAccounts(true);
     try {
       await goalApi.replaceGoalAccounts(parsedGoalId, { accountIds });
@@ -62,11 +78,14 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
           : '잠시 후 다시 시도해주세요.',
       );
     } finally {
+      isSavingAccountsRef.current = false;
       setIsSavingAccounts(false);
     }
   };
 
   const confirmDelete = () => {
+    if (isDeletingRef.current || !hasValidGoalId) return;
+
     Alert.alert('목표를 삭제할까요?', '삭제한 목표는 되돌릴 수 없어요.', [
       { text: '취소', style: 'cancel' },
       {
@@ -74,9 +93,12 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
         style: 'destructive',
         onPress: () => {
           const deleteGoal = async () => {
+            if (isDeletingRef.current) return;
+
+            isDeletingRef.current = true;
             setIsDeleting(true);
             try {
-              await goalApi.deleteGoal(Number(goalId));
+              await goalApi.deleteGoal(parsedGoalId);
               router.replace(routes.home);
             } catch (deleteError) {
               Alert.alert(
@@ -86,6 +108,7 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
                   : '잠시 후 다시 시도해주세요.',
               );
             } finally {
+              isDeletingRef.current = false;
               setIsDeleting(false);
             }
           };
@@ -98,26 +121,26 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
 
   if (isLoading) {
     return (
-      <SafeAreaLayout style={styles.screen}>
-        <View style={styles.notFound}>
-          <ActivityIndicator color={colors.primary.green} size="large" />
-        </View>
+      <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
+        <AppHeader onBackPress={handleBackPress} showBackButton title="목표 상세" />
+        <ScreenState description="목표를 불러오고 있어요" isLoading />
       </SafeAreaLayout>
     );
   }
 
   if (!goal) {
     return (
-      <SafeAreaLayout style={styles.screen}>
-        <View style={styles.notFound}>
-          <Text style={styles.notFoundTitle}>목표를 불러오지 못했어요.</Text>
-          <Text style={styles.notFoundDescription}>
-            {error?.message ?? '네트워크 상태를 확인한 뒤 다시 시도해주세요.'}
-          </Text>
-          <Pressable accessibilityRole="button" onPress={() => void refetch()}>
-            <Text style={styles.notFoundAction}>다시 시도</Text>
-          </Pressable>
-        </View>
+      <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
+        <AppHeader onBackPress={handleBackPress} showBackButton title="목표 상세" />
+        <ScreenState
+          description={
+            hasValidGoalId
+              ? error?.message ?? '네트워크 상태를 확인한 뒤 다시 시도해주세요.'
+              : '목표 번호를 확인하거나 이전 화면에서 다시 선택해주세요.'
+          }
+          onRetry={hasValidGoalId ? () => void refetch() : undefined}
+          title={hasValidGoalId ? '목표를 불러오지 못했어요.' : '목표를 찾을 수 없어요.'}
+        />
       </SafeAreaLayout>
     );
   }
@@ -132,6 +155,7 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
   return (
     <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
       <AppHeader
+        onBackPress={handleBackPress}
         right={
           <Pressable
             accessibilityRole="button"
@@ -218,9 +242,12 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
       <View style={styles.actions}>
         <Pressable
           accessibilityRole="button"
+          accessibilityState={{ disabled: isDeleting || isSavingAccounts }}
+          disabled={isDeleting || isSavingAccounts}
           onPress={() => router.push(routes.goalSetupEdit(goal.id))}
           style={({ pressed }) => [
             styles.editButton,
+            (isDeleting || isSavingAccounts) && styles.actionDisabled,
             pressed && styles.actionPressed,
           ]}
         >
@@ -228,9 +255,12 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
         </Pressable>
         <Pressable
           accessibilityRole="button"
+          accessibilityState={{ disabled: isDeleting || isSavingAccounts }}
+          disabled={isDeleting || isSavingAccounts}
           onPress={() => setIsOtherGoalsVisible(true)}
           style={({ pressed }) => [
             styles.otherGoalsButton,
+            (isDeleting || isSavingAccounts) && styles.actionDisabled,
             pressed && styles.actionPressed,
           ]}
         >
@@ -257,15 +287,27 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
       <GoalAccountManagementBottomSheet
         accounts={data.availableAccounts}
         isSubmitting={isSavingAccounts}
-        onClose={() => setIsAccountManagementVisible(false)}
+        onClose={() => {
+          if (!isSavingAccountsRef.current) setIsAccountManagementVisible(false);
+        }}
         onComplete={() => void saveLinkedAccounts()}
-        onToggle={(accountId) =>
-          setDraftAccountIds((currentIds) =>
-            currentIds.includes(accountId)
-              ? currentIds.filter((id) => id !== accountId)
-              : [...currentIds, accountId],
-          )
-        }
+        onToggle={(accountId) => {
+          if (isSavingAccountsRef.current) return;
+          if (draftAccountIds.includes(accountId)) {
+            setDraftAccountIds((currentIds) =>
+              currentIds.filter((id) => id !== accountId),
+            );
+            return;
+          }
+          if (draftAccountIds.length >= 50) {
+            Alert.alert(
+              '계좌를 더 연결할 수 없어요',
+              '계좌는 최대 50개까지 연결할 수 있어요.',
+            );
+            return;
+          }
+          setDraftAccountIds((currentIds) => [...currentIds, accountId]);
+        }}
         selectedAccountIds={draftAccountIds}
         visible={isAccountManagementVisible}
       />

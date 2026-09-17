@@ -10,12 +10,14 @@ import { mapAssetSections } from '../utils/assetMappers';
 
 interface AssetData {
   analysis: AssetAnalysis | null;
+  hasAssets: boolean;
   overview: AssetOverview | null;
   sections: readonly AssetSection[];
 }
 
 const EMPTY_ASSET_DATA: AssetData = {
   analysis: null,
+  hasAssets: false,
   overview: null,
   sections: [],
 };
@@ -37,8 +39,12 @@ export function useAssetData() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const requestIdRef = useRef(0);
+  const loadInFlightRef = useRef(false);
 
   const loadAssetData = useCallback(async (refreshing = false) => {
+    if (loadInFlightRef.current) return;
+
+    loadInFlightRef.current = true;
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
 
@@ -88,6 +94,11 @@ export function useAssetData() {
           inactiveBalance: inactiveAccounts.totalBalance,
           inactiveMonths: inactiveAccounts.criteria.inactiveMonths,
         },
+        hasAssets:
+          accounts.length > 0 ||
+          cards.length > 0 ||
+          loans.length > 0 ||
+          depositSavings.length > 0,
         overview: mapOwnedAssetOverview(accountSummary),
         sections: mapAssetSections({
           accounts,
@@ -110,6 +121,7 @@ export function useAssetData() {
       );
     } finally {
       if (requestId === requestIdRef.current) {
+        loadInFlightRef.current = false;
         setIsLoading(false);
         setIsRefreshing(false);
       }
@@ -124,6 +136,7 @@ export function useAssetData() {
     return () => {
       clearTimeout(loadTimeout);
       requestIdRef.current += 1;
+      loadInFlightRef.current = false;
     };
   }, [loadAssetData]);
 

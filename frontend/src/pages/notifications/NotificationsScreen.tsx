@@ -52,10 +52,28 @@ export function NotificationsScreen() {
   const [isMoving, setIsMoving] = useState(false);
   const detailRequestIdRef = useRef(0);
   const moveRequestIdRef = useRef(0);
+  const detailInFlightIdRef = useRef<number | null>(null);
+  const deleteConfirmationIdRef = useRef<number | null>(null);
+  const deleteInFlightRef = useRef(false);
+  const markAllReadInFlightRef = useRef(false);
+  const moveInFlightRef = useRef(false);
 
   useFocusEffect(useCallback(() => {
     void reload();
-    return cancel;
+    return () => {
+      cancel();
+      detailRequestIdRef.current += 1;
+      moveRequestIdRef.current += 1;
+      detailInFlightIdRef.current = null;
+      deleteConfirmationIdRef.current = null;
+      moveInFlightRef.current = false;
+      setSelectedId(null);
+      setDetail(null);
+      setDetailError('');
+      setIsDetailLoading(false);
+      setIsMoving(false);
+      setOpenNotificationId(null);
+    };
   }, [cancel, reload]));
 
   const handleBackPress = () => {
@@ -69,6 +87,9 @@ export function NotificationsScreen() {
 
   const loadDetail = useCallback(
     async (notificationId: number) => {
+      if (detailInFlightIdRef.current === notificationId) return;
+
+      detailInFlightIdRef.current = notificationId;
       const requestId = ++detailRequestIdRef.current;
       setDetailError('');
       setIsDetailLoading(true);
@@ -101,6 +122,7 @@ export function NotificationsScreen() {
         );
       } finally {
         if (requestId === detailRequestIdRef.current) {
+          detailInFlightIdRef.current = null;
           setIsDetailLoading(false);
         }
       }
@@ -109,23 +131,26 @@ export function NotificationsScreen() {
   );
 
   const openDetail = (notification: NotificationApiResponse) => {
+    if (deleteInFlightRef.current) return;
     setSelectedId(notification.notificationId);
     setDetail(notification);
     void loadDetail(notification.notificationId);
   };
 
   const closeDetail = () => {
-    if (isDeleting) return;
+    if (deleteInFlightRef.current || moveInFlightRef.current) return;
     moveRequestIdRef.current += 1;
     detailRequestIdRef.current += 1;
     setSelectedId(null);
     setDetail(null);
     setDetailError('');
+    detailInFlightIdRef.current = null;
   };
 
   const handleMarkAllRead = async () => {
-    if (isMarkingAllRead || unreadCount === 0) return;
+    if (markAllReadInFlightRef.current || unreadCount === 0) return;
 
+    markAllReadInFlightRef.current = true;
     setIsMarkingAllRead(true);
     try {
       await markAllRead();
@@ -135,17 +160,33 @@ export function NotificationsScreen() {
         getErrorMessage(markError, '네트워크 상태를 확인한 뒤 다시 시도해주세요.'),
       );
     } finally {
+      markAllReadInFlightRef.current = false;
       setIsMarkingAllRead(false);
     }
   };
 
   const confirmDelete = (notificationId: number) => {
+    if (
+      deleteInFlightRef.current ||
+      deleteConfirmationIdRef.current !== null
+    ) return;
+
+    deleteConfirmationIdRef.current = notificationId;
     Alert.alert('알림을 삭제할까요?', '삭제한 알림은 다시 확인할 수 없어요.', [
-      { text: '취소', style: 'cancel' },
+      {
+        text: '취소',
+        style: 'cancel',
+        onPress: () => {
+          deleteConfirmationIdRef.current = null;
+        },
+      },
       {
         text: '삭제',
         style: 'destructive',
         onPress: () => {
+          deleteConfirmationIdRef.current = null;
+          if (deleteInFlightRef.current) return;
+          deleteInFlightRef.current = true;
           setIsDeleting(true);
           void deleteNotification(notificationId)
             .then(() => {
@@ -168,10 +209,17 @@ export function NotificationsScreen() {
                 ),
               );
             })
-            .finally(() => setIsDeleting(false));
+            .finally(() => {
+              deleteInFlightRef.current = false;
+              setIsDeleting(false);
+            });
         },
       },
-    ]);
+    ], {
+      onDismiss: () => {
+        deleteConfirmationIdRef.current = null;
+      },
+    });
   };
 
   const handleDelete = () => {
@@ -222,19 +270,28 @@ export function NotificationsScreen() {
   };
 
   const moveToDestination = async () => {
-    if (!detail || isMoving) return;
+    if (!detail || moveInFlightRef.current) return;
 
     const destination = getNotificationDestination(detail);
     if (!destination) return;
 
     if (destination.kind === 'recommendation') {
       const requestId = ++moveRequestIdRef.current;
+      moveInFlightRef.current = true;
       setIsMoving(true);
-      const route = await resolveRecommendationRoute(destination.recommendationId);
-      if (requestId !== moveRequestIdRef.current) return;
-      setIsMoving(false);
-      closeDetail();
-      router.push(route);
+      try {
+        const route = await resolveRecommendationRoute(destination.recommendationId);
+        if (requestId !== moveRequestIdRef.current) return;
+        moveInFlightRef.current = false;
+        setIsMoving(false);
+        closeDetail();
+        router.push(route);
+      } finally {
+        if (requestId === moveRequestIdRef.current) {
+          moveInFlightRef.current = false;
+          setIsMoving(false);
+        }
+      }
       return;
     }
 
@@ -330,6 +387,22 @@ export function NotificationsScreen() {
                   onPress={() => openDetail(notification)}
                 />
               ))}
+              {error ? (
+                <View style={styles.inlineError}>
+                  <Text accessibilityRole="alert" style={styles.statusText}>
+                    다음 알림을 불러오지 못했어요.
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => void refetch()}
+                    style={({ pressed }) => [
+                      styles.retryButton,
+                      pressed && styles.pressed,
+                    ]}>
+                    <Text style={styles.retryLabel}>다시 시도</Text>
+                  </Pressable>
+                </View>
+              ) : null}
               {isLoadingMore ? (
                 <ActivityIndicator color={colors.primary.green} style={styles.moreIndicator} />
               ) : null}

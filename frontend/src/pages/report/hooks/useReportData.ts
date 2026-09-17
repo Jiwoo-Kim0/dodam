@@ -253,8 +253,12 @@ export function useReportData() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const requestIdRef = useRef(0);
+  const loadInFlightRef = useRef(false);
 
   const load = useCallback(async (refreshing = false) => {
+    if (loadInFlightRef.current) return;
+
+    loadInFlightRef.current = true;
     const requestId = ++requestIdRef.current;
     if (refreshing) {
       setIsRefreshing(true);
@@ -267,11 +271,18 @@ export function useReportData() {
       if (requestId === requestIdRef.current) setReport(nextReport);
     } catch (loadError) {
       if (requestId === requestIdRef.current) {
-        setError(loadError instanceof Error ? loadError : new Error('리포트를 불러오지 못했어요.'));
+        setError(
+          isApiError(loadError) && loadError.status === 404
+            ? null
+            : loadError instanceof Error
+              ? loadError
+              : new Error('리포트를 불러오지 못했어요.'),
+        );
         setReport(null);
       }
     } finally {
       if (requestId === requestIdRef.current) {
+        loadInFlightRef.current = false;
         setIsLoading(false);
         setIsRefreshing(false);
       }
@@ -285,6 +296,9 @@ export function useReportData() {
     isRefreshing,
     refetch: useCallback(() => load(true), [load]),
     reload: useCallback(() => load(), [load]),
-    cancel: useCallback(() => { requestIdRef.current += 1; }, []),
+    cancel: useCallback(() => {
+      requestIdRef.current += 1;
+      loadInFlightRef.current = false;
+    }, []),
   };
 }
