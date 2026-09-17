@@ -67,6 +67,7 @@ ACHIEVED·CANCELED는 종료 상태다. 어디로도 옮길 수 없고 다른 �
 | `NO_FIELDS_TO_UPDATE` | 400 | 수정 Body에 바꿀 필드가 없음 |
 | `GOAL_NOT_EDITABLE` | 409 | 종료 상태(ACHIEVED·CANCELED) 목표 수정 |
 | `GOAL_STATUS_TRANSITION_NOT_ALLOWED` | 409 | 허용되지 않은 상태 전이 |
+| `SPENDING_GOAL_ALREADY_EXISTS` | 409 | 종료되지 않은(ACTIVE·PAUSED) 줄이기 목표가 이미 있는데 줄이기 목표를 또 생성 |
 | `ACCOUNT_ALREADY_LINKED_TO_GOAL` | 409 | 다른(삭제되지 않은) 목표에 이미 연결된 계좌를 지정 |
 | `RESOURCE_NOT_FOUND` | 404 | 본인 것이 아니거나 삭제된 목표, 본인 것이 아니거나 없는 계좌("계좌를 찾을 수 없습니다.") |
 
@@ -83,6 +84,11 @@ ACHIEVED·CANCELED는 종료 상태다. 어디로도 옮길 수 없고 다른 �
 명세 Body는 `targetAmount`·`targetDate`를 필수, `monthlyBudget`을 선택으로 적었지만 ERD `spending_goal`에는 월 예산만 저장할 수 있다.
 줄이기 목표에 목표 금액·목표일을 조용히 버리는 대신 400으로 알려 FE와의 계약 불일치가 바로 드러나게 했다(남은 작업 참고).
 상태는 ACTIVE로 시작한다.
+
+**줄이기 목표는 사용자당 하나만 진행한다(S15P21D105-630).** 삭제되지 않은 ACTIVE·PAUSED 줄이기 목표가 있으면 새 줄이기 목표 생성은 409
+`SPENDING_GOAL_ALREADY_EXISTS`다. 월 예산은 한 사람의 "이번 달 소비 한도"라 여러 개가 있으면 진행률·요약의 월 예산 합·진단의 줄이기 목표 초과
+판정이 어느 목표를 기준으로 할지 정할 수 없기 때문이다. 기존 목표를 ACHIEVED·CANCELED로 바꾸거나 삭제하면 다시 만들 수 있다. 모으기 목표 개수와
+다른 사용자의 목표는 제한에 영향이 없다. 검사는 서비스에서 하며 DB UNIQUE 제약은 두지 않았다(동시 요청 방지는 FE의 중복 제출 방지에 맡긴다).
 
 ## 응답 `GoalResponse`
 

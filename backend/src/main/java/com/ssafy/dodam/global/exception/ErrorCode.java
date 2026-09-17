@@ -90,6 +90,10 @@ public enum ErrorCode {
      */
     GOAL_STATUS_TRANSITION_NOT_ALLOWED(HttpStatus.CONFLICT, "허용되지 않은 목표 상태 변경입니다."),
     /**
+     * 줄이기(SPENDING) 목표는 사용자당 하나만 진행할 수 있다. 종료되지 않은(ACTIVE·PAUSED) 줄이기 목표가 이미 있는데 또 만들려는 경우.
+     */
+    SPENDING_GOAL_ALREADY_EXISTS(HttpStatus.CONFLICT, "줄이기 목표는 하나만 만들 수 있습니다. 기존 줄이기 목표를 종료하거나 삭제한 뒤 다시 만들어 주세요."),
+    /**
      * 계좌는 한 목표에만 연결할 수 있다(`uk_goal_account_account`). 다른 목표에 이미 연결된 계좌를 지정한 경우(S15P21D105-509).
      */
     ACCOUNT_ALREADY_LINKED_TO_GOAL(HttpStatus.CONFLICT, "이미 다른 목표에 연결된 계좌입니다."),
