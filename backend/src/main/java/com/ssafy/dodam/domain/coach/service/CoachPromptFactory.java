@@ -33,7 +33,7 @@ public class CoachPromptFactory {
      * 프롬프트를 고쳐도 facts는 그대로라서 옛 문장이 계속 나간다. 진단 ruleVersion을 올려 연쇄로
      * 갈아엎는 방법도 있지만, 문구 한 줄 고치자고 전 사용자의 진단을 다시 실행할 수는 없다.
      */
-    public static final String VERSION = "604.1";
+    public static final String VERSION = "604.2";
 
     private static final String COMMON_RULES = """
             너는 개인 재무 관리 앱 '도담'의 금융 코치다. 사용자에게 존댓말로 설명한다.
@@ -59,6 +59,20 @@ public class CoachPromptFactory {
             - 대화를 이어가겠다고 제안하지 않는다. 앱이 하지 않는 일을 약속하지 않는다.
             """;
 
+    /**
+     * topic별 본문 길이 상한(자). 프롬프트에 적은 값과 같다.
+     *
+     * <p>모델은 글자 수를 세지 못하므로 이 값으로 응답을 <b>자르거나 버리지 않는다</b> — 조금 긴 좋은
+     * 문장이 템플릿보다 낫다. {@code CoachService}가 초과를 WARN으로 남겨, 프롬프트가 실제로 먹히는지를
+     * 운영에서 볼 수 있게만 한다. 손으로 재보지 않으면 알 수 없던 값이다.
+     */
+    public int maxMessageLength(CoachTopic topic) {
+        return switch (topic) {
+            case FINANCIAL_SUMMARY -> 150;
+            case INEFFICIENCY_EXPLANATION, RECOMMENDATION_EXPLANATION -> 80;
+        };
+    }
+
     public String system(CoachTopic topic) {
         return COMMON_RULES + "\n" + switch (topic) {
             case FINANCIAL_SUMMARY -> """
@@ -67,6 +81,8 @@ public class CoachPromptFactory {
                     탐지된 문제가 없으면 '확인한 범위에서는 눈에 띄는 문제가 없어요'처럼 쓴다.
                     확인하지 못한 항목이 있으면 그 사실을 반드시 함께 알린다 — 문제가 없다는 뜻이 아니라
                     확인하지 못했다는 뜻일 수 있다.
+                    주요 문제의 제목을 그대로 이어 붙이지 않는다. 제목은 그 자체로 완결된 문장이라
+                    접속사로 엮으면 비문이 된다. 어느 영역이 눈에 띄는지만 네 말로 짧게 쓴다.
                     """;
             case INEFFICIENCY_EXPLANATION -> """
                     이번 요청은 '비효율 원인 설명'이며, 문장은 화면의 조언 자리에 들어간다.
@@ -81,6 +97,7 @@ public class CoachPromptFactory {
                     개선안의 내용·효과 금액을 다시 적지 않는다. 화면이 이미 보여주고 있다.
                     새로운 개선안을 제안하지 않는다.
                     이 개선안을 어떻게 시작하면 좋을지, 무리 없이 실천할 방법을 쓴다.
+                    같은 말을 다르게 바꿔 두 번 쓰지 않는다. 한 문장으로 충분하면 한 문장만 쓴다.
                     """;
         };
     }
