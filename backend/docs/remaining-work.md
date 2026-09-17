@@ -16,7 +16,7 @@
 
 ### 남은 것
 
-- [ ] **시연 서버 적재**: 491 보강판을 서버 DB에 다시 돌려(fixture 재생성 필요) 4,000명의 생년월일·성별을 채우고 492를 재실행해 `last_transaction_date`를 복구한다. 그 전까지 서버의 동년배 비교는 seed 사용자에게 `DEMOGRAPHICS_MISSING`이다(아티팩트 v2의 집단 통계는 이미 들어 있어 모델은 정상). 시연 계정 U0001~U0004는 이 seed로 채워진다(629 남은 작업 해소).
+- [ ] **시연 서버 적재**: 632 병합·배포(Flyway가 V40 적용) 뒤 서버 MySQL 컨테이너에서 `backend/database/seeds/DODAM_USER_DEMOGRAPHICS_BACKFILL.sql`(12번)을 실행한다 — fixture·491 재적재 불필요, 두 컬럼만 갱신, 0.3초. 491을 다시 돌리는 방식은 fixture 재생성과 492 재실행(`last_transaction_date` 복구)이 필요해 쓰지 않는다. 그 전까지 서버의 동년배 비교는 seed 사용자에게 `DEMOGRAPHICS_MISSING`이다(아티팩트 v2의 집단 통계는 이미 들어 있어 모델은 정상). 시연 계정 U0001~U0004는 여·남·여·남, 29·36·43·50세로 채워진다(629 남은 작업 해소). 적재 뒤 시연 계정으로 `POST /patterns/analyze {"forceRefresh":true}` → `GET /patterns/me/peer-comparison`으로 확인한다.
 - [ ] FE 연동: 패턴 API는 FE가 아직 하나도 호출하지 않는다(fe-be-api-integration-status §5). `positionSummary`·`insights`·`peer-comparison`을 발견/리포트 화면 어디에 붙일지 정한다. `insights[].code` 분기표를 FE에 전달.
 - [ ] 임계값(TOP 90 / UPPER 75 / LOWER 25 / BOTTOM 10, 문장 임계 90·75·50, 최소 표본 30·10)은 서비스 초기값. 기획과 확정하면 `app.pattern.*`·`RankBand`를 조정한다.
 - [ ] 632 이전 분석 행은 `peer_stats_json`이 NULL이라 `NOT_COMPUTED`다. 시연 계정은 배포 뒤 `forceRefresh` 분석을 한 번 돌려 채운다(`be-a-server-smoke.sh`에 추가 검토).

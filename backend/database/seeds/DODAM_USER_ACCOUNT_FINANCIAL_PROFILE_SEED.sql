@@ -168,9 +168,10 @@ SELECT
     DATE_SUB('2026-09-07', INTERVAL (22 + MOD(base.sequence_no * 7, 38)) YEAR),
     INTERVAL MOD(base.sequence_no * 11, 365) DAY
   ),
-  -- Gender flips every block of four users so each gender holds all four
-  -- behavior cohorts (MOD(seq, 2) would pair FEMALE with cohorts 1·3 only).
-  CASE WHEN MOD(FLOOR((base.sequence_no - 1) / 4), 2) = 0 THEN 'MALE' ELSE 'FEMALE' END
+  -- Gender pattern per block of eight: F M F M  M F M F. Both genders then hold all
+  -- four behavior cohorts (plain MOD(seq, 2) would pair FEMALE with cohorts 1·3 only)
+  -- and the demo accounts U0001~U0004 come out mixed (F, M, F, M).
+  CASE WHEN MOD(base.sequence_no + FLOOR((base.sequence_no - 1) / 4), 2) = 1 THEN 'FEMALE' ELSE 'MALE' END
 FROM (
   SELECT
     numbers.sequence_no,
