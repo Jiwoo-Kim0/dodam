@@ -90,7 +90,7 @@ public class AuthService {
         String name = request.name().trim();
 
         return transactionTemplate.execute(status -> {
-            User user = User.createLocalUser(email, passwordHash, name);
+            User user = User.createLocalUser(email, passwordHash, name, request.birthDate(), request.gender());
             try {
                 // 동시 가입 요청이 existsByEmail 검사를 동시에 통과한 경우 UNIQUE 제약으로 걸러낸다.
                 userRepository.saveAndFlush(user);

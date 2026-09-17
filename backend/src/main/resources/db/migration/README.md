@@ -30,6 +30,7 @@
 | V36 | `recommendation.source_issue_id` 추가 (추천-진단 문제 연결) | S15P21D105-628 |
 | V37 | `improvement_action` 생성 (API 19 개선 행동) | S15P21D105-590 |
 | V38 | `report`, `daily_report`, `monthly_report` 생성 (API 20 리포트) | S15P21D105-590 |
+| V39 | `user.birth_date`, `gender`(CHECK MALE/FEMALE), `credit_rating`(금융망 등급명 A~E), `credit_rating_updated_at` 추가 — 모두 NULL 허용 | S15P21D105-629 |
 
 ## 버전 번호 할당
 
@@ -40,7 +41,7 @@
 | V1~V9 | BE-A (Auth/User, Account, Transaction/Spending, Goal 등) — V9로 소진 |
 | V10~V17 | BE-B (금융상품, Card, Installment, Loan, 예적금, Cashflow, Diagnosis) — V17까지 사용 |
 | V18~V29 | **BE-B·Infra 예비 구간** (Recommendation, Simulation, ProductSync, Dashboard, Improvement, Report 등). 2026-09-13 V18(recommendation, S15P21D105-547 브랜치)·V19(simulation) 사용, 다음은 V20 |
-| V30~V49 | **BE-A 2차 구간** (Subscription, Notification, Preference 등). 2026-09-11 V30(subscription), 2026-09-14 V31(pattern_analysis)·V32(notification)·V33(user_device), 2026-09-15 V34(user_oauth_account), 2026-09-16 V35(goal_account 할당, 626)·V36(recommendation source_issue_id, 628) 사용 — BE-B가 BE-A 테이블·구간 번호를 쓴 것으로 BE-A가 확인했다. 2026-09-16 V37(improvement_action)·V38(report, 590) 사용. 다음은 **V39** |
+| V30~V49 | **BE-A 2차 구간** (Subscription, Notification, Preference 등). 2026-09-11 V30(subscription), 2026-09-14 V31(pattern_analysis)·V32(notification)·V33(user_device), 2026-09-15 V34(user_oauth_account), 2026-09-16 V35(goal_account 할당, 626)·V36(recommendation source_issue_id, 628) 사용 — BE-B가 BE-A 테이블·구간 번호를 쓴 것으로 BE-A가 확인했다. 2026-09-16 V37(improvement_action)·V38(report, 590) 사용. 2026-09-17 V39(user 생년월일·성별·신용등급, 629) 사용. 다음은 **V40** |
 
 2026-09-11 BE-A는 팀원 부재 중에 Subscription 마이그레이션이 필요해 V18을 건너뛰고 **V30**을 잡았다. 돌아온 팀원이 "마지막 다음 번호" V18을
 자연스럽게 잡아도 충돌하지 않게 하기 위한 것이다. `out-of-order: true`라 V17 → V30 다음에 V18이 들어와도 적용에 문제가 없다.

@@ -25,6 +25,9 @@ import com.ssafy.dodam.infrastructure.external.ssafy.SsafyApiException;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyFinanceClient;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyMember;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyUnavailableException;
+import com.ssafy.dodam.domain.user.entity.Gender;
+import com.ssafy.dodam.domain.user.entity.User;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -113,6 +116,56 @@ class AuthApiIntegrationTest {
         assertThat(fieldCryptor.decrypt(connection.getExternalUserKeyEncrypted())).isEqualTo(userKeyFor(EMAIL));
         assertThat(connection.getExternalUserKeyHash()).isEqualTo(fieldCryptor.hash(userKeyFor(EMAIL)));
         assertThat(connection.getMemberEmailMasked()).isEqualTo("do***@example.com");
+    }
+
+    @Test
+    void signupStoresOptionalBirthDateAndGender() throws Exception {
+        LocalDate birthDate = LocalDate.of(1996, 3, 15);
+        mockMvc.perform(post("/api/v1/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "email", EMAIL,
+                                "password", PASSWORD,
+                                "name", NAME,
+                                "birthDate", birthDate.toString(),
+                                "gender", "MALE"
+                        ))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.user.name").value(NAME));
+
+        User user = userRepository.findByEmailAndDeletedAtIsNull(EMAIL).orElseThrow();
+        assertThat(user.getBirthDate()).isEqualTo(birthDate);
+        assertThat(user.getGender()).isEqualTo(Gender.MALE);
+        // 신용등급은 가입 시점에 조회하지 않는다(새 회원은 금융망 자산이 없어 의미가 없고, 동기화·조회 때 채운다)
+        assertThat(user.getCreditRating()).isNull();
+    }
+
+    @Test
+    void signupRejectsFutureBirthDateAndUnknownGender() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "email", EMAIL,
+                                "password", PASSWORD,
+                                "name", NAME,
+                                "birthDate", LocalDate.now().plusDays(1).toString()
+                        ))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.errors[0].field").value("birthDate"));
+
+        mockMvc.perform(post("/api/v1/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "email", EMAIL,
+                                "password", PASSWORD,
+                                "name", NAME,
+                                "gender", "OTHER"
+                        ))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+
+        assertThat(userRepository.findByEmailAndDeletedAtIsNull(EMAIL)).isEmpty();
     }
 
     @Test

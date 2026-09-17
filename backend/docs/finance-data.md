@@ -112,7 +112,8 @@ MySQL은 부분 유니크 인덱스가 없어 "사용자당 RUNNING 1행"을 DB 
 
 ## 신용등급 (500)
 
-SSAFY 금융망 API 문서 2.7절 대출 API를 실시간 호출하며 결과를 저장하지 않는다. 필드명은 문서(2026-09-09 확인본)와 대조해 확정했다.
+SSAFY 금융망 API 문서 2.7절 대출 API를 실시간 호출한다. 필드명은 문서(2026-09-09 확인본)와 대조해 확정했다.
+응답은 실시간 값이고, 2026-09-17(629)부터 `GET /credit-rating`이 성공하면 등급명을 `user.credit_rating`·`credit_rating_updated_at`에 기록한다(아래 「저장」).
 
 | 도담 API | 금융망 API | Header | 응답 |
 | --- | --- | --- | --- |
@@ -123,6 +124,20 @@ SSAFY 금융망 API 문서 2.7절 대출 API를 실시간 호출하며 결과를
 - 자산 값은 금융망이 계산한 금융망 내 자산이며 로컬 통합 요약과 다를 수 있다. 금융망은 Long 항목을 문자열(`"1089427976"`)로 내려주므로 Jackson 강제 변환으로 받는다.
 - `ratingUniqueNo`는 대출 상품 생성 API(2.7.2)의 입력이라 그대로 전달한다.
 - 기준표 조회는 로그인만 필요하고 금융망 연결이 FAILED여도 응답한다.
+
+### 저장 (629, V39)
+
+사용자 테이블에 최근 등급을 둔다. FE·분석 도메인이 금융망을 다시 호출하지 않고 `GET /users/me`의 `creditRating`으로 읽기 위한 것이다.
+
+| 갱신 경로 | 동작 |
+| --- | --- |
+| `GET /finance-data/credit-rating` 성공 | 응답의 `ratingName`을 `user.credit_rating`에, 조회 시각을 `credit_rating_updated_at`에 기록 |
+| `POST /finance-data/sync` (scope 무관) | scope 핸들러 실행 뒤 신용등급을 한 번 더 조회해 기록. **scope 결과·progress·status에는 포함하지 않는다.** 조회 실패는 로그만 남기고 동기화는 그대로 성공한다 (`CreditRatingService.refresh`) |
+| 회원가입 | 조회하지 않는다. 새 회원은 금융망 자산이 없어 항상 최저 등급이고, 첫 동기화·조회에서 채워진다 |
+
+- 금융망 호출은 트랜잭션 밖에서, 기록은 짧은 별도 트랜잭션에서 한다(동기화·연결 서비스와 같은 규칙).
+- 금융망은 숫자 신용점수를 주지 않으므로 등급명(`VARCHAR(5)`)만 저장한다. 사용자는 이 값을 직접 수정할 수 없다(`PATCH /users/me`가 받지 않음).
+- 계약·응답 예시: [user-profile.md](user-profile.md).
 
 ## SSAFY 금융망 거래 API 공통 Header
 

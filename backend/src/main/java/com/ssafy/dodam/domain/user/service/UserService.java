@@ -19,6 +19,7 @@ import com.ssafy.dodam.domain.user.repository.UserSettingRepository;
 import com.ssafy.dodam.global.exception.BusinessException;
 import com.ssafy.dodam.global.exception.ErrorCode;
 import java.time.DateTimeException;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
@@ -30,6 +31,9 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class UserService {
+
+    /** 나이 계산 기준일의 시간대. 다른 도메인 Clock과 같은 서비스 시간대다. */
+    private static final ZoneId SERVICE_ZONE = ZoneId.of("Asia/Seoul");
 
     private final UserRepository userRepository;
     private final UserSettingRepository userSettingRepository;
@@ -54,17 +58,32 @@ public class UserService {
     @Transactional(readOnly = true)
     public UserResponse getMe(Long userId) {
         User user = findActiveUser(userId);
-        return UserResponse.of(user, connectionStatus(userId));
+        return toResponse(user);
     }
 
+    /**
+     * 이름·생년월일·성별 중 보낸 항목만 바꾼다(629). 신용등급은 금융망 조회 결과라 이 API로 바꿀 수 없다.
+     */
     @Transactional
     public UserResponse updateMe(Long userId, UpdateUserRequest request) {
-        if (request.name() == null) {
+        if (request.isEmpty()) {
             throw new BusinessException(ErrorCode.NO_FIELDS_TO_UPDATE);
         }
         User user = findActiveUser(userId);
-        user.changeName(request.name().trim());
-        return UserResponse.of(user, connectionStatus(userId));
+        if (request.name() != null) {
+            user.changeName(request.name().trim());
+        }
+        if (request.birthDate() != null) {
+            user.changeBirthDate(request.birthDate());
+        }
+        if (request.gender() != null) {
+            user.changeGender(request.gender());
+        }
+        return toResponse(user);
+    }
+
+    private UserResponse toResponse(User user) {
+        return UserResponse.of(user, connectionStatus(user.getId()), LocalDate.now(SERVICE_ZONE));
     }
 
     /**

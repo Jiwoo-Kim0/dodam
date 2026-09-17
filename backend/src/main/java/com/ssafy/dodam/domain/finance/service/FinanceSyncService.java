@@ -53,6 +53,7 @@ public class FinanceSyncService {
     private final FinanceConnectionRepository financeConnectionRepository;
     private final FinanceSyncRepository financeSyncRepository;
     private final FinanceConnectionService financeConnectionService;
+    private final CreditRatingService creditRatingService;
     private final Map<FinanceSyncScope, FinanceSyncScopeHandler> handlers;
     private final TransactionTemplate transactionTemplate;
 
@@ -61,6 +62,7 @@ public class FinanceSyncService {
             FinanceConnectionRepository financeConnectionRepository,
             FinanceSyncRepository financeSyncRepository,
             FinanceConnectionService financeConnectionService,
+            CreditRatingService creditRatingService,
             List<FinanceSyncScopeHandler> handlers,
             TransactionTemplate transactionTemplate
     ) {
@@ -68,6 +70,7 @@ public class FinanceSyncService {
         this.financeConnectionRepository = financeConnectionRepository;
         this.financeSyncRepository = financeSyncRepository;
         this.financeConnectionService = financeConnectionService;
+        this.creditRatingService = creditRatingService;
         this.handlers = indexHandlers(handlers);
         this.transactionTemplate = transactionTemplate;
     }
@@ -84,6 +87,9 @@ public class FinanceSyncService {
         for (FinanceSyncScope target : scope.targets()) {
             results.add(runHandler(target, userId, userKey));
         }
+        // 629: 금융망 자산이 바뀌면 등급도 바뀌므로 동기화마다 신용등급을 함께 최신화한다.
+        // scope 결과·progress에는 포함하지 않는 부수 갱신이라 실패해도 동기화 상태에 영향을 주지 않는다.
+        creditRatingService.refresh(userId, userKey);
 
         FinanceSync finished = transactionTemplate.execute(status -> finish(sync.getId(), userId, results));
         return FinanceSyncResponse.of(finished, results);

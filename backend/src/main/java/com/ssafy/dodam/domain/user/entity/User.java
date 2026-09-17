@@ -10,11 +10,16 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Period;
 
 /**
  * ERD `user` 테이블. `user`는 MySQL·H2 모두에서 예약어이므로 백틱으로 인용한다.
  * (Hibernate가 백틱을 Dialect별 인용문자로 변환한다.)
+ *
+ * <p>V39(629): 생년월일·성별은 사용자가 입력하고, 신용등급은 SSAFY 금융망 조회 결과를 서버가 기록한다.
+ * 셋 모두 NULL 허용 — 기존 회원·seed·소셜 가입자는 값이 없다.
  */
 @Entity
 @Table(name = "`user`")
@@ -36,6 +41,23 @@ public class User {
 
     @Column(name = "name", nullable = false, length = 100)
     private String name;
+
+    @Column(name = "birth_date")
+    private LocalDate birthDate;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "gender", length = 10)
+    private Gender gender;
+
+    /**
+     * SSAFY 금융망 2.7.4 「내 신용등급 조회」의 ratingName(A~E). 금융망은 숫자 신용점수를 주지 않는다.
+     * 사용자 입력이 아니라 신용등급 조회·금융 데이터 동기화가 성공할 때 서버가 갱신한다.
+     */
+    @Column(name = "credit_rating", length = 5)
+    private String creditRating;
+
+    @Column(name = "credit_rating_updated_at")
+    private LocalDateTime creditRatingUpdatedAt;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 20)
@@ -68,6 +90,22 @@ public class User {
     }
 
     /**
+     * 이메일·비밀번호로 가입하는 자체 회원을 생년월일·성별과 함께 생성한다. 두 값은 선택이라 null일 수 있다.
+     */
+    public static User createLocalUser(
+            String email,
+            String passwordHash,
+            String name,
+            LocalDate birthDate,
+            Gender gender
+    ) {
+        User user = createLocalUser(email, passwordHash, name);
+        user.birthDate = birthDate;
+        user.gender = gender;
+        return user;
+    }
+
+    /**
      * 소셜 로그인으로 가입하는 회원을 생성한다. 비밀번호가 없으므로 {@link #hasPassword()}가 false이고 이메일·비밀번호 로그인은 불가하다.
      */
     public static User createSocialUser(String email, String name) {
@@ -88,6 +126,35 @@ public class User {
 
     public void changeName(String name) {
         this.name = name;
+    }
+
+    public void changeBirthDate(LocalDate birthDate) {
+        this.birthDate = birthDate;
+    }
+
+    public void changeGender(Gender gender) {
+        this.gender = gender;
+    }
+
+    /**
+     * 금융망 신용등급 조회 결과를 기록한다. 등급명이 비어 있으면 이전 값을 유지한다.
+     */
+    public void updateCreditRating(String ratingName, LocalDateTime at) {
+        if (ratingName == null || ratingName.isBlank()) {
+            return;
+        }
+        this.creditRating = ratingName.trim();
+        this.creditRatingUpdatedAt = at;
+    }
+
+    /**
+     * 기준일 현재 만 나이. 생년월일이 없으면 null.
+     */
+    public Integer ageAt(LocalDate today) {
+        if (birthDate == null) {
+            return null;
+        }
+        return Period.between(birthDate, today).getYears();
     }
 
     /**
@@ -121,6 +188,22 @@ public class User {
 
     public String getName() {
         return name;
+    }
+
+    public LocalDate getBirthDate() {
+        return birthDate;
+    }
+
+    public Gender getGender() {
+        return gender;
+    }
+
+    public String getCreditRating() {
+        return creditRating;
+    }
+
+    public LocalDateTime getCreditRatingUpdatedAt() {
+        return creditRatingUpdatedAt;
     }
 
     public UserRole getRole() {
