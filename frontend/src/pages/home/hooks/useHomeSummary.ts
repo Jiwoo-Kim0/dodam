@@ -91,8 +91,19 @@ async function mapSpendingGoal(goal: GoalApiResponse): Promise<HomeGoal> {
 
 async function loadGoals() {
   const response = await goalApi.getGoals({ status: 'ACTIVE', size: 20 });
+  const uniqueGoals = Array.from(
+    new Map(response.content.map((goal) => [goal.goalId, goal])).values(),
+  );
+  let hasSpendingGoal = false;
+  const homeGoals = uniqueGoals.filter((goal) => {
+    if (goal.type !== 'SPENDING') return true;
+    if (hasSpendingGoal) return false;
+    hasSpendingGoal = true;
+    return true;
+  });
+
   return Promise.all(
-    response.content.map((goal) =>
+    homeGoals.map((goal) =>
       goal.type === 'SPENDING' ? mapSpendingGoal(goal) : mapSavingGoal(goal),
     ),
   );
