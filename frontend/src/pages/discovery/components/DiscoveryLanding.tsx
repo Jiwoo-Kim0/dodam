@@ -9,10 +9,12 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import Reanimated, { useAnimatedStyle, useTimestamp, type SharedValue } from 'react-native-reanimated';
 
 import type { BouncyScrollViewHandle } from '@/components/bouncyScrollView/BouncyScrollView';
 import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
+import { FINANCIAL_INSTITUTIONS, type FinancialInstitution } from '@/mocks/financeConnection';
 import { colors } from '@/styles';
 
 import { styles } from './DiscoveryLanding.styles';
@@ -51,6 +53,16 @@ const comparisonItems = [
   ['목표 달성일', '9일 더 빨라져요'],
   ['더 모을 수 있는 금액', '240,000원'],
 ] as const;
+
+const financeLandingBanks = FINANCIAL_INSTITUTIONS
+  .filter(({ id }) => id !== 'bnk' && id !== 'kbank')
+  .slice(0, 10);
+const financeLogoRows = [
+  financeLandingBanks.slice(0, 4),
+  financeLandingBanks.slice(4, 8),
+  [...financeLandingBanks.slice(8), ...financeLandingBanks.slice(1, 3)],
+];
+const financeLogoGroupWidth = 56 * 4;
 
 export function DiscoveryLanding({ onBack, onComplete }: DiscoveryLandingProps) {
   const { height } = useWindowDimensions();
@@ -118,12 +130,15 @@ export function DiscoveryLanding({ onBack, onComplete }: DiscoveryLandingProps) 
               stage="1단계"
               title={<>흩어진 금융 정보를{`\n`}한곳에 모아요</>}
             />
-            <Image
-              accessibilityLabel="한 휴대폰에 모인 금융 정보"
-              contentFit="contain"
-              source={require('@/assets/images/discovery/discovery_finance_hub.png')}
-              style={styles.financeImage}
-            />
+            <View style={styles.financeVisual}>
+              <Image
+                accessibilityLabel="금융사 정보가 모이는 휴대폰"
+                contentFit="contain"
+                source={require('@/assets/images/discovery/discovery_finance_hub.png')}
+                style={styles.financeImage}
+              />
+              <FinanceLogoRows />
+            </View>
             <View style={styles.noticeBanner}>
               <View style={styles.checkCircle}><Text style={styles.checkMark}>✓</Text></View>
               <Text style={styles.noticeText}>개인정보는 안전하게 수집하고 관리해요</Text>
@@ -269,6 +284,66 @@ function StageSkip({ onPress }: { onPress: () => void }) {
     <Pressable hitSlop={12} onPress={onPress} style={styles.stageSkip}>
       <Text style={styles.stageSkipText}>건너뛰기</Text>
     </Pressable>
+  );
+}
+
+function FinanceLogoRows() {
+  const timestamp = useTimestamp();
+
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      pointerEvents="none"
+      style={styles.financePhoneScreen}>
+      {financeLogoRows.map((banks, index) => (
+        <FinanceLogoRow
+          banks={banks}
+          direction={index === 1 ? 'right' : 'left'}
+          duration={[9500, 10800, 10200][index] ?? 9500}
+          key={banks[0]?.id ?? index}
+          timestamp={timestamp}
+        />
+      ))}
+    </View>
+  );
+}
+
+function FinanceLogoRow({
+  banks,
+  direction,
+  duration,
+  timestamp,
+}: {
+  banks: readonly FinancialInstitution[];
+  direction: 'left' | 'right';
+  duration: number;
+  timestamp: SharedValue<number>;
+}) {
+  const animatedTrackStyle = useAnimatedStyle(() => {
+    const distance = ((timestamp.value % duration) / duration) * financeLogoGroupWidth;
+
+    return {
+      transform: [{
+        translateX: direction === 'left' ? -distance : distance - financeLogoGroupWidth,
+      }],
+    };
+  });
+
+  return (
+    <View style={styles.financeLogoRow}>
+      <Reanimated.View style={[styles.financeLogoTrack, animatedTrackStyle]}>
+        {[0, 1].map((copy) => (
+          <View key={copy} style={styles.financeLogoGroup}>
+            {banks.map((bank) => (
+              <View key={bank.id} style={styles.financeLogoSlot}>
+                <Image contentFit="contain" source={bank.logo} style={styles.financeLogoImage} />
+              </View>
+            ))}
+          </View>
+        ))}
+      </Reanimated.View>
+    </View>
   );
 }
 
