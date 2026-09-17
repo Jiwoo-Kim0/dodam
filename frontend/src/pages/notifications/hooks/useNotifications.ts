@@ -14,6 +14,8 @@ export function useNotifications() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const requestIdRef = useRef(0);
+  const firstPageInFlightRef = useRef(false);
+  const loadMoreInFlightRef = useRef(false);
   /**
    * 서버 목록에서 이미 가져온 항목 수다. 목록 API가 offset(page × size) 기반이라
    * 알림을 삭제하면 뒤 항목이 한 칸씩 당겨지므로, 다음 페이지 번호를 그대로 쓰면 1건이 건너뛰어진다.
@@ -41,6 +43,9 @@ export function useNotifications() {
 
   const loadFirstPage = useCallback(
     async (refreshing = false) => {
+      if (firstPageInFlightRef.current) return;
+
+      firstPageInFlightRef.current = true;
       const requestId = ++requestIdRef.current;
       setError(null);
       setIsLoadingMore(false);
@@ -82,6 +87,7 @@ export function useNotifications() {
         }
       } finally {
         if (requestId === requestIdRef.current) {
+          firstPageInFlightRef.current = false;
           setIsLoading(false);
           setIsRefreshing(false);
         }
@@ -91,11 +97,19 @@ export function useNotifications() {
   );
 
   const loadMore = useCallback(async () => {
-    if (!hasMore || isLoadingMore || isLoading || isRefreshing) return;
+    if (
+      !hasMore ||
+      loadMoreInFlightRef.current ||
+      isLoadingMore ||
+      isLoading ||
+      isRefreshing
+    ) return;
 
+    loadMoreInFlightRef.current = true;
     const requestId = requestIdRef.current;
     const offset = serverOffsetRef.current;
     const requestedPage = Math.floor(offset / PAGE_SIZE);
+    setError(null);
     setIsLoadingMore(true);
     try {
       const page = await notificationApi.getNotifications({
@@ -119,7 +133,10 @@ export function useNotifications() {
         setError(loadError);
       }
     } finally {
-      if (requestId === requestIdRef.current) setIsLoadingMore(false);
+      if (requestId === requestIdRef.current) {
+        loadMoreInFlightRef.current = false;
+        setIsLoadingMore(false);
+      }
     }
   }, [hasMore, isLoading, isLoadingMore, isRefreshing]);
 
@@ -196,6 +213,8 @@ export function useNotifications() {
     refetch: useCallback(() => loadFirstPage(true), [loadFirstPage]),
     cancel: useCallback(() => {
       requestIdRef.current += 1;
+      firstPageInFlightRef.current = false;
+      loadMoreInFlightRef.current = false;
       setIsLoadingMore(false);
     }, []),
     unreadCount,
