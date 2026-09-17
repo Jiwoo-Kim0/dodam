@@ -13,6 +13,8 @@ import com.ssafy.dodam.domain.simulation.dto.request.LoanRefinanceSimulationRequ
 import com.ssafy.dodam.domain.simulation.dto.request.SavingSimulationRequest;
 import com.ssafy.dodam.domain.simulation.dto.request.SpendingSimulationRequest;
 import com.ssafy.dodam.domain.simulation.entity.SimulationType;
+import com.ssafy.dodam.domain.simulation.service.SimulationBaselineReader;
+import com.ssafy.dodam.domain.simulation.service.SimulationClock;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,7 +33,9 @@ import org.springframework.stereotype.Component;
  *       {@code GOAL_SAVING_SHORTFALL}의 evidence에 남긴 {@code requiredMonthlySaving}을 읽는다. 시뮬레이션 기준선의 현재 저축액이
  *       진단 시점 A와 달라도 목표에 필요한 R은 같으므로 델타보다 절대값이 안전하다.</li>
  *   <li>SPENDING/REDUCE_CATEGORY_SPENDING(627) → {@code POST /simulations/spending}, {@code category}는 근거
- *       {@code CATEGORY_SPENDING_INCREASE}의 evidence {@code categoryCode}, {@code monthlyReduction = effect.monthlyCostSaving}.</li>
+ *       {@code CATEGORY_SPENDING_INCREASE}의 evidence {@code categoryCode}, {@code monthlyReduction = effect.monthlyCostSaving}.
+ *       (631) 감소액이 시뮬레이션 기준선의 카테고리 월평균을 넘으면 그 값으로 잘라 {@code REDUCTION_CAPPED_TO_SIMULATION_BASELINE}을 남긴다.
+ *       이 유형만은 "저장된 값만 읽는다"는 원칙의 예외로 기준선을 한 번 읽는다 — 그대로 보내면 400이 되기 때문이다.</li>
  *   <li>LOAN/REFINANCE_LOAN(627) → {@code POST /simulations/loan/refinance}, {@code targetProductId}는 근거
  *       {@code REFINANCE_INTEREST_SAVING}의 evidence, {@code refinanceAmount = null}(잔액 전액). 절감액을 추정하지 못한 추천(대상 상품
  *       없음)은 {@code REFINANCE_TARGET_MISSING}. 대출은 evidence의 {@code loanId}로 지정한다(2026-09-16 명세 17 본문 확장) —
@@ -49,16 +53,24 @@ public class RecommendationSimulationPresetAssembler {
     static final String LOAN_REFINANCE_ENDPOINT = "/api/v1/simulations/loan/refinance";
     static final String REQUIRED_MONTHLY_SAVING_FIELD = "requiredMonthlySaving";
     private final RecommendationReasonRepository reasons;
+    private final SimulationBaselineReader baselines;
+    private final SimulationClock clock;
 
-    public RecommendationSimulationPresetAssembler(RecommendationReasonRepository reasons) {
+    public RecommendationSimulationPresetAssembler(RecommendationReasonRepository reasons, SimulationBaselineReader baselines,
+            SimulationClock clock) {
         this.reasons = reasons;
+        this.baselines = baselines;
+        this.clock = clock;
     }
 
     public RecommendationSimulationPreset assemble(Long userId, Recommendation recommendation) {
         return assembleAll(userId, List.of(recommendation)).get(recommendation.getRecommendationId());
     }
 
-    /** 근거가 필요한 추천(SAVING·카테고리 소비·대환)만 골라 한 번의 쿼리로 읽는다. 목록 N건에서 N번 조회하지 않기 위해서다. */
+    /**
+     * 근거가 필요한 추천(SAVING·카테고리 소비·대환)만 골라 한 번의 쿼리로 읽는다. 목록 N건에서 N번 조회하지 않기 위해서다.
+     * 카테고리 소비 추천이 하나라도 있으면 시뮬레이션 기준선도 한 번 읽어 감소액 상한({@link #capToBaseline})에 쓴다.
+     */
     public Map<Long, RecommendationSimulationPreset> assembleAll(Long userId, List<Recommendation> recommendations) {
         List<Long> needingReasons = recommendations.stream()
                 .filter(r -> isSaving(r) || isCategorySpending(r) || isRefinance(r))
@@ -71,9 +83,12 @@ public class RecommendationSimulationPresetAssembler {
                 }
             }
         }
+        Map<String, Long> categoryBaseline = recommendations.stream().anyMatch(RecommendationSimulationPresetAssembler::isCategorySpending)
+                ? baselines.read(userId, clock.now().toLocalDate()).spendingByCategory()
+                : Map.of();
         Map<Long, RecommendationSimulationPreset> presets = new HashMap<>();
         for (Recommendation r : recommendations) {
-            presets.put(r.getRecommendationId(), build(r, evidenceByRecommendation.get(r.getRecommendationId())));
+            presets.put(r.getRecommendationId(), build(r, evidenceByRecommendation.get(r.getRecommendationId()), categoryBaseline));
         }
         return presets;
     }
@@ -84,7 +99,7 @@ public class RecommendationSimulationPresetAssembler {
                 || HighInterestLoanGenerator.REASON_INTEREST_SAVING.equals(code);
     }
 
-    private static RecommendationSimulationPreset build(Recommendation r, JsonNode evidence) {
+    private static RecommendationSimulationPreset build(Recommendation r, JsonNode evidence, Map<String, Long> categoryBaseline) {
         if (isSpending(r)) {
             Long reduction = r.getMonthlyCostSaving();
             if (reduction == null || reduction <= 0) {
@@ -103,8 +118,7 @@ public class RecommendationSimulationPresetAssembler {
             if (category == null) {
                 return RecommendationSimulationPreset.unavailable(RecommendationSimulationPreset.SNAPSHOT_FIELD_MISSING);
             }
-            return RecommendationSimulationPreset.of(SimulationType.SPENDING, SPENDING_ENDPOINT,
-                    new SpendingSimulationRequest(category, reduction, null), List.of());
+            return capToBaseline(category, reduction, categoryBaseline.getOrDefault(category, 0L));
         }
         if (isSaving(r)) {
             Long requiredMonthlySaving = longOf(evidence, REQUIRED_MONTHLY_SAVING_FIELD);
@@ -130,6 +144,25 @@ public class RecommendationSimulationPresetAssembler {
                     new LoanRefinanceSimulationRequest(null, loanId, targetProductId, null), List.of());
         }
         return RecommendationSimulationPreset.unavailable(RecommendationSimulationPreset.NO_MATCHING_SIMULATION_TYPE);
+    }
+
+    /**
+     * (631) 카테고리 소비 감소 프리셋은 시뮬레이션이 검사하는 상한(직전 3개월 카테고리 월평균, {@code SpendingReductionCalculator})을 넘지 않게
+     * 자른다. 진단은 지난달 vs 직전 3개월 평균으로 증가액을 잡으므로, 6·7월 소비가 거의 없고 8월만 튄 카테고리에서는 증가액이 6~8월 평균보다
+     * 클 수 있다. 그대로 보내면 400 {@code SIMULATION_REDUCTION_EXCEEDS_SPENDING}이다. 627 최초 구현(3개월 vs 3개월)은 진단 최근 기간과
+     * 시뮬레이션 창이 같아 이 일이 없었다. 기준선에 그 카테고리 소비가 없으면 어떤 값도 400이라 프리셋을 만들지 않는다.
+     */
+    static RecommendationSimulationPreset capToBaseline(String category, long reduction, long baselineSpending) {
+        if (baselineSpending <= 0) {
+            return RecommendationSimulationPreset.unavailable(RecommendationSimulationPreset.SIMULATION_BASELINE_UNAVAILABLE);
+        }
+        if (reduction > baselineSpending) {
+            return RecommendationSimulationPreset.of(SimulationType.SPENDING, SPENDING_ENDPOINT,
+                    new SpendingSimulationRequest(category, baselineSpending, null),
+                    List.of(RecommendationSimulationPreset.REDUCTION_CAPPED_TO_SIMULATION_BASELINE));
+        }
+        return RecommendationSimulationPreset.of(SimulationType.SPENDING, SPENDING_ENDPOINT,
+                new SpendingSimulationRequest(category, reduction, null), List.of());
     }
 
     private static boolean isSpending(Recommendation r) {

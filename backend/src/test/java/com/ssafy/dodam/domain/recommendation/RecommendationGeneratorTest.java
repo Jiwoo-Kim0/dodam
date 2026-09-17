@@ -186,24 +186,45 @@ class RecommendationGeneratorTest {
 
     @Test
     void categorySpendingGeneratorRestoresPreviousAverageAndKeepsCategoryCode() {
+        // 631 진단 형식: 지난달(1개월) 160,000 vs 직전 3개월 평균 120,000
         ObjectNode current = json.createObjectNode().put("categoryId", 3L).put("categoryCode", "FOOD").put("categoryName", "식비")
-                .put("monthlyAverage", 140_000L).put("increaseAmount", 40_000L).put("increaseRatePercent", 40.0).put("consecutiveMonths", 3);
-        ObjectNode benchmark = json.createObjectNode().put("previousMonthlyAverage", 100_000L);
+                .put("monthlyAverage", 160_000L).put("lastMonthAmount", 160_000L).put("increaseAmount", 40_000L)
+                .put("increaseRatePercent", 33.3).put("consecutiveMonths", 3);
+        current.putObject("recentPeriod").put("startMonth", "2026-08").put("endMonth", "2026-08").put("months", 1);
+        ObjectNode benchmark = json.createObjectNode().put("previousMonthlyAverage", 120_000L);
+        benchmark.putObject("baselinePeriod").put("startMonth", "2026-05").put("endMonth", "2026-07").put("months", 3);
         ObjectNode evidence = json.createObjectNode().put("targetId", 3L);
         Outcome outcome = categorySpending.generate(input(), issue(21L, "SPENDING", "CATEGORY_SPENDING_INCREASE", IssueSeverity.MEDIUM,
                 current, benchmark, evidence));
         RecommendationCandidate candidate = outcome.candidates().get(0);
+        assertThat(candidate.generatorVersion()).isEqualTo("627.3");
         assertThat(candidate.candidateKey()).isEqualTo("REDUCE_CATEGORY_SPENDING:3");
         assertThat(candidate.domain()).isEqualTo("SPENDING");
         assertThat(candidate.sourceIssueId()).isEqualTo(21L);
         assertThat(candidate.effect().monthlyCostSaving()).isEqualTo(40_000L);
+        // ×12는 유지하되 단월 증가를 연간화했다는 근거를 evidence에 남긴다
         assertThat(candidate.effect().annualCostSaving()).isEqualTo(480_000L);
         assertThat(candidate.title()).isEqualTo("식비 지출 줄여보기");
-        assertThat(candidate.description()).isEqualTo("이전 수준으로 되돌리면 월 40,000원을 아낄 수 있어요.");
+        assertThat(candidate.description()).isEqualTo("직전 3개월 월평균 수준으로 되돌리면 월 40,000원을 아낄 수 있어요.");
         assertThat(candidate.reasons()).hasSize(1);
         assertThat(candidate.reasons().get(0).code()).isEqualTo("CATEGORY_SPENDING_INCREASE");
+        assertThat(candidate.reasons().get(0).description()).isEqualTo("지난달 식비 소비 160,000원이 직전 3개월 월평균 120,000원보다 40,000원 많아요.");
         assertThat(candidate.reasons().get(0).evidence().path("categoryCode").asText()).isEqualTo("FOOD");
         assertThat(candidate.reasons().get(0).evidence().path("consecutiveMonths").asInt()).isEqualTo(3);
+        assertThat(candidate.reasons().get(0).evidence().path("recentMonths").asInt()).isEqualTo(1);
+        assertThat(candidate.reasons().get(0).evidence().path("baselineMonths").asInt()).isEqualTo(3);
+        assertThat(candidate.reasons().get(0).evidence().path("annualizationBasis").asText()).isEqualTo("SINGLE_MONTH_INCREASE_X12");
+
+        // 627(v5) 형식 진단(기간 정보 없음 = 3개월 평균 vs 3개월 평균)도 그대로 읽히며 연간화 근거가 구분된다
+        ObjectNode legacyCurrent = json.createObjectNode().put("categoryId", 3L).put("categoryCode", "FOOD").put("categoryName", "식비")
+                .put("monthlyAverage", 140_000L).put("increaseAmount", 40_000L);
+        legacyCurrent.putObject("recentPeriod").put("months", 3);
+        ObjectNode legacyBenchmark = json.createObjectNode().put("previousMonthlyAverage", 100_000L);
+        legacyBenchmark.putObject("baselinePeriod").put("months", 3);
+        RecommendationCandidate legacy = categorySpending.generate(input(), issue(24L, "SPENDING", "CATEGORY_SPENDING_INCREASE",
+                IssueSeverity.MEDIUM, legacyCurrent, legacyBenchmark, evidence)).candidates().get(0);
+        assertThat(legacy.reasons().get(0).evidence().path("annualizationBasis").asText()).isEqualTo("RECENT_AVERAGE_INCREASE_X12");
+        assertThat(legacy.reasons().get(0).description()).startsWith("최근 3개월 월평균 식비 소비 140,000원이 직전 3개월 월평균 100,000원보다");
 
         ObjectNode flat = current.deepCopy().put("increaseAmount", 0L);
         assertThat(categorySpending.generate(input(), issue(22L, "SPENDING", "CATEGORY_SPENDING_INCREASE", IssueSeverity.LOW, flat, benchmark, evidence))

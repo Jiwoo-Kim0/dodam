@@ -16,7 +16,9 @@ import java.util.List;
  * @param unavailableReason {@code NO_MATCHING_SIMULATION_TYPE}: 대응하는 시뮬레이션 유형이 없음(CASHFLOW 등).
  *                          {@code EFFECT_AMOUNT_MISSING}: 소비 추천에 월 절감액이 없음.
  *                          {@code SNAPSHOT_FIELD_MISSING}: 저축 추천 근거에 목표 필요 저축액이 없거나 카테고리 소비 추천 근거에
- *                          카테고리 코드가 없음. {@code REFINANCE_TARGET_MISSING}: 대환 추천에 대상 상품이 없음(진단이 절감액을 추정하지 못함)
+ *                          카테고리 코드가 없음. {@code REFINANCE_TARGET_MISSING}: 대환 추천에 대상 상품이 없음(진단이 절감액을 추정하지 못함).
+ *                          {@code SIMULATION_BASELINE_UNAVAILABLE}: (631) 카테고리 소비 추천인데 시뮬레이션 기준선(직전 3개월)에 그 카테고리
+ *                          소비가 없어 어떤 감소액도 400이 됨
  * @param assumptions       프리셋 값에 적용된 가정. {@code REDUCTION_APPLIES_TO_TOTAL_SPENDING}: 카테고리를 지정하지 않아 전체 소비 기준.
  *                          {@code TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT}: 추천에 goalId가 없어 저축액이 모든 모으기 목표에 남은 금액 비례로
  *                          배분됨. 619부터 저축 프리셋은 {@code request.goalId}로 대상 목표를 넘기므로 정상 자료에서는 나오지 않는다.
@@ -38,6 +40,13 @@ public record RecommendationSimulationPreset(
     public static final String TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT = "TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT";
     public static final String REFINANCE_TARGET_MISSING = "REFINANCE_TARGET_MISSING";
     public static final String ACCOUNT_NO_REQUIRED_BY_CLIENT = "ACCOUNT_NO_REQUIRED_BY_CLIENT";
+    /**
+     * (631) 카테고리 소비 감소액이 시뮬레이션 기준선(직전 3개월 카테고리 월평균)보다 커서 그 값으로 잘라 넣었다. 진단은 지난달 vs 직전 3개월
+     * 평균으로 증가액을 계산하는데, 시뮬레이션은 직전 3개월 평균을 줄일 수 있는 상한으로 보므로 지난달만 튄 카테고리에서 어긋날 수 있다.
+     */
+    public static final String REDUCTION_CAPPED_TO_SIMULATION_BASELINE = "REDUCTION_CAPPED_TO_SIMULATION_BASELINE";
+    /** (631) 시뮬레이션 기준선에 그 카테고리 소비가 없어 감소 시뮬레이션을 만들 수 없다(그대로 보내면 400). */
+    public static final String SIMULATION_BASELINE_UNAVAILABLE = "SIMULATION_BASELINE_UNAVAILABLE";
 
     public RecommendationSimulationPreset {
         assumptions = assumptions == null ? List.of() : List.copyOf(assumptions);
