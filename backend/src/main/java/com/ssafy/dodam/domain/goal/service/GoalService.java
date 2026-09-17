@@ -23,8 +23,10 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.data.domain.PageImpl;
@@ -51,6 +53,9 @@ public class GoalService {
     static final String SPENDING_NO_TARGET_MESSAGE = "줄이기 목표에는 목표 금액·목표일을 지정할 수 없습니다.";
     static final String TARGET_DATE_NOT_FUTURE_MESSAGE = "목표일은 오늘 이후여야 합니다.";
     static final String NAME_BLANK_MESSAGE = "목표 이름은 비어 있을 수 없습니다.";
+
+    /** 종료되지 않은 상태. 줄이기 목표 1개 제한은 이 상태의 목표만 센다. */
+    private static final Set<GoalStatus> OPEN_STATUSES = EnumSet.of(GoalStatus.ACTIVE, GoalStatus.PAUSED);
 
     /** 진행 중인 목표가 먼저, 같은 상태 안에서는 최근 생성 순. */
     private static final Comparator<Goal> LIST_ORDER = Comparator
@@ -170,6 +175,7 @@ public class GoalService {
             if (request.targetAmount() != null || request.targetDate() != null) {
                 throw new InvalidRequestException(SPENDING_NO_TARGET_MESSAGE);
             }
+            requireNoOpenSpendingGoal(userId);
         }
 
         Goal goal = goalRepository.save(Goal.create(userId, name, type, now));
@@ -181,6 +187,18 @@ public class GoalService {
         }
         goalHistoryRecorder.record(goal, savingGoal, GoalHistoryEvent.GOAL_CREATED, now);
         return GoalResponse.from(goal, savingGoal, spendingGoal, now.toLocalDate());
+    }
+
+    /**
+     * 줄이기 목표는 사용자당 하나만 진행한다. 월 예산이 한 사람의 "이번 달 소비 한도"라 여러 개가 있으면 진행률·요약(월 예산 합)·
+     * 진단의 줄이기 목표 초과 판정이 어느 목표를 기준으로 해야 하는지 정할 수 없다. 종료(ACHIEVED·CANCELED)되거나 삭제된 목표는
+     * 세지 않으므로, 기존 목표를 끝낸 뒤에는 새로 만들 수 있다. PAUSED는 아직 진행 중인 목표로 본다.
+     */
+    private void requireNoOpenSpendingGoal(Long userId) {
+        if (goalRepository.existsByUserIdAndTypeAndStatusInAndDeletedAtIsNull(
+                userId, GoalType.SPENDING, OPEN_STATUSES)) {
+            throw new BusinessException(ErrorCode.SPENDING_GOAL_ALREADY_EXISTS);
+        }
     }
 
     // ---------- 수정 ----------

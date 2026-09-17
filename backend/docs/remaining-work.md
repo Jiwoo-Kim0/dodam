@@ -762,6 +762,12 @@
 
 구현 계약: [goal.md](goal.md)
 
+### 줄이기 목표 1개 제한 (S15P21D105-630, 2026-09-17)
+
+- [x] 사용자당 진행 중(ACTIVE·PAUSED, 미삭제) 줄이기 목표가 있으면 생성은 409 `SPENDING_GOAL_ALREADY_EXISTS`. FE QA에서 여러 개가 만들어지는 문제로 추가했다([goal.md](goal.md) §생성).
+- [ ] FE: 줄이기 목표가 이미 있으면 생성 진입점을 숨기거나 409 메시지를 그대로 안내한다. 기존 시연 데이터에 사용자당 줄이기 목표가 2개 이상인 계정이 있으면 서버에서 하나만 남기고 CANCELED로 정리한다(seed 493은 사용자당 최대 1개).
+- [ ] DB UNIQUE 제약은 두지 않았다. 동시 요청으로 2개가 생길 수 있어 필요하면 V35 방식(생성 컬럼 + UNIQUE)으로 `goal`에 제약을 추가한다.
+
 ### 명세 Body와 ERD의 불일치(줄이기 목표)
 
 - [ ] 명세 12 생성 Body는 `targetAmount`·`targetDate` 필수, `monthlyBudget` 선택인데 ERD `spending_goal`에는 `monthly_budget`만 있다. 줄이기(SPENDING) 목표에 목표 금액·목표일이 오면 400으로 거절하도록 구현했다. FE 목표 설정 화면(481·485)이 줄이기 목표에도 금액·기한을 받는다면 ERD에 컬럼을 추가하거나 명세를 고쳐야 한다.
