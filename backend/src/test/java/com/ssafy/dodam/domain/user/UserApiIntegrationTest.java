@@ -11,6 +11,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.ssafy.dodam.domain.user.entity.Gender;
+import java.time.LocalDate;
+import java.time.ZoneId;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ssafy.dodam.domain.auth.repository.AuthSessionRepository;
@@ -105,7 +109,75 @@ class UserApiIntegrationTest {
                 .andExpect(jsonPath("$.data.role").value("USER"))
                 .andExpect(jsonPath("$.data.financeConnectionStatus").value("CONNECTED"))
                 .andExpect(jsonPath("$.data.createdAt").isNotEmpty())
-                .andExpect(jsonPath("$.data.updatedAt").isNotEmpty());
+                .andExpect(jsonPath("$.data.updatedAt").isNotEmpty())
+                // 629: 가입 때 생년월일·성별을 보내지 않았고 신용등급 조회도 없었으므로 셋 다 null이다
+                .andExpect(jsonPath("$.data.birthDate").value(nullValue()))
+                .andExpect(jsonPath("$.data.age").value(nullValue()))
+                .andExpect(jsonPath("$.data.gender").value(nullValue()))
+                .andExpect(jsonPath("$.data.creditRating").value(nullValue()))
+                .andExpect(jsonPath("$.data.creditRatingUpdatedAt").value(nullValue()));
+    }
+
+    // ---------- S15P21D105-629 생년월일·성별·신용등급 ----------
+
+    @Test
+    void updateMeSetsBirthDateAndGenderAndComputesAge() throws Exception {
+        LocalDate birthDate = LocalDate.now(ZoneId.of("Asia/Seoul")).minusYears(30).minusDays(1);
+
+        mockMvc.perform(patch("/api/v1/users/me")
+                        .header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("birthDate", birthDate.toString(), "gender", "FEMALE"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.name").value(NAME))
+                .andExpect(jsonPath("$.data.birthDate").value(birthDate.toString()))
+                .andExpect(jsonPath("$.data.age").value(30))
+                .andExpect(jsonPath("$.data.gender").value("FEMALE"));
+
+        User user = userRepository.findByEmailAndDeletedAtIsNull(EMAIL).orElseThrow();
+        assertThat(user.getBirthDate()).isEqualTo(birthDate);
+        assertThat(user.getGender()).isEqualTo(Gender.FEMALE);
+        assertThat(user.getName()).isEqualTo(NAME);
+
+        // 성별만 다시 보내면 생년월일은 유지된다
+        mockMvc.perform(patch("/api/v1/users/me")
+                        .header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("gender", "MALE"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.birthDate").value(birthDate.toString()))
+                .andExpect(jsonPath("$.data.gender").value("MALE"));
+    }
+
+    @Test
+    void updateMeRejectsFutureBirthDateAndUnknownGender() throws Exception {
+        mockMvc.perform(patch("/api/v1/users/me")
+                        .header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("birthDate", LocalDate.now().plusDays(1).toString()))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.errors[0].field").value("birthDate"));
+
+        mockMvc.perform(patch("/api/v1/users/me")
+                        .header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("gender", "UNKNOWN"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+
+        // 신용등급은 금융망 값이라 Body로 보내도 무시된다(알 수 없는 필드) — 다른 필드가 없으면 변경 없음으로 처리
+        mockMvc.perform(patch("/api/v1/users/me")
+                        .header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("creditRating", "A"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("NO_FIELDS_TO_UPDATE"));
+
+        User user = userRepository.findByEmailAndDeletedAtIsNull(EMAIL).orElseThrow();
+        assertThat(user.getBirthDate()).isNull();
+        assertThat(user.getGender()).isNull();
+        assertThat(user.getCreditRating()).isNull();
     }
 
     @Test

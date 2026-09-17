@@ -10,6 +10,10 @@ CREATE TABLE `user` (
   `email` VARCHAR(255) NOT NULL,
   `password_hash` VARCHAR(255) NULL,
   `name` VARCHAR(100) NOT NULL,
+  `birth_date` DATE NULL,
+  `gender` VARCHAR(10) NULL,
+  `credit_rating` VARCHAR(5) NULL,
+  `credit_rating_updated_at` DATETIME NULL,
   `role` VARCHAR(20) NOT NULL DEFAULT 'USER',
   `created_at` DATETIME NOT NULL,
   `updated_at` DATETIME NOT NULL,
@@ -17,7 +21,9 @@ CREATE TABLE `user` (
   PRIMARY KEY (`user_id`),
   UNIQUE KEY `uk_user_email` (`email`),
   CONSTRAINT `chk_user_role`
-    CHECK (`role` IN ('USER', 'ADMIN'))
+    CHECK (`role` IN ('USER', 'ADMIN')),
+  CONSTRAINT `chk_user_gender`
+    CHECK (`gender` IN ('MALE', 'FEMALE'))
 );
 
 CREATE TABLE `user_setting` (

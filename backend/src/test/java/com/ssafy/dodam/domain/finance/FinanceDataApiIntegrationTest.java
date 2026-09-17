@@ -28,6 +28,7 @@ import com.ssafy.dodam.domain.finance.repository.FinanceSyncRepository;
 import com.ssafy.dodam.domain.finance.service.FinanceSyncScopeHandler;
 import com.ssafy.dodam.domain.finance.service.FinanceSyncScopeResult;
 import com.ssafy.dodam.domain.finance.service.FinanceSyncService;
+import com.ssafy.dodam.domain.user.entity.User;
 import com.ssafy.dodam.domain.user.repository.FinancialProfileRepository;
 import com.ssafy.dodam.domain.user.repository.UserRepository;
 import com.ssafy.dodam.domain.user.repository.UserSettingRepository;
@@ -722,6 +723,56 @@ class FinanceDataApiIntegrationTest {
 
         // 저장된 userKey 암호문을 복호화해 그대로 넘겨야 한다
         verify(ssafyFinanceClient).inquireMyCreditRating(USER_KEY);
+
+        // 629: 조회 성공 시 등급명이 user.credit_rating에 기록되고 GET /users/me에서 보인다
+        User user = userRepository.findById(userId).orElseThrow();
+        assertThat(user.getCreditRating()).isEqualTo("B");
+        assertThat(user.getCreditRatingUpdatedAt()).isNotNull();
+        mockMvc.perform(get("/api/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.creditRating").value("B"))
+                .andExpect(jsonPath("$.data.creditRatingUpdatedAt").isNotEmpty());
+    }
+
+    // ---------- S15P21D105-629 동기화 시 신용등급 갱신 ----------
+
+    @Test
+    void syncRefreshesStoredCreditRating() throws Exception {
+        given(ssafyFinanceClient.inquireMyCreditRating(anyString()))
+                .willReturn(new SsafyCreditRating("C", 1_000_000L, 0L, 1_000_000L));
+
+        mockMvc.perform(post("/api/v1/finance-data/sync")
+                        .header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("scope", "ACCOUNT"))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.status").value("COMPLETED"))
+                // 등급 갱신은 scope 결과에 들어가지 않는다
+                .andExpect(jsonPath("$.data.results", hasSize(1)))
+                .andExpect(jsonPath("$.data.results[0].scope").value("ACCOUNT"));
+
+        verify(ssafyFinanceClient).inquireMyCreditRating(USER_KEY);
+        User user = userRepository.findById(userId).orElseThrow();
+        assertThat(user.getCreditRating()).isEqualTo("C");
+        assertThat(user.getCreditRatingUpdatedAt()).isNotNull();
+    }
+
+    @Test
+    void syncSucceedsEvenWhenCreditRatingRefreshFails() throws Exception {
+        given(ssafyFinanceClient.inquireMyCreditRating(anyString()))
+                .willThrow(new SsafyApiException("H1009", "USER_KEY가 유효하지 않습니다."));
+
+        mockMvc.perform(post("/api/v1/finance-data/sync")
+                        .header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("scope", "ACCOUNT"))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.data.errorMessage").value(nullValue()));
+
+        User user = userRepository.findById(userId).orElseThrow();
+        assertThat(user.getCreditRating()).isNull();
+        assertThat(user.getCreditRatingUpdatedAt()).isNull();
     }
 
     @Test
