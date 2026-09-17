@@ -47,7 +47,7 @@ export function NotificationDetailSheet({
 }: NotificationDetailSheetProps) {
   return (
     <Modal
-      animationType="slide"
+      animationType="fade"
       onRequestClose={onClose}
       statusBarTranslucent
       transparent

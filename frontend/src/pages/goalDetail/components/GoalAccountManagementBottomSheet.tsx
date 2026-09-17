@@ -27,7 +27,7 @@ export function GoalAccountManagementBottomSheet({
 }: GoalAccountManagementBottomSheetProps) {
   return (
     <Modal
-      animationType="slide"
+      animationType="fade"
       onRequestClose={onClose}
       statusBarTranslucent
       transparent

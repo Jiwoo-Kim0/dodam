@@ -128,18 +128,19 @@ export function mapCategorySpending(
     (left, right) => right.amount - left.amount,
   );
 
-  const topCategories = aggregatedCategories.slice(0, 3);
-  const rankedCategoryIds = topCategories
+  const rankedCategoryIds = aggregatedCategories
     .filter((category) => category.categoryId !== 'ETC')
     .map((category) => category.categoryId);
 
-  return topCategories.map((category) => ({
+  return aggregatedCategories.map((category) => ({
     categoryId: category.categoryId,
     amount: category.amount,
     ratio: Math.round(category.ratio),
     color:
       category.categoryId === 'ETC'
         ? colors.ledger.categoryOther
-        : CATEGORY_COLORS[rankedCategoryIds.indexOf(category.categoryId)],
+        : CATEGORY_COLORS[
+            rankedCategoryIds.indexOf(category.categoryId) % CATEGORY_COLORS.length
+          ],
   }));
 }

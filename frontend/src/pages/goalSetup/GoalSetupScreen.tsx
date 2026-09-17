@@ -227,6 +227,27 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
         return;
       }
 
+      const existingGoals = await goalApi.getGoals({
+        type: 'SPENDING',
+        status: 'ACTIVE',
+        size: 1,
+      });
+      const existingGoal = existingGoals.content[0];
+      if (existingGoal) {
+        Alert.alert(
+          '이미 진행 중인 목표가 있어요',
+          '지출 줄이기 목표는 한 번에 하나만 진행할 수 있어요.',
+          [
+            { text: '계속 작성', style: 'cancel' },
+            {
+              text: '기존 목표 보기',
+              onPress: () => router.replace(routes.goalDetail(String(existingGoal.goalId))),
+            },
+          ],
+        );
+        return;
+      }
+
       await goalApi.createGoal({ name: '월 지출 줄이기', type: 'SPENDING', monthlyBudget: reductionAmount });
       setStep('reductionComplete');
     } catch (error) {

@@ -2,7 +2,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, type AlertButton, Pressable, Text, View } from 'react-native';
+import { Alert, Pressable, Text, View } from 'react-native';
 
 import { authApi, financeDataApi } from '@/api';
 import {
@@ -22,6 +22,7 @@ import { BriefingCard } from './components/BriefingCard';
 import { ExpenseSummaryCard } from './components/ExpenseSummaryCard';
 import { GoalCarousel } from './components/GoalCarousel';
 import { HomeHeader } from './components/HomeHeader';
+import { HomeMenuBottomSheet } from './components/HomeMenuBottomSheet';
 import { SpendingTopList } from './components/SpendingTopList';
 import { styles } from './HomeScreen.styles';
 import { useHomeSummary } from './hooks/useHomeSummary';
@@ -35,6 +36,7 @@ export function HomeScreen() {
   const unreadNotificationCount = useUnreadNotificationCount();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const [isMenuVisible, setIsMenuVisible] = useState(false);
   const {
     assetOverview,
     error: summaryError,
@@ -113,32 +115,11 @@ export function HomeScreen() {
     );
   };
 
-  const openMenu = () => {
-    const buttons: AlertButton[] = [{ text: '취소', style: 'cancel' }];
-
-    if (user?.financeConnectionStatus === 'CONNECTED') {
-      buttons.push({ text: '금융 연결 해제', onPress: confirmDisconnect });
-    } else if (user) {
-      buttons.push({
-        text: '금융 정보 연결',
-        onPress: () => router.push(routes.financeConnection),
-      });
-    }
-
-    buttons.push({
-      text: '로그아웃',
-      style: 'destructive',
-      onPress: () => void handleLogout(),
-    });
-
-    Alert.alert('메뉴', undefined, buttons);
-  };
-
   return (
     <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
       <HomeHeader
         onLogoPress={handleHomeRefresh}
-        onMenuPress={openMenu}
+        onMenuPress={() => setIsMenuVisible(true)}
         onNotificationPress={() => router.push(routes.notifications)}
         unreadNotificationCount={unreadNotificationCount}
       />
@@ -245,6 +226,25 @@ export function HomeScreen() {
           />
         </View>
       </BouncyScrollView>
+
+      <HomeMenuBottomSheet
+        isConnected={user?.financeConnectionStatus === 'CONNECTED'}
+        isProcessing={isDisconnecting || isLoggingOut}
+        onClose={() => setIsMenuVisible(false)}
+        onFinancePress={() => {
+          setIsMenuVisible(false);
+          if (user?.financeConnectionStatus === 'CONNECTED') {
+            confirmDisconnect();
+            return;
+          }
+          router.push(routes.financeConnection);
+        }}
+        onLogoutPress={() => {
+          setIsMenuVisible(false);
+          void handleLogout();
+        }}
+        visible={isMenuVisible}
+      />
     </SafeAreaLayout>
   );
 }
