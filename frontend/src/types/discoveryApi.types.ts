@@ -40,15 +40,12 @@ export interface RecommendationSimulationRequestApiResponse {
   goalId?: number | null;
   monthlySavingAmount?: number | null;
   targetProductId?: number | null;
+  loanId?: number | null;
   refinanceAmount?: number | null;
   durationMonths?: number | null;
 }
 
-export type RecommendationSimulationUnavailableReason =
-  | 'NO_MATCHING_SIMULATION_TYPE'
-  | 'EFFECT_AMOUNT_MISSING'
-  | 'SNAPSHOT_FIELD_MISSING'
-  | 'REFINANCE_TARGET_MISSING';
+export type RecommendationSimulationUnavailableReason = string;
 
 /**
  * 587 시뮬레이션 프리셋. 저장된 추천·근거를 명세 17 요청 본문 모양으로 재배열한 실행 제안이며

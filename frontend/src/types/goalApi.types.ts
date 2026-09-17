@@ -164,6 +164,11 @@ export interface GoalAccountApiResponse {
   status: string;
   balance: number;
   contributionAmount: number | null;
+  allocatedToThisGoal: number;
+  allocatedElsewhere: number;
+  availableToAllocate: number;
+  shortfallAmount: number;
+  allocationStatus: 'OK' | 'NEEDS_ADJUSTMENT';
 }
 
 export interface GoalAccountsApiResponse {
