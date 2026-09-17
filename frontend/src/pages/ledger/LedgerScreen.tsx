@@ -20,6 +20,11 @@ import { LedgerOverview } from './components/LedgerOverview';
 import { TransactionDetail } from './components/TransactionDetail';
 import { TransactionForm } from './components/TransactionForm';
 import { useLedgerData } from './hooks/useLedgerData';
+import {
+  getTransactionAmountError,
+  isValidTransactionDate,
+  isValidTransactionTime,
+} from './utils/ledgerTransactionValidation';
 
 type LedgerView = 'overview' | 'calendar' | 'detail' | 'category' | 'form';
 type LedgerListView = 'overview' | 'calendar';
@@ -92,6 +97,18 @@ export function LedgerScreen() {
   const selectedTransaction = [...transactions, ...hiddenTransactions].find(
     (transaction) => transaction.id === selectedTransactionId,
   );
+  const needsSelectedTransaction =
+    view === 'detail' ||
+    view === 'category' ||
+    (view === 'form' && formMode === 'edit');
+  const activeView =
+    needsSelectedTransaction &&
+    !selectedTransaction &&
+    !isLoading &&
+    !isRefreshing &&
+    !isMutating
+      ? previousListView
+      : view;
   const merchantHistory = useMemo(() => {
     if (!selectedTransaction) return [];
 
@@ -128,13 +145,13 @@ export function LedgerScreen() {
   };
 
   const openTransaction = (transactionId: string) => {
-    setPreviousListView(view === 'calendar' ? 'calendar' : 'overview');
+    setPreviousListView(activeView === 'calendar' ? 'calendar' : 'overview');
     setSelectedTransactionId(transactionId);
     setView('detail');
   };
 
   const openCreateForm = () => {
-    setPreviousListView(view === 'calendar' ? 'calendar' : 'overview');
+    setPreviousListView(activeView === 'calendar' ? 'calendar' : 'overview');
     setFormMode('create');
     const now = new Date();
     setDraft({
@@ -176,8 +193,23 @@ export function LedgerScreen() {
   };
 
   const saveTransaction = async () => {
+    if (isMutating) return;
+
+    const amountError = getTransactionAmountError(draft.amountText);
+    if (amountError) {
+      Alert.alert('금액을 확인해 주세요', amountError);
+      return;
+    }
+    if (!isValidTransactionDate(draft.transactionDate)) {
+      Alert.alert('날짜를 확인해 주세요', '거래일은 오늘까지 선택할 수 있어요.');
+      return;
+    }
+    if (!isValidTransactionTime(draft.transactionTime)) {
+      Alert.alert('시간을 확인해 주세요', '올바른 거래 시간을 선택해 주세요.');
+      return;
+    }
+
     const amount = Number(draft.amountText);
-    if (amount <= 0) return;
 
     const apiCategoryId = categories.find(
       (category) => category.id === draft.categoryId,
@@ -236,6 +268,7 @@ export function LedgerScreen() {
   };
 
   const closeForm = () => {
+    if (isMutating) return;
     setView(formMode === 'edit' ? 'detail' : previousListView);
   };
 
@@ -247,12 +280,12 @@ export function LedgerScreen() {
       <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
         <AppHeader
           onBackPress={() =>
-            view === 'calendar'
+            activeView === 'calendar'
               ? setView('overview')
               : router.replace(routes.home)
           }
           showBackButton
-          title={view === 'calendar' ? '전체 내역' : '가계부'}
+          title={activeView === 'calendar' ? '전체 내역' : '가계부'}
         />
         <ScreenState
           description={
@@ -272,7 +305,7 @@ export function LedgerScreen() {
 
   let content;
 
-  if (view === 'calendar') {
+  if (activeView === 'calendar') {
     content = (
       <LedgerCalendar
         categories={categories}
@@ -293,7 +326,7 @@ export function LedgerScreen() {
         year={year}
       />
     );
-  } else if (view === 'detail' && selectedTransaction) {
+  } else if (activeView === 'detail' && selectedTransaction) {
     content = (
       <TransactionDetail
         categories={categories}
@@ -307,7 +340,7 @@ export function LedgerScreen() {
         transaction={selectedTransaction}
       />
     );
-  } else if (view === 'category' && selectedTransaction) {
+  } else if (activeView === 'category' && selectedTransaction) {
     content = (
       <CategorySelection
         amount={selectedTransaction.amount}
@@ -319,7 +352,7 @@ export function LedgerScreen() {
         transactionType={selectedTransaction.transactionType}
       />
     );
-  } else if (view === 'form') {
+  } else if (activeView === 'form') {
     content = (
       <TransactionForm
         draft={draft}

@@ -54,7 +54,9 @@ export function useLedgerData(currentMonth: Date) {
   const [mutationError, setMutationError] = useState<Error | null>(null);
   const [isMutating, setIsMutating] = useState(false);
   const requestIdRef = useRef(0);
+  const mutationRequestIdRef = useRef(0);
   const mutationInFlightRef = useRef(false);
+  const isMountedRef = useRef(true);
 
   const dateParams = useMemo(() => {
     const year = currentMonth.getFullYear();
@@ -197,6 +199,17 @@ export function useLedgerData(currentMonth: Date) {
     };
   }, [loadLedgerData]);
 
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    return () => {
+      isMountedRef.current = false;
+      requestIdRef.current += 1;
+      mutationRequestIdRef.current += 1;
+      mutationInFlightRef.current = false;
+    };
+  }, []);
+
   const refetch = useCallback(
     () => loadLedgerData(true),
     [loadLedgerData],
@@ -206,23 +219,43 @@ export function useLedgerData(currentMonth: Date) {
     async <T>(request: () => Promise<T>): Promise<T | null> => {
       if (mutationInFlightRef.current) return null;
 
+      const mutationRequestId = ++mutationRequestIdRef.current;
       mutationInFlightRef.current = true;
       setIsMutating(true);
       setMutationError(null);
       try {
         const response = await request();
+        if (
+          !isMountedRef.current ||
+          mutationRequestId !== mutationRequestIdRef.current
+        ) {
+          return null;
+        }
         await loadLedgerData(true);
+        if (
+          !isMountedRef.current ||
+          mutationRequestId !== mutationRequestIdRef.current
+        ) {
+          return null;
+        }
         return response;
       } catch (mutationFailure) {
-        setMutationError(
-          mutationFailure instanceof Error
-            ? mutationFailure
-            : new Error('거래 내역을 변경하지 못했어요.'),
-        );
+        if (
+          isMountedRef.current &&
+          mutationRequestId === mutationRequestIdRef.current
+        ) {
+          setMutationError(
+            mutationFailure instanceof Error
+              ? mutationFailure
+              : new Error('거래 내역을 변경하지 못했어요.'),
+          );
+        }
         return null;
       } finally {
-        mutationInFlightRef.current = false;
-        setIsMutating(false);
+        if (mutationRequestId === mutationRequestIdRef.current) {
+          mutationInFlightRef.current = false;
+          if (isMountedRef.current) setIsMutating(false);
+        }
       }
     },
     [loadLedgerData],
