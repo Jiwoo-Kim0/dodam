@@ -22,6 +22,8 @@ export interface DiagnosisIssueApiResponse {
   description: string;
   /** 규칙별 구조가 다른 진단 스냅샷. 소비 증가 카드에서 수치를 읽는다. */
   currentValue?: Record<string, unknown> | null;
+  /** 진단 시점의 비교 기준. 소비 증가 상세에서 이전 월평균과 기간을 읽는다. */
+  benchmarkValue?: Record<string, unknown> | null;
 }
 
 export interface RecommendationEffectApiResponse {
@@ -99,4 +101,28 @@ export interface RecommendationSummaryApiResponse {
   expectedMonthlyCostSaving: number;
   expectedContributionAmount: number;
   discovery: RecommendationDiscoverySummaryApiResponse | null;
+}
+
+/**
+ * 명세 14 목표 영향(`GET /v1/diagnoses/{id}/goal-impact`). 모든 값은 진단 시점 스냅샷이며
+ * 조회 시점으로 재계산하지 않는다. SAVING 목표만 예상 달성일 관련 필드가 찬다.
+ * v3 이전 스냅샷은 forecast가 없어 전부 null이고 `coverage`에 SNAPSHOT_WITHOUT_FORECAST가 남는다.
+ */
+export interface DiagnosisGoalImpactItemApiResponse {
+  goalId: number | null;
+  name: string | null;
+  type: string | null;
+  status: string | null;
+  /** 예상 달성일 − 목표일. 양수면 지연, 예상일이 없으면 null. */
+  daysDifference: number | null;
+  targetDate: string | null;
+  expectedAchievementDate: string | null;
+  onSchedule: boolean | null;
+  coverage: readonly string[];
+}
+
+export interface DiagnosisGoalImpactApiResponse {
+  diagnosisId: number;
+  goalId: number | null;
+  goals: readonly DiagnosisGoalImpactItemApiResponse[];
 }

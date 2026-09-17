@@ -39,6 +39,26 @@ export const styles = StyleSheet.create({
     lineHeight: 34,
     marginTop: spacing[4],
   },
+  spendingTitle: {
+    color: colors.textPrimary,
+    fontFamily: fontFamily.semiBold,
+    fontSize: fontSize.headline,
+    lineHeight: 34,
+    marginTop: spacing[5],
+  },
+  spendingTitleAmount: {
+    color: colors.report.scoreStrong,
+    fontFamily: fontFamily.semiBold,
+    fontSize: 30,
+    lineHeight: 38,
+    marginTop: spacing[1],
+  },
+  spendingTitleDescription: {
+    ...typography.body1,
+    color: colors.textSecondary,
+    lineHeight: 22,
+    marginTop: spacing[3],
+  },
   adviceSection: {
     backgroundColor: colors.primary.lightGreen,
     borderRadius: radius.card,
@@ -55,45 +75,37 @@ export const styles = StyleSheet.create({
     height: 64,
     width: 64,
   },
-  spendingAdviceSection: {
+  spendingImpactCard: {
     alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing[2],
-    marginTop: spacing[6],
-  },
-  spendingAdviceImage: {
-    height: 112,
-    width: 104,
-    zIndex: 1,
-  },
-  spendingSpeechBubble: {
-    backgroundColor: colors.primary.lightGreen,
+    backgroundColor: colors.report.patternSurface,
     borderRadius: radius.card,
-    flex: 1,
+    flexDirection: 'row',
+    gap: spacing[3],
+    marginTop: spacing[4],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[5],
+  },
+  spendingImpactIconWrap: {
+    alignItems: 'center',
+    backgroundColor: colors.report.forecastLiving,
+    borderRadius: radius.round,
+    height: 40,
     justifyContent: 'center',
-    minHeight: 96,
-    padding: spacing[4],
+    width: 40,
   },
-  spendingSpeechTail: {
-    backgroundColor: colors.primary.lightGreen,
-    height: 16,
-    left: -8,
-    marginTop: -8,
-    position: 'absolute',
-    top: '50%',
-    transform: [{ rotate: '45deg' }],
-    width: 16,
+  spendingImpactIcon: {
+    height: 22,
+    width: 22,
   },
-  spendingAdviceText: {
-    color: colors.textPrimary,
-    fontFamily: fontFamily.medium,
-    fontSize: fontSize.body1,
-    lineHeight: 28,
+  spendingImpactText: {
+    ...typography.body1,
+    color: colors.report.scoreStrong,
+    flex: 1,
+    lineHeight: 23,
   },
-  spendingAdviceAmount: {
-    color: colors.textPrimary,
+  spendingImpactEmphasis: {
+    color: colors.report.scoreStrong,
     fontFamily: fontFamily.semiBold,
-    fontSize: fontSize.button,
   },
   adviceHeaderCopy: {
     flex: 1,
@@ -113,16 +125,12 @@ export const styles = StyleSheet.create({
     color: colors.textPrimary,
     lineHeight: 22,
   },
-  disclaimerSection: {
+  coachSummary: {
     borderColor: colors.divider,
     borderTopWidth: StyleSheet.hairlineWidth,
-    marginTop: spacing[4],
-    paddingTop: spacing[3],
-  },
-  disclaimer: {
-    ...typography.caption,
-    color: colors.textTertiary,
-    lineHeight: 17,
+    gap: spacing[2],
+    marginTop: spacing[2],
+    paddingTop: spacing[4],
   },
   coachSection: {
     backgroundColor: colors.report.patternSurface,
@@ -222,6 +230,35 @@ export const styles = StyleSheet.create({
     color: colors.primary.green,
     fontFamily: fontFamily.semiBold,
     fontSize: fontSize.body1,
+  },
+  recommendationAction: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing[1],
+    justifyContent: 'flex-end',
+  },
+  recommendationActionText: {
+    ...typography.buttonSmall,
+    color: colors.primary.green,
+  },
+  recommendationActionIcon: {
+    ...typography.buttonSmall,
+    color: colors.primary.green,
+  },
+  spendingSummaryLabel: {
+    color: colors.primary.green,
+    fontFamily: fontFamily.semiBold,
+    fontSize: fontSize.body2,
+  },
+  spendingSummaryText: {
+    ...typography.body1,
+    color: colors.textPrimary,
+    lineHeight: 24,
+  },
+  spendingSummaryAmount: {
+    color: colors.primary.green,
+    fontFamily: fontFamily.semiBold,
+    fontSize: fontSize.button,
   },
   emptyAction: {
     ...typography.body1,

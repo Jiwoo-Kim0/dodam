@@ -2,6 +2,7 @@ import type { PageResponse } from './api.types';
 import { apiClient } from './apiClient';
 import type {
   DiagnosisApiResponse,
+  DiagnosisGoalImpactApiResponse,
   DiagnosisIssueApiResponse,
   DiagnosisRunApiResponse,
 } from '@/types/discoveryApi.types';
@@ -19,5 +20,9 @@ export const diagnosisApi = {
     apiClient.get<PageResponse<DiagnosisIssueApiResponse>>(
       `${PATH}/${diagnosisId}/issues`,
       { query: { page, size: 100 } },
+    ),
+  getGoalImpact: (diagnosisId: number) =>
+    apiClient.get<DiagnosisGoalImpactApiResponse>(
+      `${PATH}/${diagnosisId}/goal-impact`,
     ),
 };
