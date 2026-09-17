@@ -102,4 +102,11 @@ seed 목표는 `created_at = '2026-03-01 09:00:00'`으로 식별해 재실행 �
 
 2026-09-16 Docker `mysql:8.0`에 V1~V34를 적용하고 fixture(SHA2 더미) → 2번 → 3번 → 6번 → 8번 → **11번** 순으로 실행했다.
 11번 preflight `1 / 4 / 4 / 20 / 6 / 0 / 4`, 거래 90건(창 위반 0), 9월 이력 6건(SUB 거래 불일치 0), `next_payment_date` 10월, `last_transaction_date` 9월. 두 번 실행해도 건수·금액 합이 같다.
-시연 서버에는 아직 적재하지 않았다(6·8번 적재가 끝난 서버에서 11번만 실행하면 된다).
+**2026-09-17 시연 서버(j15d105.p.ssafy.io)에 11번을 적재했다.** 1~8번이 이미 들어간 서버라 11번만 실행했다.
+적재 후 실측: `SEED-SEP-U%` 거래 **90건 / 4명 / 2026-09-01~09-27**, 9월 `subscription_payment_history` 6건,
+`subscription.next_payment_date` 10월로 이동, 시연 계정 거래 수 132·138·132·142 → **154·161·154·165**(+90).
+**시연 계정 4명 밖의 9월 거래는 0건**으로, 파일이 의도한 범위(`digit BETWEEN 1 AND 4`)가 지켜졌다.
+작업 테이블 `tmp_dodam_625_*`는 파일 끝 cleanup으로 모두 정리됐다.
+
+U0004에는 시드와 별개로 손으로 만든 `source_type='MANUAL'` 거래 4건(9월 1건 포함)이 있으며,
+11번의 DELETE는 `source_type='SEED' AND transaction_id LIKE 'SEED-SEP-U%'`로 한정되어 그대로 보존됐다.
