@@ -83,18 +83,48 @@ PREV_COMMIT="$(git -C "$APP_DIR" rev-parse HEAD)"
 #   실측(2026-09-14): latest와 rollback이 동일 ID였고, 실제 실행 중 컨테이너는 별개 이미지였다.
 #
 #   → 태그가 아니라 "지금 실제로 떠 있는 것"을 기준으로 잡는다.
+#
+# ★ 단, "떠 있다"는 것만으로는 부족하다 (2026-09-17 추가).
+#   실행 중 컨테이너가 **재시작 루프**일 수도 있다. 그 상태에서 다음 배포가 시작되면
+#   깨진 이미지가 rollback 태그를 덮어써, 롤백해도 같은 깨진 이미지가 다시 뜬다.
+#   2026-09-17 장애(day-08.md 31절) 때 실제로 그 조건이 갖춰져 있었고,
+#   롤백이 먼저 끝나 정상 이미지로 돌아가 있던 덕분에 타이밍상 피했을 뿐이다.
+#   → **healthy일 때만** rollback 태그를 갱신하고, 아니면 마지막으로 검증된
+#     $DEPLOYED_TAG 를 롤백 지점으로 쓴다. 깨진 이미지가 롤백 지점이 되는 일은 없다.
 DEPLOYED_TAG="infra-backend:deployed"   # 헬스체크를 통과한 마지막 이미지 (배포 성공 시 갱신)
 PREV_IMAGE=""
 RUNNING_IMAGE="$(docker inspect -f '{{.Image}}' backend 2>/dev/null || true)"
-if [ -n "$RUNNING_IMAGE" ] && docker image inspect "$RUNNING_IMAGE" >/dev/null 2>&1; then
+BACKEND_STATUS="$(docker inspect -f '{{.State.Status}}' backend 2>/dev/null || true)"
+# healthcheck가 정의돼 있지 않은 경우를 none으로 구분한다 (그때는 status만으로 판단).
+BACKEND_HEALTH="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' backend 2>/dev/null || true)"
+
+backend_is_healthy() {
+    [ "$BACKEND_STATUS" = "running" ] || return 1
+    case "$BACKEND_HEALTH" in
+        healthy|none) return 0 ;;
+        *)            return 1 ;;   # starting / unhealthy → 롤백 지점으로 삼지 않는다
+    esac
+}
+
+if backend_is_healthy && [ -n "$RUNNING_IMAGE" ] && docker image inspect "$RUNNING_IMAGE" >/dev/null 2>&1; then
     docker tag "$RUNNING_IMAGE" infra-backend:rollback && PREV_IMAGE="infra-backend:rollback"
+    log "롤백 지점: 현재 실행 중인 정상 이미지 (status=$BACKEND_STATUS health=$BACKEND_HEALTH)"
 elif docker image inspect "$DEPLOYED_TAG" >/dev/null 2>&1; then
-    # 최초 배포라 컨테이너가 없거나, 실행 중 이미지가 스토어에서 사라진 경우.
-    # 태그가 붙지 않은 이미지는 GC 대상이 되어 실제로 사라진 적이 있다
-    # (2026-09-14 실측: 실행 중 backend의 이미지가 docker image inspect로 조회되지 않았다).
-    # 그래서 배포 성공 시마다 $DEPLOYED_TAG 를 붙여 최소 한 세대는 남도록 해둔다.
+    # 두 경우가 여기로 온다.
+    #   ① 최초 배포라 컨테이너가 없거나, 실행 중 이미지가 스토어에서 사라진 경우
+    #      태그가 붙지 않은 이미지는 GC 대상이 되어 실제로 사라진 적이 있다
+    #      (2026-09-14 실측: 실행 중 backend의 이미지가 docker image inspect로 조회되지 않았다).
+    #      그래서 배포 성공 시마다 $DEPLOYED_TAG 를 붙여 최소 한 세대는 남도록 해둔다.
+    #   ② 현재 컨테이너가 비정상(재시작 루프·unhealthy)인 경우 ← 2026-09-17 추가
+    #      이때 실행 중 이미지를 롤백 지점으로 삼으면 깨진 것으로 되돌아간다.
     docker tag "$DEPLOYED_TAG" infra-backend:rollback && PREV_IMAGE="infra-backend:rollback"
-    log "실행 중 이미지를 찾지 못해 마지막 검증 이미지($DEPLOYED_TAG)를 롤백 지점으로 사용한다"
+    log "롤백 지점: 마지막 검증 이미지($DEPLOYED_TAG) — 현재 backend가 롤백 기준으로 부적합" \
+        "(status=${BACKEND_STATUS:-없음} health=${BACKEND_HEALTH:-없음})"
+elif docker image inspect infra-backend:rollback >/dev/null 2>&1; then
+    # $DEPLOYED_TAG 조차 없을 때의 마지막 보루. 기존 rollback 태그를 그대로 둔다.
+    # 덮어쓰지 않는 것이 핵심이다 — 지금 실행 중인 것이 깨진 이미지일 수 있다.
+    PREV_IMAGE="infra-backend:rollback"
+    log "롤백 지점: 기존 infra-backend:rollback 태그를 그대로 사용한다 (갱신하지 않음)"
 else
     log "WARN: 보존할 backend 이미지가 없다 — 실패해도 코드만 롤백된다(이미지 롤백 불가)"
 fi
