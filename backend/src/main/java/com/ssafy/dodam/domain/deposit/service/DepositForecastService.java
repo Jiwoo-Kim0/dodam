@@ -4,6 +4,7 @@ import com.ssafy.dodam.domain.deposit.dto.response.DepositEarlyTerminationRespon
 import com.ssafy.dodam.domain.deposit.dto.response.DepositMaturityForecastResponse;
 import com.ssafy.dodam.domain.deposit.repository.DepositAccountRow;
 import com.ssafy.dodam.domain.deposit.service.DepositInterestCalculator.DepositInterest;
+import com.ssafy.dodam.global.policy.EarlyTerminationRatePolicy;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
@@ -83,7 +84,7 @@ public class DepositForecastService {
         long elapsedDays = ChronoUnit.DAYS.between(deposit.openingDate(), today);
         long elapsedMonths = ChronoUnit.MONTHS.between(deposit.openingDate(), today);
         BigDecimal appliedRate =
-                DepositEarlyTerminationRatePolicy.resolve(deposit.interestRate(), elapsedMonths);
+                EarlyTerminationRatePolicy.resolve(deposit.interestRate(), elapsedMonths);
         DepositInterest interest;
         try {
             interest = calculator.calculate(deposit.balance(), appliedRate, elapsedDays);
@@ -95,8 +96,8 @@ public class DepositForecastService {
                 deposit.accountName(), deposit.accountNoMasked(), deposit.bankName(),
                 STATUS_COMPLETE, List.of(), deposit.balance(), deposit.interestRate(),
                 deposit.openingDate(), deposit.expiryDate(), elapsedDays, elapsedMonths,
-                appliedRate, DepositEarlyTerminationRatePolicy.POLICY_CODE,
-                DepositEarlyTerminationRatePolicy.describe(elapsedMonths),
+                appliedRate, EarlyTerminationRatePolicy.POLICY_CODE,
+                EarlyTerminationRatePolicy.describe(elapsedMonths),
                 interest.grossInterest(), interest.tax(), interest.netInterest(),
                 interest.payoutAmount());
     }
@@ -164,7 +165,7 @@ public class DepositForecastService {
                 deposit.accountName(), deposit.accountNoMasked(), deposit.bankName(),
                 STATUS_UNAVAILABLE, sorted(reasons), deposit.balance(), deposit.interestRate(),
                 deposit.openingDate(), deposit.expiryDate(), null, null, null,
-                DepositEarlyTerminationRatePolicy.POLICY_CODE, null, null, null, null, null);
+                EarlyTerminationRatePolicy.POLICY_CODE, null, null, null, null, null);
     }
 
     private DepositMaturityForecastResponse unavailableForecast(

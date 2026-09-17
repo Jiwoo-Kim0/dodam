@@ -11,6 +11,7 @@ import { styles } from '../LedgerScreen.styles';
 interface LedgerHeaderProps {
   title: string;
   onBackPress?: () => void;
+  backDisabled?: boolean;
   rightLabel?: string;
   rightDisabled?: boolean;
   onRightPress?: () => void;
@@ -19,6 +20,7 @@ interface LedgerHeaderProps {
 export function LedgerHeader({
   title,
   onBackPress,
+  backDisabled = false,
   rightLabel,
   rightDisabled = false,
   onRightPress,
@@ -37,6 +39,7 @@ export function LedgerHeader({
 
   return (
     <AppHeader
+      backDisabled={backDisabled}
       onBackPress={onBackPress}
       right={right}
       showBackButton={Boolean(onBackPress)}

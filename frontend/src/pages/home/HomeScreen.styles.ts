@@ -2,8 +2,10 @@ import { StyleSheet } from 'react-native';
 
 import {
   colors,
+  componentSize,
   fontFamily,
   fontSize,
+  radius,
   semanticSpacing,
   spacing,
   typography,
@@ -55,5 +57,27 @@ export const styles = StyleSheet.create({
     gap: spacing[4],
     paddingHorizontal: semanticSpacing.screenMargin,
     paddingTop: spacing[4],
+  },
+  retryBanner: {
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderColor: colors.primary.lightGreen,
+    borderRadius: radius.default,
+    borderWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    minHeight: componentSize.touchTarget,
+    paddingHorizontal: spacing[4],
+  },
+  retryMessage: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  retryAction: {
+    ...typography.buttonSmall,
+    color: colors.primary.green,
+  },
+  retryBannerPressed: {
+    opacity: componentSize.bottomSheet.pressedOpacity,
   },
 });

@@ -307,6 +307,45 @@ class SimulationProductLoanApiTest {
     }
 
     @Test
+    void loanIdIdentifiesTheSameLoanAsAccountNumberAndExactlyOneIsRequired() throws Exception {
+        // 계좌번호 실행과 loanId 실행은 같은 대출·같은 지문이라 같은 날 재사용(200)된다
+        String byAccount = run(owner, "/loan/refinance", "{\"accountNo\":\"" + LOAN_NO + "\",\"targetProductId\":" + creditProduct + "}")
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        long id = json.readTree(byAccount).at("/data/simulation/simulationId").asLong();
+        run(owner, "/loan/refinance", "{\"loanId\":" + ownerLoanId + ",\"targetProductId\":" + creditProduct + "}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.created").value(false))
+                .andExpect(jsonPath("$.data.simulation.simulationId").value(id))
+                .andExpect(jsonPath("$.data.simulation.request.loanId").value(ownerLoanId))
+                .andExpect(jsonPath("$.data.simulation.request.accountNo").doesNotExist());
+        run(owner, "/loan/prepayment", "{\"loanId\":" + ownerLoanId + ",\"prepaymentAmount\":200000}")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.simulation.request.loanId").value(ownerLoanId));
+
+        // 둘 다 또는 둘 다 없음은 400, 타인·없는 loanId는 계좌번호 경로와 같은 404
+        run(owner, "/loan/refinance", "{\"accountNo\":\"" + LOAN_NO + "\",\"loanId\":" + ownerLoanId + ",\"targetProductId\":" + creditProduct + "}")
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        run(owner, "/loan/refinance", "{\"targetProductId\":" + creditProduct + "}")
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        run(owner, "/loan/prepayment", "{\"prepaymentAmount\":1}")
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+        run(other, "/loan/refinance", "{\"loanId\":" + ownerLoanId + ",\"targetProductId\":" + creditProduct + "}")
+                .andExpect(status().isNotFound());
+        run(owner, "/loan/prepayment", "{\"loanId\":999999,\"prepaymentAmount\":1}")
+                .andExpect(status().isNotFound());
+        for (String payload : List.of("{\"loanId\":0,\"targetProductId\":" + creditProduct + "}",
+                "{\"loanId\":1.5,\"targetProductId\":" + creditProduct + "}")) {
+            run(owner, "/loan/refinance", payload).andExpect(status().isBadRequest());
+        }
+
+        // 복합의 자식도 같은 본문이라 loanId를 받는다(복합은 자식 2개 이상)
+        run(owner, "/combined", "{\"scenarios\":[{\"type\":\"LOAN_REFINANCE\",\"parameters\":{\"loanId\":" + ownerLoanId
+                + ",\"targetProductId\":" + creditProduct + "}},{\"type\":\"SAVING\",\"parameters\":{\"goalId\":" + goalId + ",\"monthlySavingAmount\":100000,\"durationMonths\":3}}]}")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.simulation.scenarios[0].parameters.loanId").value(ownerLoanId));
+    }
+
+    @Test
     void refinanceProjectsGoalsByRepaymentDateAndAllQueryPathsAgree() throws Exception {
         // 1,200,000 전액을 6% BULLET 2회로 대환: 이자 24,000 → 12,000, 2/1·3/1에 6,000씩 절감
         // 목표: 남은 2,000,000·속도 333,333 → 7개월(8/1). 절감 반영: 1,660,667 → 1,321,334 → +4개월 = 6개월(7/1), -31일

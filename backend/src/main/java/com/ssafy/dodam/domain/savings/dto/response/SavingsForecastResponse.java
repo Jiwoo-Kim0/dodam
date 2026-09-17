@@ -14,6 +14,10 @@ import java.util.List;
  * @param elapsedMonths 개설일부터 기준일까지 경과한 만 개월 수. 만기 예상에서는 null이다.
  * @param paidPrincipal 기준일까지 실제로 납입한 원금 합
  * @param futurePrincipal 만기까지 더 낼 것으로 본 원금. 중도해지는 0이다.
+ * @param expectedInterest 세전이자
+ * @param tax 이자소득세 원천징수액. 예금과 같은 {@code GENERAL_INTEREST_INCOME_TAX_15_4} 정책이다
+ * @param expectedNetInterest 세후이자 = 세전이자 − 세액
+ * @param expectedAmount 원금 + 세후이자. 2026-09-16 전에는 세전 합계였다
  */
 public record SavingsForecastResponse(
         Long accountId,
@@ -31,6 +35,8 @@ public record SavingsForecastResponse(
         Long futurePrincipal,
         Long expectedPrincipal,
         Long expectedInterest,
+        Long tax,
+        Long expectedNetInterest,
         Long expectedAmount
 ) {
 }

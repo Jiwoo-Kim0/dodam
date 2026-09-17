@@ -1,5 +1,6 @@
 package com.ssafy.dodam.domain.installment.service;
 
+import com.ssafy.dodam.domain.installment.dto.response.InstallmentBurdenResponse;
 import com.ssafy.dodam.domain.installment.dto.response.InstallmentDetailResponse;
 import com.ssafy.dodam.domain.installment.dto.response.InstallmentResponse;
 import com.ssafy.dodam.domain.installment.dto.response.InstallmentScheduleResponse;
@@ -25,15 +26,21 @@ public class InstallmentQueryService {
     private final InstallmentReader reader;
     private final FutureYearMonthPeriodPolicy periodPolicy;
     private final InstallmentScheduleCalculator calculator;
+    private final InstallmentAvailableFundsReader availableFundsReader;
+    private final InstallmentBurdenCalculator burdenCalculator;
 
     public InstallmentQueryService(
             InstallmentReader reader,
             FutureYearMonthPeriodPolicy periodPolicy,
-            InstallmentScheduleCalculator calculator
+            InstallmentScheduleCalculator calculator,
+            InstallmentAvailableFundsReader availableFundsReader,
+            InstallmentBurdenCalculator burdenCalculator
     ) {
         this.reader = reader;
         this.periodPolicy = periodPolicy;
         this.calculator = calculator;
+        this.availableFundsReader = availableFundsReader;
+        this.burdenCalculator = burdenCalculator;
     }
 
     public PageResponse<InstallmentResponse> getInstallments(
@@ -64,6 +71,15 @@ public class InstallmentQueryService {
         LocalDate today = LocalDate.now(SERVICE_ZONE);
         YearMonthPeriod period = periodPolicy.forecast(months, YearMonth.from(today));
         return calculator.calculate(reader.readOutstanding(userId), period, today);
+    }
+
+    public InstallmentBurdenResponse getBurden(Long userId, String yearMonth) {
+        LocalDate today = LocalDate.now(SERVICE_ZONE);
+        // 부담률은 한 달 단위다. 일정 정책과 같은 창(현재 월부터 12개월)의 한 달만 계산한다.
+        YearMonth month = periodPolicy.resolveMonth(yearMonth, YearMonth.from(today));
+        InstallmentScheduleResponse schedule = calculator.calculate(
+                reader.readOutstanding(userId), new YearMonthPeriod(month, month), today);
+        return burdenCalculator.calculate(schedule, availableFundsReader.read(userId), today);
     }
 
     private InstallmentStatus parseStatus(String status) {

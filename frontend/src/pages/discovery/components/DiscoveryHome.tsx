@@ -7,6 +7,8 @@ import { AppHeader } from '@/components/appHeader/AppHeader';
 import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import { colors } from '@/styles';
+import type { RecommendationDiscoverySummaryApiResponse } from '@/types/discoveryApi.types';
+import { formatRoundedAmount } from '@/utils/currency';
 
 import type { DiscoveryInsight } from '../discoveryModel';
 import type { DiagnosisCooldown } from '../diagnosisCooldown';
@@ -15,9 +17,11 @@ import { DiscoveryInsightRow } from './DiscoveryInsightRow';
 import { styles } from './DiscoveryHome.styles';
 
 type DiscoveryHomeProps = {
-  diagnosis: { completedAt: string } | null;
+  diagnosis: { completedAt: string; issueCount: number } | null;
   insights: DiscoveryInsight[];
+  summary: RecommendationDiscoverySummaryApiResponse | null;
   isLoading: boolean;
+  isRunningAnalysis: boolean;
   error: string | null;
   cooldown: DiagnosisCooldown;
   canRetryRecommendations: boolean;
@@ -38,12 +42,14 @@ export function DiscoveryHome({
   error,
   insights,
   isLoading,
+  isRunningAnalysis,
   load,
   onBack,
   onInsightPress,
   onViewAll,
   retryRecommendationGeneration,
   runAnalysis,
+  summary,
 }: DiscoveryHomeProps) {
   const [gradientContainerHeight, setGradientContainerHeight] = useState(0);
 
@@ -103,10 +109,18 @@ export function DiscoveryHome({
               <Text style={styles.summaryText}>
                 {isLoading
                   ? '진단 결과를 확인하고 있어요'
-                  : `지금 확인할 내용 ${insights.length}개`}
+                  : `진단에서 ${summary?.issueCount ?? diagnosis?.issueCount ?? 0}건 발견했어요`}
               </Text>
               <Text style={styles.summarySubtext}>
-                각 항목에서 추천과 예상 효과를 확인해 보세요
+                {summary?.expectedAnnualCostSaving !== null &&
+                summary?.expectedAnnualCostSaving !== undefined
+                  ? `연 ${formatRoundedAmount(summary.expectedAnnualCostSaving)}원 절약 예상`
+                  : '연 절감액 산정 전'}
+                {' · '}
+                {summary?.expectedGoalAdvanceDays !== null &&
+                summary?.expectedGoalAdvanceDays !== undefined
+                  ? `최대 ${summary.expectedGoalAdvanceDays}일 단축`
+                  : '목표 단축일 산정 전'}
               </Text>
             </View>
 
@@ -162,9 +176,15 @@ export function DiscoveryHome({
             </Text>
           </View>
 
-          {(error || !diagnosis || canRetryRecommendations) && !isLoading ? (
+          {(isRunningAnalysis || error || !diagnosis || canRetryRecommendations) &&
+          (!isLoading || isRunningAnalysis) ? (
             <Pressable
               accessibilityRole="button"
+              accessibilityState={{
+                busy: isRunningAnalysis,
+                disabled: isRunningAnalysis,
+              }}
+              disabled={isRunningAnalysis}
               onPress={() => {
                 void (canRetryRecommendations
                   ? retryRecommendationGeneration()
@@ -172,9 +192,14 @@ export function DiscoveryHome({
                     ? load()
                     : runAnalysis());
               }}
-              style={styles.viewAllButton}>
+              style={[
+                styles.viewAllButton,
+                isRunningAnalysis && styles.viewAllButtonDisabled,
+              ]}>
               <Text style={styles.viewAllButtonLabel}>
-                {canRetryRecommendations
+                {isRunningAnalysis
+                  ? '진단 중...'
+                  : canRetryRecommendations
                   ? '추천 생성 다시 시도'
                   : error
                     ? '다시 시도하기'
@@ -183,27 +208,35 @@ export function DiscoveryHome({
             </Pressable>
           ) : null}
 
-          {diagnosis && !isLoading ? (
+          {diagnosis ? (
             <View style={styles.diagnosisFooter}>
               {cooldown.label ? (
                 <Text style={styles.cooldownLabel}>{cooldown.label}</Text>
               ) : null}
               <Pressable
                 accessibilityRole="button"
-                accessibilityState={{ disabled: !cooldown.canRun }}
-                disabled={!cooldown.canRun}
+                accessibilityState={{
+                  busy: isRunningAnalysis,
+                  disabled: isLoading || !cooldown.canRun,
+                }}
+                disabled={isLoading || !cooldown.canRun}
                 onPress={() => { void runAnalysis(true); }}
                 style={({ pressed }) => [
                   styles.diagnosisAction,
-                  !cooldown.canRun && styles.diagnosisActionDisabled,
-                  pressed && cooldown.canRun && styles.diagnosisActionPressed,
+                  (isLoading || !cooldown.canRun) &&
+                    styles.diagnosisActionDisabled,
+                  pressed &&
+                    !isLoading &&
+                    cooldown.canRun &&
+                    styles.diagnosisActionPressed,
                 ]}>
                 <Text
                   style={[
                     styles.diagnosisActionText,
-                    !cooldown.canRun && styles.diagnosisActionTextDisabled,
+                    (isLoading || !cooldown.canRun) &&
+                      styles.diagnosisActionTextDisabled,
                   ]}>
-                  새로 진단하기
+                  {isRunningAnalysis ? '진단 중...' : '새로 진단하기'}
                 </Text>
               </Pressable>
             </View>

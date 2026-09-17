@@ -68,6 +68,7 @@ export function DiscoveryLanding({ onBack, onComplete }: DiscoveryLandingProps) 
           contentContainerStyle={styles.scrollContent}
           pageSize={viewportHeight}
           pagingEnabled
+          refreshBackgroundColor={colors.white}
           ref={scrollRef}>
           <LinearGradient
             colors={[colors.white, colors.primary.lightGreen]}

@@ -1,6 +1,7 @@
 import type {
   RecommendationApiResponse,
   RecommendationGenerationApiResponse,
+  RecommendationSummaryApiResponse,
 } from '@/types/discoveryApi.types';
 
 import type { PageResponse } from './api.types';
@@ -20,4 +21,6 @@ export const recommendationApi = {
     apiClient.get<PageResponse<RecommendationApiResponse>>(PATH, {
       query: { page, size: 100 },
     }),
+  getSummary: () =>
+    apiClient.get<RecommendationSummaryApiResponse>(`${PATH}/summary`),
 };

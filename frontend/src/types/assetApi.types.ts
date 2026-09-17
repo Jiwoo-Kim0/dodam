@@ -78,6 +78,7 @@ export interface CardWithdrawalAccountApiResponse {
 }
 
 export interface CardApiResponse {
+  cardId: number;
   cardNoMasked: string;
   cardName: string;
   issuerCode: string;
@@ -123,6 +124,7 @@ export interface CardPaymentSchedulesApiResponse {
 }
 
 export interface LoanApiResponse {
+  loanId: number;
   accountNoMasked: string;
   accountName: string;
   institutionCode: string;

@@ -245,8 +245,8 @@ MySQL 통합 검증은 587에서 수행했다(§11.3).
 | --- | --- | --- | --- | --- |
 | `POST /simulations/saving-product` | `productId, monthlyAmount, term` | 모두 필수, 양수, `term` 1~120 | `productId\|monthlyAmount\|term` | 없음 |
 | `POST /simulations/loan/new` | `productId, principal, term, repaymentType?` | 양수, `term` 1~360, `repaymentType`은 `EQUAL_PRINCIPAL`/`EQUAL_PAYMENT`/`BULLET`(그 외 문자열 400) | `productId\|principal\|term\|AUTO 또는 enum` | 생략·null = 내부 모드 `AUTO` |
-| `POST /simulations/loan/prepayment` | `accountNo, prepaymentAmount, paymentDate?` | `accountNo` `^[0-9]{10,20}$`, 금액 양수, 날짜 ISO | `loanId\|prepaymentAmount\|paymentDate` | `paymentDate` = 기준일. 생략과 "오늘" 명시는 같은 지문 |
-| `POST /simulations/loan/refinance` | `accountNo, targetProductId, refinanceAmount?` | `accountNo` 위와 같음, `refinanceAmount` 양수 | `loanId\|targetProductId\|FULL_BALANCE 또는 금액` | 생략 = 기준일 잔액 전액. 잔액과 같은 금액을 명시해도 **별개 지문** |
+| `POST /simulations/loan/prepayment` | `accountNo / loanId, prepaymentAmount, paymentDate?` | `accountNo` `^[0-9]{10,20}$` 또는 `loanId` 양수 정수 중 **정확히 하나**(둘 다·둘 다 없음 400), 타인·없는 대출 404, 금액 양수, 날짜 ISO | `loanId\|prepaymentAmount\|paymentDate` | `paymentDate` = 기준일. 생략과 "오늘" 명시는 같은 지문 |
+| `POST /simulations/loan/refinance` | `accountNo / loanId, targetProductId, refinanceAmount?` | `accountNo`·`loanId` 위와 같음, `refinanceAmount` 양수 | `loanId\|targetProductId\|FULL_BALANCE 또는 금액` | 생략 = 기준일 잔액 전액. 잔액과 같은 금액을 명시해도 **별개 지문** |
 
 `monthlyAmount`는 적금이면 월 납입액, 예금이면 일시 예치 원금이다(명세에 해석이 없어 서비스가 정했다). `request`·`scenarios[0].parameters`에는 계좌번호 대신 `loanId`가, 신규 대출에는 `repaymentType`(생략 시 null)과 `repaymentTypeMode`(`AUTO`/`EXPLICIT`), 대환에는 `refinanceAmount`(생략 시 null)와 `refinanceAmountMode`(`FULL_BALANCE`/`EXPLICIT`)가 저장된다. 실제 선택된 상환방식은 `after.details.resolvedRepaymentType`에만 있다.
 

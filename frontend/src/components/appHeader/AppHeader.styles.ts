@@ -29,6 +29,9 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     width: componentSize.touchTarget,
   },
+  actionButtonDisabled: {
+    opacity: 0.55,
+  },
   titleGroup: {
     alignItems: 'center',
     flex: 1,

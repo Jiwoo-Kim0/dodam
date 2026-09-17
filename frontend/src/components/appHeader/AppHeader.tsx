@@ -14,6 +14,7 @@ type AppHeaderProps = {
   right?: ReactNode;
   subtitle?: string;
   showBackButton?: boolean;
+  backDisabled?: boolean;
   titleAccessory?: ReactNode;
   onBackPress?: () => void;
 };
@@ -24,6 +25,7 @@ export function AppHeader({
   right,
   subtitle,
   showBackButton = false,
+  backDisabled = false,
   titleAccessory,
   onBackPress,
 }: AppHeaderProps) {
@@ -42,13 +44,15 @@ export function AppHeader({
     <Pressable
       accessibilityLabel="이전 화면으로 이동"
       accessibilityRole="button"
+      accessibilityState={{ disabled: backDisabled }}
+      disabled={backDisabled}
       hitSlop={8}
       onPress={handleBackPress}
-      style={styles.actionButton}>
+      style={[styles.actionButton, backDisabled && styles.actionButtonDisabled]}>
       <SymbolView
         name={{ android: 'arrow_back', ios: 'chevron.left', web: 'arrow_back' }}
         size={24}
-        tintColor={colors.textPrimary}
+        tintColor={backDisabled ? colors.textTertiary : colors.textPrimary}
       />
     </Pressable>
   ) : (

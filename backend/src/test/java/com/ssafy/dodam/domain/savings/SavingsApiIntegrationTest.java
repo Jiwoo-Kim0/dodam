@@ -2,6 +2,7 @@ package com.ssafy.dodam.domain.savings;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.Mockito.when;
@@ -169,7 +170,7 @@ class SavingsApiIntegrationTest {
     @WithMockUser(username = "1")
     void earlyTerminationAppliesTieredRateOnEachInstallmentHoldingPeriod() throws Exception {
         // 경과 1개월 → 계약이율 3.6%의 20% = 0.72%
-        // 300,000 × 61일 + 300,000 × 30일 = 27,300,000 → × 0.72 ÷ 36500 = 538원
+        // 300,000 × 61일 + 300,000 × 30일 = 27,300,000 → × 0.72 ÷ 36500 = 538원, 세액 538 × 15.4% 절사 = 82원
         mvc.perform(get(BASE + "/" + RUNNING + "/early-termination")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("COMPLETE"))
                 .andExpect(jsonPath("$.data.calculationDate").value("2026-09-09"))
@@ -181,7 +182,10 @@ class SavingsApiIntegrationTest {
                 .andExpect(jsonPath("$.data.futurePrincipal").value(0))
                 .andExpect(jsonPath("$.data.expectedPrincipal").value(600000))
                 .andExpect(jsonPath("$.data.expectedInterest").value(538))
-                .andExpect(jsonPath("$.data.expectedAmount").value(600538));
+                .andExpect(jsonPath("$.data.tax").value(82))
+                .andExpect(jsonPath("$.data.expectedNetInterest").value(456))
+                .andExpect(jsonPath("$.data.expectedAmount").value(600456))
+                .andExpect(jsonPath("$.data.assumptions", hasItems("GENERAL_INTEREST_INCOME_TAX_15_4", "EXCLUDES_FEES")));
     }
 
     @Test

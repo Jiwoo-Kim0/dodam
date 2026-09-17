@@ -70,7 +70,7 @@
 | Endpoint | 파라미터 | 응답 | 정렬·빈 결과 |
 | --- | --- | --- | --- |
 | `GET /recommendations` | `status?`(enum 외 400), `domain?`(`^[A-Z][A-Z0-9_]{0,49}$`), `page≥0`, `size 1~100` 기본 20 | `PageResponse<Recommendation>` | `createdAt DESC, id DESC` |
-| `GET /recommendations/summary` | 없음 | `total, byStatus{5종, 0 포함}, byDomain{}, expectedMonthlyCostSaving, expectedContributionAmount`(PENDING+ACCEPTED 합) | 0으로 채운 객체 |
+| `GET /recommendations/summary` | 없음 | `total, byStatus{5종, 0 포함}, byDomain{}, expectedMonthlyCostSaving, expectedContributionAmount`(PENDING+ACCEPTED 합), `discovery{…}`(§5.2, 2026-09-16) | 0으로 채운 객체 |
 | `GET /recommendations/priorities` | `goalId?`(타인·삭제 → 404) | `diagnosisId, goalId, recommendations[]` — 최신 완료 진단(goalId 있으면 그 목표의)의 PENDING·DEFERRED를 `priority ASC, id ASC` | 완료 진단 없음 → `diagnosisId=null`, 빈 목록 |
 | `GET /recommendations/{id}` | | `recommendationId, diagnosisId, sourceIssueId(628), goalId, domain, type, title, description, priority, status, effect{…}, simulation{…}(§5.1), createdAt, updatedAt` | |
 | `GET /{id}/reasons` | | `[{reasonId, code, description, evidence}]` `reasonId ASC` | 빈 배열 |
@@ -98,7 +98,7 @@
 | SPENDING / REDUCE_SPENDING | SPENDING · `/api/v1/simulations/spending` | `{category: null, monthlyReduction, durationMonths: null}` | `effect.monthlyCostSaving`. 진단 SPENDING_GOAL_RISK가 목표 예산 전체 기준이라 카테고리 미지정 | `REDUCTION_APPLIES_TO_TOTAL_SPENDING` |
 | SAVING / INCREASE_MONTHLY_SAVING | SAVING · `/api/v1/simulations/saving` | `{accountNo: null, goalId, monthlySavingAmount: R, durationMonths: null}` | `goalId`는 추천의 `goalId`(619). R은 근거 `GOAL_SAVING_SHORTFALL` evidence의 `requiredMonthlySaving`. 시뮬레이션은 변경 후 절대값을 받으므로 `contributionAmount`(R − A)가 아니라 R을 준다 | 없음. 추천에 `goalId`가 없을 때만 `TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT` |
 | SPENDING / REDUCE_CATEGORY_SPENDING (627) | SPENDING · `/api/v1/simulations/spending` | `{category: <categoryCode>, monthlyReduction, durationMonths: null}` | `category`는 근거 `CATEGORY_SPENDING_INCREASE` evidence의 `categoryCode`, 금액은 `effect.monthlyCostSaving` | 없음. 근거에 코드가 없으면 `SNAPSHOT_FIELD_MISSING`, 금액 없음 `EFFECT_AMOUNT_MISSING` |
-| LOAN / REFINANCE_LOAN (627) | LOAN_REFINANCE · `/api/v1/simulations/loan/refinance` | `{accountNo: null, targetProductId, refinanceAmount: null}` | `targetProductId`는 근거 `REFINANCE_INTEREST_SAVING` evidence. `refinanceAmount: null`은 잔액 전액 | `ACCOUNT_NO_REQUIRED_BY_CLIENT` — 명세 17 대환 본문은 계좌번호 원문만 받는데 FE는 마스킹 값만 가지므로 **현재 FE가 그대로 실행할 수 없다**. 619의 `goalId`처럼 `loanId` 본문 확장이 후속(remaining-work 627 절). 절감액을 추정하지 못한 추천은 `available=false`, `REFINANCE_TARGET_MISSING` |
+| LOAN / REFINANCE_LOAN (627) | LOAN_REFINANCE · `/api/v1/simulations/loan/refinance` | `{accountNo: null, loanId, targetProductId, refinanceAmount: null}` | `loanId`·`targetProductId`는 근거 `REFINANCE_INTEREST_SAVING` evidence. `refinanceAmount: null`은 잔액 전액 | (2026-09-16) 명세 17 대환·추가상환 본문이 `loanId`를 받도록 확장돼 FE가 그대로 실행할 수 있다. evidence에 `loanId`가 없으면 `SNAPSHOT_FIELD_MISSING`. 이전 저장분의 가정 `ACCOUNT_NO_REQUIRED_BY_CLIENT`는 더 만들어지지 않는다. 절감액을 추정하지 못한 추천은 `available=false`, `REFINANCE_TARGET_MISSING` |
 | CASHFLOW / SECURE_SHORTAGE_BUFFER, 그 외 | `available=false` | 없음 | — | `unavailableReason=NO_MATCHING_SIMULATION_TYPE` |
 
 - `available=false`면 `type`·`endpoint`·`request` 키가 없고 `unavailableReason`이 있다. 사유: `NO_MATCHING_SIMULATION_TYPE`(대응 유형 없음), `EFFECT_AMOUNT_MISSING`(소비 추천의 월 절감액 없음·0), `SNAPSHOT_FIELD_MISSING`(저축 추천 근거에 R 없음, 카테고리 소비 추천 근거에 코드 없음), `REFINANCE_TARGET_MISSING`(대환 추천에 대상 상품 없음). `assumptions`는 항상 배열(없으면 `[]`).
@@ -106,6 +106,31 @@
 - `accountNo`는 항상 null이다. 원문 계좌번호를 응답에 싣지 않고 FE도 마스킹 값만 가진다. 대상 목표는 619(2026-09-16)부터 `goalId`로 넘긴다 — 명세 17 `POST /simulations/saving` 본문 확장(simulation.md §4). SAVING 추천은 생성기가 진단 evidence `targetId`를 `Recommendation.goalId`에 채워야만 만들어지므로 과거 추천에도 `goalId`가 있다. FE는 `request`를 그대로 POST하면 되고, 그 사이 목표가 PAUSED·삭제됐으면 실행이 400/404다(프리셋은 재계산하지 않는다).
 - `durationMonths: null`은 시뮬레이션 기본값(12개월)을 뜻한다. 추천 상태(REJECTED 등)와 무관하게 제공하며 실행 여부는 FE가 정한다.
 - 일관성: 진단 기준일 = 실행일이면 `effect.improvedForecastDate` = 프리셋 실행의 대상 `goalId`에 해당하는 `goalImpacts[].afterForecastDate`다. 목표가 여러 개여도 대상 목표만 변경한다(simulation.md §11.1).
+
+### 5.2 발견 요약 `discovery` (2026-09-16)
+
+FE 발견 화면의 통합 수치(문제 수·전체 개선 시 연 절감액·목표 단축일)를 `GET /recommendations/summary`에 붙였다.
+위의 사용자 전체 합계(`expectedMonthlyCostSaving` 등)는 진단을 거듭할수록 같은 문제의 추천이 쌓여 부풀므로, 이 객체는
+**최신 완료 진단 한 건**의 열린 추천(PENDING·ACCEPTED)만 본다. 완료 진단이 없으면 `discovery: null`.
+
+```json
+"discovery": {
+  "diagnosisId": 12, "issueCount": 3, "openRecommendationCount": 3,
+  "expectedAnnualCostSaving": 498000, "expectedGoalAdvanceDays": null,
+  "notes": ["ANNUAL_SAVING_BEST_ALTERNATIVE_PER_ISSUE", "GOAL_ADVANCE_UNAVAILABLE"]
+}
+```
+
+| 필드 | 계산 | 없을 때 |
+| --- | --- | --- |
+| `issueCount` | 진단의 `issueCount` | — |
+| `expectedAnnualCostSaving` | 같은 `sourceIssueId`의 대안 추천은 `annualCostSaving`이 큰 하나만 세고 문제별 값을 합산. `sourceIssueId`가 없는 추천(628 이전·여러 문제 합산)은 각각 센다 | 금액 있는 추천이 없으면 null, `ANNUAL_SAVING_UNAVAILABLE` |
+| `expectedGoalAdvanceDays` | 열린 추천 `advancedDays`의 **최댓값** | 값 있는 추천이 없으면 null, `GOAL_ADVANCE_UNAVAILABLE` |
+
+- 목표 단축일을 더하지 않는 이유: 추천끼리 같은 목표에 효과가 겹치고, 정확한 합산은 프리셋들을 복합 시뮬레이션으로
+  돌려야 하는데 그 실행은 저장 부수효과가 있어 조회 API에서 하지 않는다. 최댓값이라는 사실을 `GOAL_ADVANCE_IS_MAX_NOT_COMBINED`로
+  항상 남긴다. 합산값이 필요하면 FE가 프리셋으로 `POST /simulations/combined`를 실행한다.
+- 열린 추천이 없으면 `NO_OPEN_RECOMMENDATION`.
 
 ## 6. 상태 변경·이력 (549)
 

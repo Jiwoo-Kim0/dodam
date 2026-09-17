@@ -11,12 +11,12 @@
 ### FE 요청 중 범위 밖으로 남긴 항목
 
 - [x] (S15P21D105-628, 2026-09-16) 추천 응답 `sourceIssueId` — `V36` 컬럼·Store 검증·응답 5곳. [recommendation-api.md](recommendation-api.md) §4, [recommendation.md](recommendation.md) §2·§6·§10. 남은 것: 루트 명세 16에 응답 필드 반영(사용자 요청 시), FE에 "628 이전 추천은 null" 전달.
-- [ ] **발견 요약 통합 수치**(문제 수·전체 개선 시 연 절감액·목표 단축일): 현재 `GET /recommendations/summary`는 사용자 전체 PENDING·ACCEPTED 추천을 단순 합산한다. 같은 문제의 대안 추천 중복 제거와 Combined Simulation 기반 목표 단축일 계산이 필요하다. 계산 불가는 0이 아니라 null + 사유로 준다.
+- [x] (2026-09-16, 브랜치 `S15P21D105-548-recommendation-summary-fields`) `GET /recommendations/summary`에 `discovery{diagnosisId, issueCount, openRecommendationCount, expectedAnnualCostSaving, expectedGoalAdvanceDays, notes[]}` 추가 — 최신 완료 진단 한 건 기준, 문제별 최대 대안 합산, 단축일은 최댓값(복합 미실행, note로 명시). FE에 형태 확인 필요. 원문: **발견 요약 통합 수치**(문제 수·전체 개선 시 연 절감액·목표 단축일): 현재 `GET /recommendations/summary`는 사용자 전체 PENDING·ACCEPTED 추천을 단순 합산한다. 같은 문제의 대안 추천 중복 제거와 Combined Simulation 기반 목표 단축일 계산이 필요하다. 계산 불가는 0이 아니라 null + 사유로 준다.
 - 미사용 구독(사용 기록 없음)·유휴자금(비상금·생활비 보존 기준 미정)은 2026-09-16 FE와 합의해 하지 않기로 했다. 다시 하려면 "정기결제 점검" 표현 또는 사용 기록 데이터 추가가 선행돼야 한다.
 
 ### 대환 프리셋을 FE가 실행할 수 없다
 
-- [ ] 명세 17 `POST /simulations/loan/refinance` 본문은 `accountNo`(원문)만 받는데 FE는 마스킹 값만 가진다. 대환 추천 프리셋은 `accountNo: null` + 가정 `ACCOUNT_NO_REQUIRED_BY_CLIENT`로 나가며 그대로 POST하면 400이다. 619가 저축 프리셋에 `goalId`를 추가한 것처럼 `loanId?`(accountNo와 동시 지정 불가, 타인·없는 대출 404)를 본문에 추가하고 프리셋이 근거 `REFINANCE_INTEREST_SAVING`의 `loanId`를 싣도록 바꾼다. 같은 이유로 `GET /loans/{accountNo}/*` 계열도 FE가 호출할 수 없다(533 절 참고).
+- [x] (2026-09-16, 브랜치 `S15P21D105-587-refinance-loan-id`) `POST /simulations/loan/refinance`·`/loan/prepayment` 본문에 `loanId?`를 추가하고(accountNo와 정확히 하나), 프리셋이 evidence의 `loanId`를 싣는다. `GET /loans` 목록·상세에도 `loanId`를 추가해 FE가 값을 얻을 수 있다. 원문: 명세 17 `POST /simulations/loan/refinance` 본문은 `accountNo`(원문)만 받는데 FE는 마스킹 값만 가진다. 대환 추천 프리셋은 `accountNo: null` + 가정 `ACCOUNT_NO_REQUIRED_BY_CLIENT`로 나가며 그대로 POST하면 400이다. 619가 저축 프리셋에 `goalId`를 추가한 것처럼 `loanId?`(accountNo와 동시 지정 불가, 타인·없는 대출 404)를 본문에 추가하고 프리셋이 근거 `REFINANCE_INTEREST_SAVING`의 `loanId`를 싣도록 바꾼다. 같은 이유로 `GET /loans/{accountNo}/*` 계열도 FE가 호출할 수 없다(533 절 참고).
 
 ### 서비스 초기값으로 둔 기준
 
@@ -81,7 +81,7 @@
 
 ### 카드 목록 응답의 `cardId`
 
-- [ ] `GET /cards` 항목에 `cardId`를 추가한다. 리볼빙 시뮬레이션(명세 17)과 `GET /installments?cardId=`가 `cardId`를 받는데 카드 목록은 마스킹 번호·이름·상태만 내려 FE가 값을 얻을 경로가 없다.
+- [x] (2026-09-16, 브랜치 `S15P21D105-527-card-list-card-id`) `GET /cards` 목록과 `GET /cards/{cardNo}` 상세에 `cardId`를 추가했다. 루트 명세 8 반영은 별도 요청 필요. 원문: 리볼빙 시뮬레이션(명세 17)과 `GET /installments?cardId=`가 `cardId`를 받는데 카드 목록은 마스킹 번호·이름·상태만 내려 FE가 값을 얻을 경로가 없다.
 - 근거: 616 실측에서 `GET /installments` 항목의 `cardId`로 역추적해야 했다(simulation.md §7). 카드 상세 경로는 `{cardNo}` 원문 기반이라 대안이 못 된다.
 - 담당 근거: 카드 API는 BE-B. 응답 필드 추가라 루트 명세(카드 목록) 변경 여부를 확인해야 한다.
 - 완료 조건: 카드 목록 항목에 `cardId`가 있고 card-basic-query.md와 FE 146에 공유된다.
@@ -131,7 +131,7 @@
 
 ### 중도해지이율 공시값 확보
 
-- [ ] 상품별 공시 중도해지이율을 확보해 `DepositEarlyTerminationRatePolicy`의 구간표를 대체한다.
+- [ ] 상품별 공시 중도해지이율을 확보해 `global/policy/EarlyTerminationRatePolicy`(2026-09-16 예·적금 통합)의 구간표를 대체한다.
 - 근거: 명세 11-1에 계산식이 없고 ERD `deposit_saving`에는 계약이율만 있어 중도해지이율 컬럼이 없다. 현재 값은 시중은행 관행으로 정한 **서비스 추정치**이며 응답의 `ratePolicy`·`rateTier`와 `ESTIMATED_EARLY_TERMINATION_RATE`로 드러낸다.
 - 선행 조건: `financial_product_option`에 중도해지이율을 담을 컬럼이 없다. ERD 변경과 상품 동기화 범위를 팀이 정해야 한다.
 - 완료 조건: 상품별 공시값으로 계산하고 추정 가정 코드를 응답에서 제거한다. 자료가 없는 상품은 추정치로 떨어진다는 사실을 응답에서 구분한다.
@@ -159,7 +159,7 @@
 
 ### 기존 테스트 실패 해소(536 범위 밖, 머지 전 확인 필요)
 
-- [ ] `DepositSavingApiIntegrationTest` 29건이 실패해 `gradlew clean build`가 깨진다. 535 파일이라 이번에 수정하지 않았다.
+- [x] 해소됨(2026-09-16 확인). `develop` `36be8a7`에서 전체 테스트가 통과한다. 아래는 당시 기록이다.
 - 근거: fixture의 `account` INSERT가 `currency`·`created_at`·`updated_at`을 채우지 않는데, H2가 `MinusAccountOwner` 매핑으로 `account`를 만들면 이 컬럼이 NOT NULL이 된다. `account`를 부분 매핑한 엔티티가 둘(`CardWithdrawalAccount`, `MinusAccountOwner`)이라 어느 쪽으로 DDL이 생성되는지에 따라 결과가 갈린다. `origin/develop`(`aff8056`)을 별도 worktree로 복사해 같은 실패를 재현했으므로 536이 만든 문제가 아니다.
 - 선행 조건: 535 담당이 fixture를 고칠지, `account` 부분 매핑을 하나로 합칠지 정한다.
 - 완료 조건: `gradlew clean build`가 통과한다. `CardQueryApiIntegrationTest.getsBenefitsAndEstimatedBenefitUsage` 1건도 같은 빌드에서 실패하며 535 문서에 기록된 날짜 의존 문제다.
@@ -170,14 +170,14 @@
 
 ### 예금과 적금의 세금 처리 통일
 
-- [ ] 적금 예상금액에도 이자소득세를 반영하거나, 예금·적금 모두 세전/세후를 함께 반환하도록 맞춘다.
+- [x] (2026-09-16, 브랜치 `S15P21D105-537-deposit-savings-tax-policy`) 적금 예상금액에 예금과 같은 15.4% 원천징수를 적용했다. `SavingsForecastResponse`에 `tax`·`expectedNetInterest`를 추가하고 `expectedAmount`를 세후 합계로 바꿨으며, 세율·절사는 `global/policy/InterestIncomeTaxPolicy`로 공유한다. 가정 코드는 `EXCLUDES_TAX_AND_FEES` → `GENERAL_INTEREST_INCOME_TAX_15_4` + `EXCLUDES_FEES`. FE는 적금 API를 아직 호출하지 않아 영향 없음.
 - 근거: 예금(536)은 15.4%를 원천징수한 세후 수령액을, 적금(537)은 세전 금액을 반환한다. 두 예상금액을 나란히 놓으면 적금이 유리해 보인다.
 - 선행 조건: 두 이슈가 모두 병합돼야 한다.
 - 완료 조건: 같은 원금·이율·기간에서 두 API의 세금 처리가 같고 문서의 가정 코드가 일치한다.
 
 ### 중도해지이율 정책 통합과 공시값 확보
 
-- [ ] `SavingsEarlyTerminationRatePolicy`와 `DepositEarlyTerminationRatePolicy`를 공용 위치로 합친다.
+- [x] (2026-09-16, 같은 브랜치) 두 클래스를 지우고 `global/policy/EarlyTerminationRatePolicy` 하나로 합쳤다. 응답·계산값 변화 없음.
 - [ ] 상품별 공시 중도해지이율을 확보해 두 표를 대체한다.
 - 근거: 같은 구간표를 두 도메인에 따로 두었다. 536과 537이 서로 다른 브랜치에서 병합될 수 있어 의존을 만들지 않았다. 현재 값은 시중은행 관행 기반 **서비스 추정치**다.
 - 선행 조건: 두 이슈 병합. 공시값은 `financial_product_option`에 담을 컬럼이 없어 ERD 변경 검토가 필요하다.
@@ -242,22 +242,18 @@
 구현 계약: [installment-query.md](installment-query.md)
 
 완료 조건 파일 유실에 따라 API 명세·기획안·ERD와 구현 문서의 보완 계약으로 판단한다.
-부담률을 별도 이슈로 분리하기로 합의하지 않은 상태에서는 아래 부담률 작업이 남아 있는 동안 530 전체를 완료 처리하지 않는다.
+2026-09-16 부담률 구현으로 530 범위 5개 API가 모두 갖춰졌다.
 
 ### 월 예상 가용금액 제공 계약과 데이터
 
-- [ ] 동일 기간의 할부 차감 전 예상 가용금액을 제공할 계산식·원천 데이터·제공 코드를 확정하고 준비한다.
-- 담당 근거: 로컬 Jira 자료상 정현진의 현금흐름 영역(538~542)과 관련된다. 월 가용금액 제공 작업의 구체적인 소속 이슈는 확인 필요다.
-- 선행 조건: 기존 월소득·고정지출을 그대로 가용금액으로 간주하지 않는다. 542의 `available-today`가 월 가용금액을 제공한다고 가정하거나 542 전체 완료를 필수 선행 조건으로 두지 않는다.
-- 완료 조건: 사용자·기준일·조회 기간이 확인되고 할부 차감 전 값임을 보장하는 데이터를 제공한다. 현재 월은 기준일부터 월말, 미래 월은 해당 월 전체를 대상으로 한다.
+- [x] 2026-09-16 사용자 결정으로 외부 계약 대기를 끝내고 기획안 정의(월 소득 − 고정지출 − 저축 − 대출상환)를 자체 계산한다. 계산식·출처·없을 때 처리는 [installment-query.md](installment-query.md) "부담률" 절에 있다.
+- 2026-09-08의 "분자·분모 기간 일치(현재 월은 기준일부터 월말)" 요구는 월 단위 값 사용으로 대체했다. 안분 근거가 기획안에 없다.
 
 ### 할부 부담률 API와 테스트
 
-- [ ] `GET /api/v1/installments/burden`을 구현하고 입력·인증·소유권·계산 검증을 완료한다.
-- 담당 근거: 로컬 Jira 자료상 530 담당 정현진.
-- 선행 조건: 위 가용금액 제공 계약과 데이터.
-- 완료 조건: `yearMonth` 기본값·형식·빈 값·과거 월 검증, 정상 부담률, 예정액 0원, 가용금액 누락·0·음수, 불완전 일정 처리를 검증한다. 분자·분모의 기간 및 기준일 일치와 할부 차감 전 값 여부를 확인하고 관련 테스트 후 전체 테스트를 실행한다.
-- 항상 null을 반환하는 임시 구현은 완료로 보지 않는다. API 구현 후 실제 계약과 검증 결과를 구현 문서에 반영한다.
+- [x] `GET /api/v1/installments/burden` 구현·검증 완료(2026-09-16). 단위 8 + 통합 +4, 전체 테스트 통과.
+- [ ] FE 연결. `frontend/src/api/assetApi.ts`에 호출이 없고 명세 9 화면 담당은 FE다. 연결되면 `docs/fe-be-api-integration-status.md`를 갱신한다.
+- H2 통합 테스트는 대출 없는 사용자만 다뤘다. 대출 상환액 반영은 reader 단위 테스트(mock)로만 검증했으므로 MySQL seed로 대출 있는 사용자를 한 번 확인하면 좋다.
 
 ### 카드·할부 스키마 준비
 
@@ -292,6 +288,7 @@
 ### 현재 월 전체 상환액과 부담률 수치 제공
 
 - [ ] 월별 일정·납부내역의 완전성과 회차 매칭 계약을 확보해 현재 월 전체 상환액을 계산한다.
+- **2026-09-16 결정: 보류.** 시연 seed에 예정 회차(`SCHEDULED`) 데이터가 없어 구현해도 항상 0원이라 우선순위를 낮춘다. seed에 회차 데이터가 생기면 다시 본다.
 - 현재 동작: 대출 행이 있는 사용자의 현재 월 전체 금액·부담률은 `MONTH_TOTAL_UNAVAILABLE`과 null이다.
   남은 예정액과 미래 월 부담률은 제공한다. 이 제한은 검토한 532 계획의 보완 계약이다.
 - 선행 조건: 이미 납부한 금액·미납분·앞으로의 예정액을 중복 없이 판단할 데이터.
@@ -309,12 +306,11 @@
 
 계획: [loan-rate-priority-plan.md](loan-rate-priority-plan.md), 구현 계약: [loan-rate-priority.md](loan-rate-priority.md)
 
-3개 API 중 상환 우선순위만 구현했다. 아래가 남아 있는 동안 533 전체를 완료 처리하지 않는다.
+3개 API 모두 구현했다(금리비교·고금리 판정은 `2eb40bb`, 2026-09-16 확인). 아래 "시장금리 비교" 항목은 완료됐고 `goalId`·MySQL 항목만 남는다.
 
 ### 시장금리 비교와 고금리 판정 API
 
-- [ ] `GET /api/v1/loans/{accountNo}/rate-comparison`과 `GET /api/v1/loans/high-interest`를 구현한다.
-- 현재 동작: 두 경로는 존재하지 않는다. `GET /api/v1/loans/repayment-priority`만 동작한다.
+- [x] `GET /api/v1/loans/{accountNo}/rate-comparison`과 `GET /api/v1/loans/high-interest` 구현 완료(`LoanRateComparisonController`, 계약은 [loan-rate-priority.md](loan-rate-priority.md)). 아래는 착수 전 기록이다.
 - 선행 조건: 계획 8절 4단계의 공통 비교 계산기와 전용 테스트 fixture. 계획 5절의 비교군·상환방식 대응표와 기간 밴드, 최저금리 중앙값 기준은 확정 상태다.
 - 완료 조건: 계획 8절 5단계 게이트(시연 데이터에서 판정 1건 이상, 0건이면 기준 방식 재검토)를 통과하고 `rateSpreadThreshold`를 편차 분포 근거와 함께 확정한다. 확정값이 통계적 기준이 아니라 서비스 초기 임계값임을 응답과 문서에 남긴다.
 
@@ -361,7 +357,7 @@
 
 ### 중복 요청 방지
 
-- [ ] 상환·이자납부의 재전송 멱등성을 구현한다.
+- [x] (2026-09-16, 브랜치 `S15P21D105-534-minus-account-idempotency`) `Idempotency-Key` 헤더 + Redis(TTL 24h)로 구현. 계약은 [minus-account.md](minus-account.md) "재전송 방지". 헤더는 선택(하위 호환)이며 Redis 장애 시 보호 없이 처리한다. 원문:
 - 현재 동작: 행 잠금(`PESSIMISTIC_WRITE`)으로 동시 요청의 경쟁 조건만 막는다. 같은 요청을 두 번 보내면 두 번 처리된다. 명세 제한사항의 "중복 요청 방지"를 충족하지 못한다.
 - 선행 조건: `Idempotency-Key` 헤더와 처리 결과 저장(테이블 또는 Redis)의 계약. TTL과 응답 재생 방식이 정해지지 않았다. `(user, account, amount)` 시간창 차단은 정상적인 연속 상환을 막아 채택하지 않았다.
 - 완료 조건: 같은 키의 재요청이 잔액을 두 번 바꾸지 않고 첫 응답을 그대로 돌려주는지 확인한다.
@@ -986,6 +982,7 @@
 - 진단 실행·이력·latest·상세·summary·문제 목록/상세 API 추가. 현재 계약: [diagnosis-api.md](diagnosis-api.md).
 - 목표/당일 저장 현금흐름 위험은 연결했으나 기획안 전체 규칙은 미완료. 미정 임계값·규칙은 coverage로 공개한다.
 - 군집 공급자·적격 조건 검사·동일 카테고리 근거 병합은 후속 구현이며 저장 군집 근거 조회만 지원한다.
+- **2026-09-16 결정: 군집 분석 엔진(모델 학습·실행·근거 병합)은 시연 범위에서 제외한다.** 발견 화면은 RULE 기반 진단(544·627)으로 동작하고, `clusterContext`는 저장된 값의 조회 형식만 유지한다. 코치의 "군집 근거" 구간과 위 "군집 근거가 아직 비어 있다" 항목도 같은 결정을 따른다.
 - MySQL에서 사용자 잠금·만료 경쟁 테스트 필요. 실행 실패는 미완료 접수만 삭제하며 실패 이력을 보존하지 않는다.
 - 과거 543 항목의 input_snapshot·종합 상태·goalId 검증은 현재 API 문서의 부분 구현 범위와 함께 해석한다.
 

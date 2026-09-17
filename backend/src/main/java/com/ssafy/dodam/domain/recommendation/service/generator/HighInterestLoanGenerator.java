@@ -35,6 +35,7 @@ public class HighInterestLoanGenerator implements RecommendationCandidateGenerat
     public static final String REASON_ABOVE_MARKET = "LOAN_RATE_ABOVE_MARKET";
     public static final String REASON_INTEREST_SAVING = "REFINANCE_INTEREST_SAVING";
     public static final String REASON_ESTIMATE_UNAVAILABLE = "REFINANCE_ESTIMATE_UNAVAILABLE";
+    public static final String LOAN_ID_FIELD = "loanId";
     public static final String TARGET_PRODUCT_ID_FIELD = "targetProductId";
     static final int MONTHS_PER_YEAR = 12;
     private final ObjectMapper json;
@@ -68,7 +69,7 @@ public class HighInterestLoanGenerator implements RecommendationCandidateGenerat
         String label = accountName == null ? "대출" : "'" + accountName + "'";
         List<RecommendationCandidate.Reason> reasons = new ArrayList<>();
         ObjectNode market = json.createObjectNode();
-        market.put("loanId", loanId).put("interestRate", interestRate).put("referenceRate", referenceRate)
+        market.put(LOAN_ID_FIELD, loanId).put("interestRate", interestRate).put("referenceRate", referenceRate)
                 .put("rateDifference", difference).put("balance", balance)
                 .put("comparisonGroup", GeneratorSupport.textOf(current, "comparisonGroup"));
         reasons.add(new RecommendationCandidate.Reason(REASON_ABOVE_MARKET,
@@ -83,7 +84,7 @@ public class HighInterestLoanGenerator implements RecommendationCandidateGenerat
                 && saving != null && targetProductId != null && installments != null && installments > 0;
         if (!available) {
             ObjectNode evidence = json.createObjectNode();
-            evidence.put("loanId", loanId).put("reason", GeneratorSupport.textOf(refinance, "unavailableReason"));
+            evidence.put(LOAN_ID_FIELD, loanId).put("reason", GeneratorSupport.textOf(refinance, "unavailableReason"));
             reasons.add(new RecommendationCandidate.Reason(REASON_ESTIMATE_UNAVAILABLE,
                     "잔여 기간·상환방식에 맞는 대환 상품이 없어 절감액은 추정하지 못했어요.", evidence));
             return Outcome.of(new RecommendationCandidate(VERSION, TYPE + ":" + loanId, issue.issueId(), DOMAIN, TYPE,
@@ -96,7 +97,7 @@ public class HighInterestLoanGenerator implements RecommendationCandidateGenerat
         BigDecimal appliedRate = decimalOf(refinance, "appliedRate");
         String productName = GeneratorSupport.textOf(refinance, "targetProductName");
         ObjectNode evidence = json.createObjectNode();
-        evidence.put("loanId", loanId).put(TARGET_PRODUCT_ID_FIELD, targetProductId).put("targetProductName", productName)
+        evidence.put(LOAN_ID_FIELD, loanId).put(TARGET_PRODUCT_ID_FIELD, targetProductId).put("targetProductName", productName)
                 .put("appliedRate", appliedRate).put("remainingInstallments", installments)
                 .put("beforeInterest", GeneratorSupport.longOf(refinance, "beforeInterest"))
                 .put("afterInterest", GeneratorSupport.longOf(refinance, "afterInterest"))

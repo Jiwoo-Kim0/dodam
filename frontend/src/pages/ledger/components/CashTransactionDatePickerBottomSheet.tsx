@@ -39,8 +39,22 @@ function CashDatePickerContent({
   const currentDay = now.getDate();
 
   const [selected, setSelected] = useState<PickerDate>(() => {
-    const [initYear, initMonth, initDay] = initialValue.split('-').map(Number);
-    const clampedYear = Math.min(initYear, currentYear);
+    const [rawYear, rawMonth, rawDay] = initialValue.split('-').map(Number);
+    const hasValidParts =
+      Number.isInteger(rawYear) &&
+      Number.isInteger(rawMonth) &&
+      Number.isInteger(rawDay) &&
+      rawMonth >= 1 &&
+      rawMonth <= 12 &&
+      rawDay >= 1 &&
+      rawDay <= daysInMonth(rawYear, rawMonth);
+    const initYear = hasValidParts ? rawYear : currentYear;
+    const initMonth = hasValidParts ? rawMonth : currentMonth;
+    const initDay = hasValidParts ? rawDay : currentDay;
+    const clampedYear = Math.max(
+      currentYear - YEARS_BACK,
+      Math.min(initYear, currentYear),
+    );
     const monthCap = clampedYear === currentYear ? currentMonth : 12;
     const clampedMonth = Math.min(initMonth, monthCap);
     const dayCap =
