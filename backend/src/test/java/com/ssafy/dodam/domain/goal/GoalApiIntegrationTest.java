@@ -150,6 +150,45 @@ class GoalApiIntegrationTest {
     }
 
     @Test
+    void allowsOnlyOneOpenSpendingGoalPerUser() throws Exception {
+        long first = createSpending("월 50만 원", 500_000);
+
+        // 진행 중(ACTIVE) 줄이기 목표가 있으면 두 번째는 409
+        mockMvc.perform(post("/api/v1/goals")
+                        .header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("name", "월 30만 원", "type", "SPENDING", "monthlyBudget", 300_000))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SPENDING_GOAL_ALREADY_EXISTS"));
+
+        // PAUSED도 진행 중으로 본다
+        patchGoal(first, Map.of("status", "PAUSED"));
+        mockMvc.perform(post("/api/v1/goals")
+                        .header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("name", "월 30만 원", "type", "SPENDING", "monthlyBudget", 300_000))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SPENDING_GOAL_ALREADY_EXISTS"));
+
+        // 모으기 목표와 다른 사용자의 줄이기 목표는 제한과 무관하다
+        createSaving("여행", 1_000_000, today.plusMonths(6));
+        createSpendingAs(otherBearer, "타인 월 20만 원", 200_000);
+
+        // 종료(CANCELED)하면 새로 만들 수 있다
+        patchGoal(first, Map.of("status", "CANCELED"));
+        long second = createSpending("월 30만 원", 300_000);
+
+        // 삭제(soft delete)된 목표도 세지 않는다
+        mockMvc.perform(delete("/api/v1/goals/" + second).header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk());
+        createSpending("월 20만 원", 200_000);
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM goal WHERE type = 'SPENDING' AND deleted_at IS NULL AND status IN ('ACTIVE','PAUSED')",
+                Long.class)).isEqualTo(2L); // 본인 1 + 타인 1
+    }
+
+    @Test
     void rejectsInvalidCreateRequests() throws Exception {
         // 필수값 누락
         mockMvc.perform(post("/api/v1/goals").header(HttpHeaders.AUTHORIZATION, bearer)
@@ -208,12 +247,13 @@ class GoalApiIntegrationTest {
     @Test
     void listsGoalsOrderedByStatusThenNewestWithFilters() throws Exception {
         long saving1 = createSaving("첫 목표", 1_000_000, today.plusMonths(3));
+        // 줄이기 목표는 진행 중인 것이 하나만 허용되므로, 지울 목표를 먼저 만들어 삭제한 뒤 실제 줄이기 목표를 만든다
+        long deleted = createSpending("지운 목표", 1);
+        mockMvc.perform(delete("/api/v1/goals/" + deleted).header(HttpHeaders.AUTHORIZATION, bearer)).andExpect(status().isOk());
         long spending = createSpending("줄이기", 300_000);
         long saving2 = createSaving("둘째 목표", 2_000_000, today.plusMonths(12));
         long paused = createSaving("쉬는 목표", 500_000, today.plusMonths(1));
         patchGoal(paused, Map.of("status", "PAUSED"));
-        long deleted = createSpending("지운 목표", 1);
-        mockMvc.perform(delete("/api/v1/goals/" + deleted).header(HttpHeaders.AUTHORIZATION, bearer)).andExpect(status().isOk());
         createSpendingAs(otherBearer, "타인 목표", 9_999);
 
         mockMvc.perform(get("/api/v1/goals").header(HttpHeaders.AUTHORIZATION, bearer))
@@ -249,9 +289,10 @@ class GoalApiIntegrationTest {
     void summarizesGoalsByStatusAndType() throws Exception {
         long saving1 = createSaving("첫 목표", 1_000_000, today.plusMonths(3));
         createSaving("둘째 목표", 3_000_000, today.plusMonths(12));
+        // 줄이기 목표는 진행 중인 것이 하나만 허용된다. 종료(CANCELED)한 뒤에는 새로 만들 수 있고 요약 개수에는 둘 다 잡힌다.
+        long spendingCanceled = createSpending("끝낸 줄이기", 200_000);
+        patchGoal(spendingCanceled, Map.of("status", "CANCELED"));
         long spendingActive = createSpending("줄이기", 300_000);
-        long spendingPaused = createSpending("쉬는 줄이기", 200_000);
-        patchGoal(spendingPaused, Map.of("status", "PAUSED"));
         long achieved = createSaving("끝난 목표", 100, today.plusMonths(1));
         patchGoal(achieved, Map.of("status", "ACHIEVED"));
         jdbcTemplate.update("UPDATE goal SET current_amount = 250000 WHERE goal_id = ?", saving1);
@@ -260,9 +301,9 @@ class GoalApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.totalCount").value(5))
                 .andExpect(jsonPath("$.data.activeCount").value(3))
-                .andExpect(jsonPath("$.data.pausedCount").value(1))
+                .andExpect(jsonPath("$.data.pausedCount").value(0))
                 .andExpect(jsonPath("$.data.achievedCount").value(1))
-                .andExpect(jsonPath("$.data.canceledCount").value(0))
+                .andExpect(jsonPath("$.data.canceledCount").value(1))
                 .andExpect(jsonPath("$.data.savingGoalCount").value(3))
                 .andExpect(jsonPath("$.data.activeSavingTargetAmount").value(4_000_000))
                 .andExpect(jsonPath("$.data.activeSavingCurrentAmount").value(250_000))
