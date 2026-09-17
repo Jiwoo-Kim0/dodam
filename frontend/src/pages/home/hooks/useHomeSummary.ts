@@ -30,6 +30,22 @@ interface HomeSummaryData {
   topSpending: HomeSpendingCategory[];
 }
 
+export interface HomeSummaryErrors {
+  assetOverview: boolean;
+  briefing: boolean;
+  goals: boolean;
+  monthlyExpense: boolean;
+  topSpending: boolean;
+}
+
+const EMPTY_SUMMARY_ERRORS: HomeSummaryErrors = {
+  assetOverview: false,
+  briefing: false,
+  goals: false,
+  monthlyExpense: false,
+  topSpending: false,
+};
+
 function monthInfo(offsetFromCurrent: number) {
   const today = new Date();
   const date = new Date(today.getFullYear(), today.getMonth() + offsetFromCurrent, 1);
@@ -158,16 +174,24 @@ export function useHomeSummary() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const [sectionErrors, setSectionErrors] = useState<HomeSummaryErrors>(
+    EMPTY_SUMMARY_ERRORS,
+  );
   const requestIdRef = useRef(0);
+  const requestInFlightRef = useRef(false);
 
   const loadSummary = useCallback(async (refreshing = false) => {
+    if (requestInFlightRef.current) return;
+
+    requestInFlightRef.current = true;
     const requestId = ++requestIdRef.current;
     if (refreshing) {
       setIsRefreshing(true);
     } else {
       setIsLoading(true);
+      setError(null);
+      setSectionErrors(EMPTY_SUMMARY_ERRORS);
     }
-    setError(null);
 
     try {
       const month = monthInfo(-1);
@@ -183,6 +207,13 @@ export function useHomeSummary() {
 
       const [monthlyResult, assetResult, goalsResult, briefingResult, topResult] = results;
       const failed = results.find((result) => result.status === 'rejected');
+      setSectionErrors({
+        assetOverview: assetResult.status === 'rejected',
+        briefing: briefingResult.status === 'rejected',
+        goals: goalsResult.status === 'rejected',
+        monthlyExpense: monthlyResult.status === 'rejected',
+        topSpending: topResult.status === 'rejected',
+      });
       setData({
         monthLabel: month.monthLabel,
         monthlyExpense: monthlyResult.status === 'fulfilled' ? monthlyResult.value.totalSpending : null,
@@ -201,6 +232,7 @@ export function useHomeSummary() {
           : null,
       );
     } finally {
+      requestInFlightRef.current = false;
       if (requestId === requestIdRef.current) {
         setIsLoading(false);
         setIsRefreshing(false);
@@ -213,12 +245,14 @@ export function useHomeSummary() {
     return () => {
       clearTimeout(timeout);
       requestIdRef.current += 1;
+      requestInFlightRef.current = false;
     };
   }, [loadSummary]);
 
   return {
     ...data,
     error,
+    sectionErrors,
     isLoading,
     isRefreshing,
     refetch: useCallback(() => loadSummary(true), [loadSummary]),
