@@ -6,6 +6,8 @@ import { Pressable, Text, View } from 'react-native';
 import { coachApi, diagnosisApi, recommendationApi } from '@/api';
 import { AppHeader } from '@/components/appHeader/AppHeader';
 import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
+import { ScreenState } from '@/components/screenState/ScreenState';
+import { routes } from '@/constants/routes';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import type { CoachMessageResponse } from '@/types/coachApi.types';
 import type {
@@ -51,6 +53,7 @@ export function DiscoveryInsightDetailScreen({
     null,
   );
   const [explanationError, setExplanationError] = useState<string | null>(null);
+  const [isExplanationLoading, setIsExplanationLoading] = useState(false);
   const [selectedRecommendationId, setSelectedRecommendationId] = useState<
     number | null
   >(null);
@@ -63,7 +66,10 @@ export function DiscoveryInsightDetailScreen({
   const [error, setError] = useState<string | null>(null);
   const [relatedIssuesError, setRelatedIssuesError] = useState(false);
   const requestIdRef = useRef(0);
+  const explanationRequestIdRef = useRef(0);
   const recommendationRequestIdRef = useRef(0);
+  const loadingRouteKeyRef = useRef<string | null>(null);
+  const loadingRecommendationIdRef = useRef<number | null>(null);
   const isCategorySpending = issue !== null && isCategorySpendingIssue(issue);
   const spendingSummary = isCategorySpending
     ? categorySpendingSummary(recommendations)
@@ -81,9 +87,50 @@ export function DiscoveryInsightDetailScreen({
     };
   });
 
+  const handleBackPress = () => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+
+    router.replace(routes.discoveryInsights);
+  };
+
+  const loadExplanation = useCallback(async () => {
+    if (!diagnosisId || !issueId) return;
+
+    const requestId = ++explanationRequestIdRef.current;
+    setIsExplanationLoading(true);
+    setExplanationError(null);
+
+    try {
+      const coach = await coachApi.getInefficiencyExplanation({
+        diagnosisId,
+        issueId,
+      });
+      if (requestId === explanationRequestIdRef.current) setExplanation(coach);
+    } catch {
+      if (requestId === explanationRequestIdRef.current) {
+        setExplanation(null);
+        setExplanationError('AI 설명을 불러오지 못했어요. 다시 시도해 주세요.');
+      }
+    } finally {
+      if (requestId === explanationRequestIdRef.current) {
+        setIsExplanationLoading(false);
+      }
+    }
+  }, [diagnosisId, issueId]);
+
   const load = useCallback(async () => {
     if (!diagnosisId || !issueId) return;
+    const routeKey = `${diagnosisId}:${issueId}`;
+    if (loadingRouteKeyRef.current === routeKey) return;
+
+    loadingRouteKeyRef.current = routeKey;
     const requestId = ++requestIdRef.current;
+    explanationRequestIdRef.current += 1;
+    recommendationRequestIdRef.current += 1;
+    loadingRecommendationIdRef.current = null;
     setIsLoading(true);
     setError(null);
     setRelatedIssuesError(false);
@@ -91,9 +138,11 @@ export function DiscoveryInsightDetailScreen({
     setRecommendations([]);
     setSourceIssues([]);
     setExplanation(null);
+    setIsExplanationLoading(false);
     setExplanationError(null);
     setSelectedRecommendationId(null);
     setRecommendationExplanation(null);
+    setRecommendationError(null);
 
     try {
       const [nextIssue, allRecommendations] = await Promise.all([
@@ -117,38 +166,36 @@ export function DiscoveryInsightDetailScreen({
       setRecommendations(
         recommendationsForDetail(allRecommendations, relatedIssues, nextIssue),
       );
-
-      try {
-        const coach = await coachApi.getInefficiencyExplanation({
-          diagnosisId,
-          issueId,
-        });
-        if (requestId === requestIdRef.current) setExplanation(coach);
-      } catch {
-        if (requestId === requestIdRef.current) {
-          setExplanationError('AI 설명을 불러오지 못했어요. 다시 시도해 주세요.');
-        }
-      }
+      void loadExplanation();
     } catch {
       if (requestId === requestIdRef.current) {
         setError('발견 상세를 불러오지 못했어요. 다시 시도해 주세요.');
       }
     } finally {
+      if (loadingRouteKeyRef.current === routeKey) {
+        loadingRouteKeyRef.current = null;
+      }
       if (requestId === requestIdRef.current) setIsLoading(false);
     }
-  }, [diagnosisId, issueId]);
+  }, [diagnosisId, issueId, loadExplanation]);
 
   useEffect(() => {
     void Promise.resolve().then(load);
 
     return () => {
       requestIdRef.current += 1;
+      explanationRequestIdRef.current += 1;
       recommendationRequestIdRef.current += 1;
+      loadingRouteKeyRef.current = null;
+      loadingRecommendationIdRef.current = null;
     };
   }, [load]);
 
   const showRecommendationExplanation = async (recommendationId: number) => {
+    if (loadingRecommendationIdRef.current === recommendationId) return;
+
     const requestId = ++recommendationRequestIdRef.current;
+    loadingRecommendationIdRef.current = recommendationId;
     setSelectedRecommendationId(recommendationId);
     setRecommendationExplanation(null);
     setRecommendationError(null);
@@ -164,12 +211,16 @@ export function DiscoveryInsightDetailScreen({
       if (requestId === recommendationRequestIdRef.current) {
         setRecommendationError('추천 설명을 불러오지 못했어요. 다시 눌러 주세요.');
       }
+    } finally {
+      if (requestId === recommendationRequestIdRef.current) {
+        loadingRecommendationIdRef.current = null;
+      }
     }
   };
 
   return (
     <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
-      <AppHeader showBackButton title="발견한 점" />
+      <AppHeader onBackPress={handleBackPress} showBackButton title="발견한 점" />
 
       <RefreshableBouncyScrollView
         contentContainerStyle={styles.scrollContent}
@@ -265,6 +316,17 @@ export function DiscoveryInsightDetailScreen({
                   <View key={recommendation.recommendationId}>
                     <Pressable
                       accessibilityRole="button"
+                      accessibilityState={{
+                        disabled:
+                          selectedRecommendationId === recommendation.recommendationId &&
+                          recommendationExplanation === null &&
+                          recommendationError === null,
+                      }}
+                      disabled={
+                        selectedRecommendationId === recommendation.recommendationId &&
+                        recommendationExplanation === null &&
+                        recommendationError === null
+                      }
                       onPress={() => {
                         void showRecommendationExplanation(
                           recommendation.recommendationId,
@@ -309,10 +371,23 @@ export function DiscoveryInsightDetailScreen({
                               '이 추천을 왜 권하는지 설명을 준비하지 못했어요.'}
                           </Text>
                         ) : (
-                          <Text style={styles.recommendationDetail}>
-                            {recommendationError ??
-                              '추천 설명을 확인하고 있어요.'}
-                          </Text>
+                          <>
+                            <Text style={styles.recommendationDetail}>
+                              {recommendationError ??
+                                '추천 설명을 확인하고 있어요.'}
+                            </Text>
+                            {recommendationError ? (
+                              <Pressable
+                                accessibilityRole="button"
+                                onPress={() => {
+                                  void showRecommendationExplanation(
+                                    recommendation.recommendationId,
+                                  );
+                                }}>
+                                <Text style={styles.inlineRetry}>다시 시도</Text>
+                              </Pressable>
+                            ) : null}
+                          </>
                         )}
                       </View>
                     ) : null}
@@ -324,9 +399,11 @@ export function DiscoveryInsightDetailScreen({
             <View style={styles.coachSection}>
               <Text style={styles.coachLabel}>도담의 조언</Text>
               <Text style={styles.adviceText}>
-                {coachMessage(explanation) ??
-                  explanationError ??
-                  '조언을 준비하고 있어요.'}
+                {isExplanationLoading
+                  ? '조언을 불러오고 있어요.'
+                  : coachMessage(explanation) ??
+                    explanationError ??
+                    '표시할 조언이 없어요.'}
               </Text>
               {explanation ? (
                 <View style={styles.disclaimerSection}>
@@ -336,8 +413,10 @@ export function DiscoveryInsightDetailScreen({
               {explanationError ? (
                 <Pressable
                   accessibilityRole="button"
+                  accessibilityState={{ disabled: isExplanationLoading }}
+                  disabled={isExplanationLoading}
                   onPress={() => {
-                    void load();
+                    void loadExplanation();
                   }}>
                   <Text style={styles.emptyAction}>다시 시도하기</Text>
                 </Pressable>
@@ -352,26 +431,26 @@ export function DiscoveryInsightDetailScreen({
             ) : null}
           </>
         ) : (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>
-              {isLoading
+          <ScreenState
+            description={
+              isLoading
                 ? '발견 상세를 불러오고 있어요'
-                : (error ?? '상세 정보를 찾을 수 없어요')}
-            </Text>
-            {error && routeIds ? (
-              <Text
-                onPress={() => {
-                  void load();
-                }}
-                style={styles.emptyAction}>
-                다시 시도하기
-              </Text>
-            ) : (
-              <Text onPress={() => router.back()} style={styles.emptyAction}>
-                이전 화면으로 돌아가기
-              </Text>
-            )}
-          </View>
+                : routeIds
+                  ? error ?? '연결된 상세 정보가 없어요.'
+                  : '발견 번호를 확인하거나 이전 화면에서 다시 선택해주세요.'
+            }
+            isLoading={isLoading}
+            onRetry={!isLoading && error && routeIds ? () => void load() : undefined}
+            title={
+              isLoading
+                ? undefined
+                : routeIds
+                  ? error
+                    ? '발견 상세를 불러오지 못했어요.'
+                    : '상세 정보가 없어요.'
+                  : '발견 내용을 찾을 수 없어요.'
+            }
+          />
         )}
       </RefreshableBouncyScrollView>
     </SafeAreaLayout>

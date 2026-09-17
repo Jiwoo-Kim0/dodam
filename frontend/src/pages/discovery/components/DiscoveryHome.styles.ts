@@ -198,6 +198,9 @@ export const styles = StyleSheet.create({
   viewAllButtonPressed: {
     opacity: 0.8,
   },
+  viewAllButtonDisabled: {
+    opacity: 0.45,
+  },
   cooldownLabel: {
     ...typography.caption,
     color: colors.textTertiary,
