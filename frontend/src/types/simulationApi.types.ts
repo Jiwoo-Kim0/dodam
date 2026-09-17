@@ -49,6 +49,7 @@ export interface SpendingSimulationRequestSnapshot {
 export interface SavingSimulationRequestSnapshot {
   /** 서버가 확인한 내부 계좌 식별자. 원문 계좌번호는 응답하지 않는다. */
   accountId: number | null;
+  goalId: number | null;
   monthlySavingAmount: number;
   durationMonths: number;
 }

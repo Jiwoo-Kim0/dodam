@@ -6,6 +6,7 @@ import type {
   DiagnosisApiResponse,
   DiagnosisIssueApiResponse,
   RecommendationApiResponse,
+  RecommendationDiscoverySummaryApiResponse,
 } from '@/types/discoveryApi.types';
 
 import { toDiscoveryInsights, type DiscoveryInsight } from '../discoveryModel';
@@ -26,6 +27,7 @@ export async function loadAllPages<T>(fetchPage: (page: number) => Promise<PageR
 export function useDiscoveryData() {
   const [diagnosis, setDiagnosis] = useState<DiagnosisApiResponse | null>(null);
   const [insights, setInsights] = useState<DiscoveryInsight[]>([]);
+  const [summary, setSummary] = useState<RecommendationDiscoverySummaryApiResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRunningAnalysis, setIsRunningAnalysis] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,22 +58,29 @@ export function useDiscoveryData() {
         if (requestId === requestIdRef.current) {
           setDiagnosis(null);
           setInsights([]);
+          setSummary(null);
           setPendingRecommendationDiagnosisId(null);
         }
         return;
       }
       if (requestId === requestIdRef.current) setDiagnosis(latest);
 
-      const [issues, recommendations] = await Promise.all([
+      const [issues, recommendations, recommendationSummary] = await Promise.all([
         loadAllPages<DiagnosisIssueApiResponse>((page) =>
           diagnosisApi.getIssues(latest.diagnosisId, page),
         ),
         loadAllPages<RecommendationApiResponse>((page) =>
           recommendationApi.getRecommendations(page),
         ),
+        recommendationApi.getSummary(),
       ]);
       if (requestId !== requestIdRef.current) return;
       setDiagnosis(latest);
+      setSummary(
+        recommendationSummary.discovery?.diagnosisId === latest.diagnosisId
+          ? recommendationSummary.discovery
+          : null,
+      );
       // 순위는 연 절감액 내림차순이다. 서버 목록 순서(심각도·생성순)와 다르므로 여기서 다시 세운다.
       // 절감액을 산정하지 못한 문제는 뒤로 보낸다.
       setInsights(
@@ -86,6 +95,7 @@ export function useDiscoveryData() {
       if (requestId === requestIdRef.current) {
         setDiagnosis(null);
         setInsights([]);
+        setSummary(null);
         setError('발견 결과를 불러오지 못했어요. 다시 시도해 주세요.');
       }
     } finally {
@@ -186,6 +196,7 @@ export function useDiscoveryData() {
   return {
     diagnosis,
     insights,
+    summary,
     isLoading,
     isRunningAnalysis,
     error,
