@@ -6,6 +6,7 @@ import {
   coachApi,
   isApiError,
   ledgerApi,
+  patternApi,
   userApi,
 } from '@/api';
 import type { CashflowRiskApiResponse } from '@/types/cashflowApi.types';
@@ -14,8 +15,14 @@ import type {
   MonthlyReport,
   ReportFinancePattern,
   ReportMetricChange,
+  ReportPeerComparison,
 } from '@/types/report.types';
 import { formatCurrency } from '@/utils/currency';
+
+import {
+  PEER_COMPARISON_NOT_ANALYZED,
+  toPeerComparison,
+} from '../peerComparisonModel';
 
 function monthAt(offset: number) {
   const today = new Date();
@@ -98,6 +105,27 @@ async function loadCoachSummary() {
   }
 }
 
+/**
+ * 또래 비교를 조회한다. 서버에 스케줄러가 없어 분석은 `analyze` 호출로만 만들어지므로 먼저 실행하고,
+ * 오늘 완료된 결과가 있으면 서버가 그대로 재사용한다. 분석 자체가 실패해도 조회는 시도한다.
+ *
+ * 이 카드 하나 때문에 리포트 전체가 비지 않도록 실패는 null로 흡수한다.
+ */
+async function loadPeerComparison(): Promise<ReportPeerComparison | null> {
+  try {
+    await patternApi.analyze();
+  } catch {
+    // 이미 완료된 분석이 있으면 조회는 성공할 수 있어 여기서 멈추지 않는다.
+  }
+
+  try {
+    return toPeerComparison(await patternApi.getPeerComparison());
+  } catch (error) {
+    if (isApiError(error) && error.status === 404) return PEER_COMPARISON_NOT_ANALYZED;
+    return null;
+  }
+}
+
 async function fetchReport(): Promise<MonthlyReport> {
   const reportMonth = monthAt(-1);
   const previousMonth = monthAt(-2);
@@ -119,6 +147,7 @@ async function fetchReport(): Promise<MonthlyReport> {
     cashflowRisks,
     anomalies,
     coachSummary,
+    peerComparison,
   ] = await Promise.all([
     userApi.getMe(),
     ledgerApi.getMonthlySummary(reportMonth.yearMonth),
@@ -134,6 +163,7 @@ async function fetchReport(): Promise<MonthlyReport> {
     loadOptionalResource(cashflowApi.getRisks()),
     ledgerApi.getSpendingAnomalies(anomalyStart.yearMonth, reportMonth.yearMonth),
     loadCoachSummary(),
+    loadPeerComparison(),
   ]);
 
   const risks = cashflowRisks?.risks ?? [];
@@ -228,6 +258,7 @@ async function fetchReport(): Promise<MonthlyReport> {
         : '지금의 소비 흐름을 유지하면서 저축률을 조금씩 높여보세요!'),
     patternCoachingDisclaimer: coachSummary?.disclaimer ?? null,
     patternCharacterImage: require('@/assets/characters/dori/dori_memo.png'),
+    peerComparison,
     nextMonthForecast: {
       description: '지난달 고정·변동지출이 그대로 이어진다고 가정한 참고치예요',
       expectedExpense,

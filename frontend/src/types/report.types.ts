@@ -78,6 +78,54 @@ export interface ReportMonthlySpending {
   amount: number;
 }
 
+export interface ReportPeerFeature {
+  key: string;
+  /** 오각형 축에 들어갈 짧은 라벨이다. */
+  label: string;
+  /**
+   * 오각형에 그릴 값(0~100)이다. 낮을수록 좋은 특징은 백분위를 뒤집어 담아, 어느 축이든
+   * **바깥쪽일수록 좋은 상태**가 되게 맞춘다. 또래 중앙값은 뒤집어도 50이라 기준선은 그대로다.
+   */
+  axisValue: number;
+  /** 서버가 준 원래 백분위(0~100)다. 값이 클수록 큰 쪽이며 좋고 나쁨과는 무관하다. */
+  percentile: number;
+  /** 원본 비율 값이다. 또래 분포와 내 위치를 같은 축에 놓는 데 쓴다. */
+  userValue: number;
+  peerP25: number | null;
+  peerMedian: number | null;
+  peerP75: number | null;
+  /** 사용자 값을 퍼센트로 표기한 문자열이다. */
+  userValueText: string;
+  /** 또래 중앙값을 퍼센트로 표기한 문자열이다. 서버가 주지 않으면 null이다. */
+  peerMedianText: string | null;
+}
+
+/**
+ * 또래 비교 카드 상태. 서버가 값을 줄 수 없는 사유가 여러 가지라 화면에서 구분해 보여 준다.
+ * `available`이어도 표본 부족으로 전체 사용자까지 넓힌 경우가 있어 실제 비교 집단을 함께 싣는다.
+ */
+export type ReportPeerComparison =
+  | {
+      status: 'available';
+      /** 배정된 소비 유형 이름. 군집 구성비가 비어 있으면 null이다. */
+      clusterLabel: string | null;
+      /** `20대 여성`처럼 실제로 비교한 집단 표기다. */
+      groupLabel: string;
+      sampleSize: number;
+      /** 표본이 부족해 더 넓은 집단으로 비교한 경우 true다. */
+      isFallback: boolean;
+      features: readonly ReportPeerFeature[];
+      /** `2026년 3월 ~ 8월 소비 기준`처럼 분석에 사용한 기간 표기다. 서버가 주지 않으면 null이다. */
+      analysisPeriodLabel: string | null;
+      /** 서버가 만든 문장이다. 비어 있을 수 있다. */
+      insights: readonly string[];
+    }
+  | {
+      status: 'unavailable';
+      /** 사용자에게 보여 줄 안내 문구다. */
+      message: string;
+    };
+
 export interface MonthlyReport {
   /** YYYY-MM */
   yearMonth: string;
@@ -89,6 +137,8 @@ export interface MonthlyReport {
   patternCoachingDisclaimer: string | null;
   patternCharacterImage: ImageSourcePropType;
   nextMonthForecast: ReportNextMonthForecast;
+  /** 또래 비교 조회 자체가 실패하면 null이며, 이때 카드를 렌더링하지 않는다. */
+  peerComparison: ReportPeerComparison | null;
   keyMetrics: readonly ReportKeyMetric[];
   /** 리포트 기준 달을 마지막으로 하는 최근 6개월 지출이다. */
   monthlySpending: readonly ReportMonthlySpending[];

@@ -18,6 +18,7 @@ export const routes = {
     params: { id: insightId },
   }),
   report: '/report',
+  reportPeerComparison: '/report/peer-comparison',
   goalSetup: '/goal-setup',
   goalSetupEdit: (goalId: string) => ({
     pathname: '/goal-setup' as const,
