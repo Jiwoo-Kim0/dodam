@@ -6,9 +6,11 @@ import {
   Animated,
   type LayoutChangeEvent,
   Pressable,
+  type StyleProp,
   Text,
   useWindowDimensions,
   View,
+  type ViewStyle,
 } from 'react-native';
 import Reanimated, { useAnimatedStyle, useTimestamp, type SharedValue } from 'react-native-reanimated';
 
@@ -101,7 +103,7 @@ export function DiscoveryLanding({ onBack, onComplete }: DiscoveryLandingProps) 
                   tintColor={colors.textPrimary}
                 />
               </Pressable>
-              <StageSkip onPress={onComplete} />
+              <StageSkip onPress={onComplete} style={styles.heroSkip} />
             </View>
 
             <View style={styles.heroCopy}>
@@ -290,9 +292,14 @@ function StageHeader({ stage, title, description }: StageHeaderProps) {
   );
 }
 
-function StageSkip({ onPress }: { onPress: () => void }) {
+function StageSkip({ onPress, style }: { onPress: () => void; style?: StyleProp<ViewStyle> }) {
   return (
-    <Pressable hitSlop={12} onPress={onPress} style={styles.stageSkip}>
+    <Pressable
+      accessibilityLabel="건너뛰기"
+      accessibilityRole="button"
+      hitSlop={12}
+      onPress={onPress}
+      style={[styles.stageSkip, style]}>
       <Text style={styles.stageSkipText}>건너뛰기</Text>
     </Pressable>
   );
