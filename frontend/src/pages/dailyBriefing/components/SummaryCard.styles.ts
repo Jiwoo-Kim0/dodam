@@ -39,11 +39,12 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
+  /** 리포트 화면과 같은 카드 제목 규칙이다. 아래 금액이 시선을 가져가게 한다. */
   summaryLabel: {
-    color: colors.textPrimary,
+    color: colors.textSecondary,
     fontFamily: fontFamily.medium,
-    fontSize: fontSize.body1,
-    lineHeight: 20,
+    fontSize: fontSize.body2,
+    lineHeight: 18,
   },
   statusBadge: {
     backgroundColor: colors.briefing.statusBackground,

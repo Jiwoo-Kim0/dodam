@@ -18,11 +18,12 @@ export const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  /** 리포트 화면과 같은 카드 제목 규칙이다. */
   upcomingLabel: {
     color: colors.textSecondary,
-    fontFamily: fontFamily.regular,
-    fontSize: fontSize.detail,
-    lineHeight: 15,
+    fontFamily: fontFamily.medium,
+    fontSize: fontSize.body2,
+    lineHeight: 18,
   },
   upcomingTitle: {
     color: colors.textPrimary,
