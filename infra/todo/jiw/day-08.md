@@ -1409,6 +1409,29 @@ location / {
 조용히 무방비가 된다.** 실제로 그 location에는 "Day 7에서 FE 웹 정적 빌드를 서빙할지 결정"
 이라는 주석이 달려 있었다.
 
+#### 배포 후 검증 (2026-09-18) — 수정이 실제로 먹혔다
+
+수정 시점에는 "배포 후에 확인해야 한다"고만 적어뒀던 부분이다. 배포(`e759f09`) 후 실측했다.
+
+```
+$ curl -sI https://j15D105.p.ssafy.io/
+HTTP/2 200
+content-type: text/plain                    ← 중복 해소 (이전: octet-stream + text/plain 둘 다)
+strict-transport-security: max-age=86400
+x-content-type-options: nosniff
+x-frame-options: DENY
+referrer-policy: strict-origin-when-cross-origin
+```
+
+| 검사 | 수정 전 | 수정 후 |
+| --- | --- | --- |
+| `/` 보안 헤더 | **0개** | **4개** ✅ |
+| `/` Content-Type | 중복 2개 | 1개 ✅ |
+| `/api/` 보안 헤더 (회귀 확인) | 4개 | 4개 ✅ |
+| HSTS max-age | 86400 | 86400 (유지) ✅ |
+| `docker exec nginx nginx -t` | ok | ok ✅ |
+| nginx / backend 상태 | — | running / healthy·restarts=0 ✅ |
+
 #### 발견 ② HSTS `max-age` 상향 — **검토 후 보류**로 결론
 
 day-04 계획의 "안정되면 1년으로 상향"을 그대로 적용하려다(한때 30일로 올렸다가)
