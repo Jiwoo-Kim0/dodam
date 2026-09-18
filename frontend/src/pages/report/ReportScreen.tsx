@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback } from 'react';
 import { Text, View } from 'react-native';
@@ -13,6 +14,7 @@ import { FinancePatternCard } from './components/FinancePatternCard';
 import { KeyMetricsCard } from './components/KeyMetricsCard';
 import { MonthlySpendingCard } from './components/MonthlySpendingCard';
 import { NextMonthForecastCard } from './components/NextMonthForecastCard';
+import { PeerComparisonCard } from './components/PeerComparisonCard';
 import { styles } from './ReportScreen.styles';
 import { useReportData } from './hooks/useReportData';
 
@@ -56,12 +58,25 @@ export function ReportScreen() {
           <ScreenState description="리포트를 불러오고 있어요" isLoading />
         ) : data ? (
           <>
-            <Text style={styles.screenDescription}>
-              {`${monthLabel} 한 달, ${data.userName}님의 금융 생활을 분석했어요.`}
-            </Text>
+            <View style={[styles.card, styles.introCard]}>
+              <Image
+                contentFit="contain"
+                source={require('@/assets/characters/dori/dori_report.png')}
+                style={styles.introCharacter}
+              />
+              <Text style={styles.introText}>
+                {`${monthLabel} 한 달, ${data.userName}님의 금융 생활을 분석했어요.`}
+              </Text>
+            </View>
 
             <View style={styles.sections}>
               <EfficiencyScoreCard efficiencyScore={data.efficiencyScore} />
+              {data.peerComparison === null ? null : (
+                <PeerComparisonCard
+                  onPress={() => router.push(routes.reportPeerComparison)}
+                  peerComparison={data.peerComparison}
+                />
+              )}
               <FinancePatternCard
                 characterImage={data.patternCharacterImage}
                 coachingMessage={data.patternCoachingMessage}
