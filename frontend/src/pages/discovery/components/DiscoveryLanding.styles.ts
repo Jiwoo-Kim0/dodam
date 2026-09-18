@@ -39,11 +39,12 @@ export const styles = StyleSheet.create({
     justifyContent: 'space-between',
     position: 'relative',
   },
-  backIcon: {
-    color: colors.textPrimary,
-    fontFamily: fontFamily.regular,
-    fontSize: fontSize.display,
-    lineHeight: 36,
+  /** 공통 헤더의 뒤로 가기와 같은 44px 터치 영역을 쓰되, 아이콘은 왼쪽 끝에 맞춘다. */
+  backButton: {
+    alignItems: 'flex-start',
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
   },
   heroCopy: {
     alignItems: 'center',
@@ -104,11 +105,6 @@ export const styles = StyleSheet.create({
   scrollHintText: {
     color: colors.textTertiary,
     ...typography.caption,
-  },
-  scrollArrow: {
-    color: colors.textSecondary,
-    fontFamily: fontFamily.regular,
-    fontSize: fontSize.subtitle,
   },
   stageHeader: {
     alignItems: 'center',

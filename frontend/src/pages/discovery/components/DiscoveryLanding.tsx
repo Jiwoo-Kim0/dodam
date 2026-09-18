@@ -1,5 +1,6 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
+import { SymbolView } from 'expo-symbols';
 import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
@@ -87,8 +88,18 @@ export function DiscoveryLanding({ onBack, onComplete }: DiscoveryLandingProps) 
             locations={[0, 1]}
             style={[styles.section, styles.heroSection, { height: viewportHeight }]}>
             <View style={styles.topBar}>
-              <Pressable accessibilityLabel="뒤로 가기" hitSlop={12} onPress={onBack}>
-                <Text style={styles.backIcon}>‹</Text>
+              <Pressable
+                accessibilityLabel="뒤로 가기"
+                accessibilityRole="button"
+                hitSlop={12}
+                onPress={onBack}
+                style={styles.backButton}>
+                {/* 글자 `‹` 대신 공통 헤더와 같은 심볼을 쓴다. 글자로 그리면 모양·굵기가 달라진다. */}
+                <SymbolView
+                  name={{ android: 'arrow_back', ios: 'chevron.left', web: 'arrow_back' }}
+                  size={24}
+                  tintColor={colors.textPrimary}
+                />
               </Pressable>
               <StageSkip onPress={onComplete} />
             </View>
@@ -400,7 +411,18 @@ function FloatingScrollHint({ onPress }: { onPress: () => void }) {
       onPress={onPress}
       style={styles.scrollHint}>
       <Text style={styles.scrollHintText}>아래로 스크롤하세요</Text>
-      <Animated.Text style={[styles.scrollArrow, { transform: [{ translateY }] }]}>⌄</Animated.Text>
+      {/* 글자 `⌄`는 폰트마다 크기·위치가 달라 텍스트와 중심이 안 맞는다. 심볼로 그린다. */}
+      <Animated.View style={{ transform: [{ translateY }] }}>
+        <SymbolView
+          name={{
+            android: 'keyboard_arrow_down',
+            ios: 'chevron.down',
+            web: 'keyboard_arrow_down',
+          }}
+          size={20}
+          tintColor={colors.textSecondary}
+        />
+      </Animated.View>
     </Pressable>
   );
 }
