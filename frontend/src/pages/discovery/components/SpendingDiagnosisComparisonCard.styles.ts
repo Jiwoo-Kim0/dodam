@@ -8,12 +8,15 @@ export const styles = StyleSheet.create({
     borderRadius: radius.card,
     gap: spacing[1],
     marginTop: spacing[6],
-    paddingHorizontal: spacing[5],
-    paddingVertical: spacing[5],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[4],
   },
+  /** 다른 화면과 같은 카드 제목 규칙이다. */
   categoryLabel: {
-    ...typography.body1,
     color: colors.textSecondary,
+    fontFamily: fontFamily.medium,
+    fontSize: fontSize.body2,
+    lineHeight: 18,
   },
   amountRow: {
     alignItems: 'baseline',
@@ -25,16 +28,17 @@ export const styles = StyleSheet.create({
   amount: {
     color: colors.textPrimary,
     fontFamily: fontFamily.semiBold,
-    fontSize: 28,
-    lineHeight: 36,
+    fontSize: fontSize.title,
+    letterSpacing: -0.6,
+    lineHeight: 30,
   },
   changePercent: {
     color: colors.report.scoreStrong,
     fontFamily: fontFamily.semiBold,
-    fontSize: fontSize.body1,
+    fontSize: fontSize.body2,
   },
   bars: {
-    gap: spacing[3],
+    gap: spacing[2],
     marginTop: spacing[3],
   },
   barRow: {
@@ -43,15 +47,16 @@ export const styles = StyleSheet.create({
     gap: spacing[3],
   },
   barLabel: {
-    ...typography.body2,
-    color: colors.textPrimary,
-    width: 58,
+    color: colors.textSecondary,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.caption,
+    width: 56,
   },
   barTrack: {
     backgroundColor: colors.home.goalProgressTrack,
     borderRadius: radius.round,
     flex: 1,
-    height: 10,
+    height: 8,
     overflow: 'hidden',
   },
   previousBar: {
@@ -65,9 +70,9 @@ export const styles = StyleSheet.create({
     height: '100%',
   },
   barAmount: {
-    ...typography.body1,
+    ...typography.body2,
     color: colors.textPrimary,
-    minWidth: 78,
+    minWidth: 72,
     textAlign: 'right',
   },
 });
