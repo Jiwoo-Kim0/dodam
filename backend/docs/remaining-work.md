@@ -16,7 +16,8 @@
 - [ ] **임계값 실측(09-23)**: 시연 계정 U0001~U0004(성향 4종)로 진단을 돌려 탐지 건수·라벨을 기록한다. 전부 0건이거나 전부 HIGH면 `FEATURE_DEVIATION_THRESHOLD 0.25`·HIGH 경계 1.0·30일을 조정하고 규칙 버전을 v8로 올린다. 시연 계정 1개는 반드시 `RULE_AND_CLUSTER` 1건이 나와야 한다(U0003은 식비·카페 증가 문제가 있어 재량 소비 비중이 군집 p95를 넘으면 병합된다).
 - [ ] 사용자 1명 패턴 분석 소요 시간 실측(진단 응답 지연에 그대로 더해진다). 서버는 아티팩트 v2를 쓰므로 학습은 없고 집계·배정만이다.
 - [ ] 진단 캐시는 규칙 버전별이라 배포 뒤 첫 진단은 새 행을 만든다. 632 이전 패턴 분석(peer_stats 없음)도 `cluster_stats_json`은 있어 규칙에는 영향 없다.
-- [ ] C-2: `ClusterDeviationGenerator`(`SPENDING/REVIEW_SPENDING_PATTERN`, 효과 없음), `RecommendationInput.Issue.clusterContext`, α=1 반영, 코치 notes, recommendation-api.md 갱신.
+- [x] C-2 (2026-09-18, 브랜치 `S15P21D105-640-c2-cluster-recommendation`, 641 위에 쌓음): `ClusterDeviationGenerator`(`<domain>/REVIEW_SPENDING_PATTERN`, 효과 없음, 근거 `CLUSTER_RANGE_DEVIATION`), `RecommendationPriorityPolicy.clusterPoints`(α=1, 최대 10), 프리셋(소득 대비 소비율·재량 소비 비중만 `/simulations/spending` + `REDUCTION_AMOUNT_REQUIRED_FROM_USER`), `CoachFactAssembler` 군집 notes. `RecommendationInput.Issue`에는 `clusterContext`가 이미 있어 리더 변경은 없었다. 테스트: `ClusterDeviationGeneratorTest` 4, `RecommendationPriorityPolicyClusterTest` 2, 프리셋 assembler +1. 계약: recommendation-api.md §2·§3·§5.1·§9.
+- [ ] FE(C-3 추가): `REVIEW_SPENDING_PATTERN` 추천은 `effect`가 전부 null이다 → 발견 목록의 "절약 예상" 자리에 "절감액 산정 전"을 표시하고, 프리셋 `monthlyReduction: null`은 사용자 입력을 받아 채운 뒤 POST한다.
 - [ ] FE(C-3): `detectionSource`가 CLUSTER·RULE_AND_CLUSTER면 "또래 비교" 배지, `clusterContext` 카드, `DOMAIN_LABELS`·`DOMAIN_ICONS`에 `SAVING` 추가(단독 저축률 문제의 도메인).
 
 ## S15P21D105-635 — 리포트 금융 효율 점수·K-Means 또래 비교 연동 (FE 요청 회신)

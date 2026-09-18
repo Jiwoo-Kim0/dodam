@@ -145,7 +145,7 @@ GoalCalculationService의 실제 판정 상수는 benchmarkValue에 보존한다
 
 검증(2026-09-18, JDK 21 H2): `ClusterDeviationRuleTest` 7건(방향 필터·임계·심각도 경계·노출 조건 사유·재량 카테고리 병합·단독 생성·중복 병합 거부),
 `ClusterDeviationDiagnosisApiTest` 3건(거래 없음 → `PATTERN_NOT_ANALYZED`, 모집단 부족 → `INSUFFICIENT_POPULATION`, 성향 4종×12명 모집단에서 HYBRID 배정 →
-식비 증가 문제 `RULE_AND_CLUSTER` + 소득 대비 소비율 단독 `CLUSTER`, 같은 날 재진단 시 패턴 분석 재사용). 추천 생성기·α 반영·코치 notes는 C-2(다음 MR).
+식비 증가 문제 `RULE_AND_CLUSTER` + 소득 대비 소비율 단독 `CLUSTER`, 같은 날 재진단 시 패턴 분석 재사용). 추천 생성기(`REVIEW_SPENDING_PATTERN`)·우선순위 α·코치 notes는 640 C-2에서 연결했다(recommendation-api.md §2·§3·§5.1).
 
 ## 응답·데이터 부족
 
@@ -161,7 +161,7 @@ coverage는 실행한 GOAL/CASHFLOW, 대상 없음, 누락 데이터, 미정 규
 미구현 규칙: 휴면 계좌, 고정/변동지출 유형별 증가(627의 카테고리 증가와 다른 규칙), 이자/상환 부담, 저사용 카드,
 카드 결제 부담, 저축 후 현금 부족. 문서의 임계값·자료 완전성 확인과 정책 확정이 선행되어야 한다.
 FE가 함께 요청한 미사용 구독(사용 기록 없음)·유휴자금(비상금·생활비 보존 기준 미정)은 2026-09-16 범위에서 제외하기로 했다([627 계획](diagnosis-627-plan.md)).
-군집 조건 검증·동일 카테고리 근거 병합은 641에서 연결했다(§641). 단독 CLUSTER 문제의 추천 생성기와 우선순위 α 반영은 C-2에서 이어진다.
+군집 조건 검증·동일 카테고리 근거 병합은 641에서, 단독 CLUSTER 문제의 추천 생성기·우선순위 α·코치 notes는 640 C-2에서 연결했다. 545 군집 흐름은 이로써 규칙 → 문제 → 추천 → 코치까지 닫혔다.
 
 ## 목표 영향·진단 변화 (546)
 

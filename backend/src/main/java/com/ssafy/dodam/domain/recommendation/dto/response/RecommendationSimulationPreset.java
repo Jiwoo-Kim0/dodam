@@ -47,6 +47,8 @@ public record RecommendationSimulationPreset(
     public static final String REDUCTION_CAPPED_TO_SIMULATION_BASELINE = "REDUCTION_CAPPED_TO_SIMULATION_BASELINE";
     /** (631) 시뮬레이션 기준선에 그 카테고리 소비가 없어 감소 시뮬레이션을 만들 수 없다(그대로 보내면 400). */
     public static final String SIMULATION_BASELINE_UNAVAILABLE = "SIMULATION_BASELINE_UNAVAILABLE";
+    /** (640) 군집 이탈 추천은 절감액을 추정하지 않으므로 소비 감소 시뮬레이션의 {@code monthlyReduction}을 사용자가 입력해야 한다. */
+    public static final String REDUCTION_AMOUNT_REQUIRED_FROM_USER = "REDUCTION_AMOUNT_REQUIRED_FROM_USER";
 
     public RecommendationSimulationPreset {
         assumptions = assumptions == null ? List.of() : List.copyOf(assumptions);

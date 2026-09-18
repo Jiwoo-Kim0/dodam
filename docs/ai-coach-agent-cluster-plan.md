@@ -241,7 +241,7 @@ curl -sS https://gms.ssafy.io/gmsapi/api.openai.com/v1/chat/completions \
 ### 2-3. 추천·우선순위·코치 연결
 
 - 추천: 병합된 문제는 기존 생성기가 그대로 만든다(입력 `currentValue`는 규칙 값 유지). 단독 CLUSTER 문제는 `ClusterDeviationGenerator`가 효과 없이 `SPENDING/REVIEW_SPENDING_PATTERN` "비슷한 유형과 소비 구조 비교해 보기" 후보를 만든다(효과 금액 추정 없음 → 절감액 산정 전). 프리셋은 `discretionaryShare`·`spendingToIncomeRatio`만 `/simulations/spending`(금액 FE 입력).
-- 우선순위: `RecommendationPriorityPolicy`에 α 반영 — `score += min(10, round(α × deviationScore × 10))`, `α = 1`(군집 결과 없으면 0, 기획안 5-4). `deviationScore`가 평균값(대개 0~0.5)이라 점수 기여는 최대 5점 안팎 — 순위 뒤집기가 아니라 동점 해소 수준이다. **`RecommendationInput.Issue`에는 `clusterContext`가 없으므로 `RecommendationInputReader`에 필드를 추가**해야 정책이 읽을 수 있다(C-2).
+- 우선순위: `RecommendationPriorityPolicy`에 α 반영 — `score += min(10, round(α × deviationScore × 10))`, `α = 1`(군집 결과 없으면 0, 기획안 5-4). `deviationScore`가 평균값(대개 0~0.5)이라 점수 기여는 최대 5점 안팎 — 순위 뒤집기가 아니라 동점 해소 수준이다. ~~`RecommendationInput.Issue`에는 `clusterContext`가 없으므로 `RecommendationInputReader`에 필드를 추가해야 한다~~ → 확인 결과 이미 있다(547에서 정의). C-2는 `RecommendationPriorityPolicy.clusterPoints`만 추가했다.
 - 코치: `CoachFactAssembler.inefficiency`의 "군집 근거(서버 계산)" 섹션이 자동으로 채워진다. `notes`에 "낭비로 단정하지 말고 '비슷한 소비 유형 사용자군 대비 점검이 필요한 항목'으로 표현할 것"(기획안 5-7)을 추가.
 - `DiagnosisRuleVersion`을 `v7-cluster-hybrid`로 올린다. coverage `CLUSTER`는 `EVALUATED`/`NOT_APPLICABLE`/`UNAVAILABLE(사유)`.
 
@@ -266,7 +266,7 @@ FE가 `POST /patterns/analyze`를 부르지 않으므로 진단 실행 시 **서
 | MR | 내용 | 담당 |
 | --- | --- | --- |
 | C-1 | `ClusterDeviationRule`·`DiagnosisIssue.ofCluster`·병합·coverage·규칙 버전·진단 시 패턴 분석 보장·테스트 — **641 구현 완료(09-18)**, 계약 `backend/docs/diagnosis-api.md` §641 | 구동재 |
-| C-2 | `ClusterDeviationGenerator`·`RecommendationInput.Issue.clusterContext`·α 반영·코치 notes·`backend/docs/diagnosis-api.md`/`recommendation-api.md` 갱신 | 구동재 |
+| C-2 | `ClusterDeviationGenerator`·`RecommendationInput.Issue.clusterContext`·α 반영·코치 notes·`backend/docs/diagnosis-api.md`/`recommendation-api.md` 갱신 — **구현 완료(09-18)**. `RecommendationInput.Issue`에는 `clusterContext`가 이미 있어 리더 변경 없음 | 구동재 |
 | C-3 | FE 배지·상세 카드·`SAVING` 라벨·타입 | 정서영 |
 
 ---
