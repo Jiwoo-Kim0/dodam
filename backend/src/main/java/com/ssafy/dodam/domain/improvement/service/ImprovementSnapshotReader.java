@@ -11,8 +11,9 @@ import com.ssafy.dodam.domain.transaction.repository.JdbcSpendingAnalysisReader;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -57,7 +58,8 @@ public class ImprovementSnapshotReader {
      * @param now    스냅샷 시각. 부채 잔액·목표 예상일의 기준이기도 하다
      */
     public ImprovementSnapshot read(Long userId, Window window, Long goalId, LocalDateTime now) {
-        List<String> unavailable = new ArrayList<>();
+        // 사유 코드는 집합이다. 금리 없는 대출이 3건이면 같은 코드가 3번 들어가 스냅샷 JSON에 그대로 굳는다.
+        Set<String> unavailable = new LinkedHashSet<>();
         long spendingTotal = spending.readSpendingTotal(userId, window.startDate(), window.endDate());
         long savingTotal = spending.readSavingTransferTotal(userId, window.startDate(), window.endDate());
         int months = Math.max(1, window.months());
@@ -82,10 +84,10 @@ public class ImprovementSnapshotReader {
         return new ImprovementSnapshot(now, window.startDate(), window.endDate(), months,
                 spendingTotal / months, savingTotal / months, debtBalance,
                 unavailable.contains(LOAN_RATE_UNAVAILABLE) ? null : monthlyInterest,
-                goalId, forecastDate(userId, goalId, now, unavailable), unavailable);
+                goalId, forecastDate(userId, goalId, now, unavailable), List.copyOf(unavailable));
     }
 
-    private java.time.LocalDate forecastDate(Long userId, Long goalId, LocalDateTime now, List<String> unavailable) {
+    private java.time.LocalDate forecastDate(Long userId, Long goalId, LocalDateTime now, Set<String> unavailable) {
         if (goalId == null) {
             return null;
         }

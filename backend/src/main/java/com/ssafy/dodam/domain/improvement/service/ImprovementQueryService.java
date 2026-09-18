@@ -284,7 +284,9 @@ public class ImprovementQueryService {
     // ---------- #10 월별 개선추이 ----------
 
     public MonthlyTrendResponse monthlyTrend(Long userId, String startMonth, String endMonth) {
-        YearMonthPeriod period = monthPeriods.resolve(startMonth, endMonth);
+        // 기준월도 ImprovementClock에서 가져온다. 버킷의 달은 measuredAt/completedAt(=clock)에서 나오므로
+        // 경계만 벽시계로 잡으면 두 기준이 어긋난 달의 값이 buckets.get()에서 null이 되어 조용히 사라진다.
+        YearMonthPeriod period = monthPeriods.resolve(startMonth, endMonth, YearMonth.from(clock.today()));
         if (startMonth == null && endMonth == null) {
             period = new YearMonthPeriod(period.endMonth().minusMonths(TREND_DEFAULT_MONTHS - 1L), period.endMonth());
         }
