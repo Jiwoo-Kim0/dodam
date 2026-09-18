@@ -147,10 +147,12 @@ export const styles = StyleSheet.create({
   recommendationSection: {
     marginTop: spacing[6],
   },
+  /** 본문 대비 18px은 너무 커서 한 단계 낮춘다. 카테고리 소비 섹션 제목과 같은 크기다. */
   sectionTitle: {
     color: colors.textPrimary,
     fontFamily: fontFamily.semiBold,
-    fontSize: fontSize.subtitle,
+    fontSize: fontSize.buttonSmall,
+    lineHeight: 21,
   },
   sectionDescription: {
     ...typography.body2,
