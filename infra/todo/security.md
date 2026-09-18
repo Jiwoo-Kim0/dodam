@@ -49,7 +49,10 @@
   - [x] webhook secret 재생성 → Jenkins job config + GitLab webhook 양쪽 갱신 (새 secret 200 / 옛 secret 401 검증)
   - [ ] GitLab PAT 재발급 검토 (HTTP로 오간 적 있으면)
 - [x] HTTPS 적용, HTTP → HTTPS 301 리다이렉트, HSTS 헤더 적용
-  - 단 **HSTS `max-age`는 1일로 낮게 설정**해둔 상태 — 443 장애 시 HTTP 폴백을 막지 않기 위함. 운영 안정화 후 상향 필요
+  - 단 **HSTS `max-age`는 1일로 낮게 설정**해둔 상태 — 443 장애 시 HTTP 폴백을 막지 않기 위함.
+    **2026-09-18 상향 검토 → 시연 전까지 보류.** 안정 운영 조건은 충족됐으나, 시연 대상인 도담 앱은
+    네이티브라 HSTS를 보지 않아 얻는 것이 거의 없는 반면, 443 장애 시 이미 방문한 브라우저는
+    설정을 되돌려도 만료 전까지 HTTP로 못 간다. 근거: [[jiw/day-08.md]] 36절
 
 ### R3. backend 컨테이너가 root로 실행
 - **문제**: `docker exec backend id` → `uid=0(root)`. 컨테이너 탈출 취약점이 터지면 피해가 커진다.
@@ -88,11 +91,15 @@
           (`app.coach.rate-limit`). 과금되는 생성 호출만 세고 캐시 적중은 세지 않는다
         - Redis 장애 시 프로세스 내 카운터로 내려가 한도를 유지한다 — 캐시와 정반대의 선택이며
           근거는 `backend/docs/ai-coach.md` 12절. 경위: [[jiw/day-11.md]] 4~6절
-  - [ ] 보안 헤더: `HSTS`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`
-  - [ ] `server_tokens off` (nginx 버전 숨김)
-  - [ ] `/actuator/`가 외부로 새어나가지 않도록 nginx에서 차단 (Prometheus는 컨테이너 네트워크로만)
-  - [ ] fail2ban으로 SSH 무차별 대입 차단
-  - [ ] 감사 로그: Jenkins 로그인·배포 이력, nginx 접근 로그 보존 (Day 6 Loki와 연결)
+  - [x] 보안 헤더: `HSTS`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`
+        — Day 3 적용. **2026-09-18 실측에서 `/` 경로만 4종이 빠지는 결함을 발견해 수정**했다.
+        원인은 nginx의 `add_header` 상속 규칙(하위 블록에 하나라도 있으면 상속분을 전부 버린다).
+        경위: [[jiw/day-08.md]] 36절
+  - [x] `server_tokens off` (nginx 버전 숨김) — 2026-09-18 재확인 (버전 숨김, 제품명은 원래 남는다)
+  - [x] `/actuator/`가 외부로 새어나가지 않도록 nginx에서 차단 — 2026-09-18 재확인: `/actuator/health` → 404
+  - [x] fail2ban으로 SSH 무차별 대입 차단 — 2026-09-18 재확인: active
+  - [x] 감사 로그: nginx 접근 로그·컨테이너 로그를 promtail이 docker 서비스 디스커버리로 수집해 Loki에 적재 (Day 6)
+        — 단 **Jenkins 로그인 이력은 별도 수집하지 않는다**(UI가 루프백 전용이라 외부 접근 경로가 없다)
 
 ## 3. 의도적으로 하지 않는 것 (발표용 근거)
 
