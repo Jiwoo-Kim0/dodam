@@ -13,9 +13,14 @@ const INITIAL_TRANSACTION_COUNT = 5;
 type TransactionsCardProps = {
   transactions: readonly DailyBriefingTransaction[];
   message?: string | null;
+  onTransactionPress: (transactionId: string) => void;
 };
 
-export function TransactionsCard({ transactions, message }: TransactionsCardProps) {
+export function TransactionsCard({
+  message,
+  onTransactionPress,
+  transactions,
+}: TransactionsCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   const visibleTransactions = useMemo(
@@ -34,9 +39,16 @@ export function TransactionsCard({ transactions, message }: TransactionsCardProp
         <Text style={screenStyles.emptyMessage}>{message ?? '어제 결제한 내역이 없어요.'}</Text>
       ) : <View style={styles.transactionList}>
         {visibleTransactions.map((transaction, index) => (
-          <View
+          <Pressable
+            accessibilityHint="가계부에서 이 결제 내역을 열어요"
+            accessibilityRole="button"
             key={transaction.id}
-            style={[styles.transactionRow, index > 0 && styles.separatedRow]}>
+            onPress={() => onTransactionPress(transaction.id)}
+            style={({ pressed }) => [
+              styles.transactionRow,
+              index > 0 && styles.separatedRow,
+              pressed && screenStyles.pressed,
+            ]}>
             <Text style={styles.transactionTime}>{transaction.time}</Text>
             <View style={styles.paymentIconFrame}>
               <Image
@@ -54,7 +66,7 @@ export function TransactionsCard({ transactions, message }: TransactionsCardProp
               </Text>
             </View>
             <Text style={styles.transactionAmount}>{formatCurrency(transaction.amount)}</Text>
-          </View>
+          </Pressable>
         ))}
       </View>}
 
