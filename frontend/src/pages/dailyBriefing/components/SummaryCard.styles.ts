@@ -11,12 +11,12 @@ export const styles = StyleSheet.create({
     paddingHorizontal: spacing[4],
     paddingVertical: spacing[4],
   },
+  /** 예전에는 왼쪽 여백을 음수로 깎아 카드 모서리에 붙어 있었다. 카드 패딩 안에 세운다. */
   summaryCharacterFrame: {
-    height: 84,
-    marginLeft: -spacing[3],
-    marginRight: spacing[2],
+    height: 80,
+    marginRight: spacing[3],
     position: 'relative',
-    width: 84,
+    width: 80,
   },
   summaryCharacter: {
     height: '100%',
@@ -46,19 +46,32 @@ export const styles = StyleSheet.create({
     fontSize: fontSize.body2,
     lineHeight: 18,
   },
+  /**
+   * 테두리 없이 배경만 쓴다. 연한 배경 + 진한 테두리 + 진한 글씨는 작은 배지에서 세 겹으로 겹쳐 답답하다.
+   * 색은 리포트 지표와 같은 규칙을 따라, 지출이 늘면 주황·줄면 초록이다.
+   */
   statusBadge: {
-    backgroundColor: colors.briefing.statusBackground,
-    borderColor: colors.primary.green,
+    alignSelf: 'flex-start',
     borderRadius: radius.round,
-    borderWidth: 1,
     paddingHorizontal: spacing[2],
-    paddingVertical: spacing[1],
+    paddingVertical: 3,
+  },
+  statusBadgeGood: {
+    backgroundColor: colors.briefing.statusBackground,
+  },
+  statusBadgeBad: {
+    backgroundColor: colors.briefing.decreaseTag,
   },
   statusBadgeText: {
-    color: colors.briefing.statusText,
     fontFamily: fontFamily.semiBold,
     fontSize: fontSize.detail,
     lineHeight: 15,
+  },
+  statusBadgeTextGood: {
+    color: colors.briefing.statusText,
+  },
+  statusBadgeTextBad: {
+    color: colors.briefing.increaseText,
   },
   summaryAmount: {
     color: colors.primary.brown,
