@@ -12,15 +12,21 @@ type UpcomingCardProps = {
 export function UpcomingCard({ description, title }: UpcomingCardProps) {
   return (
     <View style={[screenStyles.card, styles.upcomingCard]}>
-      <Image
-        contentFit="contain"
-        source={require('@/assets/icons/common/check.png')}
-        style={styles.upcomingIcon}
-      />
-      <View style={styles.upcomingContent}>
-        <Text style={styles.upcomingLabel}>오늘 체크할 것</Text>
-        <Text style={styles.upcomingTitle}>{title}</Text>
-        <Text style={styles.upcomingDescription}>{description}</Text>
+      <Text style={screenStyles.sectionTitle}>오늘 체크할 것</Text>
+
+      <View style={styles.upcomingRow}>
+        <View style={styles.upcomingIconFrame}>
+          <Image
+            contentFit="contain"
+            source={require('@/assets/icons/common/check.png')}
+            style={styles.upcomingIcon}
+          />
+        </View>
+
+        <View style={styles.upcomingContent}>
+          <Text style={styles.upcomingTitle}>{title}</Text>
+          <Text style={styles.upcomingDescription}>{description}</Text>
+        </View>
       </View>
     </View>
   );

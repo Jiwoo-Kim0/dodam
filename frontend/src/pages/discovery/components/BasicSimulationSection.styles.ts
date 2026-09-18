@@ -18,10 +18,12 @@ export const styles = StyleSheet.create({
     borderRadius: radius.card,
     padding: spacing[4],
   },
+  /** 상세 화면의 다른 섹션 제목과 같은 크기다. */
   title: {
     color: colors.textPrimary,
     fontFamily: fontFamily.semiBold,
-    fontSize: fontSize.subtitle,
+    fontSize: fontSize.buttonSmall,
+    lineHeight: 21,
   },
   description: {
     ...typography.body2,

@@ -62,6 +62,11 @@ app:
       # 같은 이유로 끈다. 한도 동작은 RedisCoachCallRateLimiterTest가, 한도 초과 응답은
       # CoachApiTest가 CoachCallRateLimiter를 Mock으로 대체해 본다.
       enabled: false
+    chat:
+      # 채팅 예산도 끈다. 세션 저장소·예산은 CoachChatApiTest가 Mock으로 대체하고 Redis 구현은 단위 테스트가 본다.
+      max-turns-per-session: 3
+      rate-limit:
+        enabled: false
   pattern:
     # H2 테스트는 인프로세스 학습을 검증한다. 아티팩트 로딩은 ClusterModelArtifactLoaderTest가 따로 본다.
     model-location: ""

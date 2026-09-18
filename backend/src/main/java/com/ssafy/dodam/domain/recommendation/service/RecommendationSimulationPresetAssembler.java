@@ -6,6 +6,7 @@ import com.ssafy.dodam.domain.recommendation.entity.Recommendation;
 import com.ssafy.dodam.domain.recommendation.entity.RecommendationReason;
 import com.ssafy.dodam.domain.recommendation.repository.RecommendationReasonRepository;
 import com.ssafy.dodam.domain.recommendation.service.generator.CategorySpendingIncreaseGenerator;
+import com.ssafy.dodam.domain.recommendation.service.generator.ClusterDeviationGenerator;
 import com.ssafy.dodam.domain.recommendation.service.generator.HighInterestLoanGenerator;
 import com.ssafy.dodam.domain.recommendation.service.generator.SavingGoalRiskGenerator;
 import com.ssafy.dodam.domain.recommendation.service.generator.SpendingGoalRiskGenerator;
@@ -40,6 +41,9 @@ import org.springframework.stereotype.Component;
  *       {@code REFINANCE_INTEREST_SAVING}의 evidence, {@code refinanceAmount = null}(잔액 전액). 절감액을 추정하지 못한 추천(대상 상품
  *       없음)은 {@code REFINANCE_TARGET_MISSING}. 대출은 evidence의 {@code loanId}로 지정한다(2026-09-16 명세 17 본문 확장) —
  *       FE는 마스킹 번호만 가져 {@code accountNo}를 만들 수 없기 때문이다. evidence에 {@code loanId}가 없으면 {@code SNAPSHOT_FIELD_MISSING}.</li>
+ *   <li>{@code *}/REVIEW_SPENDING_PATTERN(640, 단독 군집 이탈) → 근거 {@code CLUSTER_RANGE_DEVIATION}의 {@code feature}가 소득 대비 소비율·재량 소비 비중이면
+ *       {@code POST /simulations/spending}, {@code monthlyReduction = null} + 가정 {@code REDUCTION_AMOUNT_REQUIRED_FROM_USER}(절감액 추정이 없어 사용자가 넣는다).
+ *       저축률·고정지출·변동성은 {@code NO_MATCHING_SIMULATION_TYPE}.</li>
  *   <li>CASHFLOW/SECURE_SHORTAGE_BUFFER → 대응 유형 없음.</li>
  * </ul>
  * {@code durationMonths}는 null로 두어 시뮬레이션 기본값을 따르고, {@code accountNo}는 원문 번호를 응답에 싣지 않는 정책상 항상 null이다.
@@ -73,7 +77,7 @@ public class RecommendationSimulationPresetAssembler {
      */
     public Map<Long, RecommendationSimulationPreset> assembleAll(Long userId, List<Recommendation> recommendations) {
         List<Long> needingReasons = recommendations.stream()
-                .filter(r -> isSaving(r) || isCategorySpending(r) || isRefinance(r))
+                .filter(r -> isSaving(r) || isCategorySpending(r) || isRefinance(r) || isReviewPattern(r))
                 .map(Recommendation::getRecommendationId).toList();
         Map<Long, JsonNode> evidenceByRecommendation = new HashMap<>();
         if (!needingReasons.isEmpty()) {
@@ -96,7 +100,7 @@ public class RecommendationSimulationPresetAssembler {
     /** 유형마다 프리셋 값이 들어 있는 근거 코드는 하나뿐이라 코드로만 고른다. */
     private static boolean isPresetReason(String code) {
         return SavingGoalRiskGenerator.REASON_SHORTFALL.equals(code) || CategorySpendingIncreaseGenerator.REASON_INCREASE.equals(code)
-                || HighInterestLoanGenerator.REASON_INTEREST_SAVING.equals(code);
+                || HighInterestLoanGenerator.REASON_INTEREST_SAVING.equals(code) || ClusterDeviationGenerator.REASON_DEVIATION.equals(code);
     }
 
     private static RecommendationSimulationPreset build(Recommendation r, JsonNode evidence, Map<String, Long> categoryBaseline) {
@@ -130,6 +134,20 @@ public class RecommendationSimulationPresetAssembler {
                     r.getGoalId() == null
                             ? List.of(RecommendationSimulationPreset.TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT)
                             : List.of());
+        }
+        if (isReviewPattern(r)) {
+            String feature = textOf(evidence, ClusterDeviationGenerator.FEATURE_FIELD);
+            if (feature == null) {
+                return RecommendationSimulationPreset.unavailable(RecommendationSimulationPreset.SNAPSHOT_FIELD_MISSING);
+            }
+            if (!ClusterDeviationGenerator.SPENDING_SIMULATION_FEATURES.contains(feature)) {
+                return RecommendationSimulationPreset.unavailable(RecommendationSimulationPreset.NO_MATCHING_SIMULATION_TYPE);
+            }
+            // 절감액을 추정하지 않는 추천이라 금액은 비워 두고 사용자가 채운다. 소비 전체 기준(카테고리 없음)이다.
+            return RecommendationSimulationPreset.of(SimulationType.SPENDING, SPENDING_ENDPOINT,
+                    new SpendingSimulationRequest(null, null, null),
+                    List.of(RecommendationSimulationPreset.REDUCTION_AMOUNT_REQUIRED_FROM_USER,
+                            RecommendationSimulationPreset.REDUCTION_APPLIES_TO_TOTAL_SPENDING));
         }
         if (isRefinance(r)) {
             Long targetProductId = longOf(evidence, HighInterestLoanGenerator.TARGET_PRODUCT_ID_FIELD);
@@ -176,6 +194,10 @@ public class RecommendationSimulationPresetAssembler {
 
     private static boolean isSaving(Recommendation r) {
         return Objects.equals(r.getDomain(), SavingGoalRiskGenerator.DOMAIN) && Objects.equals(r.getType(), SavingGoalRiskGenerator.TYPE);
+    }
+
+    private static boolean isReviewPattern(Recommendation r) {
+        return Objects.equals(r.getType(), ClusterDeviationGenerator.TYPE);
     }
 
     private static boolean isRefinance(Recommendation r) {

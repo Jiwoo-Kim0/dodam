@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { Text, View } from 'react-native';
 
-import type { ReportKeyMetric } from '@/types/report.types';
+import type { ReportKeyMetric, ReportMetricChangeTone } from '@/types/report.types';
 import { formatNumber } from '@/utils/currency';
 
 import { styles as screenStyles } from '../ReportScreen.styles';
@@ -11,6 +11,12 @@ type KeyMetricsCardProps = {
   metrics: readonly ReportKeyMetric[];
 };
 
+const changeToneStyles: Record<ReportMetricChangeTone, object> = {
+  good: styles.metricChangeGood,
+  bad: styles.metricChangeBad,
+  neutral: styles.metricChangeNeutral,
+};
+
 export function KeyMetricsCard({ metrics }: KeyMetricsCardProps) {
   return (
     <View style={[screenStyles.card, styles.metricsCard]}>
@@ -18,9 +24,7 @@ export function KeyMetricsCard({ metrics }: KeyMetricsCardProps) {
 
       <View style={styles.metricGrid}>
         {metrics.map((metric) => (
-          <View
-            key={metric.id}
-            style={[styles.metricTile, metric.tone === 'accent' && styles.metricTileAccent]}>
+          <View key={metric.id} style={styles.metricTile}>
             <View style={styles.metricHeader}>
               <Text style={styles.metricLabel}>{metric.label}</Text>
               <View style={styles.metricIconFrame}>
@@ -43,7 +47,13 @@ export function KeyMetricsCard({ metrics }: KeyMetricsCardProps) {
               ) : null}
             </View>
 
-            <Text style={styles.metricChange}>{metric.changeLabel}</Text>
+            <Text
+              numberOfLines={1}
+              style={[styles.metricChange, changeToneStyles[metric.change.tone]]}>
+              {metric.change.direction === 'none'
+                ? `· ${metric.change.label}`
+                : `${metric.change.direction === 'up' ? '↑' : '↓'} ${metric.change.label}`}
+            </Text>
           </View>
         ))}
       </View>

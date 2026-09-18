@@ -25,19 +25,7 @@ export function DiscoveryInsightRow({ insight, isLast, onPress }: DiscoveryInsig
         !isLast && styles.divider,
         pressed && styles.rowPressed,
       ]}>
-      <View style={styles.rankBadge}>
-        <View
-          style={[
-            styles.rankAccent,
-            insight.rank === 1 && styles.rankFirst,
-            insight.rank === 2 && styles.rankSecond,
-            insight.rank === 3 && styles.rankThird,
-            insight.rank === 4 && styles.rankFourth,
-          ]}
-        />
-        <Text style={styles.rankText}>{insight.rank}</Text>
-      </View>
-
+      {/* 순위 숫자는 목록 순서가 이미 말해 준다. 왼쪽 시각 앵커를 아이콘 하나로 줄인다. */}
       <View style={styles.iconFrame}>
         <Image contentFit="contain" source={insight.icon} style={styles.icon} />
       </View>

@@ -1,9 +1,12 @@
 package com.ssafy.dodam.domain.coach.controller;
 
+import com.ssafy.dodam.domain.coach.dto.request.CoachChatRequest;
 import com.ssafy.dodam.domain.coach.dto.request.FinancialSummaryRequest;
 import com.ssafy.dodam.domain.coach.dto.request.InefficiencyExplanationRequest;
 import com.ssafy.dodam.domain.coach.dto.request.RecommendationExplanationRequest;
+import com.ssafy.dodam.domain.coach.dto.response.CoachChatResponse;
 import com.ssafy.dodam.domain.coach.dto.response.CoachMessageResponse;
+import com.ssafy.dodam.domain.coach.service.CoachChatService;
 import com.ssafy.dodam.domain.coach.service.CoachService;
 import com.ssafy.dodam.global.response.ApiResponse;
 import com.ssafy.dodam.global.security.AuthenticatedUserIdResolver;
@@ -32,10 +35,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class CoachController {
 
     private final CoachService coach;
+    private final CoachChatService chat;
     private final AuthenticatedUserIdResolver users;
 
-    public CoachController(CoachService coach, AuthenticatedUserIdResolver users) {
+    public CoachController(CoachService coach, CoachChatService chat, AuthenticatedUserIdResolver users) {
         this.coach = coach;
+        this.chat = chat;
         this.users = users;
     }
 
@@ -61,5 +66,14 @@ public class CoachController {
             @Valid @RequestBody RecommendationExplanationRequest request, Authentication authentication) {
         return ApiResponse.success(
                 coach.recommendation(users.resolve(authentication), request.recommendationId()));
+    }
+
+    /**
+     * 도리에게 묻기(S15P21D105-640 A-3). 자유 입력이면 모델이 도구를 고르고, {@code chipId}면 서버 고정 매핑으로 바로 실행한다.
+     * 어떤 실패도 200 + {@code source=TEMPLATE}이다. 401·404·400(빈 질문·잘못된 chipId·길이 초과)만 예외다.
+     */
+    @PostMapping("/chat")
+    public ApiResponse<CoachChatResponse> chat(@Valid @RequestBody CoachChatRequest request, Authentication authentication) {
+        return ApiResponse.success(chat.chat(users.resolve(authentication), request));
     }
 }

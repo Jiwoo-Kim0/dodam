@@ -6,12 +6,24 @@ import {
   coachApi,
   isApiError,
   ledgerApi,
+  patternApi,
+  reportApi,
   userApi,
 } from '@/api';
-import type { CashflowRiskApiResponse } from '@/types/cashflowApi.types';
-import type { SavingRatioApiResponse } from '@/types/ledgerApi.types';
-import type { MonthlyReport, ReportFinancePattern } from '@/types/report.types';
+import type {
+  MonthlyReport,
+  ReportFinancePattern,
+  ReportMetricChange,
+  ReportPeerComparison,
+} from '@/types/report.types';
+import { getTransactionCategoryIcon } from '@/constants/transactionCategoryIcons';
 import { formatCurrency } from '@/utils/currency';
+
+import { toEfficiencyScore } from '../efficiencyScoreModel';
+import {
+  PEER_COMPARISON_NOT_ANALYZED,
+  toPeerComparison,
+} from '../peerComparisonModel';
 
 function monthAt(offset: number) {
   const today = new Date();
@@ -24,34 +36,29 @@ function monthAt(offset: number) {
   };
 }
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
+const NO_CHANGE: ReportMetricChange = {
+  direction: 'none',
+  label: '지난달과 같아요',
+  tone: 'neutral',
+};
 
-function riskPenalty(risks: readonly CashflowRiskApiResponse[]) {
-  const points = { LOW: 5, MEDIUM: 10, HIGH: 20, CRITICAL: 30 } as const;
-  return Math.min(30, risks.reduce((sum, risk) => sum + points[risk.severity], 0));
-}
+/**
+ * 전월 대비 증감을 지표 타일의 화살표 표시로 바꾼다. 색은 증감 부호가 아니라 `goodWhen`으로 정한다.
+ * 저축률은 올라야 좋고 고정지출 비중·카드 사용액은 내려야 좋아서, 같은 `+`라도 의미가 반대다.
+ */
+function metricChange(
+  difference: number,
+  goodWhen: 'up' | 'down',
+  format: (value: number) => string,
+): ReportMetricChange {
+  if (difference === 0) return NO_CHANGE;
 
-function efficiencyScore(
-  ratio: SavingRatioApiResponse,
-  fixedRatio: number,
-  risks: readonly CashflowRiskApiResponse[],
-) {
-  const savingScore = ratio.savingRatioPercent === null
-    ? 0
-    : (clamp(ratio.savingRatioPercent, 0, 50) / 50) * 40;
-  const spendingScore = clamp(100 - fixedRatio, 0, 100) * 0.3;
-  return Math.round(clamp(savingScore + spendingScore + 30 - riskPenalty(risks), 0, 100));
-}
-
-function percentChange(current: number, previous: number) {
-  if (previous === 0) return current === 0 ? 0 : 100;
-  return Math.round(((current - previous) / previous) * 100);
-}
-
-function signed(value: number, suffix = '') {
-  return `${value > 0 ? '+' : ''}${value}${suffix}`;
+  const direction = difference > 0 ? 'up' : 'down';
+  return {
+    direction,
+    label: format(Math.abs(difference)),
+    tone: direction === goodWhen ? 'good' : 'bad',
+  };
 }
 
 function cardSpending(paymentMethods: { paymentMethod: string; totalSpending: number }[]) {
@@ -78,6 +85,27 @@ async function loadCoachSummary() {
   }
 }
 
+/**
+ * 또래 비교를 조회한다. 서버에 스케줄러가 없어 분석은 `analyze` 호출로만 만들어지므로 먼저 실행하고,
+ * 오늘 완료된 결과가 있으면 서버가 그대로 재사용한다. 분석 자체가 실패해도 조회는 시도한다.
+ *
+ * 이 카드 하나 때문에 리포트 전체가 비지 않도록 실패는 null로 흡수한다.
+ */
+async function loadPeerComparison(): Promise<ReportPeerComparison | null> {
+  try {
+    await patternApi.analyze();
+  } catch {
+    // 이미 완료된 분석이 있으면 조회는 성공할 수 있어 여기서 멈추지 않는다.
+  }
+
+  try {
+    return toPeerComparison(await patternApi.getPeerComparison());
+  } catch (error) {
+    if (isApiError(error) && error.status === 404) return PEER_COMPARISON_NOT_ANALYZED;
+    return null;
+  }
+}
+
 async function fetchReport(): Promise<MonthlyReport> {
   const reportMonth = monthAt(-1);
   const previousMonth = monthAt(-2);
@@ -86,42 +114,37 @@ async function fetchReport(): Promise<MonthlyReport> {
 
   const [
     user,
-    currentSummary,
     trend,
     currentRatio,
     previousRatio,
     currentFixed,
     previousFixed,
-    currentVariable,
     currentPayments,
     previousPayments,
     loans,
     cashflowRisks,
     anomalies,
     coachSummary,
+    peerComparison,
+    monthlyReport,
   ] = await Promise.all([
     userApi.getMe(),
-    ledgerApi.getMonthlySummary(reportMonth.yearMonth),
     ledgerApi.getCategoryTrend(trendStart.yearMonth, reportMonth.yearMonth),
     ledgerApi.getSavingRatio(reportMonth.yearMonth),
     ledgerApi.getSavingRatio(previousMonth.yearMonth),
     ledgerApi.getFixedSpending(reportMonth.yearMonth, reportMonth.yearMonth),
     ledgerApi.getFixedSpending(previousMonth.yearMonth, previousMonth.yearMonth),
-    ledgerApi.getVariableSpending(reportMonth.yearMonth, reportMonth.yearMonth),
     ledgerApi.getPaymentMethodSpending(reportMonth.yearMonth),
     ledgerApi.getPaymentMethodSpending(previousMonth.yearMonth),
     assetApi.getLoanSummary(),
     loadOptionalResource(cashflowApi.getRisks()),
     ledgerApi.getSpendingAnomalies(anomalyStart.yearMonth, reportMonth.yearMonth),
     loadCoachSummary(),
+    loadPeerComparison(),
+    loadOptionalResource(reportApi.getMonthly(reportMonth.yearMonth)),
   ]);
 
   const risks = cashflowRisks?.risks ?? [];
-  const score = efficiencyScore(
-    currentRatio,
-    currentFixed.shareOfSpendingPercent,
-    risks,
-  );
   const anomaly = anomalies?.anomalies[0];
   const patterns: ReportFinancePattern[] = [
     {
@@ -175,11 +198,14 @@ async function fetchReport(): Promise<MonthlyReport> {
         },
   ];
 
-  const currentCard = cardSpending(currentPayments.paymentMethods);
-  const previousCard = cardSpending(previousPayments.paymentMethods);
-  const fixedForecast = currentFixed.monthlyAverage;
-  const livingForecast = currentVariable.monthlyAverage;
-  const expectedExpense = fixedForecast + livingForecast;
+  // 카드 사용액은 서버 집계(카드 식별자 또는 결제수단 CARD)를 쓴다. 결제수단 이름을 FE에서 문자열로
+  // 거르던 방식은 이름이 예상과 다르면 조용히 빠져서, 월간 리포트를 못 받은 경우에만 대비책으로 남긴다.
+  const currentCard = monthlyReport?.cardSpending ?? cardSpending(currentPayments.paymentMethods);
+  const cardDifference = monthlyReport === null
+    ? currentCard - cardSpending(previousPayments.paymentMethods)
+    : monthlyReport.cardSpendingDifferenceFromPreviousMonth;
+  const latestTrendMonth = trend.months.at(-1) ?? null;
+  const latestMonthSpending = latestTrendMonth?.totalSpending ?? 0;
   const savingRate = Math.round(currentRatio.savingRatioPercent ?? 0);
   const previousSavingRate = Math.round(previousRatio.savingRatioPercent ?? 0);
   const fixedRate = Math.round(currentFixed.shareOfSpendingPercent);
@@ -189,17 +215,7 @@ async function fetchReport(): Promise<MonthlyReport> {
     yearMonth: reportMonth.yearMonth,
     monthLabel: reportMonth.label,
     userName: user.name,
-    efficiencyScore: {
-      score,
-      maxScore: 100,
-      summary: score >= 70
-        ? '저축과 지출 흐름을 안정적으로 관리하고 있어요'
-        : '고정지출과 저축 흐름을 한 번 더 살펴보세요',
-      composition: [
-        { id: 'score', tone: 'strong', ratio: score },
-        { id: 'remaining', tone: 'light', ratio: 100 - score },
-      ],
-    },
+    efficiencyScore: toEfficiencyScore(monthlyReport?.efficiency ?? null),
     patterns,
     patternCoachingMessage:
       coachSummary?.message.trim() ||
@@ -208,42 +224,56 @@ async function fetchReport(): Promise<MonthlyReport> {
         : '지금의 소비 흐름을 유지하면서 저축률을 조금씩 높여보세요!'),
     patternCoachingDisclaimer: coachSummary?.disclaimer ?? null,
     patternCharacterImage: require('@/assets/characters/dori/dori_memo.png'),
-    nextMonthForecast: {
-      description: '지난달 고정·변동지출이 그대로 이어진다고 가정한 참고치예요',
-      expectedExpense,
-      differenceFromThisMonth: expectedExpense - currentSummary.totalSpending,
-      breakdown: [
-        { id: 'fixed', label: '고정지출', amount: fixedForecast, tone: 'fixed' },
-        { id: 'living', label: '변동지출', amount: livingForecast, tone: 'living' },
-      ],
-    },
+    peerComparison,
     keyMetrics: [
       {
         id: 'saving-rate', label: '저축률', value: savingRate, format: 'percent',
-        changeLabel: `지난달 대비 ${signed(savingRate - previousSavingRate, '%p')}`,
-        tone: 'accent', icon: require('@/assets/icons/common/report_pig.png'), iconScale: 1.05,
+        change: metricChange(savingRate - previousSavingRate, 'up', (value) => `${value}%p`),
+        icon: require('@/assets/icons/common/report_pig.png'), iconScale: 1.05,
       },
       {
         id: 'fixed-expense-ratio', label: '고정지출 비중', value: fixedRate, format: 'percent',
-        changeLabel: `지난달 대비 ${signed(fixedRate - previousFixedRate, '%p')}`,
-        tone: 'plain', icon: require('@/assets/icons/common/report_home.png'), iconScale: 0.95,
+        change: metricChange(fixedRate - previousFixedRate, 'down', (value) => `${value}%p`),
+        icon: require('@/assets/icons/common/report_home.png'), iconScale: 0.95,
       },
       {
         id: 'card-usage', label: '카드 사용액', value: currentCard, format: 'currency',
-        changeLabel: `지난달 대비 ${signed(percentChange(currentCard, previousCard), '%')}`,
-        tone: 'accent', icon: require('@/assets/icons/common/report_card.png'), iconScale: 1.4,
+        change: cardDifference === null
+          ? { direction: 'none', label: '비교할 지난달 기록이 없어요', tone: 'neutral' }
+          : metricChange(cardDifference, 'down', formatCurrency),
+        icon: require('@/assets/icons/common/report_card.png'), iconScale: 1.4,
       },
       {
         id: 'loan-balance', label: '대출 잔액', value: loans.totalBalance, format: 'currency',
-        changeLabel: '현재 대출 잔액', tone: 'plain',
+        // 대출 잔액은 전월 값을 받아오지 않아 증감을 계산할 수 없다.
+        change: { direction: 'none', label: '현재 잔액', tone: 'neutral' },
         icon: require('@/assets/icons/common/report_money.png'), iconScale: 0.85,
       },
     ],
-    monthlySpending: trend.months.map((month) => ({
-      yearMonth: month.yearMonth,
-      monthLabel: `${Number(month.yearMonth.slice(5))}월`,
-      amount: month.totalSpending,
-    })),
+    pastSpending: {
+      months: trend.months.map((month) => ({
+        yearMonth: month.yearMonth,
+        monthLabel: `${Number(month.yearMonth.slice(5))}월`,
+        amount: month.totalSpending,
+      })),
+      monthlyAverage: trend.monthlyAverage,
+      latestAmount: latestMonthSpending,
+      differenceFromAverage: latestMonthSpending - trend.monthlyAverage,
+      // 서버가 카테고리를 내림차순으로 주므로 상위 세 개만 자른다.
+      topCategories: (latestTrendMonth?.categories ?? [])
+        .filter((category) => category.totalSpending > 0)
+        .slice(0, 3)
+        .map((category) => ({
+          id: `${category.categoryId ?? category.code}`,
+          name: category.name,
+          amount: category.totalSpending,
+          sharePercent:
+            latestMonthSpending === 0
+              ? 0
+              : Math.round((category.totalSpending / latestMonthSpending) * 100),
+          icon: getTransactionCategoryIcon(category.code),
+        })),
+    },
   };
 }
 

@@ -1,5 +1,5 @@
-import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert } from 'react-native';
 
 import { AppHeader } from '@/components/appHeader/AppHeader';
@@ -65,6 +65,10 @@ function toPaymentMethodCode(paymentMethod: string | null) {
 
 export function LedgerScreen() {
   const router = useRouter();
+  const { date: deepLinkDate, transactionId: deepLinkTransactionId } = useLocalSearchParams<{
+    date?: string;
+    transactionId?: string;
+  }>();
   const [view, setView] = useState<LedgerView>('overview');
   const [previousListView, setPreviousListView] = useState<LedgerListView>('overview');
   const [formMode, setFormMode] = useState<TransactionFormMode>('create');
@@ -161,6 +165,26 @@ export function LedgerScreen() {
     });
     setView('form');
   };
+
+  /**
+   * 브리핑 등 다른 화면에서 `transactionId`를 달고 들어오면 그 거래의 달로 옮긴 뒤 상세를 편다.
+   * 한 번 처리한 파라미터는 지워서, 같은 거래를 다시 눌렀을 때도 정상적으로 열린다.
+   */
+  useFocusEffect(useCallback(() => {
+    if (!deepLinkTransactionId) return;
+
+    if (deepLinkDate) {
+      const [year, month] = deepLinkDate.split('-').map(Number);
+      if (Number.isInteger(year) && Number.isInteger(month)) {
+        setCurrentMonth(clampToCurrentMonth(new Date(year, month - 1, 1)));
+      }
+    }
+
+    setPreviousListView('overview');
+    setSelectedTransactionId(deepLinkTransactionId);
+    setView('detail');
+    router.setParams({ transactionId: '', date: '' });
+  }, [deepLinkDate, deepLinkTransactionId, router]));
 
   const openEditForm = () => {
     if (!selectedTransaction || selectedTransaction.sourceType !== 'manual') return;

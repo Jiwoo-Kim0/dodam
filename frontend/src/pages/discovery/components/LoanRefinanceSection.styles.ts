@@ -7,10 +7,12 @@ export const styles = StyleSheet.create({
     gap: spacing[1],
     marginTop: spacing[8],
   },
+  /** 상세 화면의 다른 섹션 제목과 같은 크기다. */
   title: {
     color: colors.textPrimary,
     fontFamily: fontFamily.semiBold,
-    fontSize: fontSize.subtitle,
+    fontSize: fontSize.buttonSmall,
+    lineHeight: 21,
   },
   description: {
     ...typography.body2,
@@ -22,8 +24,8 @@ export const styles = StyleSheet.create({
     borderRadius: radius.card,
     gap: spacing[3],
     marginTop: spacing[3],
-    paddingHorizontal: spacing[5],
-    paddingVertical: spacing[5],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[4],
   },
   row: {
     alignItems: 'center',
@@ -31,18 +33,18 @@ export const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   rowLabel: {
-    ...typography.body1,
+    ...typography.body2,
     color: colors.textSecondary,
   },
   rowValue: {
     color: colors.textPrimary,
     fontFamily: fontFamily.semiBold,
-    fontSize: fontSize.body1,
+    fontSize: fontSize.body2,
   },
   rowValueStrong: {
     color: colors.report.scoreStrong,
     fontFamily: fontFamily.semiBold,
-    fontSize: fontSize.subtitle,
+    fontSize: fontSize.buttonSmall,
   },
   targetBlock: {
     alignItems: 'center',
@@ -61,7 +63,7 @@ export const styles = StyleSheet.create({
   targetRate: {
     color: colors.textPrimary,
     fontFamily: fontFamily.semiBold,
-    fontSize: fontSize.body1,
+    fontSize: fontSize.body2,
   },
   monthlyNote: {
     ...typography.body2,

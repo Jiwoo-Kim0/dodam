@@ -174,6 +174,23 @@ public class DiagnosisIssue {
                 detectionSource, modelVersion, clusterContext, detectedAt);
     }
 
+    /**
+     * 규칙으로 탐지한 문제에 군집 근거를 병합한다(641, 기획안 5-2 "근거만 병합"). 심각도·제목·설명·값은 규칙 것을 그대로 두고
+     * {@code detectionSource}만 {@code RULE_AND_CLUSTER}로 바꾼다 — 군집은 판정 주체가 아니라 보조 근거다.
+     * 이미 군집 근거가 있는 문제(단독 CLUSTER 문제 포함)에는 붙이지 않는다.
+     */
+    public void attachClusterEvidence(String modelVersion, JsonNode clusterContext) {
+        if (detectionSource != DetectionSource.RULE) {
+            throw new IllegalStateException("규칙 문제에만 군집 근거를 병합할 수 있습니다: " + detectionSource);
+        }
+        if (modelVersion == null || modelVersion.isBlank()) {
+            throw new IllegalArgumentException("군집 근거에는 모델 버전이 필요합니다.");
+        }
+        this.detectionSource = DetectionSource.RULE_AND_CLUSTER;
+        this.modelVersion = modelVersion;
+        this.clusterContext = clusterContext;
+    }
+
     public boolean isHighSeverity() {
         return severity == IssueSeverity.HIGH || severity == IssueSeverity.CRITICAL;
     }

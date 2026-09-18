@@ -75,7 +75,10 @@ class DiagnosisApiTest {
     void emptyDataRemainsUnknownAndCacheCanBeRefreshed() throws Exception {
         String body = mvc.perform(post("/api/v1/diagnoses").with(user(owner.toString())))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.data.diagnosis.overallStatus").isEmpty())
-                .andExpect(jsonPath("$.data.diagnosis.coverage").isArray()).andReturn().getResponse().getContentAsString();
+                .andExpect(jsonPath("$.data.diagnosis.coverage").isArray())
+                // 641: 거래가 없으면 패턴 분석 자체가 없다 → 군집 규칙은 PATTERN_NOT_ANALYZED
+                .andExpect(jsonPath("$.data.diagnosis.coverage[?(@.ruleKey == 'CLUSTER')].reason").value("PATTERN_NOT_ANALYZED"))
+                .andReturn().getResponse().getContentAsString();
         long id = json.readTree(body).at("/data/diagnosis/diagnosisId").asLong();
         mvc.perform(post("/api/v1/diagnoses").with(user(owner.toString())))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.cached").value(true))
@@ -212,7 +215,11 @@ class DiagnosisApiTest {
         String body = mvc.perform(post("/api/v1/diagnoses").with(user(owner.toString())).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"forceRefresh\":true}"))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.data.diagnosis.ruleVersion").value("v6-last-month-vs-3m"))
+                .andExpect(jsonPath("$.data.diagnosis.ruleVersion").value("v7-cluster-hybrid"))
+                // 641: 이 사용자는 수입 거래가 없어 비율 특징을 만들 수 없다 → 패턴 분석이 RULE_ONLY로 전환되고 군집 규칙은 그 사유만
+                // 남긴다(문제 수는 변하지 않는다)
+                .andExpect(jsonPath("$.data.diagnosis.coverage[?(@.ruleKey == 'CLUSTER')].status").value("UNAVAILABLE"))
+                .andExpect(jsonPath("$.data.diagnosis.coverage[?(@.ruleKey == 'CLUSTER')].reason").value("FEATURES_UNAVAILABLE"))
                 .andExpect(jsonPath("$.data.diagnosis.issueCount").value(3))
                 .andExpect(jsonPath("$.data.diagnosis.overallStatus").value("RISK"))
                 .andExpect(jsonPath("$.data.diagnosis.coverage[?(@.ruleKey == 'CATEGORY_SPENDING_INCREASE')].status").value("EVALUATED"))

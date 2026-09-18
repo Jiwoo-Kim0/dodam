@@ -1,4 +1,5 @@
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback } from 'react';
 import { View } from 'react-native';
 
 import { AppHeader } from '@/components/appHeader/AppHeader';
@@ -17,14 +18,21 @@ export function AssetsScreen() {
   const router = useRouter();
   const {
     analysis,
+    cancel,
     error,
     hasAssets,
     isLoading,
     isRefreshing,
     overview,
     refetch,
+    reload,
     sections,
   } = useAssetData();
+  // 탭을 다시 눌러 돌아왔을 때도 최신 자산을 보여 준다. 예전에는 앱 실행 후 한 번만 조회했다.
+  useFocusEffect(useCallback(() => {
+    void reload();
+    return cancel;
+  }, [cancel, reload]));
 
   if (isLoading || error || !overview) {
     return (
