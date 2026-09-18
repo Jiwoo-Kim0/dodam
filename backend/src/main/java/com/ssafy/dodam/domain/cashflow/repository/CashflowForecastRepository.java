@@ -37,6 +37,17 @@ public interface CashflowForecastRepository extends JpaRepository<CashflowForeca
     );
 
     /**
+     * 기준일이 기간 안에 있는 완료 예측 중 가장 늦은 기준일의 최신 실행(635 월간 리포트 현금흐름 항목).
+     * 리포트 달 안에서 마지막으로 본 예측이 그 달의 현금흐름 상태다.
+     */
+    Optional<CashflowForecast> findFirstByUserIdAndStatusAndBaseDateBetweenOrderByBaseDateDescCompletedAtDescForecastIdDesc(
+            Long userId,
+            ForecastStatus status,
+            LocalDate startDate,
+            LocalDate endDate
+    );
+
+    /**
      * 캐시·멱등 처리용 조회. 같은 요청 지문의 완료된 예측이 있으면 재계산 없이 재사용한다.
      * 지문 생성 규칙은 S15P21D105-540에서 정한다.
      */

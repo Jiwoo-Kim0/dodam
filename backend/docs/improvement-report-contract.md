@@ -407,6 +407,11 @@ API 19에는 행동을 만들거나 상태를 바꾸는 엔드포인트가 없�
   "transactionCount": 4,
   "previousMonth": { "totalIncome": 3200000, "totalExpense": 1910000, "totalSpending": 1560000, "totalSaving": 350000 },
   "changeFromPreviousMonth": { "totalIncome": 0, "totalExpense": -60000, "totalSpending": -110000, "totalSaving": 50000 },
+  "cardSpending": 1450000,
+  "cardSpendingPreviousMonth": 1560000,
+  "cardSpendingDifferenceFromPreviousMonth": -110000,
+  "efficiency": { "score": 65, "maxScore": 100, "previousMonthDifference": -15, "summary": "…", "calculationVersion": "efficiency-v1",
+                  "availableDimensionCount": 6, "dimensions": [ "…§6-1" ] },
   "diagnosisId": 77,
   "overallStatus": "CAUTION",
   "unavailableReason": null
@@ -420,6 +425,8 @@ API 19에는 행동을 만들거나 상태를 바꾸는 엔드포인트가 없�
 | `totalSaving` | 저축성 지출(`NON_SPENDING`). `totalExpense`에 **포함**되며 이중 차감하지 않는다 |
 | `netCashflow` | `totalIncome − totalExpense` |
 | `diagnosisId`·`overallStatus` | 그 달 안에 **완료된 가장 최근 진단**. 없으면 둘 다 `null`(다른 달 진단을 끌어다 쓰지 않는다) |
+| `cardSpending`·`cardSpendingPreviousMonth`·`cardSpendingDifferenceFromPreviousMonth` (635) | 카드 사용액과 전월 대비 증감. 정의는 §6-2 |
+| `efficiency` (635) | 금융 효율 점수(전체 + 6개 항목). 정의는 §6-1. 635 이전 리포트는 첫 월간 조회 때 채워진다 |
 
 `totalExpense = totalSpending + totalSaving`이 항상 성립한다.
 
@@ -555,10 +562,10 @@ API 19에는 행동을 만들거나 상태를 바꾸는 엔드포인트가 없�
 | 협의안 | 회신 |
 | --- | --- |
 | 1. 기준 월·`generatedAt`·데이터 부족 사유, 0원과 null 구분 | 기준 월은 직전 완료 월 유지. `generatedAt`은 `Report.createdAt`이며 `READY` 리포트는 고정된다. 사유는 `dataStatus` + `unavailableReason`(§2-0)으로 나눴다 |
-| 2. 금융 효율 점수 (`score`·`percentile` 등) | **제공하지 않는다.** 점수 산식과 비교 모집단이 확정되지 않았고, 근거 없는 점수를 API로 굳히면 되돌리기 어렵다. 그 자리에는 `MonthlyReport.overallStatus`(그 달 완료 진단의 종합 상태 `HEALTHY`/`CAUTION`/`RISK`)와 `diagnosisId`를 쓴다. 상세 근거는 진단 API로 간다. **현재 위험을 과거 점수에 적용하거나 점수에서 순위를 역산하지 않는다**는 FE 판단에 동의한다 |
+| 2. 금융 효율 점수 (`score`·`percentile` 등) | ~~제공하지 않는다~~ → **2026-09-18(635) §6-1로 제공**(항목 6개·산식 버전·저장 정책 확정). `percentile`(상대 순위)은 여전히 없다. 아래 원문: 점수 산식과 비교 모집단이 확정되지 않았고, 근거 없는 점수를 API로 굳히면 되돌리기 어렵다. 그 자리에는 `MonthlyReport.overallStatus`(그 달 완료 진단의 종합 상태 `HEALTHY`/`CAUTION`/`RISK`)와 `diagnosisId`를 쓴다. 상세 근거는 진단 API로 간다. **현재 위험을 과거 점수에 적용하거나 점수에서 순위를 역산하지 않는다**는 FE 판단에 동의한다 |
 | 2. 금융 생활 패턴 (`status`·`title`·`description`·`evidencePeriod`) | **문구 목록은 제공하지 않는다.** 진단 문제(API 14 `/issues`)가 이미 `domain`·`type`·`severity`·`evidence`를 갖고 있어 같은 것을 두 번 정의하게 된다. 리포트에서는 `MonthlySpendingPattern`(관측치)만 주고, 문장이 필요하면 진단 문제를 쓴다 |
 | 2. 다음 달 예상 지출 | `UpcomingExpenses`로 제공(§2-6). **예측이 아니라 확정 스케줄**이다. 중복 제거는 현금흐름 수집기의 dedupe 키가 맡는다 — 카드 사용액을 다시 합산하지 않는다. `basis`에 해당하는 정보는 `partial`·`warnings`로 내려간다 |
-| 2. 주요 지표 (저축률·고정비 비중·카드 사용액·대출 잔액) | 리포트에 새로 넣지 않는다. `MonthlySpendingPattern.bySpendingType`(고정비 비중)과 `MonthlyReport`의 소득·소비·저축으로 저축률을 만들 수 있다. 카드 사용액·대출 잔액은 기존 개별 API가 정답을 갖고 있고, 리포트가 같은 숫자를 다시 정의하면 두 화면이 어긋난다 |
+| 2. 주요 지표 (저축률·고정비 비중·카드 사용액·대출 잔액) | 카드 사용액만 **635에서 `cardSpending` 3개 필드로 추가**(§6-2). 나머지는 원문대로: 리포트에 새로 넣지 않는다. `MonthlySpendingPattern.bySpendingType`(고정비 비중)과 `MonthlyReport`의 소득·소비·저축으로 저축률을 만들 수 있다. 카드 사용액·대출 잔액은 기존 개별 API가 정답을 갖고 있고, 리포트가 같은 숫자를 다시 정의하면 두 화면이 어긋난다 |
 | 2. 지난 소비 6개월 추이 | 리포트에 넣지 않는다. 기존 카테고리 추이 API를 그대로 쓴다. 필요하면 `/reports/monthly`를 6번 부르는 대신 개선 추이(API 19 #10)처럼 별도 엔드포인트를 다음 티켓에서 연다 |
 | 3. 상태 구분 | `dataStatus` 3종 + `unavailableReason`으로 나눴다(§2-0). 일시적 서버 오류는 기존대로 5xx이며 리포트 상태로 표현하지 않는다 |
 | 4. 월 선택 UI | 월간 24개월, 데일리 400일 전까지. 끝나지 않은 기간은 400. 미생성 월은 조회하면 생성된다(§2-0-1). 재생성은 `READY`가 아닌 리포트에만 일어난다 |
@@ -570,8 +577,86 @@ API 19에는 행동을 만들거나 상태를 바꾸는 엔드포인트가 없�
 
 | 영역 | 경로 |
 | --- | --- |
-| 스키마 | `backend/src/main/resources/db/migration/V37__create_improvement_action.sql`, `V38__create_report.sql` |
+| 스키마 | `backend/src/main/resources/db/migration/V37__create_improvement_action.sql`, `V38__create_report.sql`, `V41__monthly_report_efficiency_summary.sql`(635) |
 | Improvement | `backend/src/main/java/com/ssafy/dodam/domain/improvement/` |
 | Report | `backend/src/main/java/com/ssafy/dodam/domain/report/` |
 | 추천 수락 연결 | `RecommendationStatusService` → `ImprovementActionRecorder` |
-| 테스트 | `ImprovementApiTest`(10), `ReportApiTest`(12), `ImprovementMeasurementPolicyTest`, `ReportPeriodPolicyTest` |
+| 테스트 | `ImprovementApiTest`(10), `ReportApiTest`(15), `ImprovementMeasurementPolicyTest`, `ReportPeriodPolicyTest`, `EfficiencyScorePolicyTest`(12, 635 산식) |
+
+---
+
+## 6. 635 회신 — 금융 효율 점수·카드 사용액·또래 비교 (2026-09-18)
+
+FE 요청 "[FE→BE] 리포트 금융 효율 점수 및 K-Means 또래 비교 연동 요청"(Jira S15P21D105-635) 회신. §4의 "금융 효율 점수는 제공하지 않는다"를
+**뒤집어** 제공한다 — 이번에는 항목·산식·저장 정책을 함께 확정했고, 산식은 `calculationVersion`으로 버전을 남겨 되돌릴 수 있다.
+구현: `EfficiencyScorePolicy`(산식)·`EfficiencyScoreCalculator`(입력 수집)·`MonthlyReportGenerator`, V41 `monthly_report.efficiency_summary`.
+
+### 6-1. `MonthlyReport.efficiency` (요청 1)
+
+```json
+{
+  "score": 65,
+  "maxScore": 100,
+  "previousMonthDifference": -15,
+  "summary": "지출 관리는 안정적이지만 고정지출 관리가 필요해요.",
+  "calculationVersion": "efficiency-v1",
+  "availableDimensionCount": 6,
+  "dimensions": [
+    { "key": "SPENDING", "label": "지출 관리", "score": 100, "maxScore": 100, "status": "GOOD",
+      "description": "소득 대비 소비율이 45%예요.", "value": 0.4531, "valueType": "RATIO" },
+    { "key": "SAVING", "label": "저축", "score": 42, "maxScore": 100, "status": "NORMAL",
+      "description": "소득의 13%를 저축했어요.", "value": 0.125, "valueType": "RATIO" },
+    { "key": "FIXED_EXPENSE", "label": "고정지출", "score": 20, "maxScore": 100, "status": "CHECK",
+      "description": "전체 소비 중 고정지출이 62%예요.", "value": 0.6207, "valueType": "RATIO" },
+    { "key": "CREDIT", "label": "신용 관리", "score": 85, "maxScore": 100, "status": "GOOD",
+      "description": "신용 상태가 안정적이에요(B등급).", "valueType": "GRADE", "grade": "B" },
+    { "key": "CASHFLOW", "label": "현금흐름", "score": 70, "maxScore": 100, "status": "GOOD",
+      "description": "예정 잔액 위험 1건이 있어요.", "value": 1, "valueType": "COUNT" },
+    { "key": "INEFFICIENCY", "label": "비효율 관리", "score": null, "maxScore": 100, "status": "UNAVAILABLE",
+      "description": "이 달에 완료한 진단이 없어 계산하지 못했어요.", "unavailableReason": "DIAGNOSIS_NOT_FOUND" }
+  ]
+}
+```
+
+FE 확인 요청에 대한 답:
+
+| 확인 요청 | 회신 |
+| --- | --- |
+| 6개 항목 구성 가능한지 | **가능.** 키·순서는 SPENDING, SAVING, FIXED_EXPENSE, CREDIT, CASHFLOW, INEFFICIENCY로 고정(육각형 꼭짓점 순서). 모두 0~100 정수 |
+| 신용점수 없을 때 | 금융망은 **등급(A~E)만** 준다(신용점수 없음). `user.credit_rating`이 비어 있으면 `score = null`, `status = UNAVAILABLE`, `unavailableReason = CREDIT_RATING_MISSING`. 등급은 `grade`로 내려간다. 등급은 금융망 조회(`GET /finance-data/credit-rating`·`POST /finance-data/sync`) 시점의 **현재** 값이라 과거 달 리포트에도 조회 시점 등급이 들어간다 |
+| 비효율 탐지 기준 기간·포함 상태 | 리포트 달 안에 **완료된 가장 최근 진단**(`MonthlyReport.diagnosisId`와 같은 진단) 하나의 문제 전부. **GOAL 도메인은 제외**(607에서 목표 위험을 발견 대상에서 뺐다). 추천의 수락·완료 상태는 보지 않는다(진단 시점의 문제 수가 기준). 진단이 없으면 `DIAGNOSIS_NOT_FOUND` |
+| 항목별 산식 | 아래 표. **모두 서비스 초기값**이며 임계값을 바꾸면 `calculationVersion`을 올린다 |
+| 계산 불가 항목이 있을 때 전체 점수 | 계산된 항목의 **단순 평균**(반올림). 불가 항목은 0으로 넣지 않는다. 계산된 항목이 **3개 미만**이면 전체 `score = null`, `unavailableReason = INSUFFICIENT_DIMENSIONS`. `availableDimensionCount`로 몇 개가 들어갔는지 알 수 있다 |
+| 월별 저장·전월 비교 | 리포트 생성 시점에 `monthly_report.efficiency_summary`에 굳힌다(READY 리포트는 고정, 산식이 바뀌어도 과거 점수 유지). `previousMonthDifference` = 이번 달 점수 − 전월 점수. 전월 점수는 **전월 리포트 저장본**(같은 산식 버전)이 있으면 그 값, 없으면 같은 산식으로 즉시 계산(저장 안 함). 전월이 사용자 첫 거래 이전이거나 어느 한쪽 전체 점수가 null이면 `null` |
+
+| 항목 | 근거 수치(`value`) | 100점 | 0점 | 계산 불가 |
+| --- | --- | --- | --- | --- |
+| SPENDING 지출 관리 | 소비(`totalSpending`) / 소득 | ≤ 0.5 | ≥ 1.0 (선형) | 소득 0 → `INCOME_MISSING` |
+| SAVING 저축 | 저축성 지출(`totalSaving`) / 소득 | ≥ 0.3 | 0 (선형) | 소득 0 → `INCOME_MISSING` |
+| FIXED_EXPENSE 고정지출 | 고정지출(`bySpendingType.FIXED`) / 소비 | ≤ 0.3 | ≥ 0.7 (선형) | 소비 0 → `NO_SPENDING` |
+| CREDIT 신용 관리 | 신용등급 | A 100 · B 85 · C 70 · D 50 · E 30 | | 등급 없음 → `CREDIT_RATING_MISSING` |
+| CASHFLOW 현금흐름 | 기준일이 그 달 안인 **마지막 완료 예측**의 위험 수 | 100 − Σ(CRITICAL 40, HIGH 30, MEDIUM 15, LOW 5), 하한 0 | | 그 달 예측 없음 → `FORECAST_NOT_FOUND` |
+| INEFFICIENCY 비효율 관리 | 그 달 완료 진단의 문제 수(GOAL 제외) | 100 − Σ(CRITICAL 30, HIGH 25, MEDIUM 15, LOW 10), 하한 0 | | 그 달 진단 없음 → `DIAGNOSIS_NOT_FOUND` |
+
+`status`: GOOD ≥ 70, NORMAL 40~69, CHECK < 40, 계산 불가 UNAVAILABLE. `summary`는 서버 템플릿(최고·최저 항목으로 만든 한 줄).
+비율 `value`는 0~1 소수 4자리(리포트 소비패턴과 같은 규칙), `description`의 퍼센트는 반올림 정수다.
+
+> **635 이전에 만들어진 READY 리포트**는 `efficiency`·카드 사용액이 비어 있다가 다음 `GET /reports/monthly` 조회 때 채워진다
+> (`ReportService.supplementIfMissing`). 저장된 합계·`generatedAt`은 바뀌지 않고, 점수의 소비·저축·소득은 저장된 합계를 쓴다.
+> 리포트 상세(`GET /reports/{id}`)는 생성하지 않는 조회라 보강도 하지 않는다 — 월간 조회를 한 번 거친 리포트만 채워져 있다.
+
+### 6-2. 카드 사용액 (요청 3)
+
+`MonthlyReport`에 세 필드를 추가했다.
+
+| 필드 | 정의 |
+| --- | --- |
+| `cardSpending` | 그 달 카드 사용액. **소비 정의(506, 저축성 지출·숨긴 거래 제외)** 중 `card_id`가 있거나 `payment_method = 'CARD'`인 거래의 합. `totalSpending`의 부분집합이다 |
+| `cardSpendingPreviousMonth` | 전월 카드 사용액. 전월 비교 규칙은 `previousMonth`와 같다(비교 대상 없으면 null, 전월 거래 0건이면 0) |
+| `cardSpendingDifferenceFromPreviousMonth` | `cardSpending − cardSpendingPreviousMonth`(부호 유지). "지난달보다 84,200원 더 썼어요"는 양수, "덜 썼어요"는 음수 |
+
+FE가 지금 쓰는 `/spending/payment-methods`의 `CARD` 묶음과 같은 기준에 카드 원장 거래(`card_id`)를 더한 정의다. 카드 청구서(`card_billing_statement`)
+금액이 아니라 **사용일 기준 거래 합**이므로 청구 금액과는 다를 수 있다.
+
+### 6-3. 또래 비교 (요청 2) — [pattern.md](pattern.md) §GET /patterns/me/peer-comparison "635 FE 회신"에 정리했다.
+

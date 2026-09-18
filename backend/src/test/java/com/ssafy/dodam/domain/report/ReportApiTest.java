@@ -8,6 +8,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ssafy.dodam.domain.cashflow.entity.CashflowForecast;
+import com.ssafy.dodam.domain.cashflow.entity.CashflowRisk;
+import com.ssafy.dodam.domain.cashflow.entity.RiskSeverity;
+import com.ssafy.dodam.domain.cashflow.repository.CashflowForecastRepository;
+import com.ssafy.dodam.domain.cashflow.repository.CashflowRiskRepository;
+import com.ssafy.dodam.domain.diagnosis.entity.Diagnosis;
+import com.ssafy.dodam.domain.diagnosis.entity.DiagnosisIssue;
+import com.ssafy.dodam.domain.diagnosis.entity.DiagnosisStatus;
+import com.ssafy.dodam.domain.diagnosis.entity.IssueSeverity;
+import com.ssafy.dodam.domain.diagnosis.repository.DiagnosisIssueRepository;
+import com.ssafy.dodam.domain.diagnosis.repository.DiagnosisRepository;
 import com.ssafy.dodam.domain.goal.entity.Goal;
 import com.ssafy.dodam.domain.goal.entity.GoalType;
 import com.ssafy.dodam.domain.goal.entity.SavingGoal;
@@ -52,6 +63,10 @@ class ReportApiTest {
     @Autowired GoalRepository goals;
     @Autowired SavingGoalRepository savingGoals;
     @Autowired JdbcTemplate jdbc;
+    @Autowired CashflowForecastRepository forecasts;
+    @Autowired CashflowRiskRepository risks;
+    @Autowired DiagnosisRepository diagnoses;
+    @Autowired DiagnosisIssueRepository issues;
     @MockitoBean ReportClock reportClock;
     @MockitoBean ImprovementClock improvementClock;
 
@@ -114,6 +129,118 @@ class ReportApiTest {
                 .andExpect(jsonPath("$.data.previousMonth.totalExpense").value(1_910_000))
                 .andExpect(jsonPath("$.data.changeFromPreviousMonth.totalExpense").value(-60_000))
                 .andExpect(jsonPath("$.data.changeFromPreviousMonth.totalSaving").value(50_000));
+    }
+
+    // ---------- 635 금융 효율 점수 · 카드 사용액 ----------
+
+    @Test
+    void monthlyReportScoresSixDimensionsFromStoredInputs() throws Exception {
+        // 신용등급 B, 8월 안의 현금흐름 예측에 HIGH 위험 1건, 8월 완료 진단에 LOAN HIGH 1건 + GOAL(제외) 1건
+        jdbc.update("UPDATE `user` SET credit_rating = 'B', credit_rating_updated_at = ? WHERE user_id = ?", NOW, owner);
+        CashflowForecast forecast = forecasts.save(CashflowForecast.start(owner, LocalDate.of(2026, 8, 20), 30, "v1", null,
+                LocalDateTime.of(2026, 8, 20, 9, 0)));
+        forecast.complete(500_000L, 300_000L, -50_000L, LocalDate.of(2026, 8, 28), LocalDateTime.of(2026, 8, 20, 9, 1));
+        forecasts.save(forecast);
+        risks.save(CashflowRisk.of(forecast.getForecastId(), LocalDate.of(2026, 8, 28), "BALANCE_SHORTAGE", RiskSeverity.HIGH,
+                "잔액 부족", -50_000L));
+        Diagnosis diagnosis = diagnoses.save(Diagnosis.start(owner, null, LocalDateTime.of(2026, 8, 21, 9, 0)));
+        diagnosis.complete(2, 1, DiagnosisStatus.RISK, "v6-last-month-vs-3m", null, LocalDateTime.of(2026, 8, 21, 9, 1));
+        diagnoses.save(diagnosis);
+        issues.save(DiagnosisIssue.ofRule(diagnosis.getDiagnosisId(), "LOAN", "HIGH_INTEREST_RATE", IssueSeverity.HIGH,
+                "금리", "높아요", null, null, null, LocalDateTime.of(2026, 8, 21, 9, 1)));
+        issues.save(DiagnosisIssue.ofRule(diagnosis.getDiagnosisId(), "GOAL", "SAVING_GOAL_RISK", IssueSeverity.MEDIUM,
+                "목표", "위험", null, null, null, LocalDateTime.of(2026, 8, 21, 9, 1)));
+
+        mvc.perform(get("/api/v1/reports/monthly").with(user(owner.toString())))
+                .andExpect(status().isOk())
+                // 카드 사용액: 소비 정의(저축성 지출 제외) 중 카드 결제. setup의 거래는 전부 payment_method = CARD다
+                .andExpect(jsonPath("$.data.cardSpending").value(1_450_000))
+                .andExpect(jsonPath("$.data.cardSpendingPreviousMonth").value(1_560_000))
+                .andExpect(jsonPath("$.data.cardSpendingDifferenceFromPreviousMonth").value(-110_000))
+                .andExpect(jsonPath("$.data.efficiency.calculationVersion").value("efficiency-v1"))
+                .andExpect(jsonPath("$.data.efficiency.maxScore").value(100))
+                .andExpect(jsonPath("$.data.efficiency.availableDimensionCount").value(6))
+                .andExpect(jsonPath("$.data.efficiency.dimensions.length()").value(6))
+                // 소비 1,450,000 / 소득 3,200,000 = 0.4531 → 100
+                .andExpect(jsonPath("$.data.efficiency.dimensions[0].key").value("SPENDING"))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[0].score").value(100))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[0].status").value("GOOD"))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[0].value").value(0.4531))
+                // 저축 400,000 / 3,200,000 = 0.125 → 42
+                .andExpect(jsonPath("$.data.efficiency.dimensions[1].key").value("SAVING"))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[1].score").value(42))
+                // 고정 900,000 / 소비 1,450,000 = 0.6207 → 20 (CHECK)
+                .andExpect(jsonPath("$.data.efficiency.dimensions[2].key").value("FIXED_EXPENSE"))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[2].score").value(20))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[2].status").value("CHECK"))
+                // 신용등급 B → 85
+                .andExpect(jsonPath("$.data.efficiency.dimensions[3].key").value("CREDIT"))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[3].score").value(85))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[3].grade").value("B"))
+                // HIGH 위험 1건 → 70
+                .andExpect(jsonPath("$.data.efficiency.dimensions[4].key").value("CASHFLOW"))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[4].score").value(70))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[4].description").value("예정 잔액 위험 1건이 있어요."))
+                // GOAL 문제는 세지 않는다 → HIGH 1건 → 75
+                .andExpect(jsonPath("$.data.efficiency.dimensions[5].key").value("INEFFICIENCY"))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[5].score").value(75))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[5].value").value(1))
+                // 전체 = (100 + 42 + 20 + 85 + 70 + 75) / 6 = 65.3 → 65
+                .andExpect(jsonPath("$.data.efficiency.score").value(65))
+                // 7월: 100 · 36 · 100(고정지출 0) · 85, 예측·진단 없음 → (100+36+100+85)/4 = 80 → 65 − 80
+                .andExpect(jsonPath("$.data.efficiency.previousMonthDifference").value(-15))
+                .andExpect(jsonPath("$.data.efficiency.summary").value("지출 관리는 안정적이지만 고정지출 관리가 필요해요."))
+                .andExpect(jsonPath("$.data.diagnosisId").value(diagnosis.getDiagnosisId()));
+    }
+
+    @Test
+    void unavailableDimensionsAreNullNotZeroAndOverallSkipsThem() throws Exception {
+        // 신용등급·예측·진단이 없는 기본 상태: 3개만 계산되고 나머지는 사유가 붙는다
+        mvc.perform(get("/api/v1/reports/monthly").with(user(owner.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.efficiency.availableDimensionCount").value(3))
+                .andExpect(jsonPath("$.data.efficiency.score").value(54))
+                .andExpect(jsonPath("$.data.efficiency.unavailableReason").doesNotExist())
+                .andExpect(jsonPath("$.data.efficiency.dimensions[3].score").doesNotExist())
+                .andExpect(jsonPath("$.data.efficiency.dimensions[3].status").value("UNAVAILABLE"))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[3].unavailableReason").value("CREDIT_RATING_MISSING"))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[4].unavailableReason").value("FORECAST_NOT_FOUND"))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[5].unavailableReason").value("DIAGNOSIS_NOT_FOUND"))
+                // 7월은 3개 계산(100·36·100) → 79 → 54 − 79
+                .andExpect(jsonPath("$.data.efficiency.previousMonthDifference").value(-25));
+
+        // 소득이 없는 달은 소득 기반 2개가 빠져 계산 항목이 1개 → 전체 점수 없음
+        expense(LocalDate.of(2026, 6, 10), 700_000, "VARIABLE", null);
+        mvc.perform(get("/api/v1/reports/monthly").param("yearMonth", "2026-06").with(user(owner.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.efficiency.score").doesNotExist())
+                .andExpect(jsonPath("$.data.efficiency.unavailableReason").value("INSUFFICIENT_DIMENSIONS"))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[0].unavailableReason").value("INCOME_MISSING"))
+                .andExpect(jsonPath("$.data.efficiency.previousMonthDifference").doesNotExist())
+                // 6월은 사용자 첫 거래가 있는 달이라 5월 비교 대상이 없다 → 카드 전월 필드도 null
+                .andExpect(jsonPath("$.data.cardSpending").value(700_000))
+                .andExpect(jsonPath("$.data.cardSpendingPreviousMonth").doesNotExist());
+    }
+
+    @Test
+    void reportsFrozenBefore635GetScoreAndCardSpendingWithoutChangingTotals() throws Exception {
+        String first = mvc.perform(get("/api/v1/reports/monthly").with(user(owner.toString())))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        long reportId = json.readTree(first).at("/data/reportId").asLong();
+        // 635 이전 저장본을 재현한다: 효율 점수 컬럼이 비어 있다
+        jdbc.update("UPDATE monthly_report SET efficiency_summary = NULL WHERE report_id = ?", reportId);
+
+        String second = mvc.perform(get("/api/v1/reports/monthly").with(user(owner.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.reportId").value(reportId))
+                .andExpect(jsonPath("$.data.efficiency.score").value(54))
+                .andExpect(jsonPath("$.data.cardSpending").value(1_450_000))
+                .andReturn().getResponse().getContentAsString();
+        // 합계·생성 시각은 그대로다(READY 리포트는 고정)
+        assertThat(json.readTree(second).at("/data/generatedAt")).isEqualTo(json.readTree(first).at("/data/generatedAt"));
+        assertThat(json.readTree(second).at("/data/totalExpense")).isEqualTo(json.readTree(first).at("/data/totalExpense"));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM monthly_report WHERE report_id = ? AND efficiency_summary IS NOT NULL",
+                Integer.class, reportId)).isEqualTo(1);
     }
 
     @Test

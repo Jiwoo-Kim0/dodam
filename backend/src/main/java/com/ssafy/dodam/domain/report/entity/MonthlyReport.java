@@ -70,6 +70,11 @@ public class MonthlyReport {
     @Column(name = "improvement_summary", columnDefinition = "JSON")
     private JsonNode improvementSummary;
 
+    /** 635 금융 효율 점수(전체 + 항목별). 635 이전 리포트는 NULL이며 조회 때 {@link #supplement}로 채운다. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "efficiency_summary", columnDefinition = "JSON")
+    private JsonNode efficiencySummary;
+
     /** 생성·재계산에 쓰는 값 묶음. 필드가 많아 생성자 인자 순서를 틀리기 쉬워 record로 받는다. */
     public record Content(
             ReportDataStatus dataStatus,
@@ -78,7 +83,8 @@ public class MonthlyReport {
             JsonNode financialSummary,
             JsonNode spendingSummary,
             JsonNode goalSummary,
-            JsonNode improvementSummary
+            JsonNode improvementSummary,
+            JsonNode efficiencySummary
     ) {
     }
 
@@ -101,6 +107,19 @@ public class MonthlyReport {
         apply(content);
     }
 
+    /**
+     * 635 이전에 굳힌 READY 리포트에 카드 사용액(financial JSON 안)과 효율 점수만 덧붙인다. 합계·상태·다른 요약은
+     * 건드리지 않는다 — READY 리포트의 숫자는 고정이라는 계약을 지키면서 새 필드만 채우는 경로다.
+     */
+    public void supplement(JsonNode financialSummary, JsonNode efficiencySummary) {
+        this.financialSummary = financialSummary;
+        this.efficiencySummary = efficiencySummary;
+    }
+
+    public boolean hasEfficiencySummary() {
+        return efficiencySummary != null && !efficiencySummary.isNull();
+    }
+
     private void apply(Content content) {
         this.dataStatus = content.dataStatus();
         this.diagnosisId = content.diagnosisId();
@@ -109,5 +128,6 @@ public class MonthlyReport {
         this.spendingSummary = content.spendingSummary();
         this.goalSummary = content.goalSummary();
         this.improvementSummary = content.improvementSummary();
+        this.efficiencySummary = content.efficiencySummary();
     }
 }
