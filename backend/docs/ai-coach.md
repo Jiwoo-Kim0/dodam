@@ -493,3 +493,30 @@ Redis가 죽은 순간은 **캐시도 함께 죽어 모든 호출이 과금되�
 같은 사실을 다시 부르면 캐시 적중이라 예산을 쓰지 않는다. 40건은 "한 시간에 재진단을 세 번 하고 모든
 항목을 새로 펼쳐 보는" 사용보다 넉넉하다. 이 값에 닿는 호출 패턴은 사람이 아니라 코드일 가능성이 높아,
 막힐 때 `Coach call refused by the per-user budget` WARN을 남긴다.
+
+## 13. 도리에게 묻기 — 대화형 시뮬레이션 에이전트 (S15P21D105-640)
+
+계획: [docs/ai-coach-agent-cluster-plan.md](../../docs/ai-coach-agent-cluster-plan.md) §1. 원칙은 기존 코치와 같다 — **LLM은 도구를 고르고 인자를 채우고 문장을 쓴다. 판정·계산은 전부 서버.**
+이 절은 MR 단위로 채워진다(A-1 포트 → A-2 도구 계층 → A-3 채팅 서비스·API).
+
+### 13-1. 포트 확장 (A-1, 2026-09-18)
+
+`CoachTextGenerator`에 tool calling 대화 한 턴을 추가했다. 기존 `generate(system, user)`는 그대로라 3종 코치는 영향이 없다.
+
+```java
+ChatTurn chat(List<ChatMessage> messages, List<ToolDefinition> tools, ToolChoice toolChoice);
+record ChatMessage(String role, String content, List<ToolCall> toolCalls, String toolCallId)   // system/user/assistant/tool
+record ToolDefinition(String name, String description, JsonNode parameters)                    // OpenAI function 스키마
+record ToolChoice(Mode mode, String functionName)                                              // AUTO / REQUIRED / NONE / FUNCTION(name)
+record ToolCall(String id, String name, String argumentsJson)                                  // 모델이 만든 JSON 인자 문자열 그대로
+record ChatTurn(String content, List<ToolCall> toolCalls, String finishReason)
+```
+
+- `OpenAiCoachTextGenerator.chat`은 OpenAI Chat Completions 형식(`tools[].function`, `tool_choice`, 응답 `message.tool_calls[]`)을 그대로 보내고 받는다.
+  GMS 중계가 이 필드를 손대지 않는 것은 §8-3에서 실측했다. 요청 본문의 모델·상한 필드·temperature는 `generate`와 같은 설정을 쓴다.
+- 2턴(도구 결과 회신)은 이력에 `ChatMessage.assistant(null, toolCalls)` + `ChatMessage.tool(toolCallId, 서버가 포맷한 결과)`를 붙여 다시 `chat`을 부른다.
+  assistant 메시지의 `content`가 null이면 OpenAI 형식대로 null로 보낸다(다른 역할은 빈 문자열).
+- 응답에서 `id`나 `function.name`이 없는 tool_call은 버린다 — 실행도, 결과 회신도 할 수 없다. `choices`가 비면 예외가 아니라 빈 턴이다(`generate`의 "빈 문자열" 계약과 같다).
+- 실패 규약은 `generate`와 같다(§7): 429·5xx·연결 실패는 `max-attempts`까지 재시도, 401·400은 즉시 `CoachGenerationException`. 도구 인자 JSON의 검증·파싱은 도구 계층(A-2)이 한다.
+- 도구 스키마의 인자는 **enum·description으로 고정**한다. 637 실측에서 설명 없는 문자열 인자에 모델이 `"카페"`(한글)를 넣었다.
+- 검증: `OpenAiCoachTextGeneratorTest` +4 — tools/tool_choice 직렬화와 tool_calls 파싱(불완전 호출 제거), 2턴 이력(assistant tool_calls·tool 결과) 직렬화, 도구 없는 평문·강제 함수 선택·빈 응답, 실패 규약(5xx·미설정·빈 메시지·잘못된 인자).

@@ -17,6 +17,9 @@
 - [ ] 사용자 1명 패턴 분석 소요 시간 실측(진단 응답 지연에 그대로 더해진다). 서버는 아티팩트 v2를 쓰므로 학습은 없고 집계·배정만이다.
 - [ ] 진단 캐시는 규칙 버전별이라 배포 뒤 첫 진단은 새 행을 만든다. 632 이전 패턴 분석(peer_stats 없음)도 `cluster_stats_json`은 있어 규칙에는 영향 없다.
 - [x] C-2 (2026-09-18, 브랜치 `S15P21D105-640-c2-cluster-recommendation`, 641 위에 쌓음): `ClusterDeviationGenerator`(`<domain>/REVIEW_SPENDING_PATTERN`, 효과 없음, 근거 `CLUSTER_RANGE_DEVIATION`), `RecommendationPriorityPolicy.clusterPoints`(α=1, 최대 10), 프리셋(소득 대비 소비율·재량 소비 비중만 `/simulations/spending` + `REDUCTION_AMOUNT_REQUIRED_FROM_USER`), `CoachFactAssembler` 군집 notes. `RecommendationInput.Issue`에는 `clusterContext`가 이미 있어 리더 변경은 없었다. 테스트: `ClusterDeviationGeneratorTest` 4, `RecommendationPriorityPolicyClusterTest` 2, 프리셋 assembler +1. 계약: recommendation-api.md §2·§3·§5.1·§9.
+- [x] A-1 (2026-09-18, 브랜치 `S15P21D105-640-a1-chat-port`, develop 기준·독립): `CoachTextGenerator.chat(messages, tools, toolChoice) → ChatTurn` 포트와 `ChatMessage`/`ToolDefinition`/`ToolChoice`/`ToolCall` record, `OpenAiCoachTextGenerator.chat`(OpenAI tools 형식 직렬화·`tool_calls` 파싱·재시도 공통화). 기존 `generate`·3종 코치 영향 없음. `OpenAiCoachTextGeneratorTest` +4. 계약: ai-coach.md §13-1.
+- [ ] A-2: `CoachToolRegistry`(도구 6개 스키마, enum·description 고정)·`CoachToolDispatcher`(→ `SimulationInputResolver`/`SimulationRunner`, `GoalCalculationService.getForecast` 3인자)·라벨 매칭·칩 3개 고정 매핑·`SimulationResponse → CoachFacts` 변환기·단위 테스트.
+- [ ] A-3: `CoachChatService`(Redis 세션 6턴·TTL 30분, 1왕복, `TOOL_LOOP_EXCEEDED`)·`POST /coach/chat`·`CoachTopic.CHAT`(프롬프트·템플릿·숫자 허용 목록에 사용자 입력 숫자)·입력 문장 민감정보 검사·별도 레이트 리밋·통합 테스트·ai-coach.md §13-2~.
 - [ ] FE(C-3 추가): `REVIEW_SPENDING_PATTERN` 추천은 `effect`가 전부 null이다 → 발견 목록의 "절약 예상" 자리에 "절감액 산정 전"을 표시하고, 프리셋 `monthlyReduction: null`은 사용자 입력을 받아 채운 뒤 POST한다.
 - [ ] FE(C-3): `detectionSource`가 CLUSTER·RULE_AND_CLUSTER면 "또래 비교" 배지, `clusterContext` 카드, `DOMAIN_LABELS`·`DOMAIN_ICONS`에 `SAVING` 추가(단독 저축률 문제의 도메인).
 
