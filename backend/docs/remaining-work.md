@@ -4,6 +4,25 @@
 
 백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 629, 632, 587, 589, 611, 627, 628이다.
 
+## S15P21D105-635 — 리포트 금융 효율 점수·K-Means 또래 비교 연동 (FE 요청 회신)
+
+계약: [improvement-report-contract.md](improvement-report-contract.md) §6, [pattern.md](pattern.md) §peer-comparison "635 FE 회신". 브랜치 `S15P21D105-635-report-efficiency-peer`.
+
+### 구현 완료 (2026-09-18)
+
+- [x] 요청 1 금융 효율 점수: `MonthlyReport.efficiency`(전체 + 6개 항목, `efficiency-v1`), V41 `monthly_report.efficiency_summary`, 전월 차이, 635 이전 READY 리포트 조회 시 보강. `EfficiencyScorePolicyTest` 12 · `ReportApiTest` +3.
+- [x] 요청 2 또래 비교: `analyzedAt`·`analysisPeriod`·`features[].direction` 추가(조회 때 분석 행에서 채움), 단위·백분위·상태별 안내 회신. `PatternApiTest` 단언 추가.
+- [x] 요청 3 카드 사용액: `cardSpending`·`cardSpendingPreviousMonth`·`cardSpendingDifferenceFromPreviousMonth`(소비 정의 + `card_id` 또는 `payment_method = CARD`).
+
+### 남은 것
+
+- [ ] **산식 임계값은 서비스 초기값**(지출 0.5~1.0, 저축 0~0.3, 고정지출 0.3~0.7, 등급표, 위험·문제 감점). 시연 계정 4명의 실제 점수를 서버에서 보고 기획과 조정하면 `efficiency-v2`로 올린다(과거 리포트 점수는 그대로).
+- [ ] 리포트 도메인(590)은 김지우 담당이었다. 635는 BE-A가 작업했으므로 MR 리뷰에서 리포트 담당자 확인을 받는다.
+- [ ] FE: 리포트 카드가 `POST /patterns/analyze` → `GET /patterns/me/peer-comparison` 순서로 호출해야 한다(분석은 호출 시에만 생성). 시연 계정은 632 이전 분석이라 `forceRefresh` 1회 필요(632 남은 것과 같음). 오각형은 `direction = LOWER_IS_BETTER` 축을 `100 − percentileInPeer`로 뒤집어야 "바깥이 좋음"이 된다.
+- [ ] 리포트 상세(`GET /reports/{id}`)는 보강하지 않는다. FE가 상세를 목록에서 바로 열 때 `efficiency = null`일 수 있으면 월간 조회를 먼저 거치게 하거나 상세에도 보강을 넣는다(현재는 readOnly 유지).
+- [ ] 신용등급은 현재 값이라 과거 달 리포트에 조회 시점 등급이 들어간다. 월별 등급 이력이 필요하면 `credit_rating` 변경 이력 테이블이 필요하다.
+- [ ] 서버 배포 시 Flyway V41 적용 확인. 배포 전 생성된 시연 계정 리포트는 첫 월간 조회 때 채워진다.
+
 ## S15P21D105-633 — 시연 계정 데이터 수정 (U0003 고금리 대출·예적금 상품 추천)
 
 요청 원문: "3번 계정 — 고금리 대출을 보유한 상태로 데이터를 조정해 비효율 항목에 노출", "'발견' 화면의 추천에 예·적금 상품이 노출되도록 데이터를 조정".

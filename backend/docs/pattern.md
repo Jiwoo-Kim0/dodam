@@ -261,12 +261,28 @@ clusterDeviationAlpha = 군집 결과가 있으면 0.2 × confidence, 없으면 
 - `unavailableReason`: `DEMOGRAPHICS_MISSING`(생년월일·성별 없음 — 나이대 축은 생년월일만, 성별 축은 성별만 필요), `PEER_GROUP_TOO_SMALL`, `MODEL_NOT_SUPPORTED`(v1 모델, 격자 없음),
   `CLUSTER_NOT_ASSIGNED`(규칙 기반 분석), `NOT_COMPUTED`(632 이전 분석 — `forceRefresh`로 다시 분석하면 채워짐).
 - 나이대는 분석 시점 나이로 굳힌다. 생일이 지나 나이대가 바뀌면 다음 분석에서 갱신된다.
+- (635) `analyzedAt`(분석 실행 시각)·`analysisPeriod { startMonth, endMonth, months }`(분석에 쓴 완료 월 구간)는 저장 JSON이 아니라 분석 행에서
+  조회 때 채운다 — 비교 불가(`unavailableReason`) 응답에도 들어 있다. `features[].direction`(`HIGHER_IS_BETTER` / `LOWER_IS_BETTER`)은
+  632 저장본에 없으면 `ClusterFeature`의 방향으로 채운다.
+
+#### 635 FE 회신 (리포트 '나의 소비 유형' 오각형 카드)
+
+| 확인 요청 | 회신 |
+| --- | --- |
+| `userValue`·`peerMedian` 단위 | **비율(0~1, 소수 4자리)**. 퍼센트 아님. 소비율 0.95 = 소득의 95%. 소비 변동성은 변동계수(표준편차/평균)라 1을 넘을 수 있다(상한 2.0 클리핑) |
+| 그래프 공통 범위로 `percentileInPeer` | **가능**(0~100). 단, 백분위는 "그 값 이하인 표본 비율"이라 저축률은 클수록 좋고 나머지는 클수록 나쁘다. 오각형을 "바깥이 좋음"으로 그리려면 `direction = LOWER_IS_BETTER`인 축은 `100 − percentileInPeer`로 뒤집어 그려야 한다 |
+| 긍정·부정 구분 | `features[].direction`. 저축률 `HIGHER_IS_BETTER`, 소득 대비 소비율·고정지출 비중·재량소비 비중·소비 변동성 `LOWER_IS_BETTER`(서비스 초기값 — 고정지출·재량소비는 중립으로 볼 여지가 있어 FE가 색만 다르게 써도 된다) |
+| 최근 완료 분석이 생기는 시점 | **`POST /patterns/analyze`를 호출할 때만** 만들어진다(배치 없음). 같은 날 같은 모드의 완료 분석이 있으면 재사용하고, `forceRefresh: true`면 새로 만든다. 현재 FE는 이 API를 호출하지 않으므로 리포트 카드가 먼저 `POST /patterns/analyze`(201, 수 초) → `GET /patterns/me/peer-comparison` 순서로 부르거나, 홈 진입 시 한 번 분석을 걸어 두어야 한다. 시연 계정은 서버에 분석 이력이 있지만 632 이전 분석이라 `NOT_COMPUTED`이며 `forceRefresh`가 한 번 필요하다(remaining-work 632) |
+| 분석 기준 기간·완료 시각 | 추가했다. `analyzedAt`, `analysisPeriod.startMonth/endMonth/months`(예: 2026-03 ~ 2026-08, 6). 분석은 실행일의 **직전 달까지** `lookbackMonths`(기본 6)개월을 본다 |
+| 404 vs `unavailableReason` FE 안내 | 404 `PATTERN_ANALYSIS_NOT_FOUND` = 완료 분석이 하나도 없음 → "분석을 실행해 주세요"(analyze 호출 유도). 200 + `unavailableReason`: `DEMOGRAPHICS_MISSING` → "생년월일·성별을 등록하면 또래와 비교할 수 있어요"(내 정보 수정 유도), `NOT_COMPUTED` → 다시 분석(`forceRefresh`) 유도, `CLUSTER_NOT_ASSIGNED` → 규칙 기반 분석이라 유형 비교 없음(데이터 3개월 미만 등), `MODEL_NOT_SUPPORTED` → 서버 모델 문제(사용자 조치 없음), `PEER_GROUP_TOO_SMALL` → **값은 있다**(전체 사용자 기준) — "같은 나이대 표본이 적어 전체 사용자와 비교했어요"로 표시하고 `peerGroup.dimension = ALL`·`fallbackFrom`을 문구에 쓴다 |
 
 ```json
-{ "analysisId": 123, "modelVersion": "spending-kmeans-v2",
+{ "analysisId": 123, "analyzedAt": "2026-09-18T09:30:00", "analysisPeriod": { "startMonth": "2026-03", "endMonth": "2026-08", "months": 6 },
+  "modelVersion": "spending-kmeans-v2",
   "peerGroup": { "dimension": "AGE_BAND", "ageBand": "30S", "gender": null, "clusterId": null, "sampleSize": 1052, "fallbackFrom": "AGE_BAND_GENDER" },
   "features": [ { "feature": "spendingToIncomeRatio", "displayName": "소득 대비 소비율", "userValue": 0.95,
-                  "peerP25": 0.7, "peerMedian": 0.83, "peerP75": 0.94, "percentileInPeer": 77.4, "rankBand": "UPPER" } ],
+                  "peerP25": 0.7, "peerMedian": 0.83, "peerP75": 0.94, "percentileInPeer": 77.4, "rankBand": "UPPER",
+                  "direction": "LOWER_IS_BETTER" } ],
   "clusterShare": [ { "clusterId": 2, "clusterLabel": "소비 집중형", "peerRatio": 0.2554, "mine": true } ],
   "insights": [ { "code": "PEER_ABOVE_MEDIAN_SPENDING", "feature": "spendingToIncomeRatio", "percentile": 77.4,
                   "message": "같은 30대의 절반보다 소득 대비 소비율이 높아요(상위 23%)." },

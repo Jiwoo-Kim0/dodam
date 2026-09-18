@@ -153,15 +153,21 @@ public class PatternQueryService {
         PeerDimension requested = PeerDimension.parseOrDefault(dimension);
         PatternAnalysis analysis = latestCompleted(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PATTERN_ANALYSIS_NOT_FOUND));
+        PeerComparisonResponse stored;
         if (!analysis.hasCluster()) {
-            return PeerComparisonResponse.unavailable(analysis.getId(), analysis.getModelVersion(), PeerComparisonResponse.CLUSTER_NOT_ASSIGNED);
+            stored = PeerComparisonResponse.unavailable(analysis.getId(), analysis.getModelVersion(),
+                    PeerComparisonResponse.CLUSTER_NOT_ASSIGNED);
+        } else if (analysis.getPeerStats() == null || analysis.getPeerStats().isNull()) {
+            stored = PeerComparisonResponse.unavailable(analysis.getId(), analysis.getModelVersion(), PeerComparisonResponse.NOT_COMPUTED);
+        } else {
+            stored = assembler.read(analysis.getPeerStats().get(requested.name()), PeerComparisonResponse.class)
+                    .orElseGet(() -> PeerComparisonResponse.unavailable(analysis.getId(), analysis.getModelVersion(),
+                            PeerComparisonResponse.NOT_COMPUTED));
         }
-        if (analysis.getPeerStats() == null || analysis.getPeerStats().isNull()) {
-            return PeerComparisonResponse.unavailable(analysis.getId(), analysis.getModelVersion(), PeerComparisonResponse.NOT_COMPUTED);
-        }
-        return assembler.read(analysis.getPeerStats().get(requested.name()), PeerComparisonResponse.class)
-                .orElseGet(() -> PeerComparisonResponse.unavailable(analysis.getId(), analysis.getModelVersion(),
-                        PeerComparisonResponse.NOT_COMPUTED));
+        // (635) 기준 시점·기간은 저장 JSON이 아니라 분석 행에서 온다. 분석은 실행일의 직전 달까지 lookbackMonths개월을 본다(PatternAnalysisRunner).
+        PatternWindow window = PatternWindow.endingBefore(analysis.getAnalyzedAt().toLocalDate(), analysis.getLookbackMonths());
+        return stored.withAnalysis(analysis.getAnalyzedAt(),
+                new PeerComparisonResponse.AnalysisPeriod(window.start().toString(), window.end().toString(), window.months()));
     }
 
     private Optional<PatternAnalysis> latestCompleted(Long userId) {

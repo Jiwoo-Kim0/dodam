@@ -97,7 +97,7 @@ public class PeerComparisonCalculator {
             percentiles.put(feature, percentile);
             features.add(new PeerFeature(feature.key(), feature.displayName(), userValue,
                     model.quantileValue(group, feature, 25), model.quantileValue(group, feature, 50), model.quantileValue(group, feature, 75),
-                    percentile, RankBand.of(percentile).name()));
+                    percentile, RankBand.of(percentile).name(), feature.direction().name()));
         }
         List<ClusterShare> shares = new ArrayList<>();
         Double myShare = null;
@@ -118,7 +118,8 @@ public class PeerComparisonCalculator {
         PeerComparisonResponse.PeerGroup peerGroup = new PeerComparisonResponse.PeerGroup(dimension.name(),
                 dimension.usesAgeBand() ? ageBand : null, dimension.usesGender() ? gender.name() : null,
                 dimension.usesCluster() ? myClusterId : null, group.sampleSize(), fallbackFrom);
-        return new PeerComparisonResponse(analysisId, model.modelVersion(), peerGroup, features, shares, insights, unavailableReason);
+        return new PeerComparisonResponse(analysisId, null, null, model.modelVersion(), peerGroup, features, shares, insights,
+                unavailableReason);
     }
 
     /** 문장용 집단 표기. */

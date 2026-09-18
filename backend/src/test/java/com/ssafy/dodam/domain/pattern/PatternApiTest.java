@@ -356,7 +356,12 @@ class PatternApiTest {
                 .andExpect(jsonPath("$.data.modelVersion").value(ClusterModelProvider.MODEL_VERSION))
                 .andExpect(jsonPath("$.data.unavailableReason").value("DEMOGRAPHICS_MISSING"))
                 .andExpect(jsonPath("$.data.peerGroup").isEmpty())
-                .andExpect(jsonPath("$.data.features").isEmpty());
+                .andExpect(jsonPath("$.data.features").isEmpty())
+                // (635) 비교 불가여도 기준 시점·기간은 분석 행에서 채운다
+                .andExpect(jsonPath("$.data.analyzedAt").value("2026-09-14T10:00:00"))
+                .andExpect(jsonPath("$.data.analysisPeriod.startMonth").value("2026-03"))
+                .andExpect(jsonPath("$.data.analysisPeriod.endMonth").value("2026-08"))
+                .andExpect(jsonPath("$.data.analysisPeriod.months").value(6));
         assertThat(analyses.findById(firstId).orElseThrow().getPeerStats().get("AGE_BAND_GENDER").get("unavailableReason").asText())
                 .isEqualTo("DEMOGRAPHICS_MISSING");
 
@@ -382,6 +387,12 @@ class PatternApiTest {
                 .andExpect(jsonPath("$.data.features.length()").value(5))
                 .andExpect(jsonPath("$.data.features[1].feature").value("savingRate"))
                 .andExpect(jsonPath("$.data.features[1].percentileInPeer").isNumber())
+                // (635) 값 방향: 저축률만 높을수록 좋다
+                .andExpect(jsonPath("$.data.features[0].direction").value("LOWER_IS_BETTER"))
+                .andExpect(jsonPath("$.data.features[1].direction").value("HIGHER_IS_BETTER"))
+                .andExpect(jsonPath("$.data.features[4].direction").value("LOWER_IS_BETTER"))
+                .andExpect(jsonPath("$.data.analyzedAt").isNotEmpty())
+                .andExpect(jsonPath("$.data.analysisPeriod.endMonth").value("2026-08"))
                 .andExpect(jsonPath("$.data.clusterShare.length()").value(4))
                 .andReturn().getResponse().getContentAsString();
         JsonNode peer = json.readTree(body).at("/data");
