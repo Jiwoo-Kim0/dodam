@@ -39,21 +39,21 @@ export const styles = StyleSheet.create({
     lineHeight: 34,
     marginTop: spacing[4],
   },
-  spendingTitle: {
+  headlineTitle: {
     color: colors.textPrimary,
     fontFamily: fontFamily.semiBold,
     fontSize: fontSize.headline,
     lineHeight: 34,
     marginTop: spacing[5],
   },
-  spendingTitleAmount: {
+  headlineAmount: {
     color: colors.report.scoreStrong,
     fontFamily: fontFamily.semiBold,
     fontSize: 30,
     lineHeight: 38,
     marginTop: spacing[1],
   },
-  spendingTitleDescription: {
+  headlineDescription: {
     ...typography.body1,
     color: colors.textSecondary,
     lineHeight: 22,
@@ -75,7 +75,7 @@ export const styles = StyleSheet.create({
     height: 64,
     width: 64,
   },
-  spendingImpactCard: {
+  impactCard: {
     alignItems: 'center',
     backgroundColor: colors.report.patternSurface,
     borderRadius: radius.card,
@@ -85,7 +85,7 @@ export const styles = StyleSheet.create({
     paddingHorizontal: spacing[4],
     paddingVertical: spacing[5],
   },
-  spendingImpactIconWrap: {
+  impactIconWrap: {
     alignItems: 'center',
     backgroundColor: colors.report.forecastLiving,
     borderRadius: radius.round,
@@ -93,17 +93,17 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 40,
   },
-  spendingImpactIcon: {
+  impactIcon: {
     height: 22,
     width: 22,
   },
-  spendingImpactText: {
+  impactText: {
     ...typography.body1,
     color: colors.report.scoreStrong,
     flex: 1,
     lineHeight: 23,
   },
-  spendingImpactEmphasis: {
+  impactEmphasis: {
     color: colors.report.scoreStrong,
     fontFamily: fontFamily.semiBold,
   },
