@@ -22,6 +22,8 @@ export interface DailyBriefingGoalImpact {
   id: string;
   label: string;
   value: string;
+  /** 값이 사용자에게 좋은 소식인지. 목표보다 빠르면 `good`, 늦으면 `bad`다. */
+  tone: 'good' | 'bad' | 'neutral';
   icon: ImageSourcePropType;
 }
 

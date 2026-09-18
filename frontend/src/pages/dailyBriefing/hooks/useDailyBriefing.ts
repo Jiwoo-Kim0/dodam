@@ -40,6 +40,7 @@ async function loadGoalImpacts(): Promise<DailyBriefingGoalImpact[]> {
       id: 'saving',
       label: '이번 달 예상 절약',
       value: formatCurrency(spending.value.expectedSavingAmount),
+      tone: 'neutral',
       icon: require('@/assets/icons/common/money.png'),
     });
   }
@@ -48,6 +49,7 @@ async function loadGoalImpacts(): Promise<DailyBriefingGoalImpact[]> {
       id: 'date',
       label: '예상 목표 달성일',
       value: saving.value.expectedAchievementDate?.replaceAll('-', '.') ?? '계산 전',
+      tone: 'neutral',
       icon: require('@/assets/icons/common/calendar.png'),
     });
     if (saving.value.daysDifference !== null) {
@@ -56,6 +58,7 @@ async function loadGoalImpacts(): Promise<DailyBriefingGoalImpact[]> {
         id: 'difference',
         label: '목표 예정일 대비',
         value: days < 0 ? `${Math.abs(days)}일 빠름` : days > 0 ? `${days}일 늦음` : '예정대로',
+        tone: days < 0 ? 'good' : days > 0 ? 'bad' : 'neutral',
         icon: require('@/assets/icons/common/clock.png'),
       });
     }
