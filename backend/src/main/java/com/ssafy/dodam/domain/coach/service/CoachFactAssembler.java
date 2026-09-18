@@ -171,6 +171,10 @@ public class CoachFactAssembler {
                 + " 심각도를 다시 매기거나 문제 여부를 새로 판단하지 말 것.");
         if (issue.getClusterContext() == null) {
             notes.add("이 문제에는 군집 근거가 없다. 또래 집단 비교를 만들어 내지 말 것.");
+        } else {
+            // 640: 군집 이탈은 낭비 판정이 아니다(기획안 5-7). 문장은 "비슷한 소비 유형 사용자군 대비 점검이 필요한 항목"에 머문다.
+            notes.add("군집 근거는 비슷한 소비 유형 사용자군과의 비교일 뿐이다. 낭비·잘못으로 단정하지 말고"
+                    + " '비슷한 소비 유형 사용자군 대비 점검이 필요한 항목'으로 표현할 것. 표본 수·기준 기간은 근거에 있는 값만 쓸 것.");
         }
 
         return new CoachFacts(CoachTopic.INEFFICIENCY_EXPLANATION, issue.getTitle(), sections, notes);

@@ -17,6 +17,7 @@ import com.ssafy.dodam.domain.recommendation.entity.RecommendationReason;
 import com.ssafy.dodam.domain.recommendation.repository.RecommendationReasonRepository;
 import com.ssafy.dodam.domain.recommendation.service.RecommendationSimulationPresetAssembler;
 import com.ssafy.dodam.domain.recommendation.service.generator.CategorySpendingIncreaseGenerator;
+import com.ssafy.dodam.domain.recommendation.service.generator.ClusterDeviationGenerator;
 import com.ssafy.dodam.domain.recommendation.service.generator.HighInterestLoanGenerator;
 import com.ssafy.dodam.domain.recommendation.service.generator.SavingGoalRiskGenerator;
 import com.ssafy.dodam.domain.simulation.dto.request.LoanRefinanceSimulationRequest;
@@ -171,6 +172,30 @@ class RecommendationSimulationPresetAssemblerTest {
         assertThat(assembler.assemble(7L, r).unavailableReason()).isEqualTo(RecommendationSimulationPreset.SNAPSHOT_FIELD_MISSING);
         Recommendation noAmount = recommendation(6L, "SPENDING", "REDUCE_CATEGORY_SPENDING", Recommendation.Effect.NONE);
         assertThat(assembler.assemble(7L, noAmount).unavailableReason()).isEqualTo(RecommendationSimulationPreset.EFFECT_AMOUNT_MISSING);
+    }
+
+    /** 640: 단독 군집 이탈 추천은 절감액이 없어 소비 감소 프리셋의 금액을 비워 두고 사용자가 채운다. 소비 시뮬레이션과 무관한 특징은 프리셋이 없다. */
+    @Test
+    void reviewPatternPresetLeavesAmountToUserAndOnlyForSpendingFeatures() {
+        Recommendation r = recommendation(8L, "SPENDING", "REVIEW_SPENDING_PATTERN", Recommendation.Effect.NONE);
+        ObjectNode evidence = json.createObjectNode().put("feature", "discretionaryShare").put("deviation", 0.68);
+        given(reasons.findAllOwnedIn(7L, List.of(8L))).willReturn(List.of(
+                RecommendationReason.of(8L, ClusterDeviationGenerator.REASON_DEVIATION, "이탈", evidence)));
+
+        RecommendationSimulationPreset preset = assembler.assemble(7L, r);
+
+        assertThat(preset.available()).isTrue();
+        assertThat(preset.type()).isEqualTo(SimulationType.SPENDING);
+        assertThat(preset.request()).isEqualTo(new SpendingSimulationRequest(null, null, null));
+        assertThat(preset.assumptions()).containsExactly(RecommendationSimulationPreset.REDUCTION_AMOUNT_REQUIRED_FROM_USER,
+                RecommendationSimulationPreset.REDUCTION_APPLIES_TO_TOTAL_SPENDING);
+
+        given(reasons.findAllOwnedIn(7L, List.of(8L))).willReturn(List.of(RecommendationReason.of(8L,
+                ClusterDeviationGenerator.REASON_DEVIATION, "이탈", json.createObjectNode().put("feature", "spendingVolatility"))));
+        Recommendation volatility = recommendation(8L, "CASHFLOW", "REVIEW_SPENDING_PATTERN", Recommendation.Effect.NONE);
+        assertThat(assembler.assemble(7L, volatility).unavailableReason()).isEqualTo(RecommendationSimulationPreset.NO_MATCHING_SIMULATION_TYPE);
+        given(reasons.findAllOwnedIn(7L, List.of(8L))).willReturn(List.of());
+        assertThat(assembler.assemble(7L, r).unavailableReason()).isEqualTo(RecommendationSimulationPreset.SNAPSHOT_FIELD_MISSING);
     }
 
     /** 631: 지난달만 튄 카테고리는 증가액이 시뮬레이션 기준선(직전 3개월 평균)을 넘을 수 있다. 그대로 보내면 400이라 상한으로 자른다. */

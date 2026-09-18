@@ -14,7 +14,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * 기획안 5-4 우선순위 기준을 결정적 정수 점수로 만든다. 군집 이탈 가중치 α는 군집 미연동이라 0이다.
+ * 기획안 5-4 우선순위 기준을 결정적 정수 점수로 만든다. 군집 이탈 가중치 α는 640(C-2)에서 1로 연결했다.
  *
  * <table>
  *   <tr><th>기준</th><th>점수</th></tr>
@@ -23,6 +23,9 @@ import java.util.stream.Collectors;
  *   <tr><td>목표 기여도</td><td>advancedDays 30일당 5점, 최대 20</td></tr>
  *   <tr><td>시급성</td><td>CASHFLOW 부족일 − 기준일이 14일 이내 20, 30일 이내 10 (이미 지난 날짜도 14일 이내로 본다)</td></tr>
  *   <tr><td>실행 난이도</td><td>SPENDING·SAVING 행동은 즉시 가능 +5</td></tr>
+ *   <tr><td>군집 이탈(640)</td><td>원본 문제에 {@code clusterContext.deviationScore}가 있으면 {@code min(10, round(α × deviationScore × 10))},
+ *       α = {@link #CLUSTER_ALPHA}. deviationScore는 특징 5종 이탈의 평균(대개 0~0.5)이라 기여는 최대 5점 안팎 — 순위를 뒤집는 것이 아니라
+ *       동점 해소 수준이다(기획안 5-4). 군집 근거가 없으면 0</td></tr>
  * </table>
  *
  * <p>{@code priority}는 한 생성 요청 안에서 점수 내림차순 순위(1부터)다. 동점은 원본 문제 issueId 오름차순. 점수 자체는 저장 컬럼이
@@ -36,6 +39,9 @@ public final class RecommendationPriorityPolicy {
     static final int GOAL_MAX = 20;
     static final int URGENT_DAYS = 14;
     static final int SOON_DAYS = 30;
+    /** 군집 이탈 가중치(기획안 5-4). 서비스 초기값이며 시연 seed 실측 후 조정한다. */
+    static final double CLUSTER_ALPHA = 1.0;
+    static final int CLUSTER_MAX = 10;
 
     private RecommendationPriorityPolicy() {
     }
@@ -80,7 +86,20 @@ public final class RecommendationPriorityPolicy {
         if ("SPENDING".equals(candidate.domain()) || "SAVING".equals(candidate.domain())) {
             score += 5;
         }
+        score += clusterPoints(issue);
         return score;
+    }
+
+    /** 군집 이탈 보조 점수. 규칙 문제에 병합된 근거(RULE_AND_CLUSTER)와 단독 CLUSTER 문제 모두 같은 식이다. */
+    static int clusterPoints(RecommendationInput.Issue issue) {
+        if (issue == null || issue.clusterContext() == null || issue.clusterContext().isNull()) {
+            return 0;
+        }
+        var node = issue.clusterContext().get("deviationScore");
+        if (node == null || !node.isNumber() || node.doubleValue() <= 0) {
+            return 0;
+        }
+        return (int) Math.min(CLUSTER_MAX, Math.round(CLUSTER_ALPHA * node.doubleValue() * 10));
     }
 
     static int severityPoints(IssueSeverity severity) {
