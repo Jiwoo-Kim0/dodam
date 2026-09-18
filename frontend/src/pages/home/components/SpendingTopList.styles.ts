@@ -33,27 +33,23 @@ export const styles = StyleSheet.create({
     borderTopColor: colors.divider,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
-  rankBadge: {
+  categoryIconFrame: {
     alignItems: 'center',
-    backgroundColor: colors.primary.green,
+    backgroundColor: colors.ledger.categoryTrack,
     borderRadius: radius.round,
-    height: 20,
+    height: 34,
     justifyContent: 'center',
-    width: 20,
+    width: 34,
   },
-  secondaryRankBadge: {
-    backgroundColor: colors.home.secondaryRank,
-  },
-  rankLabel: {
-    color: colors.white,
-    fontFamily: fontFamily.semiBold,
-    fontSize: fontSize.caption,
-    lineHeight: 16,
+  categoryIcon: {
+    height: 19,
+    width: 19,
   },
   categoryLabel: {
     color: colors.textPrimary,
     flex: 1,
-    fontFamily: fontFamily.regular,
+    flexShrink: 1,
+    fontFamily: fontFamily.medium,
     fontSize: fontSize.body2,
     lineHeight: 18,
   },

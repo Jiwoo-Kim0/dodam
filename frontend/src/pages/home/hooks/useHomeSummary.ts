@@ -16,10 +16,13 @@ export interface HomeBriefing {
 
 export interface HomeSpendingCategory {
   rank: number;
+  /** 카테고리 아이콘을 고르는 데 쓰는 서버 코드다. */
+  code: string;
   label: string;
   amount: number;
   changePercent: number;
-  direction: 'up' | 'down';
+  /** 지난달과 금액이 같으면 `none`이며, 이때 증감 화살표를 그리지 않는다. */
+  direction: 'up' | 'down' | 'none';
 }
 
 interface HomeSummaryData {
@@ -168,10 +171,17 @@ async function loadTopSpending(yearMonth: string, previousYearMonth: string) {
       : Math.round((Math.abs(difference) / previousAmount) * 100);
     return {
       rank: index + 1,
+      code: category.code,
       label: category.name,
       amount: category.totalSpending,
       changePercent,
-      direction: difference > 0 ? ('up' as const) : ('down' as const),
+      // 변화가 없는 달을 `down`으로 묶으면 그대로인데도 줄어든 것처럼 보인다.
+      direction:
+        difference === 0
+          ? ('none' as const)
+          : difference > 0
+            ? ('up' as const)
+            : ('down' as const),
     };
   });
 }
