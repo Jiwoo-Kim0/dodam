@@ -20,6 +20,7 @@
 | 10 | `DODAM_DEMO_PASSWORD_SEED.sql` | 521 | 491, V1. 시연 사용자 U0001~U0004에만 시연 비밀번호의 BCrypt 해시를 넣는다(2026-09-15 추가). 나머지 사용자는 NULL 유지, 재실행 안전 |
 | 11 | `DODAM_DEMO_SEPTEMBER_SEED.sql` | 625 | 6번, 8번, V6·V30. 시연 사용자 U0001~U0004에만 2026-09-01~09-27 거래 90건과 9월 구독 결제 이력 6건을 추가하고 구독 `next_payment_date`를 10월로 옮긴다(2026-09-16 추가). 6번·8번을 다시 실행하면 이 파일도 다시 실행한다 |
 | 12 | `DODAM_USER_DEMOGRAPHICS_BACKFILL.sql` | 632 | V39. 2026-09-17 이전에 491로 적재한 DB에서 seed 사용자 4,000명의 `birth_date`·`gender`만 채운다(fixture·재적재 불필요, 멱등, 실회원 미접촉). 491 최신판을 새로 돌린 DB에는 필요 없다 |
+| 13 | `DODAM_DEMO_LOAN_SEED.sql` | 633 | 491, 1번(`KB_KOOKMIN` `KB 국민ONE대출`), V13, `backend/scripts/make_demo_loan_fixture.py`가 만든 fixture 1행(일반 테이블 `tmp_dodam_demo_loan_crypto`). 시연 사용자 U0003에만 고금리 신용대출 1건(연 8.5%, 잔액 12,998,492원)과 상환 8건을 넣는다. 재실행 멱등. 파일 끝 cleanup이 fixture도 지우므로 재실행 전에 fixture를 다시 만든다 |
 
 2~5는 계좌·카드번호 원문을 파일에 두지 않기 위해 애플리케이션 코덱으로 만든 fixture 테이블(`tmp_dodam_*_crypto`, `*_account_keys`)이
 같은 스키마에 있어야 한다. 각 파일 머리말에 정확한 계약이 있다. 6~8은 fixture 없이 자연키(사용자 이메일, 계좌 유형·이름)로 참조한다.
@@ -82,6 +83,38 @@ seed 목표는 `created_at = '2026-03-01 09:00:00'`으로 식별해 재실행 �
 - 적용 후 `backend/scripts/be-a-server-smoke.sh`로 BE-A 8개 API(로그인 → 계좌·거래·소비·목표·정기결제·패턴·알림)를 서버에서 한 번에 점검한다(S15P21D105-521).
 - 시연 종료 후 되돌리려면 같은 4개 이메일 조건으로 `password_hash = NULL`.
 
+## 시연 계정 U0003 고금리 대출 (`DODAM_DEMO_LOAN_SEED.sql`)
+
+523은 짝수 사용자에게만 대출을 만들어 U0003(홀수)은 대출이 없고, 발견 화면에 `LOAN/HIGH_INTEREST_RATE`가 나올 수 없었다.
+시연 계정 데이터 수정 요청(S15P21D105-633, "3번 계정이 고금리 대출을 보유한 상태로 비효율 항목에 노출")에 따라 13번이 U0003에만 대출 1건을 추가한다.
+
+| 항목 | 값 |
+| --- | --- |
+| 상품 | KB국민은행 `KB 국민ONE대출`(상품 DB `PERSONAL_CREDIT`, 공시 7.74~8.64%, 한도 2,000만원) → `financial_product_id` 연결 필수 |
+| 조건 | 원금 20,000,000 / 60개월 / 원리금균등 / 연 8.5000% / 상환일 10일, 2024-09-10 ~ 2029-09-10 |
+| 현재 | 24회 납입(2024-10-10 ~ 2026-09-10, 월 410,331원) → 잔액 **12,998,492원**, 다음 상환 2026-10-10, 잔여 36회 |
+| 상환 이력 | 2026-03-10 ~ 2026-09-10 PAID 7건 + 2026-10-10 SCHEDULED 1건(원금·이자는 `LoanRepaymentScheduleCalculator`와 같은 식·반올림) |
+
+- 판정(627 규칙 = API 11): 비교군 `CREDIT`(PERSONAL_CREDIT·CREDIT_REFINANCE, 은행권), 기간 밴드 25~60개월, 원리금균등 → 후보 11개 상품, 공시 최저금리 중앙값 **5.229%**. 편차 **+3.271%p** ≥ 2.0 → 심각도 **HIGH**.
+- 대환 추정: 잔여 36회에 맞는 옵션 중 최저 카카오뱅크 `신용대출` 5.028% → 만기까지 이자 1,773,405 → 1,032,145원, **절감 741,260원**(월 20,590·연 247,080). 추천 `LOAN/REFINANCE_LOAN` "'KB 국민ONE대출' 대환 알아보기"가 만들어지고 발견 요약 `expectedAnnualCostSaving`에 247,080이 잡힌다.
+- 금리 8.5%는 상품 공시 범위(7.74~8.64) 안의 값이라 "공시금리보다 높다"는 문구와 어긋나지 않는다(기준금리는 비교군 중앙값이지 이 상품의 금리가 아니다).
+- 계좌번호 원문은 seed 규칙 `1100{순번6}{유형3}`(유형 101)이며 파일에 없다. fixture는 `make_demo_loan_fixture.py`가 `DATA_ENCRYPTION_KEY`·`NUMBER_HASH_KEY`(infra/.env와 같은 이름)로 만든다(FieldCryptor·SensitiveNumberHasher·AccountNumberMasker와 같은 형식, `cryptography` 필요).
+- 출금계좌는 U0003의 유일한 ACTIVE 입출금 계좌(491)를 자연키로 찾으므로 account_keys fixture는 필요 없다. preflight(사용자 1·출금계좌 1·fixture 1·상품 1·해시 충돌 0)가 하나라도 어긋나면 아무것도 쓰지 않는다.
+- 부수 효과: 현금흐름 예측(`CashflowEventCollector`)에 월 410,331원 `LOAN_REPAYMENT` 유출이 추가된다. 가계부 `transaction`에는 상환 거래를 넣지 않았다(523도 넣지 않는다). 1번·3번 계정 등 다른 사용자는 건드리지 않는다.
+- 적용 뒤 U0003으로 발견 화면을 새로고침(`POST /diagnoses` → `POST /recommendations/generate`)해야 새 진단에 반영된다. 이전 진단은 그대로 남는다.
+
+서버 적용(컨테이너 안, infra/.env 키 사용):
+
+```bash
+set -a; . infra/.env; set +a
+python3 backend/scripts/make_demo_loan_fixture.py > /tmp/demo_loan_fixture.sql
+mysql -h127.0.0.1 -u"$DB_USERNAME" -p"$DB_PASSWORD" <db> < /tmp/demo_loan_fixture.sql
+mysql -h127.0.0.1 -u"$DB_USERNAME" -p"$DB_PASSWORD" <db> < backend/database/seeds/DODAM_DEMO_LOAN_SEED.sql
+rm /tmp/demo_loan_fixture.sql
+```
+
+되돌리려면 U0003의 `loan_repayment` → `loan` 행을 지운다(`account_name = 'KB 국민ONE대출'`, 사용자 이메일 조건).
+
 ## 검증 상태
 
 2026-09-11 Docker `mysql:8.0`(8.0.46)에 V1~V17을 적용하고 1~7번을 순서대로 실행했다(fixture는 SHA2 기반 더미로 형식만 충족).
@@ -117,3 +150,10 @@ U0004에는 시드와 별개로 손으로 만든 `source_type='MANUAL'` 거래 4
 
 2026-09-17 (632) 로컬 Docker `mysql:8.0`에 V1~V40 적용 후 1·2(491 보강판)·3·6번을 적재해 사용자 4,000(생년월일·성별 결측 0)·거래 348,192건을 만들고
 `train_cluster_model.py`로 v2 아티팩트를 학습했다. 491 재실행은 `account.last_transaction_date`를 NULL로 되돌리므로 6번(492)을 다시 돌려 채운다.
+
+2026-09-18 (13번) 로컬 Docker `mysql:8.0`에 V1~V40, 1번, 2번(fixture는 로컬 테스트 키로 실제 코덱 생성), 10번을 적재한 뒤 `make_demo_loan_fixture.py` → 13번을 실행했다.
+preflight `1 / 1 / 1 / 1 / 1 / 1 / 0`, 대출 1건(잔액 12,998,492·8.5000·`financial_product_id` 연결)·상환 8건(PAID 7·SCHEDULED 1), 다른 시연 계정 대출 0.
+같은 DB로 백엔드를 기동해 U0003으로 로그인 → `GET /loans/high-interest` 대상 1건(기준 5.229%, 후보 11, +3.271%p) → `POST /diagnoses` `issueCount 1 / highSeverityCount 1`,
+coverage `HIGH_INTEREST_RATE=EVALUATED`, 문제 `LOAN/HIGH_INTEREST_RATE HIGH` "'KB 국민ONE대출' 금리가 비교상품 공시금리보다 높아요", 대환 추정 `available=true`(카카오뱅크 신용대출 5.028%, 36회, 절감 741,260)
+→ `POST /recommendations/generate` `created 1` `LOAN/REFINANCE_LOAN`(월 20,590·연 247,080), 요약 `discovery.expectedAnnualCostSaving = 247080`.
+fixture를 다시 만들고 13번을 두 번째 실행해도 같은 `loan_id`·상환 8건이며 `tmp_dodam_demo_loan_*`는 남지 않는다. **서버 적용은 아직이다.**
