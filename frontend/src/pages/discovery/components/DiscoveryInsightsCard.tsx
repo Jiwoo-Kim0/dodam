@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import { SymbolView } from 'expo-symbols';
 import { Pressable, Text, View } from 'react-native';
 
@@ -29,7 +30,13 @@ export function DiscoveryInsightsCard({ insight, onPress }: DiscoveryInsightsCar
         </View>
       </View>
 
-      <Text style={styles.title}>{insight.detailedTitle}</Text>
+      {/* 발견 홈 목록과 같은 카테고리 아이콘이다. 글자만 있던 카드에 시각 앵커를 준다. */}
+      <View style={styles.titleRow}>
+        <View style={styles.iconFrame}>
+          <Image contentFit="contain" source={insight.icon} style={styles.icon} />
+        </View>
+        <Text style={styles.title}>{insight.detailedTitle}</Text>
+      </View>
 
       <View style={styles.divider} />
 

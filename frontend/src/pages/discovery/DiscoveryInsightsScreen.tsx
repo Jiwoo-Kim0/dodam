@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useState } from 'react';
@@ -47,6 +48,8 @@ export function DiscoveryInsightsScreen() {
       <RefreshableBouncyScrollView
         contentContainerStyle={styles.scrollContent}
         onRefresh={() => { void refetch(); }}
+        // 당겨서 여는 영역은 카드 위쪽과 같은 색이라야 빈 공간이 덜 튄다.
+        refreshBackgroundColor={colors.background}
         refreshing={isRefreshing}
         style={styles.scroll}>
         <View onLayout={handleGradientContainerLayout} style={styles.gradientContainer}>
@@ -69,12 +72,19 @@ export function DiscoveryInsightsScreen() {
               <Text style={styles.summaryCount}>{insights.length}개</Text>
             </View>
 
-            {/* 새로고침 중에 문구를 바꾸면 이미 나온 개수가 사라졌다 돌아오는 것처럼 보인다. */}
-            <Text style={styles.summaryHeadline}>
-              {isLoading && diagnosis === null
-                ? '진단 결과를 확인하고 있어요'
-                : `확인할 내용을 ${insights.length}개로 정리했어요`}
-            </Text>
+            <View style={styles.summaryHeadlineRow}>
+              {/* 새로고침 중에 문구를 바꾸면 이미 나온 개수가 사라졌다 돌아오는 것처럼 보인다. */}
+              <Text style={styles.summaryHeadline}>
+                {isLoading && diagnosis === null
+                  ? '진단 결과를 확인하고 있어요'
+                  : `확인할 내용을 ${insights.length}개로 정리했어요`}
+              </Text>
+              <Image
+                contentFit="contain"
+                source={require('@/assets/characters/dori/dori_searching.png')}
+                style={styles.summaryCharacter}
+              />
+            </View>
 
             <View style={styles.summaryNote}>
               <Text style={styles.summaryNoteLabel}>

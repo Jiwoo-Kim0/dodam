@@ -56,10 +56,21 @@ export const styles = StyleSheet.create({
     fontFamily: fontFamily.semiBold,
     fontSize: fontSize.body2,
   },
+  summaryHeadlineRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing[2],
+  },
   summaryHeadline: {
     ...typography.title,
     color: colors.textPrimary,
+    flex: 1,
     lineHeight: 28,
+    minWidth: 0,
+  },
+  summaryCharacter: {
+    height: 64,
+    width: 64,
   },
   summaryAmountHighlight: {
     color: colors.primary.green,
