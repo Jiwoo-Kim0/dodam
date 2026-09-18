@@ -3,7 +3,9 @@ package com.ssafy.dodam.domain.coach.service;
 import com.ssafy.dodam.domain.coach.dto.CoachFacts;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Collection;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -32,16 +34,33 @@ public class CoachNumberGuard {
 
     /** 천단위 구분 기호가 들어간 형태까지 한 덩어리로 잡는다: {@code 1,250,000}, {@code 62.5}, {@code 9} */
     private static final Pattern NUMBER = Pattern.compile("[0-9][0-9,]*(?:\\.[0-9]+)?");
+    /**
+     * 한국어 단위가 붙은 금액: {@code 5만원}, {@code 100만}, {@code 1.5억}, {@code 3천원}. 사용자가 "5만원"이라 말한 것을 모델이
+     * "50,000원"으로 되풀이하는 것은 지어낸 숫자가 아니므로 단위를 곱한 값도 허용한다(640 A-3). 서버 facts는 천단위
+     * 구분 기호로 포맷하므로 여기 걸리는 일이 거의 없다.
+     */
+    private static final Pattern KOREAN_UNIT_AMOUNT = Pattern.compile("([0-9][0-9,]*(?:\\.[0-9]+)?)\\s*(억|만|천)");
     private static final Set<String> ALWAYS_ALLOWED = Set.of("1", "2", "3");
 
     /**
      * @return 허용 목록에 없는 첫 숫자. 비어 있으면 모델 문장을 그대로 써도 된다
      */
     public Optional<String> findUnverifiedNumber(String text, CoachFacts facts) {
+        return findUnverifiedNumber(text, facts, List.of());
+    }
+
+    /**
+     * 채팅(640 A-3)용. 허용 목록에 {@code extraSources}의 숫자를 더한다 — 사용자가 직접 말한 값("5만원", "100만원")과
+     * 같은 대화의 앞선 턴에서 서버가 준 값은 되풀이해도 지어낸 숫자가 아니다.
+     */
+    public Optional<String> findUnverifiedNumber(String text, CoachFacts facts, Collection<String> extraSources) {
         if (text == null || text.isBlank()) {
             return Optional.empty();
         }
         Set<String> allowed = allowedNumbers(facts);
+        if (extraSources != null) {
+            extraSources.forEach(source -> addAll(allowed, source));
+        }
         Matcher matcher = NUMBER.matcher(text);
         while (matcher.find()) {
             String normalized = normalize(matcher.group());
@@ -86,6 +105,19 @@ public class CoachNumberGuard {
             allowed.add(trim(value.setScale(0, RoundingMode.FLOOR)));
             allowed.add(trim(value.setScale(0, RoundingMode.CEILING)));
             allowed.add(trim(value.setScale(1, RoundingMode.HALF_UP)));
+        }
+        Matcher units = KOREAN_UNIT_AMOUNT.matcher(source);
+        while (units.find()) {
+            String normalized = normalize(units.group(1));
+            if (normalized == null) {
+                continue;
+            }
+            BigDecimal multiplier = switch (units.group(2)) {
+                case "억" -> BigDecimal.valueOf(100_000_000L);
+                case "만" -> BigDecimal.valueOf(10_000L);
+                default -> BigDecimal.valueOf(1_000L);
+            };
+            allowed.add(trim(new BigDecimal(normalized).multiply(multiplier).setScale(0, RoundingMode.HALF_UP)));
         }
     }
 

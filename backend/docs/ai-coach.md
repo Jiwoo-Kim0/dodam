@@ -493,3 +493,110 @@ Redis가 죽은 순간은 **캐시도 함께 죽어 모든 호출이 과금되�
 같은 사실을 다시 부르면 캐시 적중이라 예산을 쓰지 않는다. 40건은 "한 시간에 재진단을 세 번 하고 모든
 항목을 새로 펼쳐 보는" 사용보다 넉넉하다. 이 값에 닿는 호출 패턴은 사람이 아니라 코드일 가능성이 높아,
 막힐 때 `Coach call refused by the per-user budget` WARN을 남긴다.
+
+## 13. 도리에게 묻기 — 대화형 시뮬레이션 에이전트 (S15P21D105-640)
+
+계획: [docs/ai-coach-agent-cluster-plan.md](../../docs/ai-coach-agent-cluster-plan.md) §1. 원칙은 기존 코치와 같다 — **LLM은 도구를 고르고 인자를 채우고 문장을 쓴다. 판정·계산은 전부 서버.**
+이 절은 MR 단위로 채워진다(A-1 포트 → A-2 도구 계층 → A-3 채팅 서비스·API).
+
+### 13-1. 포트 확장 (A-1, 2026-09-18)
+
+`CoachTextGenerator`에 tool calling 대화 한 턴을 추가했다. 기존 `generate(system, user)`는 그대로라 3종 코치는 영향이 없다.
+
+```java
+ChatTurn chat(List<ChatMessage> messages, List<ToolDefinition> tools, ToolChoice toolChoice);
+record ChatMessage(String role, String content, List<ToolCall> toolCalls, String toolCallId)   // system/user/assistant/tool
+record ToolDefinition(String name, String description, JsonNode parameters)                    // OpenAI function 스키마
+record ToolChoice(Mode mode, String functionName)                                              // AUTO / REQUIRED / NONE / FUNCTION(name)
+record ToolCall(String id, String name, String argumentsJson)                                  // 모델이 만든 JSON 인자 문자열 그대로
+record ChatTurn(String content, List<ToolCall> toolCalls, String finishReason)
+```
+
+- `OpenAiCoachTextGenerator.chat`은 OpenAI Chat Completions 형식(`tools[].function`, `tool_choice`, 응답 `message.tool_calls[]`)을 그대로 보내고 받는다.
+  GMS 중계가 이 필드를 손대지 않는 것은 §8-3에서 실측했다. 요청 본문의 모델·상한 필드·temperature는 `generate`와 같은 설정을 쓴다.
+- 2턴(도구 결과 회신)은 이력에 `ChatMessage.assistant(null, toolCalls)` + `ChatMessage.tool(toolCallId, 서버가 포맷한 결과)`를 붙여 다시 `chat`을 부른다.
+  assistant 메시지의 `content`가 null이면 OpenAI 형식대로 null로 보낸다(다른 역할은 빈 문자열).
+- 응답에서 `id`나 `function.name`이 없는 tool_call은 버린다 — 실행도, 결과 회신도 할 수 없다. `choices`가 비면 예외가 아니라 빈 턴이다(`generate`의 "빈 문자열" 계약과 같다).
+- 실패 규약은 `generate`와 같다(§7): 429·5xx·연결 실패는 `max-attempts`까지 재시도, 401·400은 즉시 `CoachGenerationException`. 도구 인자 JSON의 검증·파싱은 도구 계층(A-2)이 한다.
+- 도구 스키마의 인자는 **enum·description으로 고정**한다. 637 실측에서 설명 없는 문자열 인자에 모델이 `"카페"`(한글)를 넣었다.
+- 검증: `OpenAiCoachTextGeneratorTest` +4 — tools/tool_choice 직렬화와 tool_calls 파싱(불완전 호출 제거), 2턴 이력(assistant tool_calls·tool 결과) 직렬화, 도구 없는 평문·강제 함수 선택·빈 응답, 실패 규약(5xx·미설정·빈 메시지·잘못된 인자).
+
+### 13-2. 도구 계층 (A-2, 2026-09-18)
+
+모델이 고른 도구를 **정상 API와 같은 경로**로 실행한다. 새 계산은 없다 — 시뮬레이션은 `SimulationInputResolver` → `SimulationRunner.run`(잠금·지문·저장) →
+`SimulationQueryService.toResponse`, 목표 예측은 `GoalCalculationService.getForecast(userId, goalId, today)`(readOnly 3인자), 진단은 저장된 최신 완료본이다.
+
+| 클래스 | 역할 |
+| --- | --- |
+| `CoachToolRegistry` | 도구 7개의 OpenAI function 스키마(§13-2-1)와 시연 칩 3개의 고정 매핑(§13-2-2). 인자는 전부 enum·description으로 고정, 사용자 식별자·계좌번호·loanId·goalId는 스키마에 없다 |
+| `CoachToolArguments` | 모델이 만든 인자 JSON 검증. 금액(정수·"50,000원"·소수 정수부, 0 이하·1억 초과 거부), 개월(1~120), 코드(허용 집합 밖 거부 — "카페" 같은 한글 값), 배열 |
+| `CoachToolDispatcher` | 호출 → 실행. 한 턴 **3개**까지(초과는 미실행 사유), 검증 실패(400·404·시뮬레이션 규칙·인자 오류)는 예외가 아니라 결과 `error`로(2차 호출이 "카페 월평균 소비보다 큰 금액이에요"처럼 그대로 전달), 그 외 실패는 고정 문구. 로그는 도구 이름·인자 키·simulationId만 |
+| `CoachSimulationFactFormatter` | `SimulationResponse` → 사실 문자열. `goalImpacts[]`(현재/실행 후 달성일·단축/지연 일수, `NOT_COMPUTABLE`은 "계산 불가"), `comparison.items/costs`의 `INTEREST_SAVING`·`INTEREST_TOTAL`·`FINANCE_COST_EVALUATED`·`PREPAYMENT_AMOUNT`·`REFINANCE_AMOUNT`만, `after.assumptions` 최대 6개. 월별 상환액 행·스냅샷 전체는 넘기지 않는다 |
+| `CoachToolResult` | 결과 1건(`toolCallId, tool, simulationId, created, sections, notes, error`). `toModelText()`가 2차 호출의 tool 메시지 본문("[제목]/- 라벨: 값/※ 주의")을 만든다 |
+
+#### 13-2-1. 도구 7개
+
+| tool | 인자(모델) | 서버 매핑 | 되묻기(실행 안 함) |
+| --- | --- | --- | --- |
+| `simulate_spending_reduction` | `category?`(enum 12 코드), `monthlyReduction`, `durationMonths?` | `SpendingSimulationRequest` → resolver | 코드 집합 밖·금액 없음/0/1억 초과. 카테고리 월평균 초과는 시뮬레이션 400 메시지 그대로 |
+| `simulate_saving_change` | `monthlySavingAmount`(변경 후 총액), `goalName?`, `durationMonths?` | 본인 ACTIVE 모으기 목표에서 이름 매칭(정확 → 포함) → `SavingSimulationRequest{goalId}`. 이름 없고 목표 하나면 그것, 여럿이면 `goalId = null`(전체 배분) | 목표 없음, 이름 불일치, 여럿 매칭 |
+| `simulate_loan_prepayment` | `prepaymentAmount`, `loanLabel?` | 본인 잔액 있는(ACTIVE·OVERDUE) 대출에서 계좌명·기관명 매칭 → `LoanPrepaymentSimulationRequest{loanId}`. 대출 하나면 라벨 생략 가능 | 대출 없음, 여럿인데 라벨 없음, 불일치, 여럿 매칭 |
+| `simulate_loan_refinance` | `loanLabel?`, `targetProductName?`(1차 범위에서는 검색에 쓰지 않음) | 대출 매칭 + **최신 완료 진단의 `LOAN/HIGH_INTEREST_RATE` 문제 `currentValue.refinance.targetProductId`** → `LoanRefinanceSimulationRequest{loanId, targetProductId}` | 진단 없음, 그 대출이 고금리 판정 아님, `available=false`(조건 맞는 상품 없음) |
+| `simulate_combined` | `scenarios[]{type(SPENDING·SAVING·LOAN_PREPAYMENT·LOAN_REFINANCE) + 위 인자}` 2~10개 | 자식마다 단독 도구와 같은 해석 → 명세 17 복합 본문 `{type, parameters}`(`goalId`·`loanId`·`targetProductId`로 치환, `accountNo` 없음) | 2개 미만·10개 초과·유형 없음, 자식 오류는 전체 오류 |
+| `get_goal_forecast` | `goalName?` | `GoalCalculationService.getForecast` 3인자 | 목표 없음·여럿(되묻기) |
+| `get_latest_diagnosis` | — | 최신 완료 진단 + 문제 상위 5건(제목·심각도) | 완료 진단 없음 |
+
+시뮬레이션 도구의 사실: `시뮬레이션(제목·id)`, 목표별 `현재/실행 후 예상 달성일`·`단축/지연 N일`, `만기까지 이자 절감(수수료 제외)`, `만기까지 총 이자(현재 → 실행 후)`, 복합이면 `평가 기간 금융비용 변화`, `적용 가정(서버)`.
+notes: "달성일·절감액은 서버 시뮬레이션 엔진이 계산한 값이다. 새 숫자를 만들지 말 것." (+ 계산 불가 목표가 있으면 날짜 추정 금지).
+
+#### 13-2-2. 시연 칩 (LLM 1차 호출 없음)
+
+| chipId | 표시 | 도구 호출(서버 고정, id `chip_*`) |
+| --- | --- | --- |
+| `CHIP_SPENDING_CAFE_50K` | 카페를 월 5만원 줄이면? | `simulate_spending_reduction {category: CAFE, monthlyReduction: 50000}` |
+| `CHIP_LOAN_PREPAY_1M` | 대출 100만원 더 갚으면? | `simulate_loan_prepayment {prepaymentAmount: 1000000}` (U0003 대출 1건 → 라벨 생략) |
+| `CHIP_COMBINED` | 둘 다 하면? | `simulate_combined {scenarios: [SPENDING CAFE 50000, LOAN_PREPAYMENT 1000000]}` |
+
+금액은 U0003(633·636) 검증 규칙을 통과하는 값이다(카페 직전 3개월 월평균 약 115,000원 > 50,000). 채팅 서비스(A-3)가 `chipId`를 받으면 이 매핑으로 바로 실행하고 2차 문장 생성만 한다.
+
+검증: `CoachToolRegistryTest` 3, `CoachToolArgumentsTest` 4, `CoachSimulationFactFormatterTest` 3, `CoachToolDispatcherTest` 7(인자→요청 변환, 검증 실패 전달, 3개 상한,
+대출 라벨 매칭·모호성, 대환 대상 진단 추정, 복합 본문 조립·goalId 치환, 조회 도구). Runner·Resolver는 대체했고 계산은 Simulation 테스트가 맡는다.
+
+### 13-3. 채팅 서비스·API (A-3, 2026-09-18)
+
+`POST /api/v1/coach/chat` — 인증 필수, 본인 데이터만. 요청 `{message?, chipId?, context{diagnosisId, issueId}?, conversationId?}`, 응답은 아래.
+`message`·`chipId` 둘 다 없음, 알 수 없는 `chipId`, `conversationId` 형식(`c_` + 16 hex) 위반, 길이 초과(300자), `context` 반쪽 → 400. 남의 진단 문제 `context` → 404.
+그 밖의 모든 실패는 **200 + `source=TEMPLATE`** 이며, 이미 실행한 도구의 facts·`toolResults`는 그대로 내려간다.
+
+```json
+{ "topic": "CHAT", "source": "AI", "degradedReason": null, "model": "gpt-5.4-mini", "generatedAt": "2026-09-18T15:00:00",
+  "conversationId": "c_0123456789abcdef",
+  "message": "둘 다 하면 비상금 500만 원 목표가 2028-02-13에서 2027-10-15로 121일 빨라지고, 만기까지 이자 384,000원을 아낄 수 있어요.",
+  "facts": { "topic": "CHAT", "subject": "복합 시뮬레이션",
+             "sections": [ { "title": "시뮬레이션 결과(서버 계산)", "facts": [ { "label": "단축(비상금 500만 원)", "value": "121일" } ] } ],
+             "notes": ["달성일·절감액은 서버 시뮬레이션 엔진이 계산한 값이다. 새 숫자를 만들지 말 것."] },
+  "toolResults": [ { "tool": "simulate_combined", "simulationId": 88, "created": true, "error": null } ],
+  "suggestedQuestions": ["카페를 월 5만원 줄이면?", "대출 100만원 더 갚으면?"],
+  "disclaimer": "이 설명은 … 투자·금융 자문이 아닙니다." }
+```
+
+| 구분 | 내용 |
+| --- | --- |
+| 한 턴 (`CoachChatService`) | 세션 로드 → 턴 상한 → 사용자 문장 민감정보 검사 → `context` facts(`CoachFactAssembler.inefficiency`, 시스템 프롬프트 [화면 맥락]) → **자유 입력**: 1차 `chat(messages, tools, AUTO)`; tool_calls 없으면 그 답이 최종. **칩**: 1차 생략, `CoachToolRegistry.chip()` 고정 호출 → `CoachToolDispatcher.dispatch`(≤3) → facts → 2차 `chat(…, NONE)` → 숫자 검증 → 응답 |
+| 왕복 | 1회. 2차에 또 tool_calls → `TOOL_LOOP_EXCEEDED`(템플릿이 facts로 말한다). 칩은 AI가 꺼져 있어도 도구를 실행하고 템플릿으로 답한다 — 시연 중 GMS가 죽어도 결과 카드는 뜬다 |
+| 템플릿 (`CoachTemplateWriter` CHAT) | facts 라벨 `현재 예상 달성일(목표)`·`실행 후 예상 달성일(목표)`·`단축/지연(목표)`·`만기까지 이자 절감(수수료 제외)`에서 "비상금 500만 원 목표는 현재 2028-02-13에서 실행 후 2027-10-15로 121일 빨라질 것으로 예상돼요. 만기까지 이자를 384,000원 아낄 수 있어요." 목표 2개까지. 실패만 있으면 "요청을 실행하지 못했어요. {사유}", 결과 없음이면 고정 안내 |
+| 프롬프트 (`CoachPromptFactory.chatSystem`) | 공통 규칙 + 대화 규칙(도구 사용 조건, 금액 없으면 되묻기, `실행 실패:`는 그대로 전달, 무관 질문 거절 문구, 3문장·200자, 현재 → 실행 후 순서, 사용자 숫자 되풀이 허용) + 선택 [화면 맥락]. `VERSION` 640.1 |
+| 숫자 검증 | `CoachNumberGuard.findUnverifiedNumber(text, facts, extraSources)` — 허용 = facts + **사용자 문장** + 화면 맥락 facts + 앞선 턴의 문장·facts. `5만원`·`100만`·`1.5억`·`3천원`은 단위를 곱한 값(50,000 …)도 허용한다(사용자가 "5만원"이라 말한 것을 모델이 "50,000원"으로 되풀이하는 것은 지어낸 숫자가 아니다) |
+| 민감정보 | `CoachSensitiveDataGuard.scan(사용자 문장)` — 계좌·카드번호가 있으면 외부 호출 없이 `SENSITIVE_DATA_BLOCKED` + "계좌번호·카드번호처럼 긴 숫자는 채팅에 적지 말아 주세요…". 이 문장은 세션에도 남기지 않는다. 칩 문구는 서버 문자열이라 검사하지 않는다 |
+| 세션 (`CoachChatSessionStore`, Redis `coach:chat:session:{userId}:{conversationId}`) | 사용자 문장 + facts 줄(≤8)만. **모델 응답 전문·프롬프트는 저장하지 않는다**(§6). 재생은 user/assistant 쌍이며 assistant 자리는 "(앞선 답변의 서버 계산값) 라벨: 값 · …". 최근 6턴, TTL 30분(저장마다 갱신), 세션당 10턴(`SESSION_TURN_LIMIT`, 이 응답은 세션을 늘리지 않는다). 없는/만료된 id는 같은 id로 새 대화 — FE가 id를 바꿀 필요 없다. 저장소 장애는 새 대화와 같다 |
+| 예산 (`CoachChatRateLimiter`, Redis `coach:chat:rl:`) | 3종 코치와 **별도 키·별도 한도** `app.coach.chat.rate-limit` 기본 20건/시간. 외부 호출 1회마다 1건(자유 입력 턴 = 2건, 칩 = 1건). 알고리즘은 `RedisWindowCounter`로 §12와 공유(장애 시 인프로세스 계수) |
+| 캐시 | 없다. 같은 문장도 대화 맥락이 다르고, 도구 실행(시뮬레이션 행)은 `SimulationRunner`의 같은 날 지문 재사용이 이미 막는다 |
+| `degradedReason` | 기존 6종 + `TOOL_LOOP_EXCEEDED`, `SESSION_TURN_LIMIT` |
+| 로그 | 도구 이름·인자 키·simulationId·위반 종류·숫자 토큰만. 사용자 문장·모델 응답 전문은 남기지 않는다 |
+
+설정(`application.yml` `app.coach.chat`): `session-ttl PT30M`, `history-turns 6`, `max-turns-per-session 10`, `max-message-length 300`, `rate-limit {enabled, permits 20, window PT1H}`. 테스트 프로필은 예산을 끄고 세션당 3턴이다.
+
+검증: `CoachChatApiTest` 14(401·400 5종, 칩 → 도구 → 2차 NONE 1회·메시지 순서·세션 저장 내용, AI 꺼짐에도 칩 실행·템플릿 문장, 자유 입력 1왕복·예산 2회,
+도구 없는 답, 검증 실패 전달(`실행하지 못한 요청` 섹션·`toolResults[].error`), 사용자 번호 차단(세션 저장 없음), 지어낸 숫자 → 템플릿 + facts 유지, 2차 tool_calls → `TOOL_LOOP_EXCEEDED`,
+호출 실패·예산 소진, 앞선 턴 재생·id 유지, 턴 상한, 화면 맥락·타인 404), `CoachTemplateWriterChatTest` 4, `CoachChatSessionTest` 2, `CoachNumberGuardTest` +2,
+`RedisCoachChatSessionStoreTest` 4, `RedisCoachChatRateLimiterTest` 3. 외부 모델·도구 실행은 Mock이다 — 실제 GMS·시연 seed 실측은 09-23(계획 §1-8 후속).

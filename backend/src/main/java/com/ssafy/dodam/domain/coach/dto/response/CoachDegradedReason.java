@@ -28,5 +28,11 @@ public enum CoachDegradedReason {
      * 프롬프트 직전 검사에서 민감정보 패턴이 발견돼 호출 자체를 하지 않았다. 정상 흐름에서는 발생하지
      * 않으며, 발생하면 조립기 쪽 회귀다(서버 로그에 ERROR로 남는다).
      */
-    SENSITIVE_DATA_BLOCKED
+    SENSITIVE_DATA_BLOCKED,
+
+    /** 채팅(640 A-3): 2차 응답에 또 tool_calls가 왔다. 왕복은 1회만 허용하므로 템플릿으로 내려간다. */
+    TOOL_LOOP_EXCEEDED,
+
+    /** 채팅(640 A-3): 한 대화의 턴 수 상한에 닿았다. 새 대화를 시작해야 한다. */
+    SESSION_TURN_LIMIT
 }
