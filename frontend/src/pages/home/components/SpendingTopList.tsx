@@ -1,6 +1,8 @@
+import { Image } from 'expo-image';
 import { SymbolView } from 'expo-symbols';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
+import { getTransactionCategoryIcon } from '@/constants/transactionCategoryIcons';
 import { colors, componentSize } from '@/styles';
 import { formatCurrency } from '@/utils/currency';
 import type { HomeSpendingCategory } from '../hooks/useHomeSummary';
@@ -47,27 +49,36 @@ export function SpendingTopList({
             index === 0 && styles.firstRow,
             index > 0 && styles.separatedRow,
           ]}>
-          <View style={[styles.rankBadge, item.rank > 1 && styles.secondaryRankBadge]}>
-            <Text style={styles.rankLabel}>{item.rank}</Text>
+          {/* 순위는 목록 순서가 이미 말해 주므로, 자리는 무엇에 썼는지 알려 주는 아이콘에 준다. */}
+          <View style={styles.categoryIconFrame}>
+            <Image
+              contentFit="contain"
+              source={getTransactionCategoryIcon(item.code)}
+              style={styles.categoryIcon}
+            />
           </View>
 
-          <Text style={styles.categoryLabel}>{item.label}</Text>
+          <Text numberOfLines={1} style={styles.categoryLabel}>{item.label}</Text>
           <View style={styles.amountGroup}>
             <Text style={styles.categoryAmount}>{formatCurrency(item.amount)}</Text>
-            <View style={styles.changeGroup}>
-              <Text style={styles.changeLabel}>{`지난 달 대비 ${item.changePercent}%`}</Text>
-              <SymbolView
-                name={
-                  item.direction === 'down'
-                    ? { android: 'arrow_downward', ios: 'arrow.down', web: 'arrow_downward' }
-                    : { android: 'arrow_upward', ios: 'arrow.up', web: 'arrow_upward' }
-                }
-                size={componentSize.icon.trend}
-                tintColor={
-                  item.direction === 'down' ? colors.primary.green : colors.primary.orange
-                }
-              />
-            </View>
+            {item.direction === 'none' ? (
+              <Text style={styles.changeLabel}>지난 달과 같아요</Text>
+            ) : (
+              <View style={styles.changeGroup}>
+                <Text style={styles.changeLabel}>{`지난 달 대비 ${item.changePercent}%`}</Text>
+                <SymbolView
+                  name={
+                    item.direction === 'down'
+                      ? { android: 'arrow_downward', ios: 'arrow.down', web: 'arrow_downward' }
+                      : { android: 'arrow_upward', ios: 'arrow.up', web: 'arrow_upward' }
+                  }
+                  size={componentSize.icon.trend}
+                  tintColor={
+                    item.direction === 'down' ? colors.primary.green : colors.primary.orange
+                  }
+                />
+              </View>
+            )}
           </View>
         </View>
       ))}

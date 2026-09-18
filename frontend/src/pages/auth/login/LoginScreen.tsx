@@ -84,7 +84,7 @@ export function LoginScreen() {
   };
 
   return (
-    <AuthScreenLayout title={'로그인하고\n시작하기'}>
+    <AuthScreenLayout avoidKeyboard title={'로그인하고\n시작하기'}>
       <View style={styles.buttonGroup}>
         <SocialLoginButton
           label={submissionType === 'kakao' ? '카카오 로그인 중...' : undefined}

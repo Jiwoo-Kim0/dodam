@@ -31,8 +31,18 @@ export function SummaryCard({ comparisonMessage, previousMonthDailyAverage, yest
         <View style={styles.summaryHeadingRow}>
           <Text style={styles.summaryLabel}>어제 하루 쓴 돈</Text>
           {previousMonthDailyAverage !== null ? (
-            <View style={styles.statusBadge}>
-              <Text style={styles.statusBadgeText}>
+            <View
+              style={[
+                styles.statusBadge,
+                spentLessThanAverage ? styles.statusBadgeGood : styles.statusBadgeBad,
+              ]}>
+              <Text
+                style={[
+                  styles.statusBadgeText,
+                  spentLessThanAverage
+                    ? styles.statusBadgeTextGood
+                    : styles.statusBadgeTextBad,
+                ]}>
                 {spentLessThanAverage ? '평소보다 적어요' : '평소보다 많아요'}
               </Text>
             </View>

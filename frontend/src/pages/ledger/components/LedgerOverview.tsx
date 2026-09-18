@@ -6,7 +6,7 @@ import { SymbolView } from 'expo-symbols';
 import { AppHeader } from '@/components/appHeader/AppHeader';
 import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import type { BouncyScrollViewHandle } from '@/components/bouncyScrollView/BouncyScrollView';
-import { colors, componentSize } from '@/styles';
+import { colors } from '@/styles';
 import type {
   LedgerCategory,
   LedgerCategorySummary,
@@ -24,6 +24,9 @@ import {
 } from './LedgerShared';
 import { SpendingTrendSparkline } from './SpendingTrendSparkline';
 import { YearMonthPickerBottomSheet } from './YearMonthPickerBottomSheet';
+
+/** 헤더 우측 액션 아이콘은 같은 크기로 그려야 광학 중심이 맞는다. */
+const HEADER_ICON_SIZE = 20;
 
 interface LedgerOverviewProps {
   year: number;
@@ -228,19 +231,26 @@ export function LedgerOverview({
               accessibilityLabel="거래 검색"
               accessibilityRole="button"
               onPress={() => setIsSearchVisible((visible) => !visible)}
+              hitSlop={6}
               style={styles.headerIconAction}>
               <SymbolView
                 name={{ android: 'search', ios: 'magnifyingglass', web: 'search' }}
-                size={componentSize.icon.small + 5}
+                size={HEADER_ICON_SIZE}
                 tintColor={colors.textPrimary}
               />
             </Pressable>
             <Pressable
               accessibilityLabel="가계부 메뉴"
               accessibilityRole="button"
-              hitSlop={8}
-              onPress={() => setIsActionsMenuVisible((visible) => !visible)}>
-              <Text style={styles.headerMore}>•••</Text>
+              hitSlop={6}
+              onPress={() => setIsActionsMenuVisible((visible) => !visible)}
+              style={styles.headerIconAction}>
+              {/* 문자 `•••` 대신 심볼을 쓴다. 글자로 그리면 옆 검색 아이콘과 광학 크기가 안 맞는다. */}
+              <SymbolView
+                name={{ android: 'more_horiz', ios: 'ellipsis', web: 'more_horiz' }}
+                size={HEADER_ICON_SIZE}
+                tintColor={colors.textPrimary}
+              />
             </Pressable>
           </View>
         }

@@ -1,19 +1,28 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, fontFamily, radius, spacing, typography } from '@/styles';
+import {
+  colors,
+  fontFamily,
+  fontSize,
+  radius,
+  semanticSpacing,
+  spacing,
+  typography,
+} from '@/styles';
 
 export const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.white,
     borderRadius: radius.card,
-    marginTop: spacing[4],
     padding: spacing[4],
   },
+  /** 리포트 화면과 같은 카드 제목 규칙이다. */
   title: {
-    ...typography.subtitle,
-    color: colors.textPrimary,
-    fontFamily: fontFamily.semiBold,
-    marginBottom: spacing[3],
+    color: colors.textSecondary,
+    fontFamily: fontFamily.medium,
+    fontSize: fontSize.body2,
+    lineHeight: 18,
+    marginBottom: semanticSpacing.cardTitleContentGap,
   },
   row: {
     alignItems: 'center',

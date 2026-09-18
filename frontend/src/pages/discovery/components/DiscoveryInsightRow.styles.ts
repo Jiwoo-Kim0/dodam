@@ -7,10 +7,10 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.white,
     flexDirection: 'row',
-    gap: spacing[1],
-    minHeight: 70,
-    paddingHorizontal: spacing[3],
-    paddingVertical: spacing[2],
+    gap: spacing[3],
+    minHeight: 72,
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
   },
   rowPressed: {
     opacity: 0.65,
@@ -19,47 +19,18 @@ export const styles = StyleSheet.create({
     borderBottomColor: colors.divider,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  rankBadge: {
-    alignItems: 'center',
-    height: 28,
-    justifyContent: 'center',
-    position: 'relative',
-    width: 24,
-  },
-  rankAccent: {
-    borderRadius: radius.round,
-    bottom: 2,
-    height: spacing[2],
-    position: 'absolute',
-    width: 24,
-  },
-  rankFirst: {
-    backgroundColor: colors.goal.reducingCharacterBackground,
-  },
-  rankSecond: {
-    backgroundColor: colors.discovery.insightIncreaseTag,
-  },
-  rankThird: {
-    backgroundColor: colors.goal.savingCharacterBackground,
-  },
-  rankFourth: {
-    backgroundColor: colors.home.secondaryRank,
-  },
-  rankText: {
-    color: colors.textPrimary,
-    fontFamily: fontFamily.medium,
-    fontSize: fontSize.subtitle,
-    zIndex: 1,
-  },
+  /** 다른 화면 목록과 같은 회색 원형 프레임이다. 원색 아이콘의 채도를 눌러 준다. */
   iconFrame: {
     alignItems: 'center',
-    height: 30,
+    backgroundColor: colors.ledger.categoryTrack,
+    borderRadius: radius.round,
+    height: 38,
     justifyContent: 'center',
-    width: 30,
+    width: 38,
   },
   icon: {
-    height: 30,
-    width: 30,
+    height: 24,
+    width: 24,
   },
   content: {
     flex: 1,
@@ -74,23 +45,24 @@ export const styles = StyleSheet.create({
   title: {
     color: colors.textPrimary,
     fontFamily: fontFamily.semiBold,
+    fontSize: fontSize.body2,
+    letterSpacing: -0.3,
+    lineHeight: 18,
+    marginTop: 2,
+  },
+  description: {
+    color: colors.textSecondary,
+    fontFamily: fontFamily.regular,
     fontSize: fontSize.caption,
     lineHeight: 16,
     marginTop: 2,
   },
-  description: {
-    color: colors.textTertiary,
-    fontFamily: fontFamily.regular,
-    fontSize: fontSize.micro,
-    lineHeight: 14,
-    marginTop: 2,
-  },
+  /** 금액이 10px, 라벨이 9px이라 거의 읽히지 않았다. 행의 결론에 해당하니 크기를 올린다. */
   amountChevronRow: {
-    alignItems: 'flex-start',
+    alignItems: 'center',
     flexDirection: 'row',
     flexShrink: 0,
     gap: spacing[1],
-    marginTop: spacing[2],
   },
   amountWrap: {
     alignItems: 'flex-end',
@@ -99,17 +71,20 @@ export const styles = StyleSheet.create({
   amount: {
     color: colors.textPrimary,
     fontFamily: fontFamily.semiBold,
-    fontSize: fontSize.micro,
+    fontSize: fontSize.body2,
+    letterSpacing: -0.3,
+    lineHeight: 18,
   },
   amountUnit: {
+    color: colors.textSecondary,
     fontFamily: fontFamily.regular,
-    fontSize: fontSize.tiny,
+    fontSize: fontSize.detail,
   },
   amountLabel: {
     color: colors.textTertiary,
     fontFamily: fontFamily.regular,
-    fontSize: 9,
-    lineHeight: 12,
-    marginTop: 2,
+    fontSize: fontSize.micro,
+    lineHeight: 14,
+    marginTop: 1,
   },
 });

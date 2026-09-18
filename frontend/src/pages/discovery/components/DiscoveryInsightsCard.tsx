@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import { SymbolView } from 'expo-symbols';
 import { Pressable, Text, View } from 'react-native';
 
@@ -20,14 +21,8 @@ export function DiscoveryInsightsCard({ insight, onPress }: DiscoveryInsightsCar
       onPress={onPress}
       style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}>
       <View style={styles.badgeRow}>
-        <View
-          style={[
-            styles.rankBadge,
-            insight.rank === 1 && styles.rankFirst,
-            insight.rank === 2 && styles.rankSecond,
-            insight.rank === 3 && styles.rankThird,
-            insight.rank === 4 && styles.rankFourth,
-          ]}>
+        {/* 순위마다 색을 바꾸면 의미 없는 색이 늘어난다. 순위는 숫자만으로 충분하다. */}
+        <View style={styles.rankBadge}>
           <Text style={styles.rankBadgeText}>{insight.rank}순위</Text>
         </View>
         <View style={styles.categoryBadge}>
@@ -35,7 +30,13 @@ export function DiscoveryInsightsCard({ insight, onPress }: DiscoveryInsightsCar
         </View>
       </View>
 
-      <Text style={styles.title}>{insight.detailedTitle}</Text>
+      {/* 발견 홈 목록과 같은 카테고리 아이콘이다. 글자만 있던 카드에 시각 앵커를 준다. */}
+      <View style={styles.titleRow}>
+        <View style={styles.iconFrame}>
+          <Image contentFit="contain" source={insight.icon} style={styles.icon} />
+        </View>
+        <Text style={styles.title}>{insight.detailedTitle}</Text>
+      </View>
 
       <View style={styles.divider} />
 

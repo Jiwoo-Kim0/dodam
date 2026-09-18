@@ -39,6 +39,8 @@ export const colors = {
     forecastLiving: '#DBE8BB',
     forecastCard: '#FDDA6B',
     chartBar: '#EAEAEA',
+    /** 선택한 회색 막대. `chartBar`보다 한 단계 진하다. */
+    chartBarStrong: '#C9C9C9',
   },
   ledger: {
     softSurface: '#F8F8F8',

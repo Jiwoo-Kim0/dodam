@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 import { assetApi } from '@/api';
 import { fetchAllPages } from '@/api/pagination';
@@ -128,18 +128,6 @@ export function useAssetData() {
     }
   }, []);
 
-  useEffect(() => {
-    const loadTimeout = setTimeout(() => {
-      void loadAssetData();
-    }, 0);
-
-    return () => {
-      clearTimeout(loadTimeout);
-      requestIdRef.current += 1;
-      loadInFlightRef.current = false;
-    };
-  }, [loadAssetData]);
-
   const refetch = useCallback(() => loadAssetData(true), [loadAssetData]);
 
   return {
@@ -148,5 +136,11 @@ export function useAssetData() {
     isLoading,
     isRefreshing,
     refetch,
+    reload: useCallback(() => loadAssetData(), [loadAssetData]),
+    /** 화면을 벗어날 때 부른다. 돌아온 뒤 다시 조회할 수 있도록 진행 중 표시도 함께 푼다. */
+    cancel: useCallback(() => {
+      requestIdRef.current += 1;
+      loadInFlightRef.current = false;
+    }, []),
   };
 }

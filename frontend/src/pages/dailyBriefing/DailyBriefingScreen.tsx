@@ -54,7 +54,13 @@ export function DailyBriefingScreen() {
               previousMonthDailyAverage={data.previousMonthDailyAverage}
               yesterdaySpentAmount={data.yesterdaySpentAmount}
             />
-            <TransactionsCard message={data.transactionsMessage} transactions={data.transactions} />
+            <TransactionsCard
+              message={data.transactionsMessage}
+              onTransactionPress={(transactionId) =>
+                router.push(routes.ledgerTransaction(transactionId, data.date))
+              }
+              transactions={data.transactions}
+            />
             <InsightSection insights={data.insights} message={data.insightsMessage} />
             <GoalImpactCard impacts={data.goalImpacts} message={data.goalImpactsMessage} />
             <UpcomingCard

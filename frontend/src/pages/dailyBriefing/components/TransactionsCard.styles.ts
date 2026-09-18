@@ -5,7 +5,7 @@ import { colors, fontFamily, fontSize, spacing } from '@/styles';
 export const styles = StyleSheet.create({
   transactionsCard: {
     paddingHorizontal: spacing[4],
-    paddingTop: spacing[3],
+    paddingVertical: spacing[3],
   },
   sectionHeadingRow: {
     alignItems: 'center',
@@ -25,12 +25,18 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     minHeight: 48,
   },
+  /** 행이 여러 개 붙어 있으면 어디까지가 한 건인지 읽기 어려워 얇은 선으로 끊는다. */
+  separatedRow: {
+    borderTopColor: colors.divider,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  /** 시간은 보조 정보라 가맹점 이름보다 뒤로 물러나게 둔다. */
   transactionTime: {
-    color: colors.textPrimary,
+    color: colors.textTertiary,
     fontFamily: fontFamily.regular,
-    fontSize: fontSize.body2,
+    fontSize: fontSize.caption,
     letterSpacing: -0.2,
-    width: 58,
+    width: 44,
   },
   paymentIconFrame: {
     alignItems: 'center',
@@ -61,8 +67,8 @@ export const styles = StyleSheet.create({
   },
   transactionAmount: {
     color: colors.textPrimary,
-    fontFamily: fontFamily.medium,
-    fontSize: fontSize.buttonSmall,
+    fontFamily: fontFamily.semiBold,
+    fontSize: fontSize.body1,
     letterSpacing: -0.3,
     marginLeft: spacing[2],
   },
@@ -70,13 +76,13 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     borderTopColor: colors.divider,
     borderTopWidth: StyleSheet.hairlineWidth,
-    height: 42,
+    height: 40,
     justifyContent: 'center',
     marginTop: spacing[1],
   },
   expandButtonText: {
-    color: colors.textPrimary,
+    color: colors.textSecondary,
     fontFamily: fontFamily.medium,
-    fontSize: fontSize.body1,
+    fontSize: fontSize.body2,
   },
 });

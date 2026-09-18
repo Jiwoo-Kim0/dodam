@@ -102,10 +102,12 @@ export function buildBriefingStreaks(
     noSpendDays > 0 ? {
       id: 'no-spending', label: '지출 없는 날',
       value: noSpendDays === recent.length ? `${noSpendDays}일 이상` : `연속 ${noSpendDays}일`,
+      icon: require('@/assets/icons/common/star.png'),
     } : null,
     underAverageDays > 0 ? {
       id: 'under-average', label: '지난달 평균 이하',
       value: underAverageDays === recent.length ? `${underAverageDays}일 이상` : `연속 ${underAverageDays}일`,
+      icon: require('@/assets/icons/common/growing.png'),
     } : null,
   ].filter((item): item is DailyBriefingStreak => item !== null);
 }
