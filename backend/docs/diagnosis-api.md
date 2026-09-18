@@ -1,4 +1,4 @@
-# 진단 실행·조회 API — S15P21D105-544·545·546·627
+# 진단 실행·조회 API — S15P21D105-544·545·546·627·641
 
 작성일 2026-09-13, 갱신 2026-09-16(627 규칙 2종). 544·545는 브랜치 `S15P21D105-544-545-api-14`(병합됨), 546은 `S15P21D105-546-api-14`, 627은 `S15P21D105-627`.
 저장 계층은 [diagnosis.md](diagnosis.md), 설계 근거와 미정 규칙은 [544·545 계획](diagnosis-api-plan.md)·[546 계획](diagnosis-goal-impact-plan.md)·[627 계획](diagnosis-627-plan.md)을 참조한다.
@@ -51,7 +51,7 @@ goalId 없는 latest는 목표 연계 여부와 관계없이 본인의 최신 �
 
 ## 규칙·근거
 
-규칙 버전은 `v4-spending-loan-rules`다(627에서 규칙 2종을 추가하며 `v3-goal-impact`에서 올림. v3은 546이 스냅샷에 목표 예상 달성일을 추가한 버전). 규칙 변경 때 버전을 변경해야 이전 완료본을 잘못 재사용하지 않는다.
+규칙 버전은 `v7-cluster-hybrid`다(641에서 군집 이탈 규칙을 연결하며 `v6-last-month-vs-3m`에서 올림. 이력: v3 546 목표 예상 달성일 → v4 627 규칙 2종 → v5 문구 → v6 631 소비 증가 기준 → v7 641). 규칙 변경 때 버전을 변경해야 이전 완료본을 잘못 재사용하지 않는다.
 
 | domain/type | 데이터 출처와 판정 |
 | --- | --- |
@@ -60,6 +60,7 @@ goalId 없는 latest는 목표 연계 여부와 관계없이 본인의 최신 �
 | CASHFLOW/BALANCE_SHORTAGE | 최신 완료 예측의 baseDate가 진단 기준일과 같은 경우 저장된 위험을 변환. 예측별 위험당 한 문제 |
 | SPENDING/CATEGORY_SPENDING_INCREASE (627, 기준 변경 631) | `SpendingIncreaseRule`. 카테고리별 **지난달**(마지막 완료 월) vs **직전 3개월 월평균**(규칙 버전 `v6-last-month-vs-3m`부터. v5까지는 최근 3개월 평균 vs 이전 3개월 평균). 임계값은 API 6 소비 급증과 같은 20% 초과·월 1만 원 이상. 카테고리당 한 문제 |
 | LOAN/HIGH_INTEREST_RATE (627) | `HighInterestLoanRule`. API 11 고금리 점검(`LoanRateComparisonService.highInterest`)의 대상 대출 + 대환 절감액 추정. 대출당 한 문제 |
+| SPENDING/CLUSTER_SPENDING_RATIO_HIGH · SAVING/CLUSTER_SAVING_RATE_LOW · SPENDING/CLUSTER_DISCRETIONARY_HIGH · SPENDING/CLUSTER_FIXED_SHARE_HIGH · CASHFLOW/CLUSTER_VOLATILITY_HIGH (641) | `ClusterDeviationRule`. 최신 완료 패턴 분석의 `cluster_stats_json`(특징별 `deviation`·`direction`)만 읽는다. 특징당 한 후보이며, 같은 성격의 규칙 문제가 있으면 새 문제 대신 그 문제에 `RULE_AND_CLUSTER`로 근거를 병합한다. 아래 §641 |
 
 목표 계산은 접수 기준일을 전달하는 readOnly 경로를 추가했다. 기존 Goal API의 잔액 갱신·이력 기록 계약은 유지하고 진단 경로는 이를 수행하지 않는다.
 Goal의 기존 심각도·수치·가정을 재사용하며 진단에서 별도 금액 계산을 추가하지 않는다.
@@ -103,6 +104,49 @@ GoalCalculationService의 실제 판정 상수는 benchmarkValue에 보존한다
 - coverage `HIGH_INTEREST_RATE`: 잔액이 있는 대출이 없으면 `NOT_APPLICABLE`, 있으면 `EVALUATED`(일부 대출이 판정 불가면 `reason=INCOMPLETE_LOAN_DATA`).
 - 진단 스냅샷 `assumptions`에 `SPENDING_INCREASE_EXCLUDES_CURRENT_MONTH`·`REFINANCE_ESTIMATE_EXCLUDES_FEES`를 추가했다. 두 규칙은 goalId 지정 진단에서도 실행된다(CASHFLOW와 같다).
 
+### 641 군집 이탈 (Hybrid, `ClusterDeviationRule`)
+
+기획안 5-2·14-3. **새 계산은 없다** — 패턴 분석(516·632)이 완료 시점에 저장한 배정 군집의 기준 범위(5~95분위)와 특징별 이탈값을 진단이 읽어
+임계값·방향 필터만 적용한다. 군집 판정의 근거(모델 버전·표본 수·신뢰도·기준 기간·분석 시각)는 `clusterContext`에 그대로 남는다.
+
+- **진단 시 패턴 분석 보장**: FE가 `POST /patterns/analyze`를 부르지 않으므로 `DiagnosisRunner`가 접수 뒤 계산 전에 `PatternAnalysisRunner.run(userId, 기본값)`을 호출한다.
+  오늘 완료본이 있으면 재사용(같은 날 캐시), 데이터 부족·미연결(409)이나 그 밖의 실패는 진단을 막지 않고 coverage 사유로만 남는다.
+- coverage `CLUSTER`: `EVALUATED` / `UNAVAILABLE(reason)`. 사유는 `PATTERN_NOT_ANALYZED`(완료 분석 없음), 분석이 남긴 `fallbackReason`
+  (`INSUFFICIENT_POPULATION`·`FEATURES_UNAVAILABLE`·`USER_DATA_TOO_SHORT`·`SMALL_CLUSTER_SAMPLE`·`LOW_CONFIDENCE`·`MODEL_NOT_AVAILABLE`·`RULE_ONLY_REQUESTED`),
+  `STALE_PATTERN_ANALYSIS`(분석이 기준일보다 30일 이상 과거), 진단에서 다시 확인하는 노출 조건 미달(`SMALL_CLUSTER_SAMPLE` < 10, `LOW_CONFIDENCE` < 0.2,
+  `USER_DATA_TOO_SHORT` < 3개월), `CLUSTER_STATS_UNREADABLE`. 이전 버전의 `CLUSTER_NOT_CONNECTED`는 더 쓰지 않는다.
+- 판정: `direction`이 표의 점검 방향과 같고 `deviation ≥ 0.25`(기준 범위 폭 대비)인 특징만 후보. 심각도는 `deviation ≥ 1.0`이면 HIGH, 그 외 MEDIUM.
+  **임계값·경계·30일은 서비스 초기값**이며 시연 seed 4종 실측 뒤 조정한다(640 계획 §6-2).
+
+| 특징 | 점검 방향 | 단독 문제 type | 병합 대상(같은 진단 안 RULE 문제) |
+| --- | --- | --- | --- |
+| `spendingToIncomeRatio` | ABOVE | SPENDING/CLUSTER_SPENDING_RATIO_HIGH | 없음(GOAL 위험과 겹치지만 FE가 GOAL을 발견 목록에서 숨겨 병합하면 배지가 안 보인다) |
+| `savingRate` | BELOW | SAVING/CLUSTER_SAVING_RATE_LOW | 없음(같은 이유). 저축률이 군집보다 **높은** 것은 문제가 아니다 |
+| `discretionaryShare` | ABOVE | SPENDING/CLUSTER_DISCRETIONARY_HIGH | SPENDING/CATEGORY_SPENDING_INCREASE 중 `evidence.categoryCode`가 재량 카테고리(FOOD·CAFE·SHOPPING·BEAUTY·CULTURE·TRAVEL·TAXI)인 것 |
+| `fixedExpenseShare` | ABOVE | SPENDING/CLUSTER_FIXED_SHARE_HIGH | 없음(고정지출 증가 규칙 미구현) |
+| `spendingVolatility` | ABOVE | CASHFLOW/CLUSTER_VOLATILITY_HIGH | CASHFLOW/BALANCE_SHORTAGE |
+
+- 병합: 대상 규칙 문제의 심각도·제목·설명·값은 그대로 두고 `detectionSource = RULE_AND_CLUSTER`, `modelVersion`, `clusterContext`만 채운다(`DiagnosisIssue.attachClusterEvidence`).
+  대상이 여럿이면 전부에 같은 근거를 붙인다. 문제 수는 변하지 않는다.
+- 단독 문제(`DetectionSource.CLUSTER`): 제목은 단정하지 않는다 — "비슷한 소비 유형과 견줘 점검할 항목이 있어요". 설명 예: "재량소비 비중이 44%로 비슷한 소비 유형(소비 집중형, 1,000명)의
+  기준 범위 12~31%보다 높아요." `currentValue = {feature, displayName, userValue, direction, deviation}`, `benchmarkValue = {p5, p95, mean, sampleSize, deviationThreshold, highSeverityDeviation}`,
+  `evidence = {ruleKey: "CLUSTER_<feature>", targetId: patternAnalysisId, patternAnalysisId, clusterId, clusterLabel}`.
+- `clusterContext`(병합·단독 공통, 코치 "군집 근거(서버 계산)" 섹션과 FE 상세 카드가 그대로 읽는다):
+
+```json
+{ "modelVersion": "spending-kmeans-v2", "clusterId": 1, "clusterLabel": "소비 집중형", "sampleSize": 1000, "confidence": 0.58,
+  "window": "2026-03~2026-08", "analyzedAt": "2026-09-18T09:12:00", "feature": "discretionaryShare", "displayName": "재량소비 비중",
+  "userValue": 0.44, "p5": 0.12, "p95": 0.31, "mean": 0.21, "deviation": 0.68, "direction": "ABOVE",
+  "percentileInCluster": 92.0, "rankBand": "TOP_10", "deviationScore": 0.23 }
+```
+
+`deviationScore`는 특징 5종 이탈의 균등 평균(프로필 값)이라 개별 `deviation`보다 클 수 없다. 스냅샷 `clusterDeviation`에 판정 결과 전체와 `standaloneIssueCount`·`mergedCandidateCount`를 남기고,
+`assumptions`에 `CLUSTER_DEVIATION_USES_STORED_PATTERN_ANALYSIS`를 추가했다. 규칙은 goalId 지정 진단에서도 실행된다.
+
+검증(2026-09-18, JDK 21 H2): `ClusterDeviationRuleTest` 7건(방향 필터·임계·심각도 경계·노출 조건 사유·재량 카테고리 병합·단독 생성·중복 병합 거부),
+`ClusterDeviationDiagnosisApiTest` 3건(거래 없음 → `PATTERN_NOT_ANALYZED`, 모집단 부족 → `INSUFFICIENT_POPULATION`, 성향 4종×12명 모집단에서 HYBRID 배정 →
+식비 증가 문제 `RULE_AND_CLUSTER` + 소득 대비 소비율 단독 `CLUSTER`, 같은 날 재진단 시 패턴 분석 재사용). 추천 생성기·α 반영·코치 notes는 C-2(다음 MR).
+
 ## 응답·데이터 부족
 
 진단 응답: diagnosisId, goalId, createdAt, completedAt, ruleVersion, overallStatus, issueCount, highSeverityCount, coverage, assumptions.
@@ -117,7 +161,7 @@ coverage는 실행한 GOAL/CASHFLOW, 대상 없음, 누락 데이터, 미정 규
 미구현 규칙: 휴면 계좌, 고정/변동지출 유형별 증가(627의 카테고리 증가와 다른 규칙), 이자/상환 부담, 저사용 카드,
 카드 결제 부담, 저축 후 현금 부족. 문서의 임계값·자료 완전성 확인과 정책 확정이 선행되어야 한다.
 FE가 함께 요청한 미사용 구독(사용 기록 없음)·유휴자금(비상금·생활비 보존 기준 미정)은 2026-09-16 범위에서 제외하기로 했다([627 계획](diagnosis-627-plan.md)).
-군집 조건 검증·동일 카테고리 근거 병합·실제 공급자 연결도 후속 구현이다. 545 전체 군집 흐름을 완료한 것으로 간주하지 않는다.
+군집 조건 검증·동일 카테고리 근거 병합은 641에서 연결했다(§641). 단독 CLUSTER 문제의 추천 생성기와 우선순위 α 반영은 C-2에서 이어진다.
 
 ## 목표 영향·진단 변화 (546)
 
