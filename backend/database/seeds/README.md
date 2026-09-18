@@ -103,15 +103,26 @@ seed 목표는 `created_at = '2026-03-01 09:00:00'`으로 식별해 재실행 �
 - 부수 효과: 현금흐름 예측(`CashflowEventCollector`)에 월 410,331원 `LOAN_REPAYMENT` 유출이 추가된다. 가계부 `transaction`에는 상환 거래를 넣지 않았다(523도 넣지 않는다). 1번·3번 계정 등 다른 사용자는 건드리지 않는다.
 - 적용 뒤 U0003으로 발견 화면을 새로고침(`POST /diagnoses` → `POST /recommendations/generate`)해야 새 진단에 반영된다. 이전 진단은 그대로 남는다.
 
-서버 적용(컨테이너 안, infra/.env 키 사용):
+서버 적용(호스트에서 fixture 생성 → mysql 컨테이너로 적재. `infra/.env` 키 사용):
 
 ```bash
+# 주의: infra/.env 에는 DB_USERNAME/DB_PASSWORD 가 없다.
+#       그 이름은 compose가 backend 컨테이너에 넘길 때 쓰는 것이고,
+#       .env 의 키는 MYSQL_USER / MYSQL_PASSWORD / MYSQL_DATABASE 다.
 set -a; . infra/.env; set +a
-python3 backend/scripts/make_demo_loan_fixture.py > /tmp/demo_loan_fixture.sql
-mysql -h127.0.0.1 -u"$DB_USERNAME" -p"$DB_PASSWORD" <db> < /tmp/demo_loan_fixture.sql
-mysql -h127.0.0.1 -u"$DB_USERNAME" -p"$DB_PASSWORD" <db> < backend/database/seeds/DODAM_DEMO_LOAN_SEED.sql
+python3 backend/scripts/make_demo_loan_fixture.py > /tmp/demo_loan_fixture.sql   # cryptography 없으면 설치
+cd infra
+docker compose exec -T -e MYSQL_PWD="$MYSQL_PASSWORD" mysql mysql --default-character-set=utf8mb4 -h127.0.0.1 -u"$MYSQL_USER" "$MYSQL_DATABASE"   < /tmp/demo_loan_fixture.sql
+docker compose exec -T -e MYSQL_PWD="$MYSQL_PASSWORD" mysql mysql --default-character-set=utf8mb4 -h127.0.0.1 -u"$MYSQL_USER" "$MYSQL_DATABASE"   < ../backend/database/seeds/DODAM_DEMO_LOAN_SEED.sql
 rm /tmp/demo_loan_fixture.sql
 ```
+
+- MySQL은 컨테이너 안에만 있다(호스트에 mysql 클라이언트·3306 바인딩 없음). `docker compose exec -T`로 표준입력을 넘긴다.
+- 비밀번호는 `-p`가 아니라 `MYSQL_PWD`로 넘긴다(`ps`에 남지 않는다).
+- 한글이 들어간 즉석 점검 쿼리(`mysql -e "… product_name='KB 국민ONE대출'"`)를 쓸 때는 `--default-character-set=utf8mb4`를 반드시 붙인다.
+  빠뜨리면 리터럴이 깨져 **상품이 없는 것처럼 0건**이 나온다. seed 파일 자체는 첫 줄이 `SET NAMES utf8mb4`라 영향이 없다.
+- 2026-09-18 인프라(김지우)가 이 절차로 시연 서버에 적재했다(아래 검증 상태). 09-18 이전 판의 `mysql -u"$DB_USERNAME" -p"$DB_PASSWORD"` 블록은 .env 키 이름이
+  달라 인증에 실패한다.
 
 되돌리려면 U0003의 `loan_repayment` → `loan` 행을 지운다(`account_name = 'KB 국민ONE대출'`, 사용자 이메일 조건).
 
@@ -157,3 +168,7 @@ preflight `1 / 1 / 1 / 1 / 1 / 1 / 0`, 대출 1건(잔액 12,998,492·8.5000·`f
 coverage `HIGH_INTEREST_RATE=EVALUATED`, 문제 `LOAN/HIGH_INTEREST_RATE HIGH` "'KB 국민ONE대출' 금리가 비교상품 공시금리보다 높아요", 대환 추정 `available=true`(카카오뱅크 신용대출 5.028%, 36회, 절감 741,260)
 → `POST /recommendations/generate` `created 1` `LOAN/REFINANCE_LOAN`(월 20,590·연 247,080), 요약 `discovery.expectedAnnualCostSaving = 247080`.
 fixture를 다시 만들고 13번을 두 번째 실행해도 같은 `loan_id`·상환 8건이며 `tmp_dodam_demo_loan_*`는 남지 않는다. **서버 적용은 아직이다.**
+
+**2026-09-18 시연 서버(j15d105.p.ssafy.io)에 13번을 적재했다**(인프라 김지우, 위 `docker compose exec` 절차). preflight `1 / 1 / 1 / 1 / 1 / 1 / 0`,
+대출 1건·상환 8건. U0003 재진단에서 `LOAN/HIGH_INTEREST_RATE` HIGH(편차 +3.271%p), 대환 추천(만기까지 741,260원 절감)까지 로컬 검증 수치와 일치.
+기록: `infra/todo/jiw/day-12.md`.

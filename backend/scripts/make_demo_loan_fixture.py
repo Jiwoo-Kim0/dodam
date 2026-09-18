@@ -10,10 +10,11 @@ seed 파일은 계좌번호 원문·키를 담지 않으므로, 서버(또는 �
   - account_no_hash      : HMAC-SHA-256 소문자 hex, 키는 NUMBER_HASH_KEY(문자열 그대로 UTF-8 바이트)
   - account_no_masked    : 12자리 이상 → 앞 6자리 + "-**-**" + 뒤 4자리
 
-사용:
-  DATA_ENCRYPTION_KEY=... NUMBER_HASH_KEY=... python3 make_demo_loan_fixture.py > /tmp/demo_loan_fixture.sql
-  mysql -h127.0.0.1 -u<user> -p <db> < /tmp/demo_loan_fixture.sql
-  mysql -h127.0.0.1 -u<user> -p <db> < backend/database/seeds/DODAM_DEMO_LOAN_SEED.sql
+사용(서버는 MySQL이 컨테이너 안에만 있으므로 `docker compose exec -T`로 넘긴다. 전체 절차는 seeds/README.md §시연 계정 U0003 고금리 대출):
+  set -a; . infra/.env; set +a        # DATA_ENCRYPTION_KEY·NUMBER_HASH_KEY·MYSQL_* 가 채워진다
+  python3 backend/scripts/make_demo_loan_fixture.py > /tmp/demo_loan_fixture.sql
+  cd infra && docker compose exec -T -e MYSQL_PWD="$MYSQL_PASSWORD" mysql mysql --default-character-set=utf8mb4 -h127.0.0.1 -u"$MYSQL_USER" "$MYSQL_DATABASE" < /tmp/demo_loan_fixture.sql
+  (같은 명령으로 backend/database/seeds/DODAM_DEMO_LOAN_SEED.sql 적재)
 
 키는 환경변수(infra/.env 와 같은 이름)로만 읽고 출력하지 않는다. 계좌번호 원문도 stdout SQL에 남기지 않는다
 (암호문·해시·마스킹값만). 의존: `pip install cryptography`.
