@@ -20,14 +20,8 @@ export function DiscoveryInsightsCard({ insight, onPress }: DiscoveryInsightsCar
       onPress={onPress}
       style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}>
       <View style={styles.badgeRow}>
-        <View
-          style={[
-            styles.rankBadge,
-            insight.rank === 1 && styles.rankFirst,
-            insight.rank === 2 && styles.rankSecond,
-            insight.rank === 3 && styles.rankThird,
-            insight.rank === 4 && styles.rankFourth,
-          ]}>
+        {/* 순위마다 색을 바꾸면 의미 없는 색이 늘어난다. 순위는 숫자만으로 충분하다. */}
+        <View style={styles.rankBadge}>
           <Text style={styles.rankBadgeText}>{insight.rank}순위</Text>
         </View>
         <View style={styles.categoryBadge}>

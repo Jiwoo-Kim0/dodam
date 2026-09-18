@@ -17,25 +17,13 @@ export const styles = StyleSheet.create({
     gap: spacing[2],
   },
   rankBadge: {
-    backgroundColor: colors.primary.green,
+    backgroundColor: colors.primary.lightGreen,
     borderRadius: radius.round,
     paddingHorizontal: spacing[2],
     paddingVertical: 2,
   },
-  rankFirst: {
-    backgroundColor: colors.primary.brown,
-  },
-  rankSecond: {
-    backgroundColor: colors.primary.orange,
-  },
-  rankThird: {
-    backgroundColor: colors.primary.yellow,
-  },
-  rankFourth: {
-    backgroundColor: colors.primary.green,
-  },
   rankBadgeText: {
-    color: colors.white,
+    color: colors.report.scoreStrong,
     fontFamily: fontFamily.semiBold,
     fontSize: fontSize.micro,
   },
