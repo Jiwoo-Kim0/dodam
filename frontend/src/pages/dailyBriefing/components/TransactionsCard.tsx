@@ -33,8 +33,10 @@ export function TransactionsCard({ transactions, message }: TransactionsCardProp
       {transactions.length === 0 ? (
         <Text style={screenStyles.emptyMessage}>{message ?? '어제 결제한 내역이 없어요.'}</Text>
       ) : <View style={styles.transactionList}>
-        {visibleTransactions.map((transaction) => (
-          <View key={transaction.id} style={styles.transactionRow}>
+        {visibleTransactions.map((transaction, index) => (
+          <View
+            key={transaction.id}
+            style={[styles.transactionRow, index > 0 && styles.separatedRow]}>
             <Text style={styles.transactionTime}>{transaction.time}</Text>
             <View style={styles.paymentIconFrame}>
               <Image
