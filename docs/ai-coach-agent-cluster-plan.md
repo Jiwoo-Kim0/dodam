@@ -1,6 +1,6 @@
 # AI 고도화 계획 — 대화형 시뮬레이션 에이전트 · 군집 이탈 진단 연결
 
-작성일: 2026-09-18. 상태: **계획(미착수)**. Jira 이슈 미생성 — 착수 전 이슈를 만들고 아래 MR 단위로 하위 작업을 나눈다.
+작성일: 2026-09-18. 상태: **진행 중** — Jira S15P21D105-640(상위), 641(C-1 군집 이탈 규칙, 2026-09-18 구현 완료·MR). §1-8 GMS 확인은 637에서 통과 → ① 설계 A(tool calling) 확정.
 최종 발표 2026-09-28 기준 남은 작업일 10일(**주말 포함 작업으로 합의**, 2026-09-18)이며, 1차 QA(09-17)와 결함 수정이 병행된다.
 담당(2026-09-18 팀 합의 완료): **BE·AI 전부 구동재, FE 전부 정서영.** 이 계획의 BE 변경(`coach`·`diagnosis`·`recommendation`·`simulation`·`pattern` 패키지)은 원 관할과 무관하게 구동재가 전담한다.
 
@@ -158,7 +158,11 @@ record ToolCall(String id, String name, String argumentsJson) { }
 - 로딩 8~15초를 견디는 UI(도리 타이핑 애니메이션). 실패 시 `source=TEMPLATE` 문장 표시, 재시도 버튼.
 - 타입: `CoachChatRequest`/`CoachChatResponse`를 `types/coachApi.types.ts`에 추가. `api/coachApi.ts`에 `chat()`.
 
-### 1-8. 선행 확인 (착수 첫날, 구동재)
+### 1-8. 선행 확인 (착수 첫날, 구동재) — **완료(2026-09-18, S15P21D105-637): 통과. 설계 A 확정.**
+
+`backend/scripts/gms_tools_probe.py`로 실측했다(`backend/docs/ai-coach.md` §8-3): `tools`+`tool_choice: required` → `tool_calls` 2개 정확 인자, `tool_choice` 강제,
+`response_format json_schema strict`, 2턴 `role: tool` 회신 전부 200. 도구 인자 스키마는 enum·description으로 고정한다(빼면 모델이 `"카페"` 같은 한글 값을 넣었다).
+아래는 원래 확인 절차로 남긴다.
 
 GMS 중계가 `tools`를 통과시키는지 1회 확인한다. 통과하지 않으면 **대안 B**로 간다.
 
@@ -261,7 +265,7 @@ FE가 `POST /patterns/analyze`를 부르지 않으므로 진단 실행 시 **서
 
 | MR | 내용 | 담당 |
 | --- | --- | --- |
-| C-1 | `ClusterDeviationRule`·`DiagnosisIssue.ofCluster`·병합·coverage·규칙 버전·진단 시 패턴 분석 보장·테스트 | 구동재 |
+| C-1 | `ClusterDeviationRule`·`DiagnosisIssue.ofCluster`·병합·coverage·규칙 버전·진단 시 패턴 분석 보장·테스트 — **641 구현 완료(09-18)**, 계약 `backend/docs/diagnosis-api.md` §641 | 구동재 |
 | C-2 | `ClusterDeviationGenerator`·`RecommendationInput.Issue.clusterContext`·α 반영·코치 notes·`backend/docs/diagnosis-api.md`/`recommendation-api.md` 갱신 | 구동재 |
 | C-3 | FE 배지·상세 카드·`SAVING` 라벨·타입 | 정서영 |
 
@@ -317,7 +321,7 @@ FE가 `POST /patterns/analyze`를 부르지 않으므로 진단 실행 시 **서
 
 ## 6. 미결 (스크럼 안건)
 
-1. GMS `tools` 통과 여부 → ① 설계 A/B 확정 (09-18).
+1. ~~GMS `tools` 통과 여부 → ① 설계 A/B 확정 (09-18).~~ **확정: 통과, 설계 A**(637).
 2. `FEATURE_DEVIATION_THRESHOLD`·HIGH 경계·α 값 — seed 실측 후(09-23).
 3. 채팅 레이트 리밋 값(사용자·일 단위)과 세션 TTL.
 4. 진단 시 패턴 분석 보장(§2-4)을 진단에 넣을지, FE가 `POST /patterns/analyze`를 온보딩 동기화 직후 호출할지.

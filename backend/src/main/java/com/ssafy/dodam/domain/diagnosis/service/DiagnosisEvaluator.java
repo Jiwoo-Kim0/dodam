@@ -31,10 +31,12 @@ public class DiagnosisEvaluator {
     private final SpendingGoalRepository spendingGoals;
     private final SpendingIncreaseRule spendingIncrease;
     private final HighInterestLoanRule highInterestLoan;
+    private final ClusterDeviationRule clusterDeviation;
 
     public DiagnosisEvaluator(GoalRepository goals, GoalCalculationService goalCalculation,
             CashflowQueryService cashflow, ObjectMapper json, SavingGoalRepository savingGoals,
-            SpendingGoalRepository spendingGoals, SpendingIncreaseRule spendingIncrease, HighInterestLoanRule highInterestLoan) {
+            SpendingGoalRepository spendingGoals, SpendingIncreaseRule spendingIncrease, HighInterestLoanRule highInterestLoan,
+            ClusterDeviationRule clusterDeviation) {
         this.goals = goals;
         this.goalCalculation = goalCalculation;
         this.cashflow = cashflow;
@@ -43,6 +45,7 @@ public class DiagnosisEvaluator {
         this.spendingGoals = spendingGoals;
         this.spendingIncrease = spendingIncrease;
         this.highInterestLoan = highInterestLoan;
+        this.clusterDeviation = clusterDeviation;
     }
 
     public Evaluation evaluate(Diagnosis diagnosis) {
@@ -53,7 +56,7 @@ public class DiagnosisEvaluator {
         ArrayNode coverage = snapshot.putArray("coverage");
         snapshot.putArray("assumptions").add("LOCAL_DATA_ONLY").add("PARTIAL_RULE_COVERAGE")
                 .add("GOAL_RULES_USE_CURRENT_ACCOUNT_BALANCES").add("SPENDING_INCREASE_EXCLUDES_CURRENT_MONTH")
-                .add("REFINANCE_ESTIMATE_EXCLUDES_FEES");
+                .add("REFINANCE_ESTIMATE_EXCLUDES_FEES").add("CLUSTER_DEVIATION_USES_STORED_PATTERN_ANALYSIS");
         ArrayNode inputs = snapshot.putArray("goals");
         List<Goal> selected = diagnosis.getGoalId() == null
                 ? goals.findAllByUserIdAndDeletedAtIsNull(diagnosis.getUserId()).stream()
@@ -91,7 +94,8 @@ public class DiagnosisEvaluator {
                 "CARD_PAYMENT_BURDEN", "SAVING_CASHFLOW_BURDEN")) {
             coverage.addObject().put("ruleKey", rule).put("status", "UNAVAILABLE").put("reason", "RULE_POLICY_NOT_DEFINED");
         }
-        coverage.addObject().put("ruleKey", "CLUSTER").put("status", "UNAVAILABLE").put("reason", "CLUSTER_NOT_CONNECTED");
+        // 641: 규칙 문제가 모두 모인 뒤에 실행한다 — 병합 대상(같은 성격의 규칙 문제)을 찾아 근거만 붙여야 하기 때문이다.
+        evaluateClusterDeviation(diagnosis, issues, snapshot, coverage);
         DiagnosisStatus status = issues.stream().anyMatch(DiagnosisIssue::isHighSeverity) ? DiagnosisStatus.RISK
                 : issues.isEmpty() ? null : DiagnosisStatus.CAUTION;
         return new Evaluation(List.copyOf(issues), status, snapshot);
@@ -154,6 +158,22 @@ public class DiagnosisEvaluator {
             if (result.unavailableCount() > 0) {
                 entry.put("reason", HighInterestLoanRule.COVERAGE_INCOMPLETE);
             }
+        }
+    }
+
+    /**
+     * 군집 이탈(641). 저장된 최신 패턴 분석만 읽고, 병합 대상이 있으면 그 규칙 문제에 근거를 붙이고 없으면 단독 문제를 만든다.
+     * 분석이 없거나 낡았거나 조건 미달이면 coverage에 사유만 남긴다(문제 0건과 구분).
+     */
+    private void evaluateClusterDeviation(Diagnosis diagnosis, List<DiagnosisIssue> issues, ObjectNode snapshot, ArrayNode coverage) {
+        ClusterDeviationRule.Result result = clusterDeviation.evaluate(diagnosis.getUserId(), diagnosis.getCreatedAt().toLocalDate());
+        ObjectNode stored = json.valueToTree(result);
+        int created = result.available() ? clusterDeviation.apply(diagnosis, result, issues) : 0;
+        stored.put("standaloneIssueCount", created).put("mergedCandidateCount", result.items().size() - created);
+        snapshot.set("clusterDeviation", stored);
+        ObjectNode entry = coverage.addObject().put("ruleKey", ClusterDeviationRule.COVERAGE_KEY).put("status", result.coverageStatus());
+        if (result.coverageReason() != null) {
+            entry.put("reason", result.coverageReason());
         }
     }
 
