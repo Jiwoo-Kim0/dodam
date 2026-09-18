@@ -1,9 +1,10 @@
 import { Image } from 'expo-image';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback } from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { AppHeader } from '@/components/appHeader/AppHeader';
+import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import { ScreenState } from '@/components/screenState/ScreenState';
 import { routes } from '@/constants/routes';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
@@ -15,7 +16,8 @@ import { styles } from './PeerComparisonScreen.styles';
 
 export function PeerComparisonScreen() {
   const router = useRouter();
-  const { cancel, error, isLoading, peerComparison, reload } = usePeerComparison();
+  const { cancel, error, isLoading, isRefreshing, peerComparison, refetch, reload } =
+    usePeerComparison();
   useFocusEffect(useCallback(() => {
     void reload();
     return cancel;
@@ -34,7 +36,10 @@ export function PeerComparisonScreen() {
     <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
       <AppHeader onBackPress={handleBackPress} showBackButton title="나의 소비 유형" />
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <RefreshableBouncyScrollView
+        contentContainerStyle={styles.scrollContent}
+        onRefresh={() => void refetch()}
+        refreshing={isRefreshing}>
         {isLoading ? (
           <ScreenState description="또래 비교를 불러오고 있어요" isLoading />
         ) : peerComparison === null ? (
@@ -120,7 +125,7 @@ export function PeerComparisonScreen() {
             )}
           </>
         )}
-      </ScrollView>
+      </RefreshableBouncyScrollView>
     </SafeAreaLayout>
   );
 }

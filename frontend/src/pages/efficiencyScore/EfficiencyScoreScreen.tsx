@@ -1,8 +1,9 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback } from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { AppHeader } from '@/components/appHeader/AppHeader';
+import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import { ScreenState } from '@/components/screenState/ScreenState';
 import { routes } from '@/constants/routes';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
@@ -18,7 +19,8 @@ function differenceLabel(difference: number) {
 
 export function EfficiencyScoreScreen() {
   const router = useRouter();
-  const { cancel, efficiencyScore, error, isLoading, reload } = useEfficiencyScore();
+  const { cancel, efficiencyScore, error, isLoading, isRefreshing, refetch, reload } =
+    useEfficiencyScore();
   useFocusEffect(useCallback(() => {
     void reload();
     return cancel;
@@ -37,7 +39,10 @@ export function EfficiencyScoreScreen() {
     <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
       <AppHeader onBackPress={handleBackPress} showBackButton title="금융 효율 점수" />
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <RefreshableBouncyScrollView
+        contentContainerStyle={styles.scrollContent}
+        onRefresh={() => void refetch()}
+        refreshing={isRefreshing}>
         {isLoading ? (
           <ScreenState description="금융 효율 점수를 불러오고 있어요" isLoading />
         ) : efficiencyScore === null ? (
@@ -83,7 +88,7 @@ export function EfficiencyScoreScreen() {
             )}
           </>
         )}
-      </ScrollView>
+      </RefreshableBouncyScrollView>
     </SafeAreaLayout>
   );
 }

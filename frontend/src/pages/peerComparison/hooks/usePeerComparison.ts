@@ -15,12 +15,18 @@ import {
 export function usePeerComparison() {
   const [peerComparison, setPeerComparison] = useState<ReportPeerComparison | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const requestIdRef = useRef(0);
 
-  const load = useCallback(async () => {
+  // 당겨서 새로고침일 때는 전체 로딩 화면 대신 스크롤 상단 인디케이터만 돈다.
+  const load = useCallback(async (refreshing = false) => {
     const requestId = ++requestIdRef.current;
-    setIsLoading(true);
+    if (refreshing) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
     setError(null);
 
     try {
@@ -38,14 +44,19 @@ export function usePeerComparison() {
         );
       }
     } finally {
-      if (requestId === requestIdRef.current) setIsLoading(false);
+      if (requestId === requestIdRef.current) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
     }
   }, []);
 
   return {
     error,
     isLoading,
+    isRefreshing,
     peerComparison,
+    refetch: useCallback(() => load(true), [load]),
     reload: load,
     cancel: useCallback(() => {
       requestIdRef.current += 1;

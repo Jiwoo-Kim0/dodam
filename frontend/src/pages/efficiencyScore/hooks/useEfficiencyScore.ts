@@ -18,12 +18,18 @@ function monthAt(offset: number) {
 export function useEfficiencyScore() {
   const [efficiencyScore, setEfficiencyScore] = useState<ReportEfficiencyScore | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const requestIdRef = useRef(0);
 
-  const load = useCallback(async () => {
+  // 당겨서 새로고침일 때는 전체 로딩 화면 대신 스크롤 상단 인디케이터만 돈다.
+  const load = useCallback(async (refreshing = false) => {
     const requestId = ++requestIdRef.current;
-    setIsLoading(true);
+    if (refreshing) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
     setError(null);
 
     try {
@@ -43,7 +49,10 @@ export function useEfficiencyScore() {
         );
       }
     } finally {
-      if (requestId === requestIdRef.current) setIsLoading(false);
+      if (requestId === requestIdRef.current) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
     }
   }, []);
 
@@ -51,6 +60,8 @@ export function useEfficiencyScore() {
     efficiencyScore,
     error,
     isLoading,
+    isRefreshing,
+    refetch: useCallback(() => load(true), [load]),
     reload: load,
     cancel: useCallback(() => {
       requestIdRef.current += 1;
