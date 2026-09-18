@@ -1,6 +1,15 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, fontFamily, fontSize, radius, semanticSpacing, spacing, typography } from '@/styles';
+import {
+  colors,
+  componentSize,
+  fontFamily,
+  fontSize,
+  radius,
+  semanticSpacing,
+  spacing,
+  typography,
+} from '@/styles';
 
 export const styles = StyleSheet.create({
   safeArea: {
@@ -21,6 +30,8 @@ export const styles = StyleSheet.create({
   },
   heroSection: {
     backgroundColor: colors.white,
+    // 상단 바가 공통 헤더와 같은 높이를 직접 갖게 두고, 섹션의 위 여백은 비운다.
+    paddingTop: 0,
   },
   lastSection: {
     gap: spacing[2],
@@ -32,19 +43,21 @@ export const styles = StyleSheet.create({
     gap: spacing[3],
     justifyContent: 'flex-start',
   },
+  /** 공통 헤더(AppHeader)와 같은 높이 56이라, 뒤로 가기가 다른 화면과 같은 높이에 온다. */
   topBar: {
     alignItems: 'center',
     alignSelf: 'stretch',
     flexDirection: 'row',
     justifyContent: 'space-between',
+    minHeight: 56,
     position: 'relative',
   },
-  /** 공통 헤더의 뒤로 가기와 같은 44px 터치 영역을 쓰되, 아이콘은 왼쪽 끝에 맞춘다. */
+  /** 공통 헤더의 뒤로 가기 버튼과 같은 규격이다. 아이콘을 가운데 두어야 좌우 위치가 같아진다. */
   backButton: {
-    alignItems: 'flex-start',
-    height: 44,
+    alignItems: 'center',
+    height: componentSize.touchTarget,
     justifyContent: 'center',
-    width: 44,
+    width: componentSize.touchTarget,
   },
   heroCopy: {
     alignItems: 'center',
@@ -110,8 +123,18 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing[2],
   },
+  /** 세로로 쌓이는 단계 섹션에서는 `flex-end`가 가로 우측 정렬로 동작한다. */
   stageSkip: {
     alignSelf: 'flex-end',
+  },
+  /**
+   * 히어로 상단 바는 가로 방향이라 같은 `flex-end`가 세로 아래쪽 정렬이 된다. 그대로 두면
+   * 뒤로 가기는 가운데인데 건너뛰기만 바닥에 붙는다. 공통 헤더 우측 액션처럼 가운데에 세운다.
+   */
+  heroSkip: {
+    alignSelf: 'center',
+    height: componentSize.touchTarget,
+    justifyContent: 'center',
   },
   stageSkipText: {
     color: colors.textTertiary,
