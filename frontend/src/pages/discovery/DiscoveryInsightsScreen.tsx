@@ -142,11 +142,13 @@ export function DiscoveryInsightsScreen() {
               </Pressable>
             ) : null}
           </View>
-        </View>
-      </RefreshableBouncyScrollView>
 
-      {diagnosis ? (
-        <View style={styles.fixedFooter}>
+          {/*
+            발견 홈과 같이 스크롤 안에 둔다. 화면 하단에 고정해 두면 목록을 당길 때 이 영역만
+            제자리에 남아 떠 있는 것처럼 보인다.
+          */}
+          {diagnosis ? (
+            <View style={styles.diagnosisFooter}>
           {cooldown.label ? (
             <Text style={styles.cooldownLabel}>{cooldown.label}</Text>
           ) : null}
@@ -170,8 +172,10 @@ export function DiscoveryInsightsScreen() {
               {isRunningAnalysis ? '진단 중...' : '새로 진단하기'}
             </Text>
           </Pressable>
+            </View>
+          ) : null}
         </View>
-      ) : null}
+      </RefreshableBouncyScrollView>
     </SafeAreaLayout>
   );
 }

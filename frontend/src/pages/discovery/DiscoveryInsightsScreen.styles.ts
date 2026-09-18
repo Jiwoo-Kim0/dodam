@@ -107,14 +107,12 @@ export const styles = StyleSheet.create({
   cooldownLabel: {
     ...typography.caption,
     color: colors.textTertiary,
-    marginBottom: spacing[2],
+    marginBottom: spacing[4],
     textAlign: 'center',
   },
-  fixedFooter: {
-    backgroundColor: colors.home.goalGradientEnd,
-    paddingBottom: spacing[4],
-    paddingHorizontal: semanticSpacing.screenMargin,
-    paddingTop: spacing[2],
+  /** 스크롤 안에 있으므로 배경과 좌우 여백은 바깥(그라데이션·스크롤 패딩)이 이미 맡는다. */
+  diagnosisFooter: {
+    marginTop: spacing[6],
   },
   diagnosisButton: {
     alignItems: 'center',
