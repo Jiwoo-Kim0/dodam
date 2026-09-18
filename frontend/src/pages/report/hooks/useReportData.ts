@@ -16,6 +16,7 @@ import type {
   ReportMetricChange,
   ReportPeerComparison,
 } from '@/types/report.types';
+import { getTransactionCategoryIcon } from '@/constants/transactionCategoryIcons';
 import { formatCurrency } from '@/utils/currency';
 
 import { toEfficiencyScore } from '../efficiencyScoreModel';
@@ -113,13 +114,11 @@ async function fetchReport(): Promise<MonthlyReport> {
 
   const [
     user,
-    currentSummary,
     trend,
     currentRatio,
     previousRatio,
     currentFixed,
     previousFixed,
-    currentVariable,
     currentPayments,
     previousPayments,
     loans,
@@ -130,13 +129,11 @@ async function fetchReport(): Promise<MonthlyReport> {
     monthlyReport,
   ] = await Promise.all([
     userApi.getMe(),
-    ledgerApi.getMonthlySummary(reportMonth.yearMonth),
     ledgerApi.getCategoryTrend(trendStart.yearMonth, reportMonth.yearMonth),
     ledgerApi.getSavingRatio(reportMonth.yearMonth),
     ledgerApi.getSavingRatio(previousMonth.yearMonth),
     ledgerApi.getFixedSpending(reportMonth.yearMonth, reportMonth.yearMonth),
     ledgerApi.getFixedSpending(previousMonth.yearMonth, previousMonth.yearMonth),
-    ledgerApi.getVariableSpending(reportMonth.yearMonth, reportMonth.yearMonth),
     ledgerApi.getPaymentMethodSpending(reportMonth.yearMonth),
     ledgerApi.getPaymentMethodSpending(previousMonth.yearMonth),
     assetApi.getLoanSummary(),
@@ -207,9 +204,8 @@ async function fetchReport(): Promise<MonthlyReport> {
   const cardDifference = monthlyReport === null
     ? currentCard - cardSpending(previousPayments.paymentMethods)
     : monthlyReport.cardSpendingDifferenceFromPreviousMonth;
-  const fixedForecast = currentFixed.monthlyAverage;
-  const livingForecast = currentVariable.monthlyAverage;
-  const expectedExpense = fixedForecast + livingForecast;
+  const latestTrendMonth = trend.months.at(-1) ?? null;
+  const latestMonthSpending = latestTrendMonth?.totalSpending ?? 0;
   const savingRate = Math.round(currentRatio.savingRatioPercent ?? 0);
   const previousSavingRate = Math.round(previousRatio.savingRatioPercent ?? 0);
   const fixedRate = Math.round(currentFixed.shareOfSpendingPercent);
@@ -229,15 +225,6 @@ async function fetchReport(): Promise<MonthlyReport> {
     patternCoachingDisclaimer: coachSummary?.disclaimer ?? null,
     patternCharacterImage: require('@/assets/characters/dori/dori_memo.png'),
     peerComparison,
-    nextMonthForecast: {
-      description: '지난달 고정·변동지출이 그대로 이어진다고 가정한 참고치예요',
-      expectedExpense,
-      differenceFromThisMonth: expectedExpense - currentSummary.totalSpending,
-      breakdown: [
-        { id: 'fixed', label: '고정지출', amount: fixedForecast, tone: 'fixed' },
-        { id: 'living', label: '변동지출', amount: livingForecast, tone: 'living' },
-      ],
-    },
     keyMetrics: [
       {
         id: 'saving-rate', label: '저축률', value: savingRate, format: 'percent',
@@ -263,11 +250,30 @@ async function fetchReport(): Promise<MonthlyReport> {
         icon: require('@/assets/icons/common/report_money.png'), iconScale: 0.85,
       },
     ],
-    monthlySpending: trend.months.map((month) => ({
-      yearMonth: month.yearMonth,
-      monthLabel: `${Number(month.yearMonth.slice(5))}월`,
-      amount: month.totalSpending,
-    })),
+    pastSpending: {
+      months: trend.months.map((month) => ({
+        yearMonth: month.yearMonth,
+        monthLabel: `${Number(month.yearMonth.slice(5))}월`,
+        amount: month.totalSpending,
+      })),
+      monthlyAverage: trend.monthlyAverage,
+      latestAmount: latestMonthSpending,
+      differenceFromAverage: latestMonthSpending - trend.monthlyAverage,
+      // 서버가 카테고리를 내림차순으로 주므로 상위 세 개만 자른다.
+      topCategories: (latestTrendMonth?.categories ?? [])
+        .filter((category) => category.totalSpending > 0)
+        .slice(0, 3)
+        .map((category) => ({
+          id: `${category.categoryId ?? category.code}`,
+          name: category.name,
+          amount: category.totalSpending,
+          sharePercent:
+            latestMonthSpending === 0
+              ? 0
+              : Math.round((category.totalSpending / latestMonthSpending) * 100),
+          icon: getTransactionCategoryIcon(category.code),
+        })),
+    },
   };
 }
 

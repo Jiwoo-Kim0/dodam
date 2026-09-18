@@ -37,23 +37,6 @@ export interface ReportFinancePattern {
   icon: ImageSourcePropType;
 }
 
-export type ReportForecastTone = 'fixed' | 'living' | 'card';
-
-export interface ReportForecastBreakdown {
-  id: string;
-  label: string;
-  amount: number;
-  tone: ReportForecastTone;
-}
-
-export interface ReportNextMonthForecast {
-  description: string;
-  expectedExpense: number;
-  /** 이번 달 대비 증감액이며 양수면 더 많이 쓸 것으로 예상한다. */
-  differenceFromThisMonth: number;
-  breakdown: readonly ReportForecastBreakdown[];
-}
-
 export type ReportMetricFormat = 'percent' | 'currency';
 /** 값이 늘었는지 줄었는지. `none`은 변화가 없거나 비교할 지난달 값이 없는 상태다. */
 export type ReportMetricChangeDirection = 'up' | 'down' | 'none';
@@ -86,6 +69,27 @@ export interface ReportMonthlySpending {
   yearMonth: string;
   monthLabel: string;
   amount: number;
+}
+
+export interface ReportSpendingCategory {
+  id: string;
+  name: string;
+  amount: number;
+  /** 리포트 달 총지출 대비 비중(%)이다. 총지출이 0이면 0이다. */
+  sharePercent: number;
+  icon: ImageSourcePropType;
+}
+
+export interface ReportPastSpending {
+  /** 리포트 기준 달을 마지막으로 하는 최근 6개월 지출이다. */
+  months: readonly ReportMonthlySpending[];
+  /** 서버가 계산한 기간 월평균이다. 같은 값을 FE에서 다시 평균 내지 않는다. */
+  monthlyAverage: number;
+  latestAmount: number;
+  /** 월평균 대비 증감액이며 양수면 평균보다 많이 썼다. */
+  differenceFromAverage: number;
+  /** 리포트 달 지출 상위 카테고리다. 거래가 없으면 빈 배열이다. */
+  topCategories: readonly ReportSpendingCategory[];
 }
 
 export interface ReportPeerFeature {
@@ -146,10 +150,8 @@ export interface MonthlyReport {
   patternCoachingMessage: string;
   patternCoachingDisclaimer: string | null;
   patternCharacterImage: ImageSourcePropType;
-  nextMonthForecast: ReportNextMonthForecast;
   /** 또래 비교 조회 자체가 실패하면 null이며, 이때 카드를 렌더링하지 않는다. */
   peerComparison: ReportPeerComparison | null;
   keyMetrics: readonly ReportKeyMetric[];
-  /** 리포트 기준 달을 마지막으로 하는 최근 6개월 지출이다. */
-  monthlySpending: readonly ReportMonthlySpending[];
+  pastSpending: ReportPastSpending;
 }

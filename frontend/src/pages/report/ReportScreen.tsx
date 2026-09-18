@@ -10,10 +10,10 @@ import { routes } from '@/constants/routes';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 
 import { EfficiencyScoreCard } from './components/EfficiencyScoreCard';
+import { CoachingCard } from './components/CoachingCard';
 import { FinancePatternCard } from './components/FinancePatternCard';
 import { KeyMetricsCard } from './components/KeyMetricsCard';
 import { MonthlySpendingCard } from './components/MonthlySpendingCard';
-import { NextMonthForecastCard } from './components/NextMonthForecastCard';
 import { PeerComparisonCard } from './components/PeerComparisonCard';
 import { styles } from './ReportScreen.styles';
 import { useReportData } from './hooks/useReportData';
@@ -80,15 +80,14 @@ export function ReportScreen() {
                   peerComparison={data.peerComparison}
                 />
               )}
-              <FinancePatternCard
+              <FinancePatternCard patterns={data.patterns} />
+              <CoachingCard
                 characterImage={data.patternCharacterImage}
-                coachingMessage={data.patternCoachingMessage}
                 disclaimer={data.patternCoachingDisclaimer}
-                patterns={data.patterns}
+                message={data.patternCoachingMessage}
               />
-              <NextMonthForecastCard forecast={data.nextMonthForecast} />
               <KeyMetricsCard metrics={data.keyMetrics} />
-              <MonthlySpendingCard monthlySpending={data.monthlySpending} />
+              <MonthlySpendingCard pastSpending={data.pastSpending} />
             </View>
           </>
         ) : (
