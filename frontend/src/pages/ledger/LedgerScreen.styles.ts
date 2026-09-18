@@ -109,7 +109,7 @@ export const styles = StyleSheet.create({
     borderRadius: radius.card,
   },
   expenseSummaryCard: {
-    paddingHorizontal: spacing[5],
+    paddingHorizontal: spacing[4],
     paddingVertical: spacing[4],
   },
   expenseSummaryContent: {
@@ -121,11 +121,12 @@ export const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  /** 리포트 화면과 같은 카드 제목 규칙이다. 제목은 작고 연하게, 금액이 눈에 먼저 들어오게 한다. */
   cardEyebrow: {
-    color: colors.textPrimary,
+    color: colors.textSecondary,
     fontFamily: fontFamily.medium,
-    fontSize: 16,
-    lineHeight: 22,
+    fontSize: fontSize.body2,
+    lineHeight: 18,
   },
   expenseAmount: {
     ...typography.headline,
@@ -143,7 +144,7 @@ export const styles = StyleSheet.create({
   },
   sectionCard: {
     paddingHorizontal: spacing[4],
-    paddingVertical: spacing[5],
+    paddingVertical: spacing[4],
   },
   sectionTitle: {
     color: colors.textPrimary,
@@ -152,10 +153,10 @@ export const styles = StyleSheet.create({
     lineHeight: 22,
   },
   categorySectionTitle: {
-    color: colors.textPrimary,
+    color: colors.textSecondary,
     fontFamily: fontFamily.medium,
-    fontSize: fontSize.buttonSmall,
-    lineHeight: 20,
+    fontSize: fontSize.body2,
+    lineHeight: 18,
   },
   categorySummaryList: {
     gap: spacing[3],

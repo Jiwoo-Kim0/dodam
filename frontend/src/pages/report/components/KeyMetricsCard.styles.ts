@@ -4,7 +4,8 @@ import { colors, fontFamily, fontSize, radius, semanticSpacing, spacing, typogra
 
 export const styles = StyleSheet.create({
   metricsCard: {
-    padding: spacing[4],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
   },
   metricGrid: {
     flexDirection: 'row',

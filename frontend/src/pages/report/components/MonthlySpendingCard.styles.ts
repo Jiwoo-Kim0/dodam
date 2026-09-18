@@ -17,7 +17,8 @@ export const MONTH_LABEL_BLOCK_HEIGHT = 22;
 
 export const styles = StyleSheet.create({
   spendingCard: {
-    padding: spacing[4],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
   },
   header: {
     alignItems: 'center',
