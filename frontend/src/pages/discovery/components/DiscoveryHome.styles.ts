@@ -18,9 +18,13 @@ export const styles = StyleSheet.create({
   scroll: {
     backgroundColor: colors.home.goalGradientEnd,
   },
+  /**
+   * 아래 여백은 반드시 여기에 준다. 스크롤 컨텐츠에 주면 그라데이션 바깥이라
+   * 흰 띠(`scrollContent`의 배경)가 그대로 드러난다.
+   */
   gradientContainer: {
     marginTop: spacing[8],
-    paddingBottom: spacing[8],
+    paddingBottom: spacing[12],
     position: 'relative',
   },
   gradientOverlay: {
@@ -145,11 +149,12 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
+  /** 리포트 화면과 같은 카드 제목 규칙이다. 제목은 작고 연하게, 값이 눈에 먼저 들어오게 한다. */
   sectionTitle: {
-    color: colors.textPrimary,
+    color: colors.textSecondary,
     fontFamily: fontFamily.medium,
-    fontSize: 16,
-    lineHeight: 22,
+    fontSize: fontSize.body2,
+    lineHeight: 18,
   },
   diagnosisAction: {
     alignItems: 'center',
@@ -174,18 +179,20 @@ export const styles = StyleSheet.create({
     color: colors.textTertiary,
   },
   diagnosisFooter: {
-    marginTop: spacing[4],
+    marginTop: spacing[6],
   },
   insightListCard: {
     backgroundColor: colors.white,
     borderRadius: radius.card,
     overflow: 'hidden',
   },
+  /** 아래 안내 문구(`cooldownLabel`)와 같은 축에 두려고 가운데 정렬한다. */
   footnote: {
     color: colors.textTertiary,
     fontFamily: fontFamily.regular,
     fontSize: fontSize.micro,
     lineHeight: 14,
+    textAlign: 'center',
   },
   viewAllButton: {
     alignItems: 'center',
@@ -204,7 +211,7 @@ export const styles = StyleSheet.create({
   cooldownLabel: {
     ...typography.caption,
     color: colors.textTertiary,
-    marginBottom: spacing[3],
+    marginBottom: spacing[4],
     textAlign: 'center',
   },
   viewAllText: {
