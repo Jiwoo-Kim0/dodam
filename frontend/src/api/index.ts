@@ -11,6 +11,7 @@ export { ledgerApi } from './ledgerApi';
 export { notificationApi } from './notificationApi';
 export { patternApi } from './patternApi';
 export { recommendationApi } from './recommendationApi';
+export { reportApi } from './reportApi';
 export { simulationApi } from './simulationApi';
 export { socialAuthApi } from './socialAuthApi';
 export { userApi } from './userApi';
