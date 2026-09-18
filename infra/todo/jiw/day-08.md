@@ -1149,6 +1149,14 @@ Schema-validation: wrong column type encountered in column [year_month]
 in table [monthly_report]; found [char], but expecting [varchar(7)]
 ```
 
+> **백엔드 쪽 기록**: [[day-11.md]] 12~15절에 같은 장애가 **백엔드 관점**으로 남아 있다 —
+> V38은 ERD대로 `CHAR(7)`로 선언했는데 엔티티에는 `@Column(length = 7)`만 붙어 Hibernate가
+> `varchar(7)`을 기대한 것이 원인이고, "**이것 하나뿐인가**"를 증거로 확인한 뒤(13절)
+> DB가 아니라 **엔티티를 고치는 방향**을 택했다(14절).
+> 재발 방지로 `SchemaTypeConsistencyTest`를 추가했다(15절) — 마이그레이션과 엔티티 타입이
+> 어긋나면 **배포가 아니라 테스트에서 먼저 걸린다.**
+> 이 절(인프라 원인·롤백 분석)과 **둘을 같이 봐야 전모가 보인다.**
+
 #### 왜 롤백이 서비스를 지키지 못했나
 
 `deploy.sh`의 배포 본류가 `up -d --build`로 **기존 컨테이너를 먼저 교체**한다(160행).
@@ -1401,6 +1409,29 @@ location / {
 조용히 무방비가 된다.** 실제로 그 location에는 "Day 7에서 FE 웹 정적 빌드를 서빙할지 결정"
 이라는 주석이 달려 있었다.
 
+#### 배포 후 검증 (2026-09-18) — 수정이 실제로 먹혔다
+
+수정 시점에는 "배포 후에 확인해야 한다"고만 적어뒀던 부분이다. 배포(`e759f09`) 후 실측했다.
+
+```
+$ curl -sI https://j15D105.p.ssafy.io/
+HTTP/2 200
+content-type: text/plain                    ← 중복 해소 (이전: octet-stream + text/plain 둘 다)
+strict-transport-security: max-age=86400
+x-content-type-options: nosniff
+x-frame-options: DENY
+referrer-policy: strict-origin-when-cross-origin
+```
+
+| 검사 | 수정 전 | 수정 후 |
+| --- | --- | --- |
+| `/` 보안 헤더 | **0개** | **4개** ✅ |
+| `/` Content-Type | 중복 2개 | 1개 ✅ |
+| `/api/` 보안 헤더 (회귀 확인) | 4개 | 4개 ✅ |
+| HSTS max-age | 86400 | 86400 (유지) ✅ |
+| `docker exec nginx nginx -t` | ok | ok ✅ |
+| nginx / backend 상태 | — | running / healthy·restarts=0 ✅ |
+
 #### 발견 ② HSTS `max-age` 상향 — **검토 후 보류**로 결론
 
 day-04 계획의 "안정되면 1년으로 상향"을 그대로 적용하려다(한때 30일로 올렸다가)
@@ -1482,6 +1513,28 @@ day-04 계획의 "안정되면 1년으로 상향"을 그대로 적용하려다(�
 
 사실상 **없다.** Day 1~4·security.md에 남은 것은 사용자 액션 2건(Jenkins admin 비밀번호,
 GitLab PAT)과 백엔드팀 항목뿐이다. HSTS 상향은 36절 판단에 따라 **시연 후로 명시 보류**했다.
+
+### 38. 09-17 장애 기록 상호 참조 연결
+
+같은 장애가 두 문서에 **서로 모르는 채** 나뉘어 있었다.
+
+| 문서 | 관점 | 담은 것 |
+| --- | --- | --- |
+| 이 문서 31절 | 인프라 | `validate` 복구 경위, 드라이런이 V35 기준이라 V38을 놓친 점, 60분 타임라인, **롤백이 서비스를 지키지 못한 이유**, 후속 조치(32·33절) |
+| `day-11.md` 12~15절 | 백엔드 | 매핑 원인(`@Column(length=7)` vs `CHAR(7)`), "이것 하나뿐인가" 확인, **엔티티를 고치는 방향** 선택, 재발 방지 `SchemaTypeConsistencyTest` |
+
+한쪽만 보면 "왜 이런 일이 났고 무엇이 바뀌었는지"의 절반만 남는다.
+양쪽 해당 위치에 상대 문서를 가리키는 블록을 넣었다.
+
+#### 이 연결로 드러난 것 — 재발 방지가 양쪽에 하나씩 생겼다
+
+- **백엔드**: `SchemaTypeConsistencyTest` — 마이그레이션과 엔티티 타입이 어긋나면
+  **배포가 아니라 테스트에서 먼저 걸린다**
+- **인프라**: 배포 전 사전 검증(32절) — 그래도 새어 나온 기동 실패가
+  **운영 컨테이너에 닿기 전에 걸린다**
+
+층이 다르다. 백엔드 쪽이 더 앞단이고 더 싸다(테스트 실패 vs 배포 21초 낭비).
+인프라 쪽은 **타입 불일치가 아닌 모든 기동 실패**까지 받아낸다.
 
 ## 남은 것
 - [x] ~~`deploy.sh` 사전 검증 단계 추가~~ — 32절. **다음 배포에서 실제 동작 확인 필요**
