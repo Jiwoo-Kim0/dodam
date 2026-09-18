@@ -13,11 +13,12 @@ export const styles = StyleSheet.create({
   cardPressed: {
     opacity: componentSize.bottomSheet.pressedOpacity,
   },
+  /** 리포트 화면과 같은 카드 제목 규칙이다. 제목은 작고 연하게, 값이 눈에 먼저 들어오게 한다. */
   title: {
-    color: colors.textPrimary,
-    fontFamily: fontFamily.semiBold,
-    fontSize: fontSize.body1,
-    lineHeight: 20,
+    color: colors.textSecondary,
+    fontFamily: fontFamily.medium,
+    fontSize: fontSize.body2,
+    lineHeight: 18,
   },
   row: {
     alignItems: 'center',

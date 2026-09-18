@@ -58,7 +58,7 @@ export const styles = StyleSheet.create({
   },
   /**
    * 카드 제목은 카드 안에서 무엇을 보는지 알려 주는 라벨로 두고, 시선은 그 아래 숫자·그래프가 가져가게
-   * 한다. 다른 화면은 아직 가계부·브리핑의 15/20 규칙을 쓰므로 리포트에서 먼저 적용해 본다.
+   * 한다. 홈 소비 TOP 3, 가계부 쓴 돈·소비 TOP 3, 자산 점검도 같은 규칙을 쓴다.
    */
   cardTitle: {
     color: colors.textSecondary,
