@@ -520,3 +520,44 @@ record ChatTurn(String content, List<ToolCall> toolCalls, String finishReason)
 - 실패 규약은 `generate`와 같다(§7): 429·5xx·연결 실패는 `max-attempts`까지 재시도, 401·400은 즉시 `CoachGenerationException`. 도구 인자 JSON의 검증·파싱은 도구 계층(A-2)이 한다.
 - 도구 스키마의 인자는 **enum·description으로 고정**한다. 637 실측에서 설명 없는 문자열 인자에 모델이 `"카페"`(한글)를 넣었다.
 - 검증: `OpenAiCoachTextGeneratorTest` +4 — tools/tool_choice 직렬화와 tool_calls 파싱(불완전 호출 제거), 2턴 이력(assistant tool_calls·tool 결과) 직렬화, 도구 없는 평문·강제 함수 선택·빈 응답, 실패 규약(5xx·미설정·빈 메시지·잘못된 인자).
+
+### 13-2. 도구 계층 (A-2, 2026-09-18)
+
+모델이 고른 도구를 **정상 API와 같은 경로**로 실행한다. 새 계산은 없다 — 시뮬레이션은 `SimulationInputResolver` → `SimulationRunner.run`(잠금·지문·저장) →
+`SimulationQueryService.toResponse`, 목표 예측은 `GoalCalculationService.getForecast(userId, goalId, today)`(readOnly 3인자), 진단은 저장된 최신 완료본이다.
+
+| 클래스 | 역할 |
+| --- | --- |
+| `CoachToolRegistry` | 도구 7개의 OpenAI function 스키마(§13-2-1)와 시연 칩 3개의 고정 매핑(§13-2-2). 인자는 전부 enum·description으로 고정, 사용자 식별자·계좌번호·loanId·goalId는 스키마에 없다 |
+| `CoachToolArguments` | 모델이 만든 인자 JSON 검증. 금액(정수·"50,000원"·소수 정수부, 0 이하·1억 초과 거부), 개월(1~120), 코드(허용 집합 밖 거부 — "카페" 같은 한글 값), 배열 |
+| `CoachToolDispatcher` | 호출 → 실행. 한 턴 **3개**까지(초과는 미실행 사유), 검증 실패(400·404·시뮬레이션 규칙·인자 오류)는 예외가 아니라 결과 `error`로(2차 호출이 "카페 월평균 소비보다 큰 금액이에요"처럼 그대로 전달), 그 외 실패는 고정 문구. 로그는 도구 이름·인자 키·simulationId만 |
+| `CoachSimulationFactFormatter` | `SimulationResponse` → 사실 문자열. `goalImpacts[]`(현재/실행 후 달성일·단축/지연 일수, `NOT_COMPUTABLE`은 "계산 불가"), `comparison.items/costs`의 `INTEREST_SAVING`·`INTEREST_TOTAL`·`FINANCE_COST_EVALUATED`·`PREPAYMENT_AMOUNT`·`REFINANCE_AMOUNT`만, `after.assumptions` 최대 6개. 월별 상환액 행·스냅샷 전체는 넘기지 않는다 |
+| `CoachToolResult` | 결과 1건(`toolCallId, tool, simulationId, created, sections, notes, error`). `toModelText()`가 2차 호출의 tool 메시지 본문("[제목]/- 라벨: 값/※ 주의")을 만든다 |
+
+#### 13-2-1. 도구 7개
+
+| tool | 인자(모델) | 서버 매핑 | 되묻기(실행 안 함) |
+| --- | --- | --- | --- |
+| `simulate_spending_reduction` | `category?`(enum 12 코드), `monthlyReduction`, `durationMonths?` | `SpendingSimulationRequest` → resolver | 코드 집합 밖·금액 없음/0/1억 초과. 카테고리 월평균 초과는 시뮬레이션 400 메시지 그대로 |
+| `simulate_saving_change` | `monthlySavingAmount`(변경 후 총액), `goalName?`, `durationMonths?` | 본인 ACTIVE 모으기 목표에서 이름 매칭(정확 → 포함) → `SavingSimulationRequest{goalId}`. 이름 없고 목표 하나면 그것, 여럿이면 `goalId = null`(전체 배분) | 목표 없음, 이름 불일치, 여럿 매칭 |
+| `simulate_loan_prepayment` | `prepaymentAmount`, `loanLabel?` | 본인 잔액 있는(ACTIVE·OVERDUE) 대출에서 계좌명·기관명 매칭 → `LoanPrepaymentSimulationRequest{loanId}`. 대출 하나면 라벨 생략 가능 | 대출 없음, 여럿인데 라벨 없음, 불일치, 여럿 매칭 |
+| `simulate_loan_refinance` | `loanLabel?`, `targetProductName?`(1차 범위에서는 검색에 쓰지 않음) | 대출 매칭 + **최신 완료 진단의 `LOAN/HIGH_INTEREST_RATE` 문제 `currentValue.refinance.targetProductId`** → `LoanRefinanceSimulationRequest{loanId, targetProductId}` | 진단 없음, 그 대출이 고금리 판정 아님, `available=false`(조건 맞는 상품 없음) |
+| `simulate_combined` | `scenarios[]{type(SPENDING·SAVING·LOAN_PREPAYMENT·LOAN_REFINANCE) + 위 인자}` 2~10개 | 자식마다 단독 도구와 같은 해석 → 명세 17 복합 본문 `{type, parameters}`(`goalId`·`loanId`·`targetProductId`로 치환, `accountNo` 없음) | 2개 미만·10개 초과·유형 없음, 자식 오류는 전체 오류 |
+| `get_goal_forecast` | `goalName?` | `GoalCalculationService.getForecast` 3인자 | 목표 없음·여럿(되묻기) |
+| `get_latest_diagnosis` | — | 최신 완료 진단 + 문제 상위 5건(제목·심각도) | 완료 진단 없음 |
+
+시뮬레이션 도구의 사실: `시뮬레이션(제목·id)`, 목표별 `현재/실행 후 예상 달성일`·`단축/지연 N일`, `만기까지 이자 절감(수수료 제외)`, `만기까지 총 이자(현재 → 실행 후)`, 복합이면 `평가 기간 금융비용 변화`, `적용 가정(서버)`.
+notes: "달성일·절감액은 서버 시뮬레이션 엔진이 계산한 값이다. 새 숫자를 만들지 말 것." (+ 계산 불가 목표가 있으면 날짜 추정 금지).
+
+#### 13-2-2. 시연 칩 (LLM 1차 호출 없음)
+
+| chipId | 표시 | 도구 호출(서버 고정, id `chip_*`) |
+| --- | --- | --- |
+| `CHIP_SPENDING_CAFE_50K` | 카페를 월 5만원 줄이면? | `simulate_spending_reduction {category: CAFE, monthlyReduction: 50000}` |
+| `CHIP_LOAN_PREPAY_1M` | 대출 100만원 더 갚으면? | `simulate_loan_prepayment {prepaymentAmount: 1000000}` (U0003 대출 1건 → 라벨 생략) |
+| `CHIP_COMBINED` | 둘 다 하면? | `simulate_combined {scenarios: [SPENDING CAFE 50000, LOAN_PREPAYMENT 1000000]}` |
+
+금액은 U0003(633·636) 검증 규칙을 통과하는 값이다(카페 직전 3개월 월평균 약 115,000원 > 50,000). 채팅 서비스(A-3)가 `chipId`를 받으면 이 매핑으로 바로 실행하고 2차 문장 생성만 한다.
+
+검증: `CoachToolRegistryTest` 3, `CoachToolArgumentsTest` 4, `CoachSimulationFactFormatterTest` 3, `CoachToolDispatcherTest` 7(인자→요청 변환, 검증 실패 전달, 3개 상한,
+대출 라벨 매칭·모호성, 대환 대상 진단 추정, 복합 본문 조립·goalId 치환, 조회 도구). Runner·Resolver는 대체했고 계산은 Simulation 테스트가 맡는다.
