@@ -29,6 +29,7 @@ export function useDiscoveryData() {
   const [insights, setInsights] = useState<DiscoveryInsight[]>([]);
   const [summary, setSummary] = useState<RecommendationDiscoverySummaryApiResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRunningAnalysis, setIsRunningAnalysis] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingRecommendationDiagnosisId, setPendingRecommendationDiagnosisId] = useState<number | null>(null);
@@ -39,12 +40,21 @@ export function useDiscoveryData() {
   const isMountedRef = useRef(true);
   const cooldown = useDiagnosisCooldown(diagnosis);
 
-  const load = useCallback(async () => {
+  /**
+   * 당겨서 새로고침일 때는 이미 보고 있는 진단 결과를 그대로 두고 조용히 다시 읽는다.
+   * 진단은 쿨다운 때문에 하루 한 번만 새로 만들 수 있어서, 같은 결과를 다시 받는 사이
+   * 화면이 "확인하고 있어요"로 바뀌거나 건수가 사라지면 값이 날아간 것처럼 보인다.
+   */
+  const load = useCallback(async (refreshing = false) => {
     if (loadInFlightRef.current) return;
 
     loadInFlightRef.current = true;
     const requestId = ++requestIdRef.current;
-    setIsLoading(true);
+    if (refreshing) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
     setError(null);
     try {
       let latest: DiagnosisApiResponse | null;
@@ -93,22 +103,27 @@ export function useDiscoveryData() {
       );
     } catch {
       if (requestId === requestIdRef.current) {
-        setDiagnosis(null);
-        setInsights([]);
-        setSummary(null);
+        // 새로고침이 실패했다고 이미 받아 둔 결과까지 지우지 않는다. 안내만 띄운다.
+        if (!refreshing) {
+          setDiagnosis(null);
+          setInsights([]);
+          setSummary(null);
+        }
         setError('발견 결과를 불러오지 못했어요. 다시 시도해 주세요.');
       }
     } finally {
       if (requestId === requestIdRef.current) {
         loadInFlightRef.current = false;
         setIsLoading(false);
+        setIsRefreshing(false);
       }
     }
   }, []);
 
   useEffect(() => {
     isMountedRef.current = true;
-    void Promise.resolve().then(load);
+    // `.then(load)`로 넘기면 resolve 값이 첫 인자로 들어가므로 최초 로딩으로 명시해 부른다.
+    void Promise.resolve().then(() => load());
     return () => {
       isMountedRef.current = false;
       requestIdRef.current += 1;
@@ -198,10 +213,12 @@ export function useDiscoveryData() {
     insights,
     summary,
     isLoading,
+    isRefreshing,
     isRunningAnalysis,
     error,
     cooldown,
     canRetryRecommendations: pendingRecommendationDiagnosisId !== null,
+    refetch: useCallback(() => load(true), [load]),
     load,
     runAnalysis,
     retryRecommendationGeneration,

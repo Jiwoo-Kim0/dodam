@@ -19,11 +19,13 @@ type DiscoveryHomeProps = {
   diagnosis: { completedAt: string; issueCount: number } | null;
   insights: DiscoveryInsight[];
   isLoading: boolean;
+  isRefreshing: boolean;
   isRunningAnalysis: boolean;
   error: string | null;
   cooldown: DiagnosisCooldown;
   canRetryRecommendations: boolean;
   load: () => Promise<void>;
+  refetch: () => Promise<void>;
   runAnalysis: (forceRefresh?: boolean) => Promise<void>;
   retryRecommendationGeneration: () => Promise<void>;
   onBack: () => void;
@@ -40,11 +42,13 @@ export function DiscoveryHome({
   error,
   insights,
   isLoading,
+  isRefreshing,
   isRunningAnalysis,
   load,
   onBack,
   onInsightPress,
   onViewAll,
+  refetch,
   retryRecommendationGeneration,
   runAnalysis,
 }: DiscoveryHomeProps) {
@@ -62,8 +66,8 @@ export function DiscoveryHome({
 
       <RefreshableBouncyScrollView
         contentContainerStyle={styles.scrollContent}
-        onRefresh={() => { void load(); }}
-        refreshing={isLoading}
+        onRefresh={() => { void refetch(); }}
+        refreshing={isRefreshing}
         style={styles.scroll}>
         <View style={styles.titleGroup}>
           <Text style={styles.subtitle}>
@@ -106,8 +110,12 @@ export function DiscoveryHome({
                 style={styles.summaryIcon}
               />
               <Text style={styles.summaryText}>
-                {/* 서버 issueCount는 화면에서 거르는 목표 위험까지 세므로 실제 목록 길이를 쓴다. */}
-                {isLoading
+                {/*
+                  서버 issueCount는 화면에서 거르는 목표 위험까지 세므로 실제 목록 길이를 쓴다.
+                  보여 줄 결과가 아직 없을 때만 확인 중 문구를 쓴다. 새로고침 중에 문구를 바꾸면
+                  이미 나온 건수가 사라졌다 돌아오는 것처럼 보인다.
+                */}
+                {isLoading && diagnosis === null
                   ? '진단 결과를 확인하고 있어요'
                   : `진단에서 ${insights.length}건 발견했어요`}
               </Text>
