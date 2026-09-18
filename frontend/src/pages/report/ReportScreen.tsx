@@ -70,7 +70,10 @@ export function ReportScreen() {
             </View>
 
             <View style={styles.sections}>
-              <EfficiencyScoreCard efficiencyScore={data.efficiencyScore} />
+              <EfficiencyScoreCard
+                efficiencyScore={data.efficiencyScore}
+                onPress={() => router.push(routes.reportEfficiencyScore)}
+              />
               {data.peerComparison === null ? null : (
                 <PeerComparisonCard
                   onPress={() => router.push(routes.reportPeerComparison)}

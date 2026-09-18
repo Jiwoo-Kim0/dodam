@@ -7,10 +7,9 @@ import {
   isApiError,
   ledgerApi,
   patternApi,
+  reportApi,
   userApi,
 } from '@/api';
-import type { CashflowRiskApiResponse } from '@/types/cashflowApi.types';
-import type { SavingRatioApiResponse } from '@/types/ledgerApi.types';
 import type {
   MonthlyReport,
   ReportFinancePattern,
@@ -19,6 +18,7 @@ import type {
 } from '@/types/report.types';
 import { formatCurrency } from '@/utils/currency';
 
+import { toEfficiencyScore } from '../efficiencyScoreModel';
 import {
   PEER_COMPARISON_NOT_ANALYZED,
   toPeerComparison,
@@ -33,27 +33,6 @@ function monthAt(offset: number) {
     label: `${month}월`,
     yearMonth: `${date.getFullYear()}-${String(month).padStart(2, '0')}`,
   };
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function riskPenalty(risks: readonly CashflowRiskApiResponse[]) {
-  const points = { LOW: 5, MEDIUM: 10, HIGH: 20, CRITICAL: 30 } as const;
-  return Math.min(30, risks.reduce((sum, risk) => sum + points[risk.severity], 0));
-}
-
-function efficiencyScore(
-  ratio: SavingRatioApiResponse,
-  fixedRatio: number,
-  risks: readonly CashflowRiskApiResponse[],
-) {
-  const savingScore = ratio.savingRatioPercent === null
-    ? 0
-    : (clamp(ratio.savingRatioPercent, 0, 50) / 50) * 40;
-  const spendingScore = clamp(100 - fixedRatio, 0, 100) * 0.3;
-  return Math.round(clamp(savingScore + spendingScore + 30 - riskPenalty(risks), 0, 100));
 }
 
 const NO_CHANGE: ReportMetricChange = {
@@ -148,6 +127,7 @@ async function fetchReport(): Promise<MonthlyReport> {
     anomalies,
     coachSummary,
     peerComparison,
+    monthlyReport,
   ] = await Promise.all([
     userApi.getMe(),
     ledgerApi.getMonthlySummary(reportMonth.yearMonth),
@@ -164,14 +144,10 @@ async function fetchReport(): Promise<MonthlyReport> {
     ledgerApi.getSpendingAnomalies(anomalyStart.yearMonth, reportMonth.yearMonth),
     loadCoachSummary(),
     loadPeerComparison(),
+    loadOptionalResource(reportApi.getMonthly(reportMonth.yearMonth)),
   ]);
 
   const risks = cashflowRisks?.risks ?? [];
-  const score = efficiencyScore(
-    currentRatio,
-    currentFixed.shareOfSpendingPercent,
-    risks,
-  );
   const anomaly = anomalies?.anomalies[0];
   const patterns: ReportFinancePattern[] = [
     {
@@ -225,8 +201,12 @@ async function fetchReport(): Promise<MonthlyReport> {
         },
   ];
 
-  const currentCard = cardSpending(currentPayments.paymentMethods);
-  const previousCard = cardSpending(previousPayments.paymentMethods);
+  // 카드 사용액은 서버 집계(카드 식별자 또는 결제수단 CARD)를 쓴다. 결제수단 이름을 FE에서 문자열로
+  // 거르던 방식은 이름이 예상과 다르면 조용히 빠져서, 월간 리포트를 못 받은 경우에만 대비책으로 남긴다.
+  const currentCard = monthlyReport?.cardSpending ?? cardSpending(currentPayments.paymentMethods);
+  const cardDifference = monthlyReport === null
+    ? currentCard - cardSpending(previousPayments.paymentMethods)
+    : monthlyReport.cardSpendingDifferenceFromPreviousMonth;
   const fixedForecast = currentFixed.monthlyAverage;
   const livingForecast = currentVariable.monthlyAverage;
   const expectedExpense = fixedForecast + livingForecast;
@@ -239,17 +219,7 @@ async function fetchReport(): Promise<MonthlyReport> {
     yearMonth: reportMonth.yearMonth,
     monthLabel: reportMonth.label,
     userName: user.name,
-    efficiencyScore: {
-      score,
-      maxScore: 100,
-      summary: score >= 70
-        ? '저축과 지출 흐름을 안정적으로 관리하고 있어요'
-        : '고정지출과 저축 흐름을 한 번 더 살펴보세요',
-      composition: [
-        { id: 'score', tone: 'strong', ratio: score },
-        { id: 'remaining', tone: 'light', ratio: 100 - score },
-      ],
-    },
+    efficiencyScore: toEfficiencyScore(monthlyReport?.efficiency ?? null),
     patterns,
     patternCoachingMessage:
       coachSummary?.message.trim() ||
@@ -281,9 +251,9 @@ async function fetchReport(): Promise<MonthlyReport> {
       },
       {
         id: 'card-usage', label: '카드 사용액', value: currentCard, format: 'currency',
-        change: previousPayments.transactionCount === 0
-          ? { direction: 'none', label: '지난달 사용 내역이 없어요', tone: 'neutral' }
-          : metricChange(currentCard - previousCard, 'down', formatCurrency),
+        change: cardDifference === null
+          ? { direction: 'none', label: '비교할 지난달 기록이 없어요', tone: 'neutral' }
+          : metricChange(cardDifference, 'down', formatCurrency),
         icon: require('@/assets/icons/common/report_card.png'), iconScale: 1.4,
       },
       {

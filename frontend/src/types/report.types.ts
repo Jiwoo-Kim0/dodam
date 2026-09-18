@@ -1,20 +1,30 @@
 import type { ImageSourcePropType } from 'react-native';
 
 /** 금융 효율 점수 도넛의 구성 색상 단계 */
-export type ReportScoreTone = 'strong' | 'medium' | 'light';
+export type ReportScoreDimensionStatus = 'good' | 'normal' | 'check' | 'unavailable';
 
-export interface ReportScoreSegment {
-  id: string;
-  tone: ReportScoreTone;
-  /** 도넛 전체(100) 기준 비율 */
-  ratio: number;
+export interface ReportScoreDimension {
+  key: string;
+  /** 육각형 축 라벨이다. */
+  label: string;
+  /** 0~100. 계산할 수 없으면 null이며 0점과 구분한다. */
+  score: number | null;
+  status: ReportScoreDimensionStatus;
+  /** 숫자 근거가 담긴 서버 문장이다. */
+  description: string;
 }
 
 export interface ReportEfficiencyScore {
-  score: number;
+  /** 계산된 항목이 너무 적으면 서버가 전체 점수를 주지 않는다. */
+  score: number | null;
   maxScore: number;
+  /** 전월 대비 점수 차. 비교할 수 없으면 null이다. */
+  previousMonthDifference: number | null;
   summary: string;
-  composition: readonly ReportScoreSegment[];
+  /** 항목별 점수. 비어 있으면 육각형을 그리지 않는다. */
+  dimensions: readonly ReportScoreDimension[];
+  /** 점수를 계산할 수 없을 때 보여 줄 안내다. 점수가 있으면 null이다. */
+  unavailableMessage: string | null;
 }
 
 export type ReportPatternStatus = 'good' | 'check';

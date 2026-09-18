@@ -19,6 +19,7 @@ export const routes = {
   }),
   report: '/report',
   reportPeerComparison: '/report/peer-comparison',
+  reportEfficiencyScore: '/report/efficiency-score',
   goalSetup: '/goal-setup',
   goalSetupEdit: (goalId: string) => ({
     pathname: '/goal-setup' as const,
