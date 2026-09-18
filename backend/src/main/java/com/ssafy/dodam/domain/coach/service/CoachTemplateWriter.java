@@ -2,6 +2,7 @@ package com.ssafy.dodam.domain.coach.service;
 
 import com.ssafy.dodam.domain.coach.dto.CoachFacts;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import org.springframework.stereotype.Component;
 
@@ -32,7 +33,90 @@ public class CoachTemplateWriter {
             case FINANCIAL_SUMMARY -> "진단 결과를 아래에서 확인해 보세요.";
             case INEFFICIENCY_EXPLANATION -> "이 항목을 조금 더 살펴보면 좋겠어요.";
             case RECOMMENDATION_EXPLANATION -> "무리하지 않는 선에서 하나씩 시작해 보세요.";
+            case CHAT -> chat(facts);
         };
+    }
+
+    /** 채팅 템플릿에서 읽는 라벨. {@link CoachSimulationFactFormatter}가 만드는 라벨과 같은 문자열이다. */
+    static final String LABEL_BEFORE_DATE = "현재 예상 달성일(";
+    static final String LABEL_AFTER_DATE = "실행 후 예상 달성일(";
+    static final String LABEL_SHORTENED = "단축(";
+    static final String LABEL_DELAYED = "지연(";
+    static final String LABEL_INTEREST_SAVING = "만기까지 이자 절감(수수료 제외)";
+    /** 실패한 도구를 담는 섹션 제목. {@code CoachChatService}가 같은 제목으로 넣는다. */
+    static final String FAILED_SECTION_TITLE = "실행하지 못한 요청";
+
+    static final String CHAT_NO_ANSWER = "지금은 답변을 만들 수 없어요. 잠시 후 다시 물어봐 주세요.";
+    static final String CHAT_SEE_FACTS = "지금은 문장을 만들 수 없어서 계산 결과만 보여드려요.";
+    /** 한 문장에 담는 목표 수. 목표가 더 많으면 나머지는 결과 카드가 보여준다. */
+    private static final int CHAT_GOAL_LIMIT = 2;
+
+    /**
+     * 채팅 대체 문장(640 A-3). AI 없이도 "현재 A → 실행 후 B, N일 단축"을 서버 값으로 말한다 — 이것이 없으면
+     * 도구는 실행됐는데 화면에 문장이 없어 사용자는 "계산이 안 됐다"고 읽는다. 값은 전부 facts에 이미 포맷된 문자열이다.
+     */
+    private static String chat(CoachFacts facts) {
+        StringBuilder text = new StringBuilder();
+        // 목표별 달성일 변화. 라벨의 괄호 안이 목표 이름이다: [0]=현재, [1]=실행 후, [2]=단축, [3]=지연
+        LinkedHashMap<String, String[]> goals = new LinkedHashMap<>();
+        String interestSaving = null;
+        String firstFailure = null;
+        for (CoachFacts.Section section : facts.sections()) {
+            for (CoachFacts.Fact fact : section.facts()) {
+                String label = fact.label();
+                if (FAILED_SECTION_TITLE.equals(section.title())) {
+                    if (firstFailure == null) {
+                        firstFailure = fact.value();
+                    }
+                } else if (label.startsWith(LABEL_BEFORE_DATE)) {
+                    goals.computeIfAbsent(goalName(label, LABEL_BEFORE_DATE), name -> new String[4])[0] = fact.value();
+                } else if (label.startsWith(LABEL_AFTER_DATE)) {
+                    goals.computeIfAbsent(goalName(label, LABEL_AFTER_DATE), name -> new String[4])[1] = fact.value();
+                } else if (label.startsWith(LABEL_SHORTENED)) {
+                    goals.computeIfAbsent(goalName(label, LABEL_SHORTENED), name -> new String[4])[2] = fact.value();
+                } else if (label.startsWith(LABEL_DELAYED)) {
+                    goals.computeIfAbsent(goalName(label, LABEL_DELAYED), name -> new String[4])[3] = fact.value();
+                } else if (LABEL_INTEREST_SAVING.equals(label) && interestSaving == null) {
+                    interestSaving = fact.value();
+                }
+            }
+        }
+        int written = 0;
+        for (var entry : goals.entrySet()) {
+            if (written >= CHAT_GOAL_LIMIT) {
+                break;
+            }
+            String[] values = entry.getValue();
+            if (values[0] == null && values[1] == null) {
+                continue;
+            }
+            text.append(entry.getKey()).append(" 목표는 현재 ").append(values[0] == null ? "계산 불가" : values[0])
+                    .append("에서 실행 후 ").append(values[1] == null ? "계산 불가" : values[1]);
+            if (values[2] != null) {
+                text.append("로 ").append(values[2]).append(" 빨라질 것으로 예상돼요.");
+            } else if (values[3] != null) {
+                text.append("로 ").append(values[3]).append(" 늦어질 것으로 예상돼요.");
+            } else {
+                text.append("로 예상돼요.");
+            }
+            text.append(' ');
+            written++;
+        }
+        if (interestSaving != null) {
+            text.append("만기까지 이자를 ").append(interestSaving).append(" 아낄 수 있어요. ");
+        }
+        if (text.isEmpty() && firstFailure != null) {
+            return "요청을 실행하지 못했어요. " + firstFailure;
+        }
+        if (text.isEmpty()) {
+            return facts.sections().isEmpty() ? CHAT_NO_ANSWER : CHAT_SEE_FACTS;
+        }
+        return text.toString().strip();
+    }
+
+    private static String goalName(String label, String prefix) {
+        int end = label.lastIndexOf(')');
+        return end > prefix.length() ? label.substring(prefix.length(), end) : label.substring(prefix.length());
     }
 
     /**

@@ -82,6 +82,36 @@ public class CoachToolRegistry {
         return List.of("카페를 월 5만원 줄이면?", "대출 100만원 더 갚으면?", "둘 다 하면?");
     }
 
+    /** 칩 하나의 표시 문구. 채팅 세션에 사용자 문장 대신 남기고, 2차 호출의 user 메시지로 쓴다. 알 수 없는 칩이면 비어 있다. */
+    public static Optional<String> chipLabel(String chipId) {
+        if (chipId == null) {
+            return Optional.empty();
+        }
+        return switch (chipId.strip().toUpperCase(Locale.ROOT)) {
+            case "CHIP_SPENDING_CAFE_50K" -> Optional.of(chipLabels().get(0));
+            case "CHIP_LOAN_PREPAY_1M" -> Optional.of(chipLabels().get(1));
+            case "CHIP_COMBINED" -> Optional.of(chipLabels().get(2));
+            default -> Optional.empty();
+        };
+    }
+
+    /** 도구 이름의 사용자용 표기. 실패 사실의 라벨과 채팅 facts의 {@code subject}에 쓴다 — 영문 도구 이름이 화면에 나가지 않게 한다. */
+    public static String displayName(String tool) {
+        if (tool == null) {
+            return "요청";
+        }
+        return switch (tool) {
+            case SIMULATE_SPENDING_REDUCTION -> "소비 줄이기 시뮬레이션";
+            case SIMULATE_SAVING_CHANGE -> "저축 변경 시뮬레이션";
+            case SIMULATE_LOAN_PREPAYMENT -> "대출 추가 상환 시뮬레이션";
+            case SIMULATE_LOAN_REFINANCE -> "대출 대환 시뮬레이션";
+            case SIMULATE_COMBINED -> "복합 시뮬레이션";
+            case GET_GOAL_FORECAST -> "목표 달성 예측";
+            case GET_LATEST_DIAGNOSIS -> "최근 진단";
+            default -> tool;
+        };
+    }
+
     // ---------- 스키마 ----------
 
     private ToolDefinition spendingReduction() {

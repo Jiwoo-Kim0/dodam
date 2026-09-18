@@ -75,6 +75,17 @@ app:
       enabled: true
       permits: 40
       window: PT1H
+    # 도리에게 묻기(backend/docs/ai-coach.md 13-3절, S15P21D105-640). 3종 코치와 예산을 분리한다 —
+    # 자유 입력 한 턴에 외부 호출이 최대 2회 나가므로 permits 20은 자유 입력 10턴 분량이다.
+    chat:
+      session-ttl: PT30M
+      history-turns: 6
+      max-turns-per-session: 10
+      max-message-length: 300
+      rate-limit:
+        enabled: true
+        permits: 20
+        window: PT1H
 
   idempotency:
     # 쓰기 API 재전송 방지(backend/docs/minus-account.md "재전송 방지"). Idempotency-Key 처리 결과를 Redis에 두는 기간이다.

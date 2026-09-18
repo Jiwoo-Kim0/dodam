@@ -561,3 +561,42 @@ notes: "달성일·절감액은 서버 시뮬레이션 엔진이 계산한 값�
 
 검증: `CoachToolRegistryTest` 3, `CoachToolArgumentsTest` 4, `CoachSimulationFactFormatterTest` 3, `CoachToolDispatcherTest` 7(인자→요청 변환, 검증 실패 전달, 3개 상한,
 대출 라벨 매칭·모호성, 대환 대상 진단 추정, 복합 본문 조립·goalId 치환, 조회 도구). Runner·Resolver는 대체했고 계산은 Simulation 테스트가 맡는다.
+
+### 13-3. 채팅 서비스·API (A-3, 2026-09-18)
+
+`POST /api/v1/coach/chat` — 인증 필수, 본인 데이터만. 요청 `{message?, chipId?, context{diagnosisId, issueId}?, conversationId?}`, 응답은 아래.
+`message`·`chipId` 둘 다 없음, 알 수 없는 `chipId`, `conversationId` 형식(`c_` + 16 hex) 위반, 길이 초과(300자), `context` 반쪽 → 400. 남의 진단 문제 `context` → 404.
+그 밖의 모든 실패는 **200 + `source=TEMPLATE`** 이며, 이미 실행한 도구의 facts·`toolResults`는 그대로 내려간다.
+
+```json
+{ "topic": "CHAT", "source": "AI", "degradedReason": null, "model": "gpt-5.4-mini", "generatedAt": "2026-09-18T15:00:00",
+  "conversationId": "c_0123456789abcdef",
+  "message": "둘 다 하면 비상금 500만 원 목표가 2028-02-13에서 2027-10-15로 121일 빨라지고, 만기까지 이자 384,000원을 아낄 수 있어요.",
+  "facts": { "topic": "CHAT", "subject": "복합 시뮬레이션",
+             "sections": [ { "title": "시뮬레이션 결과(서버 계산)", "facts": [ { "label": "단축(비상금 500만 원)", "value": "121일" } ] } ],
+             "notes": ["달성일·절감액은 서버 시뮬레이션 엔진이 계산한 값이다. 새 숫자를 만들지 말 것."] },
+  "toolResults": [ { "tool": "simulate_combined", "simulationId": 88, "created": true, "error": null } ],
+  "suggestedQuestions": ["카페를 월 5만원 줄이면?", "대출 100만원 더 갚으면?"],
+  "disclaimer": "이 설명은 … 투자·금융 자문이 아닙니다." }
+```
+
+| 구분 | 내용 |
+| --- | --- |
+| 한 턴 (`CoachChatService`) | 세션 로드 → 턴 상한 → 사용자 문장 민감정보 검사 → `context` facts(`CoachFactAssembler.inefficiency`, 시스템 프롬프트 [화면 맥락]) → **자유 입력**: 1차 `chat(messages, tools, AUTO)`; tool_calls 없으면 그 답이 최종. **칩**: 1차 생략, `CoachToolRegistry.chip()` 고정 호출 → `CoachToolDispatcher.dispatch`(≤3) → facts → 2차 `chat(…, NONE)` → 숫자 검증 → 응답 |
+| 왕복 | 1회. 2차에 또 tool_calls → `TOOL_LOOP_EXCEEDED`(템플릿이 facts로 말한다). 칩은 AI가 꺼져 있어도 도구를 실행하고 템플릿으로 답한다 — 시연 중 GMS가 죽어도 결과 카드는 뜬다 |
+| 템플릿 (`CoachTemplateWriter` CHAT) | facts 라벨 `현재 예상 달성일(목표)`·`실행 후 예상 달성일(목표)`·`단축/지연(목표)`·`만기까지 이자 절감(수수료 제외)`에서 "비상금 500만 원 목표는 현재 2028-02-13에서 실행 후 2027-10-15로 121일 빨라질 것으로 예상돼요. 만기까지 이자를 384,000원 아낄 수 있어요." 목표 2개까지. 실패만 있으면 "요청을 실행하지 못했어요. {사유}", 결과 없음이면 고정 안내 |
+| 프롬프트 (`CoachPromptFactory.chatSystem`) | 공통 규칙 + 대화 규칙(도구 사용 조건, 금액 없으면 되묻기, `실행 실패:`는 그대로 전달, 무관 질문 거절 문구, 3문장·200자, 현재 → 실행 후 순서, 사용자 숫자 되풀이 허용) + 선택 [화면 맥락]. `VERSION` 640.1 |
+| 숫자 검증 | `CoachNumberGuard.findUnverifiedNumber(text, facts, extraSources)` — 허용 = facts + **사용자 문장** + 화면 맥락 facts + 앞선 턴의 문장·facts. `5만원`·`100만`·`1.5억`·`3천원`은 단위를 곱한 값(50,000 …)도 허용한다(사용자가 "5만원"이라 말한 것을 모델이 "50,000원"으로 되풀이하는 것은 지어낸 숫자가 아니다) |
+| 민감정보 | `CoachSensitiveDataGuard.scan(사용자 문장)` — 계좌·카드번호가 있으면 외부 호출 없이 `SENSITIVE_DATA_BLOCKED` + "계좌번호·카드번호처럼 긴 숫자는 채팅에 적지 말아 주세요…". 이 문장은 세션에도 남기지 않는다. 칩 문구는 서버 문자열이라 검사하지 않는다 |
+| 세션 (`CoachChatSessionStore`, Redis `coach:chat:session:{userId}:{conversationId}`) | 사용자 문장 + facts 줄(≤8)만. **모델 응답 전문·프롬프트는 저장하지 않는다**(§6). 재생은 user/assistant 쌍이며 assistant 자리는 "(앞선 답변의 서버 계산값) 라벨: 값 · …". 최근 6턴, TTL 30분(저장마다 갱신), 세션당 10턴(`SESSION_TURN_LIMIT`, 이 응답은 세션을 늘리지 않는다). 없는/만료된 id는 같은 id로 새 대화 — FE가 id를 바꿀 필요 없다. 저장소 장애는 새 대화와 같다 |
+| 예산 (`CoachChatRateLimiter`, Redis `coach:chat:rl:`) | 3종 코치와 **별도 키·별도 한도** `app.coach.chat.rate-limit` 기본 20건/시간. 외부 호출 1회마다 1건(자유 입력 턴 = 2건, 칩 = 1건). 알고리즘은 `RedisWindowCounter`로 §12와 공유(장애 시 인프로세스 계수) |
+| 캐시 | 없다. 같은 문장도 대화 맥락이 다르고, 도구 실행(시뮬레이션 행)은 `SimulationRunner`의 같은 날 지문 재사용이 이미 막는다 |
+| `degradedReason` | 기존 6종 + `TOOL_LOOP_EXCEEDED`, `SESSION_TURN_LIMIT` |
+| 로그 | 도구 이름·인자 키·simulationId·위반 종류·숫자 토큰만. 사용자 문장·모델 응답 전문은 남기지 않는다 |
+
+설정(`application.yml` `app.coach.chat`): `session-ttl PT30M`, `history-turns 6`, `max-turns-per-session 10`, `max-message-length 300`, `rate-limit {enabled, permits 20, window PT1H}`. 테스트 프로필은 예산을 끄고 세션당 3턴이다.
+
+검증: `CoachChatApiTest` 14(401·400 5종, 칩 → 도구 → 2차 NONE 1회·메시지 순서·세션 저장 내용, AI 꺼짐에도 칩 실행·템플릿 문장, 자유 입력 1왕복·예산 2회,
+도구 없는 답, 검증 실패 전달(`실행하지 못한 요청` 섹션·`toolResults[].error`), 사용자 번호 차단(세션 저장 없음), 지어낸 숫자 → 템플릿 + facts 유지, 2차 tool_calls → `TOOL_LOOP_EXCEEDED`,
+호출 실패·예산 소진, 앞선 턴 재생·id 유지, 턴 상한, 화면 맥락·타인 404), `CoachTemplateWriterChatTest` 4, `CoachChatSessionTest` 2, `CoachNumberGuardTest` +2,
+`RedisCoachChatSessionStoreTest` 4, `RedisCoachChatRateLimiterTest` 3. 외부 모델·도구 실행은 Mock이다 — 실제 GMS·시연 seed 실측은 09-23(계획 §1-8 후속).

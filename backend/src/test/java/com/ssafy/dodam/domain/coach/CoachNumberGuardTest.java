@@ -67,4 +67,29 @@ class CoachNumberGuardTest {
         assertThat(guard.findUnverifiedNumber("문제가 두 가지 있고 절반 정도가 소비 영역입니다.", given)).isEmpty();
         assertThat(guard.findUnverifiedNumber("   ", given)).isEmpty();
     }
+
+    // ---------- 640 A-3 채팅: 사용자 문장·앞선 턴의 숫자 ----------
+
+    @Test
+    void chatAllowsNumbersTheUserTypedAndEarlierTurnsGave() {
+        CoachFacts facts = facts("단축(비상금)", "121일");
+        // 사용자가 말한 5만원·100만원과 앞선 턴의 서버 값(384,000원)은 지어낸 숫자가 아니다
+        List<String> extra = List.of("카페 5만원 줄이고 대출 100만원 더 갚으면?", "만기까지 이자 절감: 384,000원");
+
+        assertThat(guard.findUnverifiedNumber("카페 50,000원을 줄이고 1,000,000원을 더 갚으면 121일 빨라지고 384,000원을 아껴요.",
+                facts, extra)).isEmpty();
+        // 그래도 새 숫자는 막힌다: 12개월 × 50,000 = 600,000은 아무도 준 적 없다
+        assertThat(guard.findUnverifiedNumber("1년이면 600,000원이에요.", facts, extra)).contains("600,000");
+        // 2인자 버전은 그대로다(3종 코치 회귀 없음)
+        assertThat(guard.findUnverifiedNumber("50,000원을 줄이면요.", facts)).contains("50,000");
+    }
+
+    @Test
+    void koreanUnitAmountsExpandToTheirWonValue() {
+        CoachFacts facts = facts("단축", "10일");
+        assertThat(guard.findUnverifiedNumber("월 30,000원, 1,500,000원, 150,000,000원", facts,
+                List.of("저축을 월 3만원 올리고 150만원 넣고 1.5억 대출이면?"))).isEmpty();
+        // 단위 없는 '3'은 3만원의 3이지 30,000이 아니다 — 단위가 붙은 경우만 곱한다
+        assertThat(guard.findUnverifiedNumber("30,000원", facts, List.of("3 정도"))).contains("30,000");
+    }
 }

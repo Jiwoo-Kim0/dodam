@@ -33,7 +33,7 @@ public class CoachPromptFactory {
      * 프롬프트를 고쳐도 facts는 그대로라서 옛 문장이 계속 나간다. 진단 ruleVersion을 올려 연쇄로
      * 갈아엎는 방법도 있지만, 문구 한 줄 고치자고 전 사용자의 진단을 다시 실행할 수는 없다.
      */
-    public static final String VERSION = "604.2";
+    public static final String VERSION = "640.1";
 
     private static final String COMMON_RULES = """
             너는 개인 재무 관리 앱 '도담'의 금융 코치다. 사용자에게 존댓말로 설명한다.
@@ -70,7 +70,48 @@ public class CoachPromptFactory {
         return switch (topic) {
             case FINANCIAL_SUMMARY -> 150;
             case INEFFICIENCY_EXPLANATION, RECOMMENDATION_EXPLANATION -> 80;
+            case CHAT -> CHAT_MAX_LENGTH;
         };
+    }
+
+    /** 채팅 본문 상한(자). 도구 결과를 현재 → 실행 후 순서로 말하려면 80자로는 부족하고, 버블 하나에 들어가야 한다. */
+    static final int CHAT_MAX_LENGTH = 200;
+
+    private static final String CHAT_RULES = """
+            이번 요청은 '도리에게 묻기' 대화다. 너의 이름은 도리다. 사용자가 저축·소비·대출·목표에 대해
+            "이렇게 하면 어떻게 되나"를 묻고, 너는 서버 도구로 계산한 결과를 말로 옮긴다.
+
+            도구 사용:
+            - 시뮬레이션이나 목표 달성 예측이 필요한 질문이면 도구를 사용한다. 도구 결과에 적힌 값만으로 답한다.
+            - 금액이나 대상이 빠져 있으면 도구를 부르지 말고, 무엇을 알려 주면 계산할 수 있는지 한 문장으로 되묻는다.
+            - 도구 결과가 '실행 실패:'로 시작하면 그 사유를 사용자 말로 그대로 전달한다. 다른 값을 대신 넣어 다시 실행하지 않는다.
+            - 인사나 앱 사용법 질문에는 도구 없이 짧게 답한다.
+            - 가계·저축·대출·목표와 무관한 질문에는 "가계·저축·대출·목표에 관한 질문만 도와드릴 수 있어요"라고만 답한다.
+
+            답변 형식:
+            - 세 문장 이내, 전체 200자 이내.
+            - 결과를 말할 때는 현재 → 실행 후 순서로, 예상 달성일과 단축(또는 지연) 일수를 함께 말한다.
+            - '계산 불가'인 항목은 계산할 수 없었다고만 말하고 날짜를 추정하지 않는다.
+            - 사용자가 직접 말한 금액·기간은 되풀이해도 된다. 그 밖의 숫자는 도구 결과에 있는 값만 쓴다.
+            """;
+
+    /**
+     * 채팅 시스템 프롬프트(640 A-3). 공통 규칙 + 대화 규칙 + 선택 [화면 맥락](발견 상세에서 열었을 때의 진단 문제 facts).
+     * 이전 턴은 여기 넣지 않고 메시지 목록의 user/assistant 쌍으로 재생한다.
+     */
+    public String chatSystem(CoachFacts context) {
+        StringBuilder prompt = new StringBuilder(COMMON_RULES).append('\n').append(CHAT_RULES);
+        if (context != null && !context.sections().isEmpty()) {
+            prompt.append("\n[화면 맥락] 사용자는 아래 진단 항목 화면에서 대화를 열었다. 질문이 이 항목과 관련되면 참고한다.\n");
+            prompt.append("[대상] ").append(context.subject()).append('\n');
+            context.notes().forEach(note -> prompt.append("[주의] ").append(note).append('\n'));
+            context.sections().forEach(section -> {
+                prompt.append(section.title()).append('\n');
+                section.facts().forEach(fact ->
+                        prompt.append("- ").append(fact.label()).append(": ").append(fact.value()).append('\n'));
+            });
+        }
+        return prompt.toString();
     }
 
     public String system(CoachTopic topic) {
@@ -99,6 +140,7 @@ public class CoachPromptFactory {
                     이 개선안을 어떻게 시작하면 좋을지, 무리 없이 실천할 방법을 쓴다.
                     같은 말을 다르게 바꿔 두 번 쓰지 않는다. 한 문장으로 충분하면 한 문장만 쓴다.
                     """;
+            case CHAT -> CHAT_RULES;
         };
     }
 

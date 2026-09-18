@@ -191,7 +191,7 @@ curl -sS https://gms.ssafy.io/gmsapi/api.openai.com/v1/chat/completions \
 | --- | --- | --- |
 | A-1 | `CoachTextGenerator.chat` 포트·`OpenAiCoachTextGenerator` tools 요청/응답 파싱·GMS 확인 결과 문서 — **구현 완료(09-18)**, `backend/docs/ai-coach.md` §13-1. 계획의 `chat(messages, tools)`에 `ToolChoice`(AUTO/REQUIRED/NONE/FUNCTION)를 더했다(칩 경로에서 함수 강제·2차 문장 생성에서 NONE) | 구동재 |
 | A-2 | `CoachToolRegistry`·`CoachToolDispatcher`·도구 6개·칩 매핑·facts 변환기·단위 테스트 — **구현 완료(09-18)**, `backend/docs/ai-coach.md` §13-2. 도구는 6개 + 읽기 도구 `get_latest_diagnosis`, 인자 검증 `CoachToolArguments`, 결과 `CoachToolResult` | 구동재 |
-| A-3 | `CoachChatService`·Redis 세션·별도 레이트 리밋·`POST /coach/chat`·`CoachTopic.CHAT`(프롬프트·템플릿·숫자 검증 확장)·통합 테스트·`backend/docs/ai-coach.md` §13 추가 | 구동재 |
+| A-3 | `CoachChatService`·Redis 세션·별도 레이트 리밋·`POST /coach/chat`·`CoachTopic.CHAT`(프롬프트·템플릿·숫자 검증 확장)·통합 테스트·`backend/docs/ai-coach.md` §13 추가 — **구현 완료(09-18)**, `backend/docs/ai-coach.md` §13-3. 응답에 `toolResults[].error` 추가, `degradedReason`에 `SESSION_TURN_LIMIT` 추가(세션 10턴), 실패 도구는 facts `실행하지 못한 요청` 섹션 | 구동재 |
 | A-4 | FE 채팅 시트·진입점·칩·타입 | 정서영 |
 
 ---
