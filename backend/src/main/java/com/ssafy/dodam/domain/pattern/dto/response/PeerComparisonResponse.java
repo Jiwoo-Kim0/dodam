@@ -2,13 +2,20 @@ package com.ssafy.dodam.domain.pattern.dto.response;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.ssafy.dodam.domain.pattern.service.ClusterFeature;
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
  * `GET /patterns/me/peer-comparison` 응답(632). 분석 완료 시점에 차원별로 계산해 `pattern_analysis.peer_stats_json`에 굳혀 두고
  * 조회 때 그대로 읽는다 — 모델을 다시 학습해도 과거 분석 결과가 바뀌지 않고, AI 코치가 재계산 없이 읽는다.
  *
+ * <p>(635) {@code analyzedAt}·{@code analysisPeriod}는 저장 JSON에 없고 조회 때 분석 행에서 채운다. {@code features[].direction}은
+ * 632 저장본에 없어 조회 때 {@code ClusterFeature}로 채운다.
+ *
  * @param analysisId        근거 패턴 분석
+ * @param analyzedAt        분석 실행 시각(= 이 비교의 기준 시점). 나이대도 이 시점 나이다
+ * @param analysisPeriod    분석에 쓴 완료 월 구간(yyyy-MM). 분석 실행 달의 직전 달이 {@code endMonth}다
  * @param modelVersion      군집 모델 버전. 군집이 배정되지 않았으면 null
  * @param peerGroup         실제로 비교한 집단. 비교할 수 없으면 null
  * @param features          특징별 사용자 값·집단 분포·백분위. 비교할 수 없으면 빈 목록
@@ -21,6 +28,8 @@ import java.util.List;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record PeerComparisonResponse(
         Long analysisId,
+        @JsonInclude(JsonInclude.Include.NON_NULL) LocalDateTime analyzedAt,
+        @JsonInclude(JsonInclude.Include.NON_NULL) AnalysisPeriod analysisPeriod,
         String modelVersion,
         PeerGroup peerGroup,
         List<PeerFeature> features,
@@ -41,7 +50,23 @@ public record PeerComparisonResponse(
     }
 
     public static PeerComparisonResponse unavailable(Long analysisId, String modelVersion, String reason) {
-        return new PeerComparisonResponse(analysisId, modelVersion, null, List.of(), List.of(), List.of(), reason);
+        return new PeerComparisonResponse(analysisId, null, null, modelVersion, null, List.of(), List.of(), List.of(), reason);
+    }
+
+    /** 분석 행의 시각·기간을 붙이고, 저장본에 방향이 없는 특징은 {@code ClusterFeature}의 방향으로 채운다. */
+    public PeerComparisonResponse withAnalysis(LocalDateTime analyzedAt, AnalysisPeriod period) {
+        List<PeerFeature> filled = features.stream().map(PeerFeature::withDefaultDirection).toList();
+        return new PeerComparisonResponse(analysisId, analyzedAt, period, modelVersion, peerGroup, filled, clusterShare, insights,
+                unavailableReason);
+    }
+
+    /**
+     * @param startMonth 첫 완료 월(yyyy-MM)
+     * @param endMonth   마지막 완료 월(yyyy-MM)
+     * @param months     개월 수
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record AnalysisPeriod(String startMonth, String endMonth, int months) {
     }
 
     /**
@@ -63,12 +88,22 @@ public record PeerComparisonResponse(
      * @param peerP25          집단 25분위 값
      * @param peerMedian       집단 중앙값
      * @param peerP75          집단 75분위 값
-     * @param percentileInPeer 집단 안에서 사용자 값의 백분위(0~100)
+     * @param percentileInPeer 집단 안에서 사용자 값의 백분위(0~100). "그 값 이하인 표본의 비율"이라 방향과 무관하게 큰 값 = 큰 백분위
      * @param rankBand         TOP_10 / UPPER / MIDDLE / LOWER / BOTTOM_10
+     * @param direction        HIGHER_IS_BETTER(저축률) / LOWER_IS_BETTER(나머지). 값은 비율(0~1 소수 4자리), 백분위는 0~100이다
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record PeerFeature(String feature, String displayName, double userValue, Double peerP25, Double peerMedian, Double peerP75,
-            double percentileInPeer, String rankBand) {
+            double percentileInPeer, String rankBand, String direction) {
+
+        PeerFeature withDefaultDirection() {
+            if (direction != null) {
+                return this;
+            }
+            ClusterFeature.Direction resolved = ClusterFeature.directionOf(feature);
+            return resolved == null ? this : new PeerFeature(feature, displayName, userValue, peerP25, peerMedian, peerP75,
+                    percentileInPeer, rankBand, resolved.name());
+        }
     }
 
     /**

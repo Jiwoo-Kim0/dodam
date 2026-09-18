@@ -12,24 +12,48 @@ import java.util.List;
  */
 public enum ClusterFeature {
     /** 소비 / 소득 */
-    SPENDING_TO_INCOME_RATIO("spendingToIncomeRatio", "소득 대비 소비율", 3.0),
+    SPENDING_TO_INCOME_RATIO("spendingToIncomeRatio", "소득 대비 소비율", 3.0, Direction.LOWER_IS_BETTER),
     /** 저축성 지출 / 소득 */
-    SAVING_RATE("savingRate", "저축률", 2.0),
+    SAVING_RATE("savingRate", "저축률", 2.0, Direction.HIGHER_IS_BETTER),
     /** 고정지출 / 소비 */
-    FIXED_EXPENSE_SHARE("fixedExpenseShare", "고정지출 비중", 1.0),
+    FIXED_EXPENSE_SHARE("fixedExpenseShare", "고정지출 비중", 1.0, Direction.LOWER_IS_BETTER),
     /** 재량 소비(외식·카페·쇼핑·뷰티·문화·여행·택시) / 소비 */
-    DISCRETIONARY_SHARE("discretionaryShare", "재량소비 비중", 1.0),
+    DISCRETIONARY_SHARE("discretionaryShare", "재량소비 비중", 1.0, Direction.LOWER_IS_BETTER),
     /** 월 소비 변동계수(표준편차 / 평균) */
-    SPENDING_VOLATILITY("spendingVolatility", "소비 변동성", 2.0);
+    SPENDING_VOLATILITY("spendingVolatility", "소비 변동성", 2.0, Direction.LOWER_IS_BETTER);
+
+    /**
+     * 값이 클수록 좋은지(635, FE 오각형 그래프 색·문구 분기). 저축률만 HIGHER_IS_BETTER다. 고정지출·재량소비 비중은 "낮을수록
+     * 여유"라는 일반 해석을 따른 서비스 초기값이며, 필수 지출이 많은 사용자에게는 중립일 수 있다.
+     */
+    public enum Direction {
+        HIGHER_IS_BETTER, LOWER_IS_BETTER
+    }
 
     private final String key;
     private final String displayName;
     private final double cap;
+    private final Direction direction;
 
-    ClusterFeature(String key, String displayName, double cap) {
+    ClusterFeature(String key, String displayName, double cap, Direction direction) {
         this.key = key;
         this.displayName = displayName;
         this.cap = cap;
+        this.direction = direction;
+    }
+
+    public Direction direction() {
+        return direction;
+    }
+
+    /** 특징 키로 방향을 찾는다. 모르는 키면 null(저장된 과거 JSON을 읽을 때). */
+    public static Direction directionOf(String key) {
+        for (ClusterFeature feature : values()) {
+            if (feature.key.equals(key)) {
+                return feature.direction;
+            }
+        }
+        return null;
     }
 
     public String key() {

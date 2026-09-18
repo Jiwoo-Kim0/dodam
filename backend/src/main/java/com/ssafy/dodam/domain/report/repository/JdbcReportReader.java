@@ -55,6 +55,20 @@ public class JdbcReportReader {
             ORDER BY h.payment_amount DESC, h.payment_history_id
             """;
 
+    // 카드 사용액(635): 소비 정의(506, NON_SPENDING·숨긴 거래 제외) 중 카드로 결제한 것. 카드 원장에서 온 거래는
+    // card_id가 있고, 수동·seed 거래는 payment_method = 'CARD'다. 둘 중 하나면 카드 사용이다.
+    // 결제수단별 소비 API(/spending/payment-methods)의 'CARD' 묶음과 card_id 기준 카드 화면 합계를 합친 정의다.
+    private static final String CARD_SPENDING_SQL = """
+            SELECT COALESCE(SUM(entry.amount), 0)
+            FROM `transaction` entry
+            WHERE entry.user_id = :userId
+              AND entry.hidden = FALSE
+              AND entry.transaction_type = 'EXPENSE'
+              AND (entry.spending_type IS NULL OR entry.spending_type <> 'NON_SPENDING')
+              AND entry.transaction_date BETWEEN :startDate AND :endDate
+              AND (entry.card_id IS NOT NULL OR UPPER(entry.payment_method) = 'CARD')
+            """;
+
     private final NamedParameterJdbcTemplate jdbcTemplate;
 
     public JdbcReportReader(NamedParameterJdbcTemplate jdbcTemplate) {
@@ -63,6 +77,13 @@ public class JdbcReportReader {
 
     public long countTransactions(Long userId, LocalDate startDate, LocalDate endDate) {
         return Objects.requireNonNullElse(jdbcTemplate.queryForObject(COUNT_SQL,
+                new MapSqlParameterSource().addValue("userId", userId)
+                        .addValue("startDate", startDate).addValue("endDate", endDate), Long.class), 0L);
+    }
+
+    /** 그 기간의 카드 사용액(소비 정의 + 카드 결제). 거래가 없으면 0이다. */
+    public long readCardSpending(Long userId, LocalDate startDate, LocalDate endDate) {
+        return Objects.requireNonNullElse(jdbcTemplate.queryForObject(CARD_SPENDING_SQL,
                 new MapSqlParameterSource().addValue("userId", userId)
                         .addValue("startDate", startDate).addValue("endDate", endDate), Long.class), 0L);
     }

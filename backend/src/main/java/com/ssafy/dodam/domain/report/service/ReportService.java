@@ -1,6 +1,7 @@
 package com.ssafy.dodam.domain.report.service;
 
 import com.ssafy.dodam.domain.report.dto.DailyReportResponse;
+import com.ssafy.dodam.domain.report.dto.EfficiencyScoreResponse;
 import com.ssafy.dodam.domain.report.dto.MonthlyGoalImpactResponse;
 import com.ssafy.dodam.domain.report.dto.MonthlyImprovementsResponse;
 import com.ssafy.dodam.domain.report.dto.MonthlyReportResponse;
@@ -204,14 +205,30 @@ public class ReportService {
         MonthlyReport stored = monthlyReport(report);
         if (stored.getDataStatus().isRegenerable()) {
             stored.refresh(toEntityContent(monthlyGenerator.generate(userId, month)));
+            return report;
         }
+        supplementIfMissing(userId, month, stored);
         return report;
+    }
+
+    /**
+     * 635 이전에 굳힌 READY 리포트에 카드 사용액·효율 점수가 없으면 그 두 값만 채운다. 합계·생성 시각은 그대로다.
+     * 저장 형식을 읽지 못한 리포트({@code financial == null})는 건드리지 않는다 — {@code INSUFFICIENT_DATA}로 응답한다.
+     */
+    private void supplementIfMissing(Long userId, YearMonth month, MonthlyReport stored) {
+        Financial financial = json.fromJson(stored.getFinancialSummary(), Financial.class);
+        if (financial == null || (financial.hasCardSpending() && stored.hasEfficiencySummary())) {
+            return;
+        }
+        MonthlyReportGenerator.Supplement supplement =
+                monthlyGenerator.supplement(userId, month, financial, stored.getDiagnosisId());
+        stored.supplement(supplement.financialSummary(), supplement.efficiencySummary());
     }
 
     private static MonthlyReport.Content toEntityContent(MonthlyReportGenerator.Content content) {
         return new MonthlyReport.Content(content.dataStatus(), content.diagnosisId(), content.overallStatus(),
                 content.financialSummary(), content.spendingSummary(), content.goalSummary(),
-                content.improvementSummary());
+                content.improvementSummary(), content.efficiencySummary());
     }
 
     private MonthlyReport monthlyReport(Report report) {
@@ -259,6 +276,10 @@ public class ReportService {
                 financial == null ? null : financial.transactionCount(),
                 financial == null ? null : financial.previousMonth(),
                 financial == null ? null : financial.changeFromPreviousMonth(),
+                financial == null ? null : financial.cardSpending(),
+                financial == null ? null : financial.cardSpendingPreviousMonth(),
+                financial == null ? null : financial.cardSpendingDifferenceFromPreviousMonth(),
+                json.fromJson(monthly.getEfficiencySummary(), EfficiencyScoreResponse.class),
                 monthly.getDiagnosisId(), monthly.getOverallStatus(), status.unavailableReason());
     }
 }

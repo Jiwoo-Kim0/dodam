@@ -4,6 +4,47 @@
 
 백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 629, 632, 587, 589, 611, 627, 628이다.
 
+## S15P21D105-635 — 리포트 금융 효율 점수·K-Means 또래 비교 연동 (FE 요청 회신)
+
+계약: [improvement-report-contract.md](improvement-report-contract.md) §6, [pattern.md](pattern.md) §peer-comparison "635 FE 회신". 브랜치 `S15P21D105-635-report-efficiency-peer`.
+
+### 구현 완료 (2026-09-18)
+
+- [x] 요청 1 금융 효율 점수: `MonthlyReport.efficiency`(전체 + 6개 항목, `efficiency-v1`), V41 `monthly_report.efficiency_summary`, 전월 차이, 635 이전 READY 리포트 조회 시 보강. `EfficiencyScorePolicyTest` 12 · `ReportApiTest` +3.
+- [x] 요청 2 또래 비교: `analyzedAt`·`analysisPeriod`·`features[].direction` 추가(조회 때 분석 행에서 채움), 단위·백분위·상태별 안내 회신. `PatternApiTest` 단언 추가.
+- [x] 요청 3 카드 사용액: `cardSpending`·`cardSpendingPreviousMonth`·`cardSpendingDifferenceFromPreviousMonth`(소비 정의 + `card_id` 또는 `payment_method = CARD`).
+
+### 남은 것
+
+- [ ] **산식 임계값은 서비스 초기값**(지출 0.5~1.0, 저축 0~0.3, 고정지출 0.3~0.7, 등급표, 위험·문제 감점). 시연 계정 4명의 실제 점수를 서버에서 보고 기획과 조정하면 `efficiency-v2`로 올린다(과거 리포트 점수는 그대로).
+- [ ] 리포트 도메인(590)은 김지우 담당이었다. 635는 BE-A가 작업했으므로 MR 리뷰에서 리포트 담당자 확인을 받는다.
+- [ ] FE: 리포트 카드가 `POST /patterns/analyze` → `GET /patterns/me/peer-comparison` 순서로 호출해야 한다(분석은 호출 시에만 생성). 시연 계정은 632 이전 분석이라 `forceRefresh` 1회 필요(632 남은 것과 같음). 오각형은 `direction = LOWER_IS_BETTER` 축을 `100 − percentileInPeer`로 뒤집어야 "바깥이 좋음"이 된다.
+- [ ] 리포트 상세(`GET /reports/{id}`)는 보강하지 않는다. FE가 상세를 목록에서 바로 열 때 `efficiency = null`일 수 있으면 월간 조회를 먼저 거치게 하거나 상세에도 보강을 넣는다(현재는 readOnly 유지).
+- [ ] 신용등급은 현재 값이라 과거 달 리포트에 조회 시점 등급이 들어간다. 월별 등급 이력이 필요하면 `credit_rating` 변경 이력 테이블이 필요하다.
+- [ ] 서버 배포 시 Flyway V41 적용 확인. 배포 전 생성된 시연 계정 리포트는 첫 월간 조회 때 채워진다.
+
+## S15P21D105-633 — 시연 계정 데이터 수정 (U0003 고금리 대출·예적금 상품 추천)
+
+요청 원문: "3번 계정 — 고금리 대출을 보유한 상태로 데이터를 조정해 비효율 항목에 노출", "'발견' 화면의 추천에 예·적금 상품이 노출되도록 데이터를 조정".
+브랜치 `S15P21D105-633-demo-account-data`.
+
+### 1. 고금리 대출 — seed로 해결 (구현 완료, 서버 적용 대기)
+
+- [x] `backend/database/seeds/DODAM_DEMO_LOAN_SEED.sql`(13번) + `backend/scripts/make_demo_loan_fixture.py`. U0003에 `KB 국민ONE대출` 연 8.5%(잔액 12,998,492, 잔여 36회) 1건과 상환 8건. 627 규칙이 비교군 `CREDIT` 중앙값 5.229% 대비 +3.271%p → **HIGH**, 대환 추천(연 247,080원 절감)까지 로컬에서 끝까지 확인했다. 수치·절차는 [seeds/README.md](../database/seeds/README.md) §시연 계정 U0003 고금리 대출.
+- [x] **서버 적용**: 2026-09-18 인프라(김지우)가 13번 적재 완료(`docker compose exec -T` + `MYSQL_PWD`, preflight 1/1/1/1/1/1/0, 대출 1건·상환 8건). U0003 재진단에서 고금리 대출 HIGH(+3.271%p)·대환 추천(741,260원)까지 확인(`infra/todo/jiw/day-12.md`). README의 서버 적용 블록은 `.env` 키 이름(`MYSQL_USER`/`MYSQL_PASSWORD`, `DB_USERNAME` 아님)·컨테이너 경유·`MYSQL_PWD`로 고쳤다. 서버 seed 상태: 1~11·13번 적용, **12번(632 인구통계 backfill) 미적용**.
+- [ ] 다른 시연 계정은 그대로다. U0002는 주택담보 3.9%(비교군 MORTGAGE), U0004는 전세 3.2% + 보조 대출(523 변형 1: 신한 사잇돌 중금리)이라 고금리 판정 대상이 아닐 가능성이 크다(서버 진단 결과로 확인).
+
+### 2. 예·적금 상품 추천 — 데이터 조정으로는 불가 (BE 기능 필요, 결정 대기)
+
+- 발견 화면의 추천은 진단 문제(`diagnosis_issue`)에서 생성기가 만든 `recommendation`만 보여 준다. **예·적금과 관련된 진단 규칙·추천 생성기가 없다**(recommendation-api.md §"카드·계좌·예적금 추천 — 대응 진단 규칙 미구현"). FE 발견 화면도 상품 API(`/v1/products`)를 호출하지 않는다. 즉 어떤 seed 값을 바꿔도 예·적금 상품이 발견 화면에 나타나지 않는다.
+- 유일하게 가까운 기존 추천 `SAVING/INCREASE_MONTHLY_SAVING`(GOAL/SAVING_GOAL_RISK → 월 저축 증액)은 상품을 가리키지 않고, 607에서 FE가 GOAL 도메인을 발견 목록에서 숨기기로 해 화면에도 나오지 않는다.
+- 구현하려면(627 고금리 대출과 같은 구조, BE 하루 안팎):
+  1. 진단 규칙 `DEPOSIT/LOW_INTEREST_RATE`: 보유 정기예금 금리를 `DepositRateComparisonService`(API 12 예금 금리비교, 같은 기간·업권 기본금리 중앙값, `HIGHER_IS_BETTER`)로 판정. 기준 편차·심각도는 새로 정한다.
+  2. 추천 생성기 `DEPOSIT/SWITCH_DEPOSIT_PRODUCT`: 비교군에서 같은 기간 최고 기본금리 상품(`targetProductId`)과 만기까지 세후 이자 차액을 효과로. 시뮬레이션 프리셋은 585 예적금 가입 실행 API로 연결.
+  3. FE 발견 상세: 목표·대출·현금흐름처럼 `issue.title/description`만 갈아 끼우는 공용 화면으로도 표시는 되지만, 상품명·금리 비교 카드는 607 요청서 3번(도메인별 고유 수치 계약)과 함께 정해야 한다.
+- 데이터 측면: U0003의 보유 예금은 524 변형 1 `신한 쏠편한 정기예금` 3.05%·24개월·2,000만원(ACTIVE)이고, 상품 DB의 24개월 정기예금 기본금리 최고는 카카오뱅크 3.00%라 **지금 값으로는 "더 좋은 상품"이 없다**. 규칙을 만들면 U0003 예금 금리를 2%대로 낮추는 시연 seed(13번과 같은 방식, 524 fixture 불필요 — 기존 행 UPDATE)를 함께 넣어야 한다. 상품 DB에 적금(`SAVING`)은 0건이라 "적금 추천"은 상품 seed 보강도 필요하다.
+- [ ] 위 범위를 시연 전에 넣을지(어느 파트가 맡을지) 팀 결정. 결정되면 규칙·생성기·seed를 한 브랜치로 진행한다.
+
 ## S15P21D105-632 — K-Means 군집 내 위치·동년배 비교 (V40)
 
 설계·결정: [pattern-peer-comparison-plan.md](pattern-peer-comparison-plan.md). 계약: [pattern.md](pattern.md) §clusterProfile(632)·§GET /patterns/me/peer-comparison. 아티팩트: [ml/pattern/README.md](../ml/pattern/README.md) §v2.
