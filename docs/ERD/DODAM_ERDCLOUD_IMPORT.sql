@@ -139,6 +139,7 @@ CREATE TABLE `pattern_analysis` (
   `feature_window_months` INT NULL,
   `feature_summary_json` JSON NULL,
   `cluster_stats_json` JSON NULL,
+  `peer_stats_json` JSON NULL,
   `sample_size` INT NULL,
   `confidence` DECIMAL(5,4) NULL,
   `analyzed_at` DATETIME NOT NULL,

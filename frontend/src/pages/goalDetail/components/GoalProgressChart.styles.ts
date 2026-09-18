@@ -1,6 +1,6 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, radius, spacing, typography } from '@/styles';
+import { colors, fontSize, radius, spacing, typography } from '@/styles';
 
 export const styles = StyleSheet.create({
   card: {
@@ -31,26 +31,27 @@ export const styles = StyleSheet.create({
   legend: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    gap: spacing[3],
-    paddingRight: spacing[2],
+    gap: spacing[2],
+    paddingRight: spacing[1],
   },
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing[1],
+    gap: 3,
   },
   legendDot: {
-    width: spacing[2],
-    height: spacing[2],
+    width: 6,
+    height: 6,
     borderRadius: radius.round,
   },
   legendBar: {
-    width: spacing[3],
-    height: spacing[2],
+    width: 10,
+    height: 6,
     borderRadius: radius.small,
   },
   legendLabel: {
-    ...typography.caption,
+    fontSize: fontSize.micro,
+    lineHeight: 14,
     color: colors.textSecondary,
   },
 });

@@ -28,6 +28,19 @@ public final class ClusterLabelPolicy {
             Map.entry(ClusterFeature.FIXED_EXPENSE_SHARE, "고정지출 집중형")
     );
 
+    /**
+     * 라벨의 대표 특징(632). "소비 집중형 중에서도 …" 문장이 근거로 삼는 특징 한 개다. 라벨을 준 특징이 곧 대표 특징이고, 균형형·"소비 유형 N"은
+     * 소득 대비 소비율로 본다.
+     */
+    public static ClusterFeature representativeFeature(String label) {
+        for (Map.Entry<ClusterFeature, String> candidate : PRIORITY) {
+            if (candidate.getValue().equals(label)) {
+                return candidate.getKey();
+            }
+        }
+        return ClusterFeature.SPENDING_TO_INCOME_RATIO;
+    }
+
     private ClusterLabelPolicy() {
     }
 

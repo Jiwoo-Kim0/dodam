@@ -74,6 +74,15 @@ class ClusterModelArtifactLoaderTest {
         assertThat(model.clusters()).extracting(ClusterModel.ClusterSummary::label)
                 .containsExactlyInAnyOrder("저축 중심형", "소비 변동형", "소비 집중형", "균형형");
         assertThat(model.clusters()).allSatisfy(cluster -> assertThat(cluster.sampleSize()).isGreaterThanOrEqualTo(10));
+        // 632 v2: 분위 격자·동년배 집단·모집단 통계. seed 4,000명 전원이 생년월일·성별을 가져 나이대 4종 × (전체·성별 2·군집 4) + 성별 2 = 30개 이상
+        assertThat(model.supportsPercentiles()).isTrue();
+        assertThat(model.quantileGrid()).hasSize(21);
+        assertThat(model.population()).isNotNull();
+        assertThat(model.population().sampleSize()).isEqualTo(model.populationSize());
+        assertThat(model.peerGroups().size()).isGreaterThanOrEqualTo(30);
+        assertThat(model.peerGroup("20S", com.ssafy.dodam.domain.user.entity.Gender.FEMALE, null)).isPresent();
+        assertThat(model.peerGroup("30S", null, null).orElseThrow().stats().sampleSize()).isGreaterThanOrEqualTo(900);
+        assertThat(model.clusters()).allSatisfy(cluster -> assertThat(cluster.quantiles()).hasSize(5));
         // 저축형 사용자는 저축 중심형에 배정된다.
         ClusterModel.Assignment saver = model.assign(new double[] {0.65, 0.30, 0.68, 0.22, 0.01});
         assertThat(model.cluster(saver.clusterId()).label()).isEqualTo("저축 중심형");

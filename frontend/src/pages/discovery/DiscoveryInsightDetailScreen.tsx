@@ -11,23 +11,28 @@ import { routes } from '@/constants/routes';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import type { CoachMessageResponse } from '@/types/coachApi.types';
 import type {
+  DiagnosisGoalImpactApiResponse,
   DiagnosisIssueApiResponse,
   RecommendationApiResponse,
 } from '@/types/discoveryApi.types';
 import { formatNumber } from '@/utils/currency';
 
-import { BasicSimulationSection } from './components/BasicSimulationSection';
 import {
-  categorySpendingCopy,
+  categorySpendingDiagnosisComparison,
   categorySpendingSummary,
+  recentPeriodLabel,
 } from './categorySpendingCopy';
+import { CategoryMonthlySpendingSection } from './components/CategoryMonthlySpendingSection';
+import { SpendingDiagnosisComparisonCard } from './components/SpendingDiagnosisComparisonCard';
 import {
   discoveryDomainLabel,
   isCategorySpendingIssue,
   parseIssueRouteId,
-  recommendationsForDetail,
+  recommendationsForIssue,
 } from './discoveryModel';
 import { styles } from './DiscoveryInsightDetailScreen.styles';
+import { mostDelayedGoal } from './goalDelay';
+import { useCategoryMonthlySpending } from './hooks/useCategoryMonthlySpending';
 import { loadAllPages } from './hooks/useDiscoveryData';
 
 type DiscoveryInsightDetailScreenProps = { insightId?: string };
@@ -48,12 +53,12 @@ export function DiscoveryInsightDetailScreen({
   const [recommendations, setRecommendations] = useState<
     RecommendationApiResponse[]
   >([]);
-  const [sourceIssues, setSourceIssues] = useState<DiagnosisIssueApiResponse[]>([]);
   const [explanation, setExplanation] = useState<CoachMessageResponse | null>(
     null,
   );
   const [explanationError, setExplanationError] = useState<string | null>(null);
   const [isExplanationLoading, setIsExplanationLoading] = useState(false);
+  const [isCoachExpanded, setIsCoachExpanded] = useState(false);
   const [selectedRecommendationId, setSelectedRecommendationId] = useState<
     number | null
   >(null);
@@ -62,31 +67,49 @@ export function DiscoveryInsightDetailScreen({
   const [recommendationError, setRecommendationError] = useState<string | null>(
     null,
   );
+  const [goalImpact, setGoalImpact] =
+    useState<DiagnosisGoalImpactApiResponse | null>(null);
   const [isLoading, setIsLoading] = useState(Boolean(routeIds));
   const [error, setError] = useState<string | null>(null);
-  const [relatedIssuesError, setRelatedIssuesError] = useState(false);
   const requestIdRef = useRef(0);
   const explanationRequestIdRef = useRef(0);
   const recommendationRequestIdRef = useRef(0);
+  const recommendationExplanationCacheRef = useRef(
+    new Map<number, CoachMessageResponse>(),
+  );
   const loadingRouteKeyRef = useRef<string | null>(null);
   const loadingRecommendationIdRef = useRef<number | null>(null);
   const isCategorySpending = issue !== null && isCategorySpendingIssue(issue);
+  const monthlySpending = useCategoryMonthlySpending(
+    isCategorySpending ? issue : null,
+  );
   const spendingSummary = isCategorySpending
     ? categorySpendingSummary(recommendations)
     : null;
-  const recommendationCards = recommendations.map((recommendation) => {
-    const sourceIssue = sourceIssues.find(
-      (candidate) => candidate.issueId === recommendation.sourceIssueId,
-    );
-    return {
-      recommendation,
-      copy:
-        isCategorySpending && sourceIssue
-          ? categorySpendingCopy(sourceIssue, recommendation)
-          : { title: recommendation.title, description: recommendation.description },
-    };
-  });
-
+  const spendingComparison =
+    isCategorySpending && issue
+      ? categorySpendingDiagnosisComparison(issue)
+      : null;
+  const rawCategoryCode = issue?.currentValue?.categoryCode;
+  const spendingCategoryCode =
+    typeof rawCategoryCode === 'string' && rawCategoryCode.trim()
+      ? rawCategoryCode.trim()
+      : null;
+  const spendingRecommendation = recommendations.find(
+    (recommendation) => recommendation.sourceIssueId === issue?.issueId,
+  );
+  const spendingAnnualSaving = spendingRecommendation?.effect.annualCostSaving;
+  const goalDelay = isCategorySpending ? mostDelayedGoal(goalImpact) : null;
+  // 목표 지연을 우선 보여주고, 목표가 없거나 스냅샷에 예상 달성일이 없으면 연간 금액으로 대신한다.
+  const spendingImpact = !isCategorySpending
+    ? null
+    : goalDelay
+      ? ({ kind: 'goalDelay', goalName: goalDelay.name, days: goalDelay.days } as const)
+      : spendingAnnualSaving !== null &&
+          spendingAnnualSaving !== undefined &&
+          spendingAnnualSaving > 0
+        ? ({ kind: 'annualCost', annualAmount: spendingAnnualSaving } as const)
+        : null;
   const handleBackPress = () => {
     if (router.canGoBack()) {
       router.back();
@@ -133,39 +156,29 @@ export function DiscoveryInsightDetailScreen({
     loadingRecommendationIdRef.current = null;
     setIsLoading(true);
     setError(null);
-    setRelatedIssuesError(false);
     setIssue(null);
     setRecommendations([]);
-    setSourceIssues([]);
+    setGoalImpact(null);
     setExplanation(null);
     setIsExplanationLoading(false);
+    setIsCoachExpanded(false);
     setExplanationError(null);
     setSelectedRecommendationId(null);
     setRecommendationExplanation(null);
     setRecommendationError(null);
+    recommendationExplanationCacheRef.current.clear();
 
     try {
-      const [nextIssue, allRecommendations] = await Promise.all([
+      const [nextIssue, allRecommendations, impact] = await Promise.all([
         diagnosisApi.getIssue(diagnosisId, issueId),
         loadAllPages((page) => recommendationApi.getRecommendations(page)),
+        // 목표 지연 배너는 부가 정보다. 실패해도 나머지 상세는 그대로 보여준다.
+        diagnosisApi.getGoalImpact(diagnosisId).catch(() => null),
       ]);
       if (requestId !== requestIdRef.current) return;
-      let relatedIssues = [nextIssue];
-      if (isCategorySpendingIssue(nextIssue)) {
-        try {
-          relatedIssues = await loadAllPages((page) =>
-            diagnosisApi.getIssues(diagnosisId, page),
-          );
-        } catch {
-          if (requestId === requestIdRef.current) setRelatedIssuesError(true);
-        }
-      }
-      if (requestId !== requestIdRef.current) return;
       setIssue(nextIssue);
-      setSourceIssues(relatedIssues);
-      setRecommendations(
-        recommendationsForDetail(allRecommendations, relatedIssues, nextIssue),
-      );
+      setRecommendations(recommendationsForIssue(allRecommendations, nextIssue));
+      setGoalImpact(impact);
       void loadExplanation();
     } catch {
       if (requestId === requestIdRef.current) {
@@ -191,20 +204,30 @@ export function DiscoveryInsightDetailScreen({
     };
   }, [load]);
 
-  const showRecommendationExplanation = async (recommendationId: number) => {
+  const showRecommendationExplanation = async (
+    recommendationId: number,
+    retry = false,
+  ) => {
     if (loadingRecommendationIdRef.current === recommendationId) return;
+    if (!retry && selectedRecommendationId === recommendationId) {
+      setSelectedRecommendationId(null);
+      return;
+    }
 
     const requestId = ++recommendationRequestIdRef.current;
-    loadingRecommendationIdRef.current = recommendationId;
+    const cached = recommendationExplanationCacheRef.current.get(recommendationId);
+    loadingRecommendationIdRef.current = cached ? null : recommendationId;
     setSelectedRecommendationId(recommendationId);
-    setRecommendationExplanation(null);
+    setRecommendationExplanation(cached ?? null);
     setRecommendationError(null);
+    if (cached) return;
 
     try {
       const coach = await coachApi.getRecommendationExplanation({
         recommendationId,
       });
       if (requestId === recommendationRequestIdRef.current) {
+        recommendationExplanationCacheRef.current.set(recommendationId, coach);
         setRecommendationExplanation(coach);
       }
     } catch {
@@ -217,6 +240,55 @@ export function DiscoveryInsightDetailScreen({
       }
     }
   };
+
+  const explanationText = coachMessage(explanation);
+  const hasLongExplanation = (explanationText?.length ?? 0) > 90;
+  const coachSection = (
+    <View style={styles.coachSection}>
+      <Text style={styles.coachLabel}>도담의 조언</Text>
+      <Text
+        numberOfLines={hasLongExplanation && !isCoachExpanded ? 3 : undefined}
+        style={styles.adviceText}>
+        {isExplanationLoading
+          ? '조언을 불러오고 있어요.'
+          : explanationText ?? explanationError ?? '표시할 조언이 없어요.'}
+      </Text>
+      {hasLongExplanation ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setIsCoachExpanded((expanded) => !expanded)}>
+          <Text style={styles.inlineRetry}>
+            {isCoachExpanded ? '조언 접기' : '조언 전체 보기'}
+          </Text>
+        </Pressable>
+      ) : null}
+      {explanationError ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: isExplanationLoading }}
+          disabled={isExplanationLoading}
+          onPress={() => {
+            void loadExplanation();
+          }}>
+          <Text style={styles.emptyAction}>다시 시도하기</Text>
+        </Pressable>
+      ) : null}
+      {spendingSummary ? (
+        <View style={styles.coachSummary}>
+          <Text style={styles.spendingSummaryLabel}>예상 절약 효과</Text>
+          <Text style={styles.spendingSummaryText}>
+            {spendingSummary.isComplete
+              ? '이전 평균 수준으로 줄이면 연 약 '
+              : '계산 가능한 항목만 줄이면 연 약 '}
+            <Text style={styles.spendingSummaryAmount}>
+              {spendingSummary.amount}원
+            </Text>
+            {' 절약 예상'}
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
 
   return (
     <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
@@ -233,44 +305,32 @@ export function DiscoveryInsightDetailScreen({
             <View style={styles.titleSection}>
               <View style={styles.categoryBadge}>
                 <Text style={styles.categoryBadgeText}>
-                  {discoveryDomainLabel(issue.domain)}
+                  {isCategorySpending ? '소비 진단' : discoveryDomainLabel(issue.domain)}
                 </Text>
               </View>
-              <Text style={styles.title}>
-                {isCategorySpending && recommendations.length > 1
-                  ? `소비가 늘어난 항목 ${recommendations.length}개`
-                  : issue.title}
-              </Text>
+              {spendingComparison ? (
+                <>
+                  <Text style={styles.spendingTitle}>
+                    {spendingComparison.categoryName.endsWith('비')
+                      ? spendingComparison.categoryName
+                      : `${spendingComparison.categoryName}비`}
+                    가 평소보다
+                  </Text>
+                  <Text style={styles.spendingTitleAmount}>
+                    {formatNumber(spendingComparison.increaseAmount)}원 늘었어요
+                  </Text>
+                  <Text style={styles.spendingTitleDescription}>
+                    직전 {spendingComparison.baselinePeriod.months}개월 평균과{' '}
+                    {recentPeriodLabel(spendingComparison.recentPeriod)} 결제 내역을
+                    비교했어요.
+                  </Text>
+                </>
+              ) : (
+                <Text style={styles.title}>{issue.title}</Text>
+              )}
             </View>
 
-            {isCategorySpending ? (
-              <View style={styles.spendingAdviceSection}>
-                <Image
-                  accessibilityLabel="예상 절약 효과를 안내하는 도리"
-                  contentFit="contain"
-                  source={require('@/assets/images/discovery/discovery_detail_advice.png')}
-                  style={styles.spendingAdviceImage}
-                />
-                <View style={styles.spendingSpeechBubble}>
-                  <View pointerEvents="none" style={styles.spendingSpeechTail} />
-                  <Text style={styles.spendingAdviceText}>
-                    {spendingSummary ? (
-                      <>
-                        {spendingSummary.isComplete
-                          ? '전부 줄이면 1년간 약 '
-                          : '절약액이 계산된 항목을 줄이면 1년간 약 '}
-                        <Text style={styles.spendingAdviceAmount}>
-                          {spendingSummary.amount}원
-                        </Text>
-                        {' 아낄 수 있어요.'}
-                      </>
-                    ) : (
-                      '예상 절약액을 아직 계산할 수 없어요.'
-                    )}
-                  </Text>
-                </View>
-              </View>
-            ) : (
+            {!isCategorySpending ? (
               <View style={styles.adviceSection}>
                 <View style={styles.adviceHeader}>
                   <Image
@@ -286,149 +346,167 @@ export function DiscoveryInsightDetailScreen({
                 </View>
                 <Text style={styles.adviceText}>{issue.description}</Text>
               </View>
-            )}
+            ) : null}
 
-            <View style={styles.recommendationSection}>
-              <Text style={styles.sectionTitle}>
-                {isCategorySpending
-                  ? '소비를 이렇게 줄여볼 수 있어요'
-                  : '이렇게 바꿔볼 수 있어요'}
-              </Text>
-              {isCategorySpending ? (
-                <Text style={styles.sectionDescription}>
-                  같은 진단에서 늘어난 소비 항목을 최대 3개 보여드려요.
-                </Text>
-              ) : null}
-              {relatedIssuesError ? (
-                <Text style={styles.sectionDescription}>
-                  다른 소비 항목을 불러오지 못했어요. 아래로 당겨 다시 시도해 주세요.
-                </Text>
-              ) : null}
+            {spendingComparison ? (
+              <SpendingDiagnosisComparisonCard comparison={spendingComparison} />
+            ) : null}
 
-              <View style={styles.recommendationList}>
-                {recommendations.length === 0 ? (
-                  <Text style={styles.sectionDescription}>
-                    연결된 추천이 아직 없어요.
+            {spendingImpact ? (
+              <View style={styles.spendingImpactCard}>
+                <View style={styles.spendingImpactIconWrap}>
+                  <Image
+                    accessibilityLabel=""
+                    contentFit="contain"
+                    source={require('@/assets/icons/common/calendar.png')}
+                    style={styles.spendingImpactIcon}
+                  />
+                </View>
+                {spendingImpact.kind === 'goalDelay' ? (
+                  <Text style={styles.spendingImpactText}>
+                    지금 속도면 ‘{spendingImpact.goalName}’ 목표가{' '}
+                    <Text style={styles.spendingImpactEmphasis}>
+                      약 {formatNumber(spendingImpact.days)}일
+                    </Text>
+                    {' 늦어져요.'}
                   </Text>
-                ) : null}
+                ) : (
+                  <Text style={styles.spendingImpactText}>
+                    이 소비가 계속되면 1년에{' '}
+                    <Text style={styles.spendingImpactEmphasis}>
+                      약 {formatNumber(spendingImpact.annualAmount)}원
+                    </Text>
+                    을 더 쓰게 돼요.
+                  </Text>
+                )}
+              </View>
+            ) : null}
 
-                {recommendationCards.map(({ recommendation, copy }, index) => (
-                  <View key={recommendation.recommendationId}>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityState={{
-                        disabled:
+            {monthlySpending.hasQuery && spendingComparison && spendingCategoryCode ? (
+              <CategoryMonthlySpendingSection
+                categoryCode={spendingCategoryCode}
+                categoryName={spendingComparison.categoryName}
+                error={monthlySpending.error}
+                isLoading={monthlySpending.isLoading}
+                merchants={monthlySpending.merchants}
+                onRetry={monthlySpending.retry}
+                periodLabel={recentPeriodLabel(spendingComparison.recentPeriod)}
+              />
+            ) : null}
+
+            {isCategorySpending ? coachSection : null}
+
+            {!isCategorySpending ? (
+              <View style={styles.recommendationSection}>
+                <Text style={styles.sectionTitle}>이렇게 바꿔볼 수 있어요</Text>
+
+                <View style={styles.recommendationList}>
+                  {recommendations.length === 0 ? (
+                    <Text style={styles.sectionDescription}>
+                      연결된 추천이 아직 없어요.
+                    </Text>
+                  ) : null}
+
+                  {recommendations.map((recommendation, index) => (
+                    <View key={recommendation.recommendationId}>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityState={{
+                          expanded:
+                            selectedRecommendationId === recommendation.recommendationId,
+                          disabled:
+                            selectedRecommendationId === recommendation.recommendationId &&
+                            recommendationExplanation === null &&
+                            recommendationError === null,
+                        }}
+                        disabled={
                           selectedRecommendationId === recommendation.recommendationId &&
                           recommendationExplanation === null &&
-                          recommendationError === null,
-                      }}
-                      disabled={
-                        selectedRecommendationId === recommendation.recommendationId &&
-                        recommendationExplanation === null &&
-                        recommendationError === null
-                      }
-                      onPress={() => {
-                        void showRecommendationExplanation(
-                          recommendation.recommendationId,
-                        );
-                      }}
-                      style={[
-                        styles.recommendationCard,
-                        index === 0 && styles.recommendedCard,
-                      ]}>
-                      <View style={styles.recommendationHeader}>
-                        <Text style={styles.recommendationTitle}>
-                          {copy.title}
+                          recommendationError === null
+                        }
+                        onPress={() => {
+                          void showRecommendationExplanation(
+                            recommendation.recommendationId,
+                          );
+                        }}
+                        style={[
+                          styles.recommendationCard,
+                          index === 0 && styles.recommendedCard,
+                        ]}>
+                        <View style={styles.recommendationHeader}>
+                          <Text style={styles.recommendationTitle}>
+                            {recommendation.title}
+                          </Text>
+                          {index === 0 ? (
+                            <View style={styles.recommendedBadge}>
+                              <Text style={styles.recommendedBadgeText}>
+                                우선 추천
+                              </Text>
+                            </View>
+                          ) : null}
+                        </View>
+                        <Text style={styles.recommendationDetail}>
+                          {recommendation.description}
                         </Text>
-                        {index === 0 &&
-                        (!isCategorySpending || recommendations.length > 1) ? (
-                          <View style={styles.recommendedBadge}>
-                            <Text style={styles.recommendedBadgeText}>
-                              {isCategorySpending ? '가장 추천' : '우선 추천'}
+                        {recommendation.effect.annualCostSaving !== null ? (
+                          <View style={styles.savingRow}>
+                            <Text style={styles.savingLabel}>예상 절약액</Text>
+                            <Text style={styles.savingValue}>
+                              연 {formatNumber(recommendation.effect.annualCostSaving)}원 예상
                             </Text>
                           </View>
                         ) : null}
-                      </View>
-                      <Text style={styles.recommendationDetail}>
-                        {copy.description}
-                      </Text>
-                      {recommendation.effect.annualCostSaving !== null ? (
-                        <View style={styles.savingRow}>
-                          <Text style={styles.savingLabel}>예상 절약</Text>
-                          <Text style={styles.savingValue}>
-                            연 {formatNumber(recommendation.effect.annualCostSaving)}원
+                        <View style={styles.recommendationAction}>
+                          <Text style={styles.recommendationActionText}>
+                            {selectedRecommendationId === recommendation.recommendationId
+                              ? '추천 이유 접기'
+                              : '추천 이유 보기'}
+                          </Text>
+                          <Text style={styles.recommendationActionIcon}>
+                            {selectedRecommendationId === recommendation.recommendationId
+                              ? '⌃'
+                              : '⌄'}
                           </Text>
                         </View>
-                      ) : null}
-                    </Pressable>
+                      </Pressable>
 
-                    {selectedRecommendationId ===
-                    recommendation.recommendationId ? (
-                      <View style={styles.recommendationExplanation}>
-                        {recommendationExplanation ? (
-                          <Text style={styles.adviceText}>
-                            {coachMessage(recommendationExplanation) ??
-                              '이 추천을 왜 권하는지 설명을 준비하지 못했어요.'}
-                          </Text>
-                        ) : (
-                          <>
-                            <Text style={styles.recommendationDetail}>
-                              {recommendationError ??
-                                '추천 설명을 확인하고 있어요.'}
+                      {selectedRecommendationId ===
+                      recommendation.recommendationId ? (
+                        <View style={styles.recommendationExplanation}>
+                          {recommendationExplanation ? (
+                            <Text style={styles.adviceText}>
+                              {coachMessage(recommendationExplanation) ??
+                                '이 추천을 왜 권하는지 설명을 준비하지 못했어요.'}
                             </Text>
-                            {recommendationError ? (
-                              <Pressable
-                                accessibilityRole="button"
-                                onPress={() => {
-                                  void showRecommendationExplanation(
-                                    recommendation.recommendationId,
-                                  );
-                                }}>
-                                <Text style={styles.inlineRetry}>다시 시도</Text>
-                              </Pressable>
-                            ) : null}
-                          </>
-                        )}
-                      </View>
-                    ) : null}
-                  </View>
-                ))}
-              </View>
-            </View>
-
-            <View style={styles.coachSection}>
-              <Text style={styles.coachLabel}>도담의 조언</Text>
-              <Text style={styles.adviceText}>
-                {isExplanationLoading
-                  ? '조언을 불러오고 있어요.'
-                  : coachMessage(explanation) ??
-                    explanationError ??
-                    '표시할 조언이 없어요.'}
-              </Text>
-              {explanation ? (
-                <View style={styles.disclaimerSection}>
-                  <Text style={styles.disclaimer}>{explanation.disclaimer}</Text>
+                          ) : (
+                            <>
+                              <Text style={styles.recommendationDetail}>
+                                {recommendationError ??
+                                  '추천 설명을 확인하고 있어요.'}
+                              </Text>
+                              {recommendationError ? (
+                                <Pressable
+                                  accessibilityRole="button"
+                                  onPress={() => {
+                                    void showRecommendationExplanation(
+                                      recommendation.recommendationId,
+                                      true,
+                                    );
+                                  }}>
+                                  <Text style={styles.inlineRetry}>다시 시도</Text>
+                                </Pressable>
+                              ) : null}
+                            </>
+                          )}
+                        </View>
+                      ) : null}
+                    </View>
+                  ))}
                 </View>
-              ) : null}
-              {explanationError ? (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{ disabled: isExplanationLoading }}
-                  disabled={isExplanationLoading}
-                  onPress={() => {
-                    void loadExplanation();
-                  }}>
-                  <Text style={styles.emptyAction}>다시 시도하기</Text>
-                </Pressable>
-              ) : null}
-            </View>
-
-            {recommendations.length > 0 ? (
-              <BasicSimulationSection
-                key={recommendations[0].recommendationId}
-                preset={recommendations[0].simulation ?? null}
-              />
+              </View>
             ) : null}
+
+            {!isCategorySpending ? coachSection : null}
           </>
         ) : (
           <ScreenState

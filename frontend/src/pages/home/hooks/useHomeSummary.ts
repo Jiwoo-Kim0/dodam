@@ -6,6 +6,7 @@ import type { HomeGoal } from '@/types/goal.types';
 import type { GoalApiResponse } from '@/types/goalApi.types';
 import { mapOwnedAssetOverview } from '@/utils/assetOverview';
 import { formatCurrency } from '@/utils/currency';
+import { calculateProgressPercent } from '@/utils/goal';
 import { shiftDateKey, toDateKey } from '@/utils/date';
 
 export interface HomeBriefing {
@@ -57,7 +58,10 @@ function monthInfo(offsetFromCurrent: number) {
 }
 
 function mapSavingGoal(goal: GoalApiResponse): HomeGoal {
-  const progress = Math.round(goal.progressRatePercent ?? 0);
+  const progress = calculateProgressPercent(
+    goal.currentAmount,
+    goal.targetAmount ?? 0,
+  );
   return {
     id: String(goal.goalId),
     type: 'saving',
@@ -91,8 +95,19 @@ async function mapSpendingGoal(goal: GoalApiResponse): Promise<HomeGoal> {
 
 async function loadGoals() {
   const response = await goalApi.getGoals({ status: 'ACTIVE', size: 20 });
+  const uniqueGoals = Array.from(
+    new Map(response.content.map((goal) => [goal.goalId, goal])).values(),
+  );
+  let hasSpendingGoal = false;
+  const homeGoals = uniqueGoals.filter((goal) => {
+    if (goal.type !== 'SPENDING') return true;
+    if (hasSpendingGoal) return false;
+    hasSpendingGoal = true;
+    return true;
+  });
+
   return Promise.all(
-    response.content.map((goal) =>
+    homeGoals.map((goal) =>
       goal.type === 'SPENDING' ? mapSpendingGoal(goal) : mapSavingGoal(goal),
     ),
   );

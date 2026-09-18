@@ -2,7 +2,47 @@
 
 마지막 갱신: 2026-09-17
 
-백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 629, 587, 589, 611, 627, 628이다.
+백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 629, 632, 587, 589, 611, 627, 628이다.
+
+## S15P21D105-633 — 시연 계정 데이터 수정 (U0003 고금리 대출·예적금 상품 추천)
+
+요청 원문: "3번 계정 — 고금리 대출을 보유한 상태로 데이터를 조정해 비효율 항목에 노출", "'발견' 화면의 추천에 예·적금 상품이 노출되도록 데이터를 조정".
+브랜치 `S15P21D105-633-demo-account-data`.
+
+### 1. 고금리 대출 — seed로 해결 (구현 완료, 서버 적용 대기)
+
+- [x] `backend/database/seeds/DODAM_DEMO_LOAN_SEED.sql`(13번) + `backend/scripts/make_demo_loan_fixture.py`. U0003에 `KB 국민ONE대출` 연 8.5%(잔액 12,998,492, 잔여 36회) 1건과 상환 8건. 627 규칙이 비교군 `CREDIT` 중앙값 5.229% 대비 +3.271%p → **HIGH**, 대환 추천(연 247,080원 절감)까지 로컬에서 끝까지 확인했다. 수치·절차는 [seeds/README.md](../database/seeds/README.md) §시연 계정 U0003 고금리 대출.
+- [ ] **서버 적용**(사용자 실행): 컨테이너에서 infra/.env 키로 fixture 생성 → 13번 실행 → U0003으로 발견 화면 새로고침(새 진단·추천 생성). 현재 서버 seed 적재 상태: 1~11번 적용(1~8 09-14, 9 09-14, 10 09-15, 11 09-17), **12번(632 인구통계 backfill)·13번 미적용**.
+- [ ] 다른 시연 계정은 그대로다. U0002는 주택담보 3.9%(비교군 MORTGAGE), U0004는 전세 3.2% + 보조 대출(523 변형 1: 신한 사잇돌 중금리)이라 고금리 판정 대상이 아닐 가능성이 크다(서버 진단 결과로 확인).
+
+### 2. 예·적금 상품 추천 — 데이터 조정으로는 불가 (BE 기능 필요, 결정 대기)
+
+- 발견 화면의 추천은 진단 문제(`diagnosis_issue`)에서 생성기가 만든 `recommendation`만 보여 준다. **예·적금과 관련된 진단 규칙·추천 생성기가 없다**(recommendation-api.md §"카드·계좌·예적금 추천 — 대응 진단 규칙 미구현"). FE 발견 화면도 상품 API(`/v1/products`)를 호출하지 않는다. 즉 어떤 seed 값을 바꿔도 예·적금 상품이 발견 화면에 나타나지 않는다.
+- 유일하게 가까운 기존 추천 `SAVING/INCREASE_MONTHLY_SAVING`(GOAL/SAVING_GOAL_RISK → 월 저축 증액)은 상품을 가리키지 않고, 607에서 FE가 GOAL 도메인을 발견 목록에서 숨기기로 해 화면에도 나오지 않는다.
+- 구현하려면(627 고금리 대출과 같은 구조, BE 하루 안팎):
+  1. 진단 규칙 `DEPOSIT/LOW_INTEREST_RATE`: 보유 정기예금 금리를 `DepositRateComparisonService`(API 12 예금 금리비교, 같은 기간·업권 기본금리 중앙값, `HIGHER_IS_BETTER`)로 판정. 기준 편차·심각도는 새로 정한다.
+  2. 추천 생성기 `DEPOSIT/SWITCH_DEPOSIT_PRODUCT`: 비교군에서 같은 기간 최고 기본금리 상품(`targetProductId`)과 만기까지 세후 이자 차액을 효과로. 시뮬레이션 프리셋은 585 예적금 가입 실행 API로 연결.
+  3. FE 발견 상세: 목표·대출·현금흐름처럼 `issue.title/description`만 갈아 끼우는 공용 화면으로도 표시는 되지만, 상품명·금리 비교 카드는 607 요청서 3번(도메인별 고유 수치 계약)과 함께 정해야 한다.
+- 데이터 측면: U0003의 보유 예금은 524 변형 1 `신한 쏠편한 정기예금` 3.05%·24개월·2,000만원(ACTIVE)이고, 상품 DB의 24개월 정기예금 기본금리 최고는 카카오뱅크 3.00%라 **지금 값으로는 "더 좋은 상품"이 없다**. 규칙을 만들면 U0003 예금 금리를 2%대로 낮추는 시연 seed(13번과 같은 방식, 524 fixture 불필요 — 기존 행 UPDATE)를 함께 넣어야 한다. 상품 DB에 적금(`SAVING`)은 0건이라 "적금 추천"은 상품 seed 보강도 필요하다.
+- [ ] 위 범위를 시연 전에 넣을지(어느 파트가 맡을지) 팀 결정. 결정되면 규칙·생성기·seed를 한 브랜치로 진행한다.
+
+## S15P21D105-632 — K-Means 군집 내 위치·동년배 비교 (V40)
+
+설계·결정: [pattern-peer-comparison-plan.md](pattern-peer-comparison-plan.md). 계약: [pattern.md](pattern.md) §clusterProfile(632)·§GET /patterns/me/peer-comparison. 아티팩트: [ml/pattern/README.md](../ml/pattern/README.md) §v2.
+
+### 구현 완료 (2026-09-17)
+
+- [x] seed 491 생년월일·성별 보강(성별·나이대가 군집 신호를 갖지 않게 배분), 아티팩트 `spending-kmeans-v2`(격자·집단 34개·모집단), `ClusterModel`/`ClusterModelArtifact` v2 파싱(v1 하위 호환), 인프로세스 학습도 같은 격자 생성.
+- [x] `clusterProfile`에 `percentileInCluster`·`rankBand`·`positionSummary`·`insights`, `GET /patterns/me/peer-comparison?dimension=` 4축 + 자동 확장, V40 `peer_stats_json` 저장, AI 코치 "또래 비교(서버 계산)" 섹션.
+- [x] 검증: H2 `PeerComparisonCalculatorTest` 4·`StatsPercentileRankTest` 2·`PatternApiTest` +1·`ClusterModelArtifactLoaderTest` v2 단언, MySQL 8.0 게이트 `PatternMySqlIntegrationTest`(V40 validate).
+
+### 남은 것
+
+- [ ] **시연 서버 적재**: 632 병합·배포(Flyway가 V40 적용) 뒤 서버 MySQL 컨테이너에서 `backend/database/seeds/DODAM_USER_DEMOGRAPHICS_BACKFILL.sql`(12번)을 실행한다 — fixture·491 재적재 불필요, 두 컬럼만 갱신, 0.3초. 491을 다시 돌리는 방식은 fixture 재생성과 492 재실행(`last_transaction_date` 복구)이 필요해 쓰지 않는다. 그 전까지 서버의 동년배 비교는 seed 사용자에게 `DEMOGRAPHICS_MISSING`이다(아티팩트 v2의 집단 통계는 이미 들어 있어 모델은 정상). 시연 계정 U0001~U0004는 여·남·여·남, 29·36·43·50세로 채워진다(629 남은 작업 해소). 적재 뒤 시연 계정으로 `POST /patterns/analyze {"forceRefresh":true}` → `GET /patterns/me/peer-comparison`으로 확인한다.
+- [ ] FE 연동: 패턴 API는 FE가 아직 하나도 호출하지 않는다(fe-be-api-integration-status §5). `positionSummary`·`insights`·`peer-comparison`을 발견/리포트 화면 어디에 붙일지 정한다. `insights[].code` 분기표를 FE에 전달.
+- [ ] 임계값(TOP 90 / UPPER 75 / LOWER 25 / BOTTOM 10, 문장 임계 90·75·50, 최소 표본 30·10)은 서비스 초기값. 기획과 확정하면 `app.pattern.*`·`RankBand`를 조정한다.
+- [ ] 632 이전 분석 행은 `peer_stats_json`이 NULL이라 `NOT_COMPUTED`다. 시연 계정은 배포 뒤 `forceRefresh` 분석을 한 번 돌려 채운다(`be-a-server-smoke.sh`에 추가 검토).
+- [ ] 신용등급(A~E)을 비교 축에 추가하는 것은 실회원 등급이 쌓인 뒤 재검토(seed 회원은 등급 없음). 재학습 주기·위치는 518 절과 같다.
 
 ## S15P21D105-629 — User 생년월일·성별·신용등급 (V39)
 
@@ -20,7 +60,7 @@
 
 ### 시연 데이터
 
-- [ ] seed(491)는 컬럼을 명시한 INSERT라 V39 뒤에도 그대로 실행되지만 U0001~U0004의 생년월일·성별은 NULL이다. 시연 화면에서 나이·성별을 보이려면 seed 또는 서버 UPDATE로 4명 값을 채운다. 신용등급은 시연 서버에서 동기화 1회로 채워진다(금융망 키는 2026-09-15 교체 완료).
+- [x] (632, 2026-09-17) seed 491이 전원의 생년월일·성별을 채우도록 보강했다(서버 재적재는 632 절). 원문: seed(491)는 컬럼을 명시한 INSERT라 V39 뒤에도 그대로 실행되지만 U0001~U0004의 생년월일·성별은 NULL이다. 시연 화면에서 나이·성별을 보이려면 seed 또는 서버 UPDATE로 4명 값을 채운다. 신용등급은 시연 서버에서 동기화 1회로 채워진다(금융망 키는 2026-09-15 교체 완료).
 
 ### 정책 기본값
 
@@ -48,13 +88,25 @@
 
 ### 서비스 초기값으로 둔 기준
 
-- [ ] 소비 증가 심각도 경계(증가율 50% → HIGH), 고금리 심각도 경계(편차 2.0%p 또는 연체 → HIGH), 최근/이전 3개월 고정, 미분류 제외, 대환 후보의 같은 업권 한정은 팀 확정값이 아니다. 바뀌면 `DiagnosisRuleVersion`을 올린다.
+- [ ] 소비 증가 심각도 경계(증가율 50% → HIGH), 고금리 심각도 경계(편차 2.0%p 또는 연체 → HIGH), 비교 기간(631부터 지난달 vs 직전 3개월 평균), 미분류 제외, 대환 후보의 같은 업권 한정은 팀 확정값이 아니다. 바뀌면 `DiagnosisRuleVersion`을 올린다.
 - [ ] 대환 절감액은 잔여 회차와 정확히 같은 `term` 옵션이 있는 상품만 대상이다(시뮬레이션과 같은 제약). 시연 seed의 대출 상품 옵션이 12·24·36·60개월 위주라 잔여 회차가 그 값과 다른 대출은 대부분 `NO_ELIGIBLE_PRODUCT`가 된다. seed 환경에서 실제 판정 건수를 확인하고, 필요하면 인접 기간 옵션 허용 여부를 시뮬레이션(585)과 함께 정한다.
 - [ ] 대출 판정은 API 11 `highInterest`를 재호출하므로 대출 상품 전량을 진단마다 읽는다(76개 상품·319 옵션 규모라 문제없음). 상품 수가 크게 늘면 재검토.
 
 ### MySQL 검증
 
 - [ ] 스키마 변경은 없다. H2 통합 테스트만 통과했고 MySQL JSON 컬럼(`current_value`의 BigDecimal·LocalDate 직렬화)은 기존 규칙과 같은 경로라 별도 실측하지 않았다. seed 환경에서 `POST /diagnoses` 한 번으로 두 규칙의 실제 결과를 확인한다.
+
+### 소비 증가 기준 변경 (S15P21D105-631, 2026-09-17)
+
+결정·검토 표: [diagnosis-627-plan.md](diagnosis-627-plan.md) §소비 증가 기준 변경. 계약: [diagnosis-api.md](diagnosis-api.md) 627 절, [recommendation-api.md](recommendation-api.md) §2·§5.1.
+
+- [x] 지난달 vs 직전 3개월 평균으로 변경. `DiagnosisRuleVersion` `v6-last-month-vs-3m`, 생성기 `627.3`. 기존 v5 진단·추천은 보존된다.
+- [x] 프리셋 400 방지: 감소액을 시뮬레이션 기준선 상한으로 자름(`REDUCTION_CAPPED_TO_SIMULATION_BASELINE`), 기준선 소비 없으면 `SIMULATION_BASELINE_UNAVAILABLE`.
+- [ ] **임계값 재검토**: 단월 비교는 탐지 건수가 늘 수 있다. 시연 서버(9월 거래 seed 적재 완료, 625)에서 `POST /diagnoses {forceRefresh:true}` 뒤 `CATEGORY_SPENDING_INCREASE` 건수를 v5 결과와 비교해 월 1만 원·20% 유지 여부를 정한다.
+- [ ] **연 절감액 표기**: `annualCostSaving = 단월 증가 × 12` 유지 + evidence `annualizationBasis`. FE·기획이 "지속 시 연간" 표기 또는 미표시를 정하면 `627.4`로 올린다. 추천 요약 `discovery.expectedAnnualCostSaving`도 같은 값을 합산한다.
+- [ ] FE 인계: `description` 문구 변경("지난달 소비가 직전 3개월 평균보다 N% 높아요."), `currentValue.lastMonthAmount` 신규, `recentPeriod.months = 1`·`baselinePeriod.months = 3`, `evidence.monthly[]` 4개월, 프리셋 `assumptions`에 새 코드 2종. v5 진단은 `ruleVersion`으로 구분해 문구를 분기할 것.
+- [ ] 별도 협의(FE): 가맹점별 증가 원인(`topMerchants[]`, 가맹점명 정규화 선행), 3단계 절약 계획(서버 데이터 아님), 목표 달성일 단축(추천 goal-impact 연결). 계획서 표 아래 판단 참고.
+- [ ] API 6 `GET /spending/anomalies`는 여전히 N개월 평균 대 N개월 평균이다. 두 화면 판정이 갈라지는 것을 FE·기획에 알리고, 가계부 화면도 단월 기준으로 맞출지 정한다.
 
 ## S15P21D105-589 — AI Coach (API 21)
 

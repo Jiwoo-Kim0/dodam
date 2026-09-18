@@ -275,6 +275,7 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
           setIsOtherGoalsVisible(false);
           router.push(routes.goalSetup);
         }}
+        onCurrentGoalDeleted={() => router.replace(routes.home)}
         onSelectGoal={(selectedGoalId) => {
           setIsOtherGoalsVisible(false);
           if (selectedGoalId !== goal.id) {

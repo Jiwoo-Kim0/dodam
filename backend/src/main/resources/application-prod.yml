@@ -41,7 +41,7 @@ app:
     # 값이 비어도 기동은 성공하고 코치만 템플릿 응답으로 내려간다.
     api-key: ${OPENAI_API_KEY}
   pattern:
-    # 군집 모델은 커밋된 Python 학습 아티팩트(classpath:ml/spending-kmeans-v1.json)만 쓴다. 아티팩트가 없으면 Java가 임의 학습하지 않고 RULE_ONLY(MODEL_NOT_AVAILABLE)로 전환한다.
+    # 군집 모델은 커밋된 Python 학습 아티팩트(classpath:ml/spending-kmeans-v2.json)만 쓴다. 아티팩트가 없으면 Java가 임의 학습하지 않고 RULE_ONLY(MODEL_NOT_AVAILABLE)로 전환한다.
     train-in-process: false
   notification:
     push:

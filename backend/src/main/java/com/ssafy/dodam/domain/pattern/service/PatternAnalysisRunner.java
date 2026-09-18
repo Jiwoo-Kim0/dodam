@@ -12,9 +12,15 @@ import com.ssafy.dodam.domain.pattern.service.ClusterAssigner.ClusterResult;
 import com.ssafy.dodam.domain.pattern.service.PatternAnalysisExecutionStore.Admission;
 import com.ssafy.dodam.domain.pattern.service.PatternAnalysisExecutionStore.ClusterAttachment;
 import com.ssafy.dodam.domain.pattern.service.PatternAnalysisExecutionStore.Completion;
+import com.ssafy.dodam.domain.pattern.dto.response.PeerComparisonResponse;
+import com.ssafy.dodam.domain.user.entity.User;
+import com.ssafy.dodam.domain.user.repository.UserRepository;
 import com.ssafy.dodam.global.exception.BusinessException;
 import com.ssafy.dodam.global.exception.ErrorCode;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import org.springframework.stereotype.Service;
 
 /**
@@ -36,12 +42,17 @@ public class PatternAnalysisRunner {
     private final ClusterAssigner assigner;
     private final PatternResponseAssembler assembler;
     private final FinanceConnectionRepository connections;
+    private final PeerComparisonCalculator peers;
+    private final UserRepository users;
     private final PatternProperties properties;
     private final PatternClock clock;
 
     public PatternAnalysisRunner(PatternAnalysisExecutionStore store, JdbcPatternFeatureReader reader,
             PatternFeatureCalculator calculator, ClusterAssigner assigner, PatternResponseAssembler assembler,
-            FinanceConnectionRepository connections, PatternProperties properties, PatternClock clock) {
+            FinanceConnectionRepository connections, PeerComparisonCalculator peers, UserRepository users,
+            PatternProperties properties, PatternClock clock) {
+        this.peers = peers;
+        this.users = users;
         this.store = store;
         this.reader = reader;
         this.calculator = calculator;
@@ -74,7 +85,7 @@ public class PatternAnalysisRunner {
             }
             ClusterAssigner.Outcome outcome = assigner.evaluate(requestedMode, features, forceRefresh);
             Completion completion = new Completion(features, assembler.toJson(assembler.summarize(requestedMode, features, outcome)),
-                    outcome.assigned() ? attachment(outcome.cluster()) : null);
+                    outcome.assigned() ? attachment(userId, analysisId, outcome.cluster()) : null);
             PatternAnalysis completed = store.complete(userId, analysisId, completion);
             return new AnalyzePatternResult(assembler.toResponse(completed), false);
         } catch (BusinessException precondition) {
@@ -95,10 +106,20 @@ public class PatternAnalysisRunner {
         throw new BusinessException(connected ? ErrorCode.PATTERN_INSUFFICIENT_DATA : ErrorCode.FINANCE_NOT_CONNECTED);
     }
 
-    private ClusterAttachment attachment(ClusterResult cluster) {
+    /**
+     * 군집 프로필과 함께 동년배 비교(632)를 네 축 모두 계산해 저장용 JSON으로 만든다. 나이대는 분석 기준일(오늘) 기준이다.
+     * 인구통계가 없거나 모델에 격자가 없어도 사유가 담긴 응답을 저장해 조회 API가 그대로 돌려줄 수 있게 한다.
+     */
+    private ClusterAttachment attachment(Long userId, Long analysisId, ClusterResult cluster) {
         ClusterProfileResponse profile = assembler.clusterProfile(cluster);
+        Optional<User> user = users.findByIdAndDeletedAtIsNull(userId);
+        Map<PeerDimension, PeerComparisonResponse> byDimension = peers.calculateAll(analysisId, cluster,
+                user.map(User::getBirthDate).orElse(null), user.map(User::getGender).orElse(null), clock.today());
+        Map<String, PeerComparisonResponse> stored = new LinkedHashMap<>();
+        byDimension.forEach((dimension, response) -> stored.put(dimension.name(), response));
         return new ClusterAttachment(profile.modelVersion(), profile.clusterId(), profile.clusterLabel(),
-                profile.featureWindowMonths(), profile.sampleSize(), profile.confidence(), assembler.toJson(profile));
+                profile.featureWindowMonths(), profile.sampleSize(), profile.confidence(), assembler.toJson(profile),
+                assembler.toJson(stored));
     }
 
     private static void cleanup(Runnable action, RuntimeException cause) {

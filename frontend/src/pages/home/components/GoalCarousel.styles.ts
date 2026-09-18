@@ -5,7 +5,38 @@ import { colors, fontFamily, fontSize, radius, semanticSpacing, spacing } from '
 export const styles = StyleSheet.create({
   container: {
     marginHorizontal: -semanticSpacing.screenMargin,
-    marginTop: spacing[5],
+    marginTop: -spacing[2],
+  },
+  headerActions: {
+    alignItems: 'flex-end',
+    paddingHorizontal: semanticSpacing.screenMargin,
+    marginBottom: spacing[2],
+  },
+  headerAddButton: {
+    minHeight: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[1],
+    paddingHorizontal: spacing[3],
+    borderRadius: radius.round,
+    backgroundColor: colors.white,
+  },
+  headerAddIcon: {
+    color: colors.primary.green,
+    fontFamily: fontFamily.semiBold,
+    fontSize: 20,
+    includeFontPadding: false,
+    lineHeight: 18,
+    textAlignVertical: 'center',
+  },
+  headerAddLabel: {
+    color: colors.primary.green,
+    fontFamily: fontFamily.semiBold,
+    fontSize: fontSize.caption,
+    includeFontPadding: false,
+    lineHeight: 18,
+    textAlignVertical: 'center',
+    transform: [{ translateY: 2 }],
   },
   page: {
     paddingRight: spacing[2],

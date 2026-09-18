@@ -15,8 +15,8 @@ import { toDateKey, toTimeKeyFromParts } from '@/utils/date';
 
 import { styles } from './LedgerScreen.styles';
 import { CategorySelection } from './components/CategorySelection';
-import { LedgerCalendar } from './components/LedgerCalendar';
 import { LedgerOverview } from './components/LedgerOverview';
+import { SpendingTrendDetail } from './components/SpendingTrendDetail';
 import { TransactionDetail } from './components/TransactionDetail';
 import { TransactionForm } from './components/TransactionForm';
 import { useLedgerData } from './hooks/useLedgerData';
@@ -26,8 +26,8 @@ import {
   isValidTransactionTime,
 } from './utils/ledgerTransactionValidation';
 
-type LedgerView = 'overview' | 'calendar' | 'detail' | 'category' | 'form';
-type LedgerListView = 'overview' | 'calendar';
+type LedgerView = 'overview' | 'trend' | 'detail' | 'category' | 'form';
+type LedgerListView = 'overview';
 type TransactionFormMode = 'create' | 'edit';
 
 function draftFromTransaction(transaction: LedgerTransaction): LedgerTransactionDraft {
@@ -145,13 +145,13 @@ export function LedgerScreen() {
   };
 
   const openTransaction = (transactionId: string) => {
-    setPreviousListView(activeView === 'calendar' ? 'calendar' : 'overview');
+    setPreviousListView('overview');
     setSelectedTransactionId(transactionId);
     setView('detail');
   };
 
   const openCreateForm = () => {
-    setPreviousListView(activeView === 'calendar' ? 'calendar' : 'overview');
+    setPreviousListView('overview');
     setFormMode('create');
     const now = new Date();
     setDraft({
@@ -280,12 +280,10 @@ export function LedgerScreen() {
       <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
         <AppHeader
           onBackPress={() =>
-            activeView === 'calendar'
-              ? setView('overview')
-              : router.replace(routes.home)
+            router.replace(routes.home)
           }
           showBackButton
-          title={activeView === 'calendar' ? '전체 내역' : '가계부'}
+          title="가계부"
         />
         <ScreenState
           description={
@@ -305,21 +303,15 @@ export function LedgerScreen() {
 
   let content;
 
-  if (activeView === 'calendar') {
+  if (activeView === 'trend') {
     content = (
-      <LedgerCalendar
+      <SpendingTrendDetail
         categories={categories}
         dailyTotals={dailyTotals}
-        hiddenTransactions={hiddenTransactions}
-        key={`${year}-${month}`}
         month={month}
         onBackPress={() => setView('overview')}
-        onCreateTransaction={openCreateForm}
-        onNextMonth={() => changeMonth(1)}
-        onOpenTransaction={openTransaction}
-        onPreviousMonth={() => changeMonth(-1)}
         onRefresh={() => void refetch()}
-        onSelectMonth={selectMonth}
+        previousDailyTotals={previousDailyTotals}
         refreshing={isRefreshing}
         summary={monthlySummary}
         transactions={transactions}
@@ -367,14 +359,17 @@ export function LedgerScreen() {
   } else {
     content = (
       <LedgerOverview
+        key={`${year}-${month}`}
         categories={categories}
         categorySummaries={categorySummaries}
         dailyTotals={dailyTotals}
+        hiddenTransactions={hiddenTransactions}
         month={month}
         onBackPress={() => router.replace(routes.home)}
         onNextMonth={() => changeMonth(1)}
-        onOpenCalendar={() => setView('calendar')}
+        onCreateTransaction={openCreateForm}
         onOpenTransaction={openTransaction}
+        onOpenTrend={() => setView('trend')}
         onPreviousMonth={() => changeMonth(-1)}
         onSelectMonth={selectMonth}
         previousDailyTotals={previousDailyTotals}
