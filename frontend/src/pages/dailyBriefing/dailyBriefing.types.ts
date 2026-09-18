@@ -31,6 +31,7 @@ export interface DailyBriefingStreak {
   id: string;
   label: string;
   value: string;
+  icon: ImageSourcePropType;
 }
 
 export interface DailyBriefingData {
