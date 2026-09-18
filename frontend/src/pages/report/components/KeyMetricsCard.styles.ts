@@ -17,12 +17,11 @@ export const styles = StyleSheet.create({
     borderRadius: radius.card,
     flexBasis: '48%',
     flexGrow: 1,
-    minHeight: 64,
+    // 증감 문구 길이와 상관없이 네 타일 높이를 같게 고정한다.
+    height: 88,
+    justifyContent: 'space-between',
     paddingHorizontal: spacing[2],
     paddingVertical: spacing[2],
-  },
-  metricTileAccent: {
-    backgroundColor: colors.report.patternSurface,
   },
   metricHeader: {
     alignItems: 'flex-start',
@@ -37,14 +36,15 @@ export const styles = StyleSheet.create({
   },
   metricIconFrame: {
     alignItems: 'center',
-    height: 22,
+    height: 18,
     justifyContent: 'center',
-    marginTop: -2,
-    width: 22,
+    // 숫자가 주인공이라 아이콘은 보조로만 남긴다.
+    opacity: 0.55,
+    width: 18,
   },
   metricIcon: {
-    height: 22,
-    width: 22,
+    height: 18,
+    width: 18,
   },
   metricValueRow: {
     alignItems: 'baseline',
@@ -65,7 +65,16 @@ export const styles = StyleSheet.create({
   },
   metricChange: {
     ...typography.caption,
-    color: colors.textSecondary,
     lineHeight: 17,
+  },
+  metricChangeGood: {
+    color: colors.primary.green,
+  },
+  /** 지출·부채가 늘어난 방향. 일일 브리핑의 소비 증가 표시와 같은 색을 쓴다. */
+  metricChangeBad: {
+    color: colors.primary.orange,
+  },
+  metricChangeNeutral: {
+    color: colors.textTertiary,
   },
 });

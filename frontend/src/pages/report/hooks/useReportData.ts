@@ -10,7 +10,11 @@ import {
 } from '@/api';
 import type { CashflowRiskApiResponse } from '@/types/cashflowApi.types';
 import type { SavingRatioApiResponse } from '@/types/ledgerApi.types';
-import type { MonthlyReport, ReportFinancePattern } from '@/types/report.types';
+import type {
+  MonthlyReport,
+  ReportFinancePattern,
+  ReportMetricChange,
+} from '@/types/report.types';
 import { formatCurrency } from '@/utils/currency';
 
 function monthAt(offset: number) {
@@ -45,13 +49,29 @@ function efficiencyScore(
   return Math.round(clamp(savingScore + spendingScore + 30 - riskPenalty(risks), 0, 100));
 }
 
-function percentChange(current: number, previous: number) {
-  if (previous === 0) return current === 0 ? 0 : 100;
-  return Math.round(((current - previous) / previous) * 100);
-}
+const NO_CHANGE: ReportMetricChange = {
+  direction: 'none',
+  label: '지난달과 같아요',
+  tone: 'neutral',
+};
 
-function signed(value: number, suffix = '') {
-  return `${value > 0 ? '+' : ''}${value}${suffix}`;
+/**
+ * 전월 대비 증감을 지표 타일의 화살표 표시로 바꾼다. 색은 증감 부호가 아니라 `goodWhen`으로 정한다.
+ * 저축률은 올라야 좋고 고정지출 비중·카드 사용액은 내려야 좋아서, 같은 `+`라도 의미가 반대다.
+ */
+function metricChange(
+  difference: number,
+  goodWhen: 'up' | 'down',
+  format: (value: number) => string,
+): ReportMetricChange {
+  if (difference === 0) return NO_CHANGE;
+
+  const direction = difference > 0 ? 'up' : 'down';
+  return {
+    direction,
+    label: format(Math.abs(difference)),
+    tone: direction === goodWhen ? 'good' : 'bad',
+  };
 }
 
 function cardSpending(paymentMethods: { paymentMethod: string; totalSpending: number }[]) {
@@ -220,22 +240,25 @@ async function fetchReport(): Promise<MonthlyReport> {
     keyMetrics: [
       {
         id: 'saving-rate', label: '저축률', value: savingRate, format: 'percent',
-        changeLabel: `지난달 대비 ${signed(savingRate - previousSavingRate, '%p')}`,
-        tone: 'accent', icon: require('@/assets/icons/common/report_pig.png'), iconScale: 1.05,
+        change: metricChange(savingRate - previousSavingRate, 'up', (value) => `${value}%p`),
+        icon: require('@/assets/icons/common/report_pig.png'), iconScale: 1.05,
       },
       {
         id: 'fixed-expense-ratio', label: '고정지출 비중', value: fixedRate, format: 'percent',
-        changeLabel: `지난달 대비 ${signed(fixedRate - previousFixedRate, '%p')}`,
-        tone: 'plain', icon: require('@/assets/icons/common/report_home.png'), iconScale: 0.95,
+        change: metricChange(fixedRate - previousFixedRate, 'down', (value) => `${value}%p`),
+        icon: require('@/assets/icons/common/report_home.png'), iconScale: 0.95,
       },
       {
         id: 'card-usage', label: '카드 사용액', value: currentCard, format: 'currency',
-        changeLabel: `지난달 대비 ${signed(percentChange(currentCard, previousCard), '%')}`,
-        tone: 'accent', icon: require('@/assets/icons/common/report_card.png'), iconScale: 1.4,
+        change: previousPayments.transactionCount === 0
+          ? { direction: 'none', label: '지난달 사용 내역이 없어요', tone: 'neutral' }
+          : metricChange(currentCard - previousCard, 'down', formatCurrency),
+        icon: require('@/assets/icons/common/report_card.png'), iconScale: 1.4,
       },
       {
         id: 'loan-balance', label: '대출 잔액', value: loans.totalBalance, format: 'currency',
-        changeLabel: '현재 대출 잔액', tone: 'plain',
+        // 대출 잔액은 전월 값을 받아오지 않아 증감을 계산할 수 없다.
+        change: { direction: 'none', label: '현재 잔액', tone: 'neutral' },
         icon: require('@/assets/icons/common/report_money.png'), iconScale: 0.85,
       },
     ],
