@@ -23,7 +23,11 @@ public class YearMonthPeriodPolicy {
         return resolve(startMonth, endMonth, YearMonth.now(SERVICE_ZONE));
     }
 
-    YearMonthPeriod resolve(String startMonth, String endMonth, YearMonth currentMonth) {
+    /**
+     * 기준월을 부르는 쪽이 정하는 판. 도메인 전용 시계(예: {@code ImprovementClock})를 쓰는 API는 이 오버로드를
+     * 불러야 한다 — 기간 경계를 벽시계로, 집계 대상을 도메인 시계로 잡으면 두 기준이 어긋난 달이 조용히 버려진다.
+     */
+    public YearMonthPeriod resolve(String startMonth, String endMonth, YearMonth currentMonth) {
         YearMonth parsedEnd = parse(endMonth, "endMonth");
         YearMonth resolvedEnd = parsedEnd == null ? currentMonth : parsedEnd;
         YearMonth parsedStart = parse(startMonth, "startMonth");
