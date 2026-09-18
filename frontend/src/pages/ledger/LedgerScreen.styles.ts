@@ -81,27 +81,22 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     alignSelf: 'center',
     flexDirection: 'row',
-    gap: spacing[2],
     justifyContent: 'center',
-    minHeight: 40,
+    minHeight: 36,
   },
   monthArrowButton: {
     alignItems: 'center',
-    height: 36,
+    height: 32,
     justifyContent: 'center',
-    width: 36,
+    width: 32,
   },
-  monthArrow: {
-    color: colors.textPrimary,
-    fontFamily: fontFamily.medium,
-    fontSize: 30,
-    lineHeight: 34,
-  },
+  /** 월 이름이 바뀌어도 화살표가 움직이지 않도록 폭을 고정한다. */
   monthLabel: {
-    ...typography.subtitle,
     color: colors.textPrimary,
+    fontFamily: fontFamily.semiBold,
     fontSize: 16,
-    minWidth: 96,
+    lineHeight: 22,
+    minWidth: 104,
     textAlign: 'center',
   },
   card: {
@@ -170,23 +165,17 @@ export const styles = StyleSheet.create({
   fixedMonthSelector: {
     zIndex: 12,
     backgroundColor: colors.background,
-    paddingVertical: spacing[1],
-  },
-  headerMore: {
-    color: colors.textPrimary,
-    fontFamily: fontFamily.semiBold,
-    fontSize: 18,
-    lineHeight: 22,
-    letterSpacing: 2,
+    paddingVertical: spacing[2],
   },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing[2],
+    gap: spacing[1],
   },
+  /** 두 액션이 헤더 우측 폭(84) 안에 들어가도록 36으로 잡고, 모자란 터치 영역은 hitSlop으로 채운다. */
   headerIconAction: {
-    width: componentSize.touchTarget,
-    height: componentSize.touchTarget,
+    width: 36,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center',
   },

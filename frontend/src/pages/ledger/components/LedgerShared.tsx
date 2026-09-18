@@ -48,6 +48,8 @@ export function LedgerHeader({
   );
 }
 
+const MONTH_ARROW_SIZE = 18;
+
 interface MonthSelectorProps {
   year: number;
   month: number;
@@ -77,10 +79,11 @@ export function MonthSelector({
         hitSlop={12}
         onPress={onPrevious}
         style={styles.monthArrowButton}>
+        {/* 화살표는 보조 조작이라 월 이름보다 뒤로 물러나게 작고 연하게 그린다. */}
         <SymbolView
           name={{ android: 'chevron_left', ios: 'chevron.left', web: 'chevron_left' }}
-          size={20}
-          tintColor={colors.textPrimary}
+          size={MONTH_ARROW_SIZE}
+          tintColor={colors.textSecondary}
         />
       </Pressable>
       {onPressLabel ? (
@@ -104,8 +107,8 @@ export function MonthSelector({
         style={styles.monthArrowButton}>
         <SymbolView
           name={{ android: 'chevron_right', ios: 'chevron.right', web: 'chevron_right' }}
-          size={20}
-          tintColor={isNextDisabled ? colors.textTertiary : colors.textPrimary}
+          size={MONTH_ARROW_SIZE}
+          tintColor={isNextDisabled ? colors.textTertiary : colors.textSecondary}
         />
       </Pressable>
     </View>
