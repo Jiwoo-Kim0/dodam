@@ -311,6 +311,21 @@ app:
 > 2026-09-16에 이 401을 "키가 잘렸다"로 읽고 재발급까지 갈 뻔했다(day-10 13·14절).
 > 외부 API 실패를 볼 때는 "올바른 상대에게 말하고 있는가"를 응답 코드보다 먼저 확인해야 한다.
 
+### 8-3. GMS는 `tools`·`response_format`을 그대로 통과시킨다 (2026-09-18 실측, S15P21D105-637 AI 채팅 도입 검토)
+
+"도리에게 묻기"(LLM이 시뮬레이션 API를 골라 호출) 검토용으로 `backend/scripts/gms_tools_probe.py`로 실측했다. 모델 `gpt-5.4-mini-2026-03-17`, GMS 중계 토큰.
+
+| 요청 | 결과 |
+| --- | --- |
+| 평문(현재 코치 형태) | 200, 1.12s |
+| `tools` 2개 + `tool_choice: "required"`, 질문 "카페 5만원 줄이고 대출 100만원 더 갚으면 목표 언제 돼?" | 200, 0.95s, `finish_reason: tool_calls`, **함수 2개 호출** `simulate_spending_cut({"category":"CAFE","monthlyReduction":50000})`, `simulate_loan_prepayment({"amount":1000000})` |
+| `response_format: {type: json_schema, strict: true}` | 200, 1.70s, 스키마대로 `calls[]` JSON. 우회 경로도 열려 있다 |
+| `tool_choice`를 함수 하나로 강제 | 200, 0.79s, 인자 정확 |
+| 2턴: `role: assistant`(tool_calls) + `role: tool`(서버 계산 결과 JSON) 되돌려 보내기 | 200, 1.08s, 서버 숫자만 써서 두 문장 답변("…달성 예상일은 2027-03-02… 104일 빨라집니다"). 단, 이 확인에서 `category` 스키마에 enum·설명을 빼자 모델이 `"카페"`(한글)를 넣었다 → **도구 인자는 enum·description으로 고정**해야 한다 |
+
+- GMS는 본문을 손대지 않고 넘기고 상위(OpenAI) 오류도 그대로 중계한다(day-10 §16의 `max_tokens` 400과 같은 정황). **tool calling 설계로 진행 가능**하며 json_schema 우회는 필요 없다.
+- `reasoning_tokens` 0, 4회 합계 약 1,000토큰. 재실행: `OPENAI_API_KEY=<GMS 토큰> python3 backend/scripts/gms_tools_probe.py`(다른 모델은 `--model gpt-4o-mini --max-tokens-parameter max_tokens`).
+
 **`backend/.env`는 운영 경로에 없다.** `backend/.dockerignore`가 `.env`를 제외하고 Dockerfile도
 복사하지 않는다. `backend/.env.example`은 로컬 실행 시 개발자가 직접 주입할 값의 체크리스트일 뿐이다
 (Spring Boot는 `.env`를 자동으로 읽지 않는다 — `backend/README.md`).
