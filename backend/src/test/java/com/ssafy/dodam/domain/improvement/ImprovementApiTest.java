@@ -228,8 +228,8 @@ class ImprovementApiTest {
         long recommendationId = recommend();
         accept(recommendationId);
 
-        // 월 범위 검증은 공용 YearMonthPeriodPolicy가 실제 현재 월 기준으로 한다(고정 시계를 쓰지 않는다).
-        // 그래서 여기서는 지나간 월만 요청한다.
+        // 기준월도 고정 시계(NOW = 2026-09)에서 나온다. 벽시계를 쓰면 실제 오늘이 2026-09를 지난 뒤
+        // "종료월은 현재 월 이후일 수 없습니다"가 아니라 그 반대 방향으로 어긋난다.
         String body = mvc.perform(get("/api/v1/improvements/monthly-trend")
                         .param("startMonth", "2026-07").param("endMonth", "2026-09")
                         .with(user(owner.toString())))
@@ -244,6 +244,13 @@ class ImprovementApiTest {
         assertThat(months.get(0).get("monthlySaving").asLong()).isZero();
         assertThat(months.get(1).get("yearMonth").asText()).isEqualTo("2026-08");
         assertThat(months.get(2).get("yearMonth").asText()).isEqualTo("2026-09");
+
+        // 파라미터를 모두 생략하면 고정 시계의 현재 월로 끝나는 6개월이다(벽시계가 아니다).
+        mvc.perform(get("/api/v1/improvements/monthly-trend").with(user(owner.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.startMonth").value("2026-04"))
+                .andExpect(jsonPath("$.data.endMonth").value("2026-09"))
+                .andExpect(jsonPath("$.data.months.length()").value(6));
     }
 
     @Test
