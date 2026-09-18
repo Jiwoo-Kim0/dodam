@@ -23,6 +23,8 @@ import {
   recentPeriodLabel,
 } from './categorySpendingCopy';
 import { CategoryMonthlySpendingSection } from './components/CategoryMonthlySpendingSection';
+import { LoanRateComparisonCard } from './components/LoanRateComparisonCard';
+import { LoanRefinanceSection } from './components/LoanRefinanceSection';
 import { SpendingDiagnosisComparisonCard } from './components/SpendingDiagnosisComparisonCard';
 import {
   discoveryDomainLabel,
@@ -32,6 +34,7 @@ import {
 } from './discoveryModel';
 import { styles } from './DiscoveryInsightDetailScreen.styles';
 import { mostDelayedGoal } from './goalDelay';
+import { formatRate, isLoanHighInterestIssue, loanRateDiagnosis } from './loanRateCopy';
 import { useCategoryMonthlySpending } from './hooks/useCategoryMonthlySpending';
 import { loadAllPages } from './hooks/useDiscoveryData';
 
@@ -99,6 +102,8 @@ export function DiscoveryInsightDetailScreen({
     (recommendation) => recommendation.sourceIssueId === issue?.issueId,
   );
   const spendingAnnualSaving = spendingRecommendation?.effect.annualCostSaving;
+  const loanDiagnosis =
+    issue !== null && isLoanHighInterestIssue(issue) ? loanRateDiagnosis(issue) : null;
   const goalDelay = isCategorySpending ? mostDelayedGoal(goalImpact) : null;
   // 목표 지연을 우선 보여주고, 목표가 없거나 스냅샷에 예상 달성일이 없으면 연간 금액으로 대신한다.
   const spendingImpact = !isCategorySpending
@@ -305,24 +310,40 @@ export function DiscoveryInsightDetailScreen({
             <View style={styles.titleSection}>
               <View style={styles.categoryBadge}>
                 <Text style={styles.categoryBadgeText}>
-                  {isCategorySpending ? '소비 진단' : discoveryDomainLabel(issue.domain)}
+                  {isCategorySpending
+                    ? '소비 진단'
+                    : loanDiagnosis
+                      ? '대출 진단'
+                      : discoveryDomainLabel(issue.domain)}
                 </Text>
               </View>
               {spendingComparison ? (
                 <>
-                  <Text style={styles.spendingTitle}>
+                  <Text style={styles.headlineTitle}>
                     {spendingComparison.categoryName.endsWith('비')
                       ? spendingComparison.categoryName
                       : `${spendingComparison.categoryName}비`}
                     가 평소보다
                   </Text>
-                  <Text style={styles.spendingTitleAmount}>
+                  <Text style={styles.headlineAmount}>
                     {formatNumber(spendingComparison.increaseAmount)}원 늘었어요
                   </Text>
-                  <Text style={styles.spendingTitleDescription}>
+                  <Text style={styles.headlineDescription}>
                     직전 {spendingComparison.baselinePeriod.months}개월 평균과{' '}
                     {recentPeriodLabel(spendingComparison.recentPeriod)} 결제 내역을
                     비교했어요.
+                  </Text>
+                </>
+              ) : loanDiagnosis ? (
+                <>
+                  <Text style={styles.headlineTitle}>
+                    ‘{loanDiagnosis.accountName}’ 금리가
+                  </Text>
+                  <Text style={styles.headlineAmount}>
+                    연 {formatRate(loanDiagnosis.rateDifference)}%p 높아요
+                  </Text>
+                  <Text style={styles.headlineDescription}>
+                    같은 조건 상품의 공시 최저금리 중앙값과 비교했어요.
                   </Text>
                 </>
               ) : (
@@ -330,7 +351,7 @@ export function DiscoveryInsightDetailScreen({
               )}
             </View>
 
-            {!isCategorySpending ? (
+            {!isCategorySpending && !loanDiagnosis ? (
               <View style={styles.adviceSection}>
                 <View style={styles.adviceHeader}>
                   <Image
@@ -352,28 +373,32 @@ export function DiscoveryInsightDetailScreen({
               <SpendingDiagnosisComparisonCard comparison={spendingComparison} />
             ) : null}
 
+            {loanDiagnosis ? (
+              <LoanRateComparisonCard diagnosis={loanDiagnosis} />
+            ) : null}
+
             {spendingImpact ? (
-              <View style={styles.spendingImpactCard}>
-                <View style={styles.spendingImpactIconWrap}>
+              <View style={styles.impactCard}>
+                <View style={styles.impactIconWrap}>
                   <Image
                     accessibilityLabel=""
                     contentFit="contain"
                     source={require('@/assets/icons/common/calendar.png')}
-                    style={styles.spendingImpactIcon}
+                    style={styles.impactIcon}
                   />
                 </View>
                 {spendingImpact.kind === 'goalDelay' ? (
-                  <Text style={styles.spendingImpactText}>
+                  <Text style={styles.impactText}>
                     지금 속도면 ‘{spendingImpact.goalName}’ 목표가{' '}
-                    <Text style={styles.spendingImpactEmphasis}>
+                    <Text style={styles.impactEmphasis}>
                       약 {formatNumber(spendingImpact.days)}일
                     </Text>
                     {' 늦어져요.'}
                   </Text>
                 ) : (
-                  <Text style={styles.spendingImpactText}>
+                  <Text style={styles.impactText}>
                     이 소비가 계속되면 1년에{' '}
-                    <Text style={styles.spendingImpactEmphasis}>
+                    <Text style={styles.impactEmphasis}>
                       약 {formatNumber(spendingImpact.annualAmount)}원
                     </Text>
                     을 더 쓰게 돼요.
@@ -394,9 +419,33 @@ export function DiscoveryInsightDetailScreen({
               />
             ) : null}
 
+            {loanDiagnosis?.refinance ? (
+              <View style={styles.impactCard}>
+                <View style={styles.impactIconWrap}>
+                  <Image
+                    accessibilityLabel=""
+                    contentFit="contain"
+                    source={require('@/assets/icons/common/money.png')}
+                    style={styles.impactIcon}
+                  />
+                </View>
+                <Text style={styles.impactText}>
+                  대환하면 만기까지 이자{' '}
+                  <Text style={styles.impactEmphasis}>
+                    약 {formatNumber(loanDiagnosis.refinance.interestSaving)}원
+                  </Text>
+                  을 아낄 수 있어요.
+                </Text>
+              </View>
+            ) : null}
+
+            {loanDiagnosis ? (
+              <LoanRefinanceSection diagnosis={loanDiagnosis} />
+            ) : null}
+
             {isCategorySpending ? coachSection : null}
 
-            {!isCategorySpending ? (
+            {!isCategorySpending && !loanDiagnosis ? (
               <View style={styles.recommendationSection}>
                 <Text style={styles.sectionTitle}>이렇게 바꿔볼 수 있어요</Text>
 
