@@ -28,6 +28,12 @@ export function DiscoveryInsightsCard({ insight, onPress }: DiscoveryInsightsCar
         <View style={styles.categoryBadge}>
           <Text style={styles.categoryBadgeText}>{insight.category}</Text>
         </View>
+        {/* 군집 이탈이 근거에 섞인 문제만. 규칙 진단은 값이 null이라 배지가 없다. */}
+        {insight.hasClusterEvidence ? (
+          <View style={styles.clusterBadge}>
+            <Text style={styles.clusterBadgeText}>또래 비교</Text>
+          </View>
+        ) : null}
       </View>
 
       {/* 발견 홈 목록과 같은 카테고리 아이콘이다. 글자만 있던 카드에 시각 앵커를 준다. */}

@@ -31,7 +31,15 @@ export function DiscoveryInsightRow({ insight, isLast, onPress }: DiscoveryInsig
       </View>
 
       <View style={styles.content}>
-        <Text style={styles.category}>{insight.category}</Text>
+        <View style={styles.categoryRow}>
+          <Text style={styles.category}>{insight.category}</Text>
+          {/* 군집 이탈이 근거에 섞인 문제만. 규칙 진단은 값이 null이라 배지가 없다. */}
+          {insight.hasClusterEvidence ? (
+            <View style={styles.clusterBadge}>
+              <Text style={styles.clusterBadgeText}>또래 비교</Text>
+            </View>
+          ) : null}
+        </View>
         <Text numberOfLines={1} style={styles.title}>
           {insight.title}
         </Text>

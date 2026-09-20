@@ -12,6 +12,42 @@ export interface DiagnosisRunApiResponse {
   cached: boolean;
 }
 
+/**
+ * 문제를 무엇이 찾았는지. 규칙만이면 `RULE`, K-Means 군집 이탈만이면 `CLUSTER`,
+ * 규칙 문제에 군집 근거가 병합됐으면 `RULE_AND_CLUSTER`다.
+ */
+export type DiagnosisDetectionSource = 'RULE' | 'CLUSTER' | 'RULE_AND_CLUSTER';
+
+/** 군집 안에서 사용자가 어디쯤인지. 서버가 판정한 값을 그대로 쓴다. */
+export type ClusterRankBand = 'TOP_10' | 'TOP_25' | 'MIDDLE' | 'BOTTOM_25' | 'BOTTOM_10';
+
+/**
+ * 군집 이탈 근거(641). 패턴 분석이 저장한 배정 군집의 기준 범위와 이탈값이며 진단은 읽기만 한다.
+ * `detectionSource`가 `RULE`이면 통째로 null이다.
+ */
+export interface DiagnosisClusterContextApiResponse {
+  modelVersion: string;
+  clusterId: number;
+  clusterLabel: string;
+  sampleSize: number;
+  confidence: number;
+  /** 분석 기준 기간. 예: `2026-03~2026-08` */
+  window: string;
+  analyzedAt: string;
+  feature: string;
+  displayName: string;
+  userValue: number;
+  p5: number;
+  p95: number;
+  mean: number;
+  deviation: number;
+  direction: 'ABOVE' | 'BELOW';
+  percentileInCluster: number;
+  rankBand: ClusterRankBand;
+  /** 특징 5종 이탈의 균등 평균이라 개별 `deviation`보다 클 수 없다. */
+  deviationScore: number;
+}
+
 export interface DiagnosisIssueApiResponse {
   issueId: number;
   diagnosisId: number;
@@ -24,6 +60,10 @@ export interface DiagnosisIssueApiResponse {
   currentValue?: Record<string, unknown> | null;
   /** 진단 시점의 비교 기준. 소비 증가 상세에서 이전 월평균과 기간을 읽는다. */
   benchmarkValue?: Record<string, unknown> | null;
+  /** 641 이전 완료본에는 없어서 optional이다. 없으면 규칙 진단으로 본다. */
+  detectionSource?: DiagnosisDetectionSource | null;
+  modelVersion?: string | null;
+  clusterContext?: DiagnosisClusterContextApiResponse | null;
 }
 
 export interface RecommendationEffectApiResponse {
