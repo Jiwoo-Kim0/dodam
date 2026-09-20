@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 
 import { coachApi, isApiError } from '@/api';
+import { getAuthSessionVersion } from '@/services/authSessionService';
 import type {
   CoachChatChipId,
   CoachChatContext,
@@ -21,9 +22,24 @@ type PendingRequest = { text: string; chipId?: CoachChatChipId };
  *
  * <p>서버 세션이 30분 유지되므로 화면 상태도 그만큼은 남아 있는 편이 자연스럽다.
  * 앱을 껐다 켜면 사라지는데, 그때는 서버 세션도 이미 만료됐거나 곧 만료된다.
+ *
+ * <p>**로그인 세션에 묶는다.** 로그아웃·세션 만료·재로그인 때마다 `authSessionVersion`이 올라가므로,
+ * 값이 달라져 있으면 이전 사용자의 대화로 보고 버린다. 이렇게 하지 않으면 A로 대화한 뒤
+ * 로그아웃하고 B로 들어왔을 때 B 화면에 A의 금융 대화가 그대로 남는다.
  */
+let cachedSessionVersion: number | null = null;
 let cachedTurns: readonly CoachChatTurn[] = [];
 let cachedConversationId: string | null = null;
+
+/** 캐시를 현재 로그인 세션 기준으로 맞춘다. 세션이 바뀌었으면 비운다. */
+function syncCacheWithSession() {
+  const currentVersion = getAuthSessionVersion();
+  if (cachedSessionVersion !== currentVersion) {
+    cachedSessionVersion = currentVersion;
+    cachedTurns = [];
+    cachedConversationId = null;
+  }
+}
 
 function turnId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -44,23 +60,29 @@ function errorMessage(error: unknown) {
  * 만료된 id를 보내도 서버가 같은 id로 새 대화를 시작하므로 FE가 먼저 지울 필요는 없다.
  */
 export function useCoachChat(context?: CoachChatContext) {
-  const [turns, setTurnsState] = useState<readonly CoachChatTurn[]>(cachedTurns);
+  // 화면에 들어올 때마다 캐시가 지금 로그인한 사람의 것인지 확인한다.
+  const [turns, setTurnsState] = useState<readonly CoachChatTurn[]>(() => {
+    syncCacheWithSession();
+    return cachedTurns;
+  });
   const [conversationId, setConversationIdState] = useState<string | null>(
-    cachedConversationId,
+    () => cachedConversationId,
   );
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // 화면 상태와 모듈 캐시가 어긋나지 않도록 항상 같이 바꾼다.
   const setTurns = useCallback(
     (update: (current: readonly CoachChatTurn[]) => readonly CoachChatTurn[]) => {
-      setTurnsState((current) => {
-        cachedTurns = update(current);
-        return cachedTurns;
-      });
+      // 화면이 떠 있는 동안 로그아웃될 수 있다. 남길 때도 세션을 확인한다.
+      syncCacheWithSession();
+      const next = update(cachedTurns);
+      cachedTurns = next;
+      setTurnsState(next);
     },
     [],
   );
   const setConversationId = useCallback((next: string | null) => {
+    syncCacheWithSession();
     cachedConversationId = next;
     setConversationIdState(next);
   }, []);
