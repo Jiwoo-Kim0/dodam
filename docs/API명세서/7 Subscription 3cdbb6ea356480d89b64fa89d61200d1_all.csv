@@ -1,22 +1,22 @@
 ﻿API명,Endpoint,Method,Parameter,담당자,데이터/연동,인증 여부,제한사항,진행상태
 정기결제 목록,/api/v1/subscriptions,GET,"Query: status?, category?, page?, size?",,SSAFY,O,"본인 리소스만 접근; page≥0, size 1~100 (도담 정책); SSAFY 키·userKey 서버 관리; 호출별 거래
-고유번호 신규 생성; 사전 생성된 시연 데이터 범위 내",시작 전
+고유번호 신규 생성; 사전 생성된 시연 데이터 범위 내",완료
 정기결제 상세,/api/v1/subscriptions/{subscriptionId},GET,Path: subscriptionId,,SSAFY + 집계,O,"본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
-연 데이터 범위 내",시작 전
+연 데이터 범위 내",완료
 정기결제 이력,/api/v1/subscriptions/{subscriptionId}/history,GET,"Path: subscriptionId / Query: startDate?, endDate?,
 page?, size?",,SSAFY,O,"본인 리소스만 접근; page≥0, size 1~100 (도담 정책); 시작일≤종료일; 조회기간 정책 제한; SSAFY
-키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시연 데이터 범위 내",시작 전
+키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시연 데이터 범위 내",완료
 정기결제 요약,/api/v1/subscriptions/summary,GET,없음,,SSAFY,O,"본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
-연 데이터 범위 내",시작 전
+연 데이터 범위 내",완료
 정기결제 서비스 목록,/api/v1/subscriptions/services,GET,"Query: category?, page?, size?",,SSAFY,O,"본인 리소스만 접근; page≥0, size 1~100 (도담 정책); SSAFY 키·userKey 서버 관리; 호출별 거래
-고유번호 신규 생성; 사전 생성된 시연 데이터 범위 내",시작 전
+고유번호 신규 생성; 사전 생성된 시연 데이터 범위 내",완료
 정기결제 카테고리,/api/v1/subscriptions/categories,GET,없음,,SSAFY,O,"본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
-연 데이터 범위 내",시작 전
+연 데이터 범위 내",완료
 정기결제 수정,/api/v1/subscriptions/{subscriptionId},PATCH,"Path: subscriptionId / Body: paymentAmount?,
 paymentDay?, endDate?, status?",,SSAFY,O,"본인 리소스만 접근; 시작일≤종료일; 조회기간 정책 제한; SSAFY 키·userKey 서버 관리; 호출별 거
-래고유번호 신규 생성; 사전 생성된 시연 데이터 범위 내; 입력값/상태 전이 검증; 중복 요청 방지",시작 전
+래고유번호 신규 생성; 사전 생성된 시연 데이터 범위 내; 입력값/상태 전이 검증; 중복 요청 방지",완료
 정기결제 취소,/api/v1/subscriptions/{subscriptionId},DELETE,Path: subscriptionId,,SSAFY,O,"본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
-연 데이터 범위 내; 존재·소유권 확인 후 처리",시작 전
+연 데이터 범위 내; 존재·소유권 확인 후 처리",완료
 정지/재개,/api/v1/subscriptions/{subscriptionId}/status,PATCH,Path: subscriptionId / Body: status|action,,SSAFY,O,"본인 리소스만 접근; SSAFY 키·userKey 서버 관리; 호출별 거래고유번호 신규 생성; 사전 생성된 시
-연 데이터 범위 내; 입력값/상태 전이 검증; 중복 요청 방지",시작 전
-미등록 반복결제 탐지,/api/v1/subscriptions/candidates,GET,"Query: minOccurrences?, lookbackMonths?",,자체 탐지,O,본인 리소스만 접근,시작 전
+연 데이터 범위 내; 입력값/상태 전이 검증; 중복 요청 방지",완료
+미등록 반복결제 탐지,/api/v1/subscriptions/candidates,GET,"Query: minOccurrences?, lookbackMonths?",,자체 탐지,O,본인 리소스만 접근,완료
