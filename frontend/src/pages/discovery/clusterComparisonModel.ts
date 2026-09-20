@@ -41,9 +41,9 @@ export function formatClusterRange(feature: string, low: number, high: number) {
 
 const RANK_BAND_LABELS: Record<ClusterRankBand, string> = {
   TOP_10: '상위',
-  TOP_25: '상위',
+  UPPER: '상위',
   MIDDLE: '중간',
-  BOTTOM_25: '하위',
+  LOWER: '하위',
   BOTTOM_10: '하위',
 };
 
@@ -61,7 +61,7 @@ export function clusterRankBandLabel(
   const prefix = RANK_BAND_LABELS[rankBand];
   if (prefix === undefined || rankBand === 'MIDDLE') return null;
 
-  const isTop = rankBand === 'TOP_10' || rankBand === 'TOP_25';
+  const isTop = rankBand === 'TOP_10' || rankBand === 'UPPER';
   const percent = Math.round(isTop ? 100 - percentileInCluster : percentileInCluster);
   return `${prefix} ${Math.max(1, percent)}%`;
 }

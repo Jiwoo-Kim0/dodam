@@ -18,8 +18,11 @@ export interface DiagnosisRunApiResponse {
  */
 export type DiagnosisDetectionSource = 'RULE' | 'CLUSTER' | 'RULE_AND_CLUSTER';
 
-/** 군집 안에서 사용자가 어디쯤인지. 서버가 판정한 값을 그대로 쓴다. */
-export type ClusterRankBand = 'TOP_10' | 'TOP_25' | 'MIDDLE' | 'BOTTOM_25' | 'BOTTOM_10';
+/**
+ * 군집 안에서 사용자가 어디쯤인지. 경계는 백분위 90 / 75 / 25 / 10이다.
+ * (backend/docs/pattern.md §"features[]")
+ */
+export type ClusterRankBand = 'TOP_10' | 'UPPER' | 'MIDDLE' | 'LOWER' | 'BOTTOM_10';
 
 /**
  * 군집 이탈 근거(641). 패턴 분석이 저장한 배정 군집의 기준 범위와 이탈값이며 진단은 읽기만 한다.
