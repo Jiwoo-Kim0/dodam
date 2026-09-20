@@ -222,7 +222,6 @@ export function HomeScreen() {
             isLoading={isSummaryLoading}
             items={topSpending}
             monthLabel={monthLabel}
-            onDetailPress={() => router.push(routes.ledger)}
           />
         </View>
       </BouncyScrollView>
