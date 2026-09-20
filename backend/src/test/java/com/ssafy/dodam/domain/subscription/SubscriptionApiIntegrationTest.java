@@ -41,8 +41,13 @@ class SubscriptionApiIntegrationTest extends SubscriptionApiTestSupport {
                 .andExpect(jsonPath("$.data.content[0].daysUntilNextPayment").value(2))
                 .andExpect(jsonPath("$.data.content[0].cardId").value(nullValue()))
                 .andExpect(jsonPath("$.data.content[0].cardName").value(nullValue()))
+                // 카탈로그에 있지만 FE 아이콘이 없는 서비스: 코드만 있고 아이콘 키는 null
+                .andExpect(jsonPath("$.data.content[0].serviceCode").value("ICLOUD_PLUS"))
+                .andExpect(jsonPath("$.data.content[0].iconKey").value(nullValue()))
                 .andExpect(jsonPath("$.data.content[1].subscriptionId").value(NETFLIX))
                 .andExpect(jsonPath("$.data.content[1].name").value("넷플릭스"))
+                .andExpect(jsonPath("$.data.content[1].serviceCode").value("NETFLIX"))
+                .andExpect(jsonPath("$.data.content[1].iconKey").value("netflix"))
                 .andExpect(jsonPath("$.data.content[1].category").value("VIDEO"))
                 .andExpect(jsonPath("$.data.content[1].categoryLabel").value("영상"))
                 .andExpect(jsonPath("$.data.content[1].paymentAmount").value(17_000))
@@ -57,6 +62,9 @@ class SubscriptionApiIntegrationTest extends SubscriptionApiTestSupport {
                 .andExpect(jsonPath("$.data.content[2].subscriptionId").value(GYM))
                 .andExpect(jsonPath("$.data.content[2].monthlyEquivalentAmount").value(25_000))
                 .andExpect(jsonPath("$.data.content[2].paymentDay").value(nullValue()))
+                // 카탈로그에 없는 이름은 둘 다 null
+                .andExpect(jsonPath("$.data.content[2].serviceCode").value(nullValue()))
+                .andExpect(jsonPath("$.data.content[2].iconKey").value(nullValue()))
                 .andExpect(jsonPath("$.data.content[3].subscriptionId").value(SPOTIFY))
                 .andExpect(jsonPath("$.data.content[3].status").value("PAUSED"))
                 .andExpect(jsonPath("$.data.content[3].nextPaymentDate").value(nullValue()))

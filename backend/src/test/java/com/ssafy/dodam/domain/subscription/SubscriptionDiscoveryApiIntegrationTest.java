@@ -1,8 +1,11 @@
 package com.ssafy.dodam.domain.subscription;
 
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
+import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.lessThanOrEqualTo;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -29,6 +32,8 @@ import org.springframework.test.context.jdbc.Sql;
 class SubscriptionDiscoveryApiIntegrationTest extends SubscriptionApiTestSupport {
 
     private static final long SUBSCRIPTION_CATEGORY = 15L;
+    private static final long HOUSING_CATEGORY = 12L;
+    private static final long INSURANCE_CATEGORY = 14L;
     private static final long CAFE_CATEGORY = 2L;
     private static final long INCOME_CATEGORY = 19L;
 
@@ -65,6 +70,19 @@ class SubscriptionDiscoveryApiIntegrationTest extends SubscriptionApiTestSupport
         for (int i = 0; i < 3; i++) {
             insertTransaction("TX-GYM-" + i, userId, cardId, null, today.minusDays(7 + 30L * i),
                     "EXPENSE", 50_000, "헬스장", "CARD", true);
+        }
+        // 고정비: 매달 같은 날 같은 금액 같은 이름이라 주기 조건은 완벽히 맞지만 구독이 아니다(시연 seed 4b 블록과 같은 모양).
+        // 카테고리가 SUBSCRIPTION이 아니고 카탈로그에도 없으므로 후보에서 뺀다.
+        for (int i = 0; i < 3; i++) {
+            insertTransaction("TX-INS-" + i, userId, null, INSURANCE_CATEGORY, today.minusDays(8 + 30L * i),
+                    "EXPENSE", 105_000, "도담 보험", "ACCOUNT", false);
+            insertTransaction("TX-HOUSE-" + i, userId, null, HOUSING_CATEGORY, today.minusDays(11 + 30L * i),
+                    "EXPENSE", 455_000, "도담 주거 관리사무소", "ACCOUNT", false);
+        }
+        // 미분류(카테고리 null) + 카탈로그 밖 이름도 반복만으로는 후보가 아니다.
+        for (int i = 0; i < 3; i++) {
+            insertTransaction("TX-ACADEMY-" + i, userId, cardId, null, today.minusDays(15 + 30L * i),
+                    "EXPENSE", 200_000, "도담 어학원", "CARD", false);
         }
         // 수입은 보지 않는다.
         for (int i = 0; i < 3; i++) {
@@ -106,6 +124,18 @@ class SubscriptionDiscoveryApiIntegrationTest extends SubscriptionApiTestSupport
                 .andExpect(jsonPath("$.data[1].cardId").value(nullValue()))
                 .andExpect(jsonPath("$.data[1].matchedServiceCode").value("MILLIE"))
                 .andExpect(jsonPath("$.data[1].suggestedCategory").value("BOOK"));
+    }
+
+    @Test
+    void excludesRegularFixedCostsThatAreNotSubscriptions() throws Exception {
+        // minOccurrences=2까지 낮춰도 보험·관리비·학원비는 나오지 않는다. 카테고리가 없어도 카탈로그와 맞는 유튜브 프리미엄은 남는다.
+        mockMvc.perform(get("/api/v1/subscriptions/candidates").param("minOccurrences", "2")
+                        .header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[*].merchantName",
+                        containsInAnyOrder("쿠팡와우", "밀리의서재", "유튜브 프리미엄")))
+                .andExpect(jsonPath("$.data[*].merchantName",
+                        not(hasItems("도담 보험", "도담 주거 관리사무소", "도담 어학원"))));
     }
 
     @Test
