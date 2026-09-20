@@ -174,12 +174,14 @@ export const styles = StyleSheet.create({
     borderColor: colors.divider,
     borderRadius: radius.card,
     borderWidth: StyleSheet.hairlineWidth,
-    gap: spacing[3],
-    padding: spacing[4],
+    gap: spacing[2],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
   },
+  /** 우선 추천은 연초록 바탕으로 구분한다. 진한 테두리는 배지와 겹쳐 두 번 강조하는 셈이었다. */
   recommendedCard: {
-    borderColor: colors.primary.green,
-    borderWidth: 1,
+    backgroundColor: colors.primary.lightGreen,
+    borderColor: colors.primary.lightGreen,
   },
   recommendationHeader: {
     alignItems: 'flex-start',
@@ -187,18 +189,21 @@ export const styles = StyleSheet.create({
     gap: spacing[2],
     justifyContent: 'space-between',
   },
+  /** 우선 추천 카드가 연초록이라 같은 색을 쓰면 구분이 안 된다. 흰 바탕으로 한 겹 올린다. */
   recommendationExplanation: {
-    backgroundColor: colors.primary.lightGreen,
-    borderRadius: radius.card,
-    marginTop: spacing[2],
-    padding: spacing[4],
+    backgroundColor: colors.white,
+    borderRadius: radius.default,
+    marginTop: spacing[1],
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[3],
   },
   recommendationTitle: {
     color: colors.textPrimary,
     flex: 1,
     fontFamily: fontFamily.semiBold,
-    fontSize: fontSize.body1,
-    lineHeight: 21,
+    fontSize: fontSize.body2,
+    letterSpacing: -0.3,
+    lineHeight: 19,
   },
   recommendationDetail: {
     ...typography.body2,
@@ -243,19 +248,18 @@ export const styles = StyleSheet.create({
     color: colors.textTertiary,
     fontFamily: fontFamily.regular,
   },
+  /** 보조 조작이다. 본문보다 커서 카드에서 제일 먼저 읽히던 것을 한 단계 낮췄다. */
   recommendationAction: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: spacing[1],
+    gap: 2,
     justifyContent: 'flex-end',
   },
   recommendationActionText: {
-    ...typography.buttonSmall,
-    color: colors.primary.green,
-  },
-  recommendationActionIcon: {
-    ...typography.buttonSmall,
-    color: colors.primary.green,
+    color: colors.textSecondary,
+    fontFamily: fontFamily.medium,
+    fontSize: fontSize.body2,
+    lineHeight: 18,
   },
   spendingSummaryLabel: {
     color: colors.primary.green,

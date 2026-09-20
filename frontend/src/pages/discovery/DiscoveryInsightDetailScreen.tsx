@@ -1,5 +1,6 @@
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
@@ -9,6 +10,7 @@ import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/Refre
 import { ScreenState } from '@/components/screenState/ScreenState';
 import { routes } from '@/constants/routes';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
+import { colors } from '@/styles';
 import type { CoachMessageResponse } from '@/types/coachApi.types';
 import type {
   DiagnosisGoalImpactApiResponse,
@@ -63,7 +65,6 @@ export function DiscoveryInsightDetailScreen({
   );
   const [explanationError, setExplanationError] = useState<string | null>(null);
   const [isExplanationLoading, setIsExplanationLoading] = useState(false);
-  const [isCoachExpanded, setIsCoachExpanded] = useState(false);
   const [selectedRecommendationId, setSelectedRecommendationId] = useState<
     number | null
   >(null);
@@ -169,7 +170,6 @@ export function DiscoveryInsightDetailScreen({
     setGoalImpact(null);
     setExplanation(null);
     setIsExplanationLoading(false);
-    setIsCoachExpanded(false);
     setExplanationError(null);
     setSelectedRecommendationId(null);
     setRecommendationExplanation(null);
@@ -250,26 +250,19 @@ export function DiscoveryInsightDetailScreen({
   };
 
   const explanationText = coachMessage(explanation);
-  const hasLongExplanation = (explanationText?.length ?? 0) > 90;
   const coachSection = (
     <View style={styles.coachSection}>
       <Text style={styles.coachLabel}>도담의 조언</Text>
-      <Text
-        numberOfLines={hasLongExplanation && !isCoachExpanded ? 3 : undefined}
-        style={styles.adviceText}>
+      {/*
+        접기·펴기를 두지 않는다. 글자 수(90자)로 길이를 재던 방식은 실제 줄 수와 달라서,
+        세 줄 안에 들어가는 조언에도 "전체 보기"가 떠 눌러도 아무것도 바뀌지 않았다.
+        조언은 길어야 네댓 줄이라 처음부터 다 보여 주는 편이 낫다.
+      */}
+      <Text style={styles.adviceText}>
         {isExplanationLoading
           ? '조언을 불러오고 있어요.'
           : explanationText ?? explanationError ?? '표시할 조언이 없어요.'}
       </Text>
-      {hasLongExplanation ? (
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => setIsCoachExpanded((expanded) => !expanded)}>
-          <Text style={styles.inlineRetry}>
-            {isCoachExpanded ? '조언 접기' : '조언 전체 보기'}
-          </Text>
-        </Pressable>
-      ) : null}
       {explanationError ? (
         <Pressable
           accessibilityRole="button"
@@ -527,11 +520,24 @@ export function DiscoveryInsightDetailScreen({
                               ? '추천 이유 접기'
                               : '추천 이유 보기'}
                           </Text>
-                          <Text style={styles.recommendationActionIcon}>
-                            {selectedRecommendationId === recommendation.recommendationId
-                              ? '⌃'
-                              : '⌄'}
-                          </Text>
+                          {/* 글자 `⌄`는 폰트마다 크기·위치가 달라 글자와 중심이 안 맞는다. */}
+                          <SymbolView
+                            name={
+                              selectedRecommendationId === recommendation.recommendationId
+                                ? {
+                                    android: 'keyboard_arrow_up',
+                                    ios: 'chevron.up',
+                                    web: 'keyboard_arrow_up',
+                                  }
+                                : {
+                                    android: 'keyboard_arrow_down',
+                                    ios: 'chevron.down',
+                                    web: 'keyboard_arrow_down',
+                                  }
+                            }
+                            size={16}
+                            tintColor={colors.textSecondary}
+                          />
                         </View>
                       </Pressable>
 
