@@ -52,7 +52,7 @@ export function ClusterComparisonCard({ cluster }: ClusterComparisonCardProps) {
 
       <View style={styles.valueRow}>
         <Text style={styles.featureLabel}>{cluster.displayName}</Text>
-        <Text style={styles.userValue}>{formatClusterValue(cluster.userValue)}</Text>
+        <Text style={styles.userValue}>{formatClusterValue(cluster.feature, cluster.userValue)}</Text>
       </View>
 
       {/* 평균 눈금은 두지 않는다. 띠가 끊긴 틈처럼 보이고, 문구에서도 평균을 쓰지 않는다. */}
@@ -65,7 +65,7 @@ export function ClusterComparisonCard({ cluster }: ClusterComparisonCardProps) {
 
       <View style={styles.legendRow}>
         <Text style={styles.legendText}>
-          {`기준 범위 ${formatClusterRange(cluster.p5, cluster.p95)}`}
+          {`기준 범위 ${formatClusterRange(cluster.feature, cluster.p5, cluster.p95)}`}
         </Text>
         {rankLabel === null ? null : <Text style={styles.rankText}>{rankLabel}</Text>}
       </View>
