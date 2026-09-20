@@ -14,6 +14,7 @@ export { recommendationApi } from './recommendationApi';
 export { reportApi } from './reportApi';
 export { simulationApi } from './simulationApi';
 export { socialAuthApi } from './socialAuthApi';
+export { subscriptionApi } from './subscriptionApi';
 export { userApi } from './userApi';
 export type {
   ApiFieldError,
