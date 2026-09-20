@@ -1038,6 +1038,22 @@
 
 - [ ] `end_date`가 지나도 상태는 ACTIVE로 남는다. EXPIRED는 seed·동기화가 넣는 값으로만 존재한다. 일 1회 배치(현금흐름 이벤트 수집과 함께)나 조회 시점 계산 중 하나를 정한다. 조회 시점 계산을 택하면 요약 금액에서 종료일 지난 건을 빼야 한다.
 
+### 목록 응답의 서비스 식별자 (2026-09-20, `docs/subscription-backend-request.md` P2)
+
+- [x] `SubscriptionResponse`에 `serviceCode`·`iconKey`(nullable)를 추가했다. `SubscriptionResponseAssembler`가 후보 탐지와 같은 `SubscriptionServiceCatalog.match(name)`으로 채운다.
+  FE(`frontend/src/constants/subscriptionServiceIcons.ts`)가 이름 키워드로 아이콘을 추측하던 것을 `iconKey`로 바꿀 수 있다. RN은 `require()`가 정적이라 FE 번들에 있는 아이콘에 한해 서버 카탈로그 확장이 그대로 따라온다.
+- [ ] 매칭은 `name`에 서비스명·키워드가 포함되는지만 본다. 금융망 가맹점명("NETFLIX.COM", "쿠팡(와우멤버십)")이 들어오면 카탈로그 키워드를 늘려야 한다(513 "탐지 임계값"의 정규화 항목과 같은 뿌리).
+
+### 시연 seed (2026-09-20, `docs/subscription-backend-request.md` P1)
+
+- [x] 시연 계정 U0003은 `seq ≡ 3 (mod 6)`라 8번 seed로는 구독이 `도담 뮤직` 1건이다. 15번 `DODAM_DEMO_SUBSCRIPTION_SEED.sql`이 U0001~U0004의 구독·구독 거래·이력을 카탈로그 서비스명으로 5~7건씩 다시 만든다
+  (`backend/database/seeds/README.md` "시연 계정 구독 목록"). 전체 4,000명은 바꾸지 않았다 — 구독 거래가 FIXED 소비라 K-Means 아티팩트·또래 비교 수치가 움직여 재학습이 필요해진다.
+- [x] 2026-09-20 일회용 Docker `mysql:8.0`에 V1~V41을 적용하고 최소 fixture(시연 사용자 4명 + 방관자 1명, 주거래 계좌·주카드, 8번 모양 구독 7건·거래 59건, U0004 MANUAL 거래 1건)를 넣은 뒤
+  15번을 두 번 실행했다. preflight `1 / 4 / 4 / 1 / 24 / 4 / 4`, 구독 U0001 5(54,590)·U0002 6(83,680)·U0003 7(94,490)·U0004 5(ACTIVE 4, 37,690), 거래 165·이력 158·이력-거래 불일치 0·계약 위반 0·카드 불일치 0,
+  방관자 사용자의 구독·SUB 거래 7건과 U0004 MANUAL 거래 유지, U0004 `유튜브 프리미엄` PAUSED(이력 4건·다음 결제일 NULL), U0003 미등록 `디즈니+` 7건(3/27~9/27). 두 번째 실행 결과 동일, 작업 테이블 잔존 없음.
+- [ ] 위 검증은 1~14번 전체 체인이 아니라 최소 fixture 위에서 한 것이다. 서버 적용 전 로컬에 1·2·3·6·8·10·11번을 적재한 DB에서 한 번 더 돌리고, 백엔드를 띄워 U0003 로그인 → `GET /subscriptions?status=ACTIVE`(7건, `serviceCode`·`iconKey`)
+  → `GET /subscriptions/candidates`(디즈니+ 1건) → 가계부 9월에 넷플릭스·유튜브 프리미엄 결제가 보이는지 확인한다. **서버 적용은 아직이다.**
+
 ### 목록 처리 방식
 
 - [ ] 목록 필터·정렬·페이지를 메모리에서 한다(사용자당 수십 건 전제, Goal과 같음). 동기화로 건수가 수백 건이 되면 `Specification` 조회로 바꾼다.
@@ -1055,9 +1071,18 @@
 
 - [ ] 명세 7에는 등록(POST) API가 없어 후보 탐지 결과를 정기결제로 만들 방법이 없다. 후보 응답에 `merchantName`·`amount`·`estimatedBillingCycle`·`suggestedPaymentDay`·`cardId`·`suggestedCategory`를 넣어 등록 Body를 바로 만들 수 있게 해 두었다. `POST /api/v1/subscriptions`를 명세에 추가할지 팀에서 정한다.
 
+### 구독 성격 필터 (2026-09-20, `docs/subscription-backend-request.md` P3)
+
+- [x] 후보 판정에 "이게 구독인가"를 보는 단계가 없어 seed 고정비 `도담 보험`·`도담 주거 관리사무소`가 MONTHLY 후보로 잡혔다(아래 514 MySQL 검증 기록에도 그렇게 적혀 있다). FE가 이 오탐 때문에 후보 연동을 걷어냈다.
+  `SubscriptionDiscoveryService.isSubscriptionLike`: 거래 카테고리 `SUBSCRIPTION` 또는 카탈로그 매칭 중 하나를 만족해야 후보다. 제외 목록(INSURANCE·HOUSING) 방식은 쓰지 않았다.
+- [ ] 위 필터는 카테고리가 없고 카탈로그에도 없는 진짜 구독(소규모 서비스, 해외 결제 "APPLE.COM/BILL" 등)을 놓친다. 카탈로그 키워드를 늘리거나 사용자가 후보를 직접 등록하는 경로(POST)로 보완한다.
+
 ### 탐지 임계값
 
 - [ ] 기본 3회·6개월, 주기 판정 범위(주 5~9일, 월 25~36일, 연 350~380일)는 seed 거래(매월 12일·25일 결제)가 잡히도록 잡은 값이다. 기획안 "정기결제 점검" 화면의 요구(예: 2회면 경고)에 맞춰 조정한다.
+  요청서 4절이 짚은 세 가지도 같은 항목이다: (1) 조회 창이 최대 12개월(365일)이라 기본 `minOccurrences=3`으로는 YEARLY(평균 350일 × 2 간격)에 도달할 수 없다,
+  (2) WEEKLY는 3회 × 5~9일이면 걸려 매주 같은 금액의 습관 소비가 잡힌다, (3) `totalGap` 누적은 `(마지막 - 첫 결제일)`과 같아 개별 간격의 규칙성을 보지 않는다(1/1·1/2·3/2가 평균 30일로 MONTHLY).
+  `suggestedPaymentDay`(최빈값)에서 벗어난 결제 수를 세는 규칙성 검사와 YEARLY·WEEKLY 처리 방침을 함께 정한다.
 - [ ] 가맹점명 정규화가 공백·대소문자 제거뿐이다. "넷플릭스"와 "NETFLIX.COM", "쿠팡와우"와 "쿠팡(와우멤버십)"은 다른 묶음이 된다. 카탈로그 키워드 매칭(`matchedServiceCode`)을 묶음 기준에도 쓸지 정한다.
 - [ ] 금액이 바뀐 요금제(예: 9,900 → 13,500)는 두 묶음으로 갈라져 각각 횟수가 줄어든다. 가맹점 단위로 묶고 금액 변동을 허용(±20%)하는 방식을 검토한다.
 

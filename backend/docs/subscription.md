@@ -80,6 +80,7 @@ ACTIVE로 돌아오면 아래 "다음 결제일 재계산" 규칙으로 다시 �
 | 필드 | 설명 |
 | --- | --- |
 | `subscriptionId`, `name` | 식별자, 서비스 이름 |
+| `serviceCode`, `iconKey` | 이름이 서비스 카탈로그(`SubscriptionServiceCatalog.match`, 후보 탐지와 같은 매처)와 맞으면 그 서비스 코드와 FE `assets/icons/payments` 아이콘 키. 카탈로그에 없으면 둘 다 null, 카탈로그에 아이콘이 없으면 `iconKey`만 null(예: iCloud+). FE는 이름으로 아이콘을 추측하지 않고 이 키로 고른다(2026-09-20, 요청서 P2) |
 | `category`, `categoryLabel` | 저장 코드와 표시 이름(정의되지 않은 코드는 코드 그대로) |
 | `paymentAmount`, `billingCycle`, `monthlyEquivalentAmount` | 결제 금액, 주기, 월 환산 금액(WEEKLY ×52÷12, YEARLY ÷12, 원 단위 반올림) |
 | `paymentDay`, `nextPaymentDate`, `daysUntilNextPayment` | 결제일, 다음 결제일, 오늘부터 남은 일수(다음 결제일이 없으면 null) |
@@ -127,9 +128,16 @@ ACTIVE로 돌아오면 아래 "다음 결제일 재계산" 규칙으로 다시 �
 
 1. 기간 안의 EXPENSE·숨김 아님·가맹점명 있는 거래를 읽는다(`JdbcRecurringPaymentReader`). INCOME·TRANSFER·숨긴 거래와 `spending_type = NON_SPENDING`(저축 이체 등)은 보지 않는다.
 2. 가맹점명(공백·대소문자 무시)과 금액이 같은 거래를 한 묶음으로 본다. 금액이 다르면 다른 묶음이다(요금제 변경은 별도 후보로 보인다).
-3. 서로 다른 결제일이 `minOccurrences` 이상이고, 연속 결제 사이 **평균 간격**이 주 5~9일, 월 25~36일, 연 350~380일 중 하나에 들면 후보다.
+3. 묶음이 **구독 성격**이어야 한다(2026-09-20, 요청서 P3): 거래 카테고리(가장 많이 붙은 것)가 `SUBSCRIPTION`이거나, 가맹점명이 서비스 카탈로그와 맞아야 한다.
+   보험료·관리비·통신비·학원비처럼 매달 같은 날 같은 금액이 같은 이름으로 나가는 고정비는 아래 주기 조건을 완벽히 만족하므로 여기서 걸러야 한다.
+   `INSURANCE`·`HOUSING`을 빼는 제외 목록 방식은 쓰지 않는다(헬스장·학원·통신비·대출 상환·정기 배송이 전부 같은 조건이라 목록이 계속 늘어난다).
+   카테고리가 붙지 않은 카드 거래(예: 미분류 "유튜브 프리미엄")는 카탈로그 매칭으로 건진다.
+4. 서로 다른 결제일이 `minOccurrences` 이상이고, 연속 결제 사이 **평균 간격**이 주 5~9일, 월 25~36일, 연 350~380일 중 하나에 들면 후보다.
    그 밖(불규칙)이면 뺀다.
-4. 이미 등록된 정기결제(CANCELED 제외)와 이름이 같으면 뺀다. 취소한 뒤에도 결제가 계속되면 다시 후보로 보인다.
+5. 이미 등록된 정기결제(CANCELED 제외)와 이름이 같으면 뺀다. 취소한 뒤에도 결제가 계속되면 다시 후보로 보인다.
+
+시연 seed에서는 거래 seed 4b 고정비(`도담 주거 관리사무소` HOUSING·`도담 보험` INSURANCE)가 3번에서 빠지고, 15번 `DODAM_DEMO_SUBSCRIPTION_SEED.sql`이
+U0003에 거래로만 넣은 `디즈니+ 9,900`(카테고리 SUBSCRIPTION, 카탈로그 `DISNEY_PLUS`)이 유일한 후보로 남는다.
 
 응답(`RecurringPaymentCandidateResponse`, 결제 횟수 → 금액 → 가맹점명 순):
 
@@ -191,4 +199,7 @@ Body는 명세대로 `status`(ACTIVE·PAUSED) 또는 `action`(pause·resume, 대
 - `SubscriptionApiIntegrationTest`(512), `SubscriptionDiscoveryApiIntegrationTest`(513), `SubscriptionManagementApiIntegrationTest`(514):
   H2(MODE=MySQL)에서 실제 회원가입·로그인 토큰으로 호출한다. 정기결제·카드·거래 행은 `SubscriptionApiTestSupport`가 JdbcTemplate로 넣고,
   날짜는 모두 오늘 기준 상대값이다. fixture는 `src/test/resources/sql/subscription-test-data.sql`(V6·V11·V30 컬럼 전체, 외래키 없음).
+- 2026-09-20 요청서(`docs/subscription-backend-request.md`) 반영: 목록 응답 `serviceCode`·`iconKey`(512 테스트에 단언 추가), 후보 판정 구독 성격 필터
+  (513 테스트 `excludesRegularFixedCostsThatAreNotSubscriptions` — 보험·관리비·미분류 학원비 3회 반복이 `minOccurrences=2`에서도 빠지고 카탈로그 매칭 유튜브 프리미엄은 남는다).
+  H2 fixture에 `HOUSING`(12)·`INSURANCE`(14) 카테고리 행을 추가했다. 세 클래스 17건 통과.
 - MySQL 8.0 검증(2026-09-11): V30 적용 후 `ddl-auto: validate` 통과, 시연 seed 구독 6,000·이력 36,000 적재, seed 사용자로 목록·요약·상세·이력·후보·정지·재개·수정·취소 호출 확인. 상세는 `remaining-work.md` 512·514 절.
