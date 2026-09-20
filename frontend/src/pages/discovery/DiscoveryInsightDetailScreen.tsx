@@ -503,14 +503,24 @@ export function DiscoveryInsightDetailScreen({
                         <Text style={styles.recommendationDetail}>
                           {recommendation.description}
                         </Text>
-                        {recommendation.effect.annualCostSaving !== null ? (
-                          <View style={styles.savingRow}>
-                            <Text style={styles.savingLabel}>예상 절약액</Text>
-                            <Text style={styles.savingValue}>
-                              연 {formatNumber(recommendation.effect.annualCostSaving)}원 예상
-                            </Text>
-                          </View>
-                        ) : null}
+                        {/*
+                          소비 패턴 검토(REVIEW_SPENDING_PATTERN)는 줄일 금액을 사용자가 정하는
+                          추천이라 서버 효과가 전부 null이다. 행을 숨기면 추천마다 높이가 달라져
+                          빠진 것처럼 보이므로, 자리를 두고 산정 전이라고 알린다.
+                        */}
+                        <View style={styles.savingRow}>
+                          <Text style={styles.savingLabel}>예상 절약액</Text>
+                          <Text
+                            style={[
+                              styles.savingValue,
+                              recommendation.effect.annualCostSaving === null &&
+                                styles.savingValuePending,
+                            ]}>
+                            {recommendation.effect.annualCostSaving === null
+                              ? '절감액 산정 전'
+                              : `연 ${formatNumber(recommendation.effect.annualCostSaving)}원 예상`}
+                          </Text>
+                        </View>
                         <View style={styles.recommendationAction}>
                           <Text style={styles.recommendationActionText}>
                             {selectedRecommendationId === recommendation.recommendationId

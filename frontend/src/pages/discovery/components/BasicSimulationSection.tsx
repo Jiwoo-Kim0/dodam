@@ -51,6 +51,18 @@ function toRunnable(
   return null;
 }
 
+/**
+ * 서버가 금액을 비워 보내고 사용자 입력을 기다리는 프리셋인지.
+ * 소비 패턴 검토(REVIEW_SPENDING_PATTERN)가 여기 해당한다 — 얼마를 줄일지는 서버가 정하지 않는다.
+ */
+function requiresUserAmount(preset: RecommendationSimulationApiResponse | null | undefined) {
+  return (
+    preset?.available === true &&
+    preset.request?.monthlyReduction === null &&
+    (preset.assumptions ?? []).includes('REDUCTION_AMOUNT_REQUIRED_FROM_USER')
+  );
+}
+
 /** 실행 폼을 띄울 수 없는 이유를 사용자 말로 옮긴다. */
 function unavailableMessage(
   preset: RecommendationSimulationApiResponse | null | undefined,
@@ -107,6 +119,7 @@ function getDurationMonths(request: unknown, fallbackDurationMonths: number) {
 export function BasicSimulationSection({ preset }: BasicSimulationSectionProps) {
   // loadHistory 이펙트의 의존성이라 렌더마다 새 객체를 만들면 무한 루프가 된다.
   const config = useMemo(() => toRunnable(preset), [preset]);
+  const needsUserAmount = requiresUserAmount(preset);
   const [amountText, setAmountText] = useState(() => {
     const initial = toRunnable(preset)?.initialAmount;
     // 프리셋이 제안한 금액을 그대로 채워 두고 사용자가 고칠 수 있게 한다.
@@ -269,6 +282,12 @@ export function BasicSimulationSection({ preset }: BasicSimulationSectionProps) 
 
           <View style={styles.field}>
             <Text style={styles.fieldLabel}>{config.amountLabel}</Text>
+            {/* 서버가 금액을 비워 보낸 추천이다. 빈 칸만 두면 왜 비었는지 알 수 없다. */}
+            {needsUserAmount ? (
+              <Text style={styles.fieldHint}>
+                얼마를 줄일지 직접 정하는 추천이에요. 금액을 입력하면 효과를 계산해 드려요.
+              </Text>
+            ) : null}
             <View style={styles.amountInputRow}>
               <TextInput
                 accessibilityLabel={config.amountLabel}

@@ -238,6 +238,11 @@ export const styles = StyleSheet.create({
     fontFamily: fontFamily.semiBold,
     fontSize: fontSize.body1,
   },
+  /** 아직 값이 없는 상태다. 초록으로 두면 계산된 절감액처럼 읽힌다. */
+  savingValuePending: {
+    color: colors.textTertiary,
+    fontFamily: fontFamily.regular,
+  },
   recommendationAction: {
     alignItems: 'center',
     flexDirection: 'row',
