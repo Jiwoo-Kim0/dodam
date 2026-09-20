@@ -26,6 +26,12 @@ export const routes = {
   report: '/report',
   reportPeerComparison: '/report/peer-comparison',
   reportEfficiencyScore: '/report/efficiency-score',
+  /** 도리에게 묻기. 탭 바깥이라 어느 탭에서 열어도 뒤로가기가 왔던 자리로 돌아간다. */
+  coachChat: '/coach-chat',
+  coachChatFromIssue: (diagnosisId: number, issueId: number) => ({
+    pathname: '/coach-chat' as const,
+    params: { diagnosisId, issueId },
+  }),
   goalSetup: '/goal-setup',
   goalSetupEdit: (goalId: string) => ({
     pathname: '/goal-setup' as const,

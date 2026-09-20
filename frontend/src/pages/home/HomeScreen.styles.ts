@@ -18,9 +18,13 @@ export const styles = StyleSheet.create({
   scroll: {
     backgroundColor: colors.background,
   },
+  /**
+   * 아래 여백은 떠 있는 도리 버튼이 차지하는 높이(바닥에서 20 + 56)를 비켜 준다.
+   * 그렇지 않으면 맨 아래까지 내렸을 때 마지막 카드가 버튼에 가린다.
+   */
   scrollContent: {
     backgroundColor: colors.background,
-    paddingBottom: spacing[5],
+    paddingBottom: spacing[24],
   },
   goalSection: {
     overflow: 'hidden',

@@ -238,6 +238,31 @@ export const styles = StyleSheet.create({
     ...typography.body2,
     color: colors.textSecondary,
   },
+  /** 조언 끝에서 채팅으로 넘어가는 버튼이다. */
+  askCoachButton: {
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderColor: colors.primary.green,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing[2],
+    justifyContent: 'center',
+    marginTop: spacing[3],
+    paddingVertical: spacing[3],
+  },
+  askCoachPressed: {
+    opacity: 0.7,
+  },
+  askCoachIcon: {
+    height: 24,
+    width: 24,
+  },
+  askCoachText: {
+    color: colors.primary.green,
+    fontFamily: fontFamily.semiBold,
+    fontSize: fontSize.body2,
+  },
   savingValue: {
     color: colors.primary.green,
     fontFamily: fontFamily.semiBold,

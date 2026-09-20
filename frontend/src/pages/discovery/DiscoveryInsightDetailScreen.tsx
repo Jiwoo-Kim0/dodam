@@ -288,6 +288,27 @@ export function DiscoveryInsightDetailScreen({
           </Text>
         </View>
       ) : null}
+
+      {/*
+        이 문제를 맥락으로 들고 채팅으로 넘어간다. 조언을 읽은 다음이 가장 궁금해지는 자리다.
+        `/coach-chat`은 탭 바깥이라 뒤로가기가 이 화면으로 정확히 돌아온다.
+      */}
+      {routeIds ? (
+        <Pressable
+          accessibilityHint="이 발견을 두고 도리에게 물어봐요"
+          accessibilityRole="button"
+          onPress={() => {
+            router.push(routes.coachChatFromIssue(routeIds.diagnosisId, routeIds.issueId));
+          }}
+          style={({ pressed }) => [styles.askCoachButton, pressed && styles.askCoachPressed]}>
+          <Image
+            contentFit="contain"
+            source={require('@/assets/characters/dori/dori_questionmark.png')}
+            style={styles.askCoachIcon}
+          />
+          <Text style={styles.askCoachText}>도리에게 물어보기</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 
