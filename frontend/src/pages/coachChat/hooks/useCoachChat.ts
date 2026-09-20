@@ -107,6 +107,12 @@ export function useCoachChat(context?: CoachChatContext) {
 
       const controller = new AbortController();
       abortRef.current = controller;
+      /*
+       * 응답이 8~15초 걸리는 동안 로그아웃될 수 있다. 그때 늦게 도착한 답을 그대로 저장하면
+       * 다음 사용자의 캐시에 이전 계정의 금융 대화가 들어간다. 보낸 세션에서만 결과를 받는다.
+       */
+      const sentSessionVersion = getAuthSessionVersion();
+      const isSameSession = () => sentSessionVersion === getAuthSessionVersion();
 
       try {
         const body: CoachChatRequest = {
@@ -115,6 +121,8 @@ export function useCoachChat(context?: CoachChatContext) {
           ...(conversationId ? { conversationId } : {}),
         };
         const response = await coachApi.chat(body, controller.signal);
+        if (!isSameSession()) return;
+
         setConversationId(response.conversationId);
         setTurns((current) => [
           ...current,
@@ -122,6 +130,8 @@ export function useCoachChat(context?: CoachChatContext) {
         ]);
         pendingRef.current = null;
       } catch (sendError) {
+        if (!isSameSession()) return;
+
         // 실패한 질문은 말풍선을 걷어낸다. 재시도하면 같은 질문이 다시 올라온다.
         setTurns((current) => current.slice(0, -1));
         setError(errorMessage(sendError));
@@ -129,6 +139,8 @@ export function useCoachChat(context?: CoachChatContext) {
         inFlightRef.current = false;
         abortRef.current = null;
         setIsSending(false);
+        // 세션이 바뀐 뒤라면 재시도 대상도 남기지 않는다. 이전 계정 질문이 다시 올라가면 안 된다.
+        if (!isSameSession()) pendingRef.current = null;
       }
     },
     [context, conversationId, setConversationId, setTurns],
