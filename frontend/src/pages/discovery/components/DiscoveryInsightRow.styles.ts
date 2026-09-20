@@ -36,11 +36,29 @@ export const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  categoryRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing[1],
+  },
   category: {
     color: colors.textSecondary,
     fontFamily: fontFamily.medium,
     fontSize: fontSize.detail,
     lineHeight: 15,
+  },
+  /** K-Means 군집 비교가 근거에 섞였다는 표시다. 판정이 아니라 근거 출처라 연하게 둔다. */
+  clusterBadge: {
+    backgroundColor: colors.primary.lightGreen,
+    borderRadius: radius.round,
+    paddingHorizontal: spacing[2],
+    paddingVertical: 1,
+  },
+  clusterBadgeText: {
+    color: colors.report.scoreStrong,
+    fontFamily: fontFamily.medium,
+    fontSize: fontSize.tiny,
+    lineHeight: 13,
   },
   title: {
     color: colors.textPrimary,

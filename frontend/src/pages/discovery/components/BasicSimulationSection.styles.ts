@@ -39,6 +39,13 @@ export const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginBottom: spacing[2],
   },
+  fieldHint: {
+    ...typography.caption,
+    color: colors.textTertiary,
+    lineHeight: 17,
+    marginBottom: spacing[2],
+    marginTop: -spacing[1],
+  },
   amountInputRow: {
     alignItems: 'center',
     backgroundColor: colors.ledger.softSurface,

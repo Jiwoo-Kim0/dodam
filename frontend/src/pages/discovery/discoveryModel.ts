@@ -15,12 +15,26 @@ export interface DiscoveryInsight {
   annualSavingAmount: number | null;
   goalAccelerationDays: number | null;
   icon: ImageSourcePropType;
+  /** 군집 이탈이 근거에 섞였는지. 목록에서 "또래 비교" 배지를 띄울지 정한다. */
+  hasClusterEvidence: boolean;
+}
+
+/**
+ * 641 이전 완료본에는 `detectionSource`가 없다. 없으면 규칙 진단으로 보고 배지를 띄우지 않는다.
+ * `clusterContext`까지 있어야 상세 카드를 그릴 수 있어서 둘을 함께 본다.
+ */
+export function hasClusterEvidence(issue: DiagnosisIssueApiResponse) {
+  return (
+    (issue.detectionSource === 'CLUSTER' || issue.detectionSource === 'RULE_AND_CLUSTER') &&
+    Boolean(issue.clusterContext)
+  );
 }
 
 const DOMAIN_LABELS: Record<string, string> = {
   CASHFLOW: '현금흐름',
   GOAL: '목표',
   LOAN: '대출',
+  SAVING: '저축',
   SPENDING: '소비',
 };
 
@@ -32,6 +46,8 @@ const DOMAIN_ICONS: Record<string, ImageSourcePropType> = {
   CASHFLOW: require('@/assets/icons/common/wallet.png'),
   GOAL: require('@/assets/icons/common/light.png'),
   LOAN: require('@/assets/icons/common/wallet.png'),
+  // 저축 단독 문제(641 SAVING/CLUSTER_SAVING_RATE_LOW)다. 리포트 저축률과 같은 그림을 쓴다.
+  SAVING: require('@/assets/icons/common/report_piggy.png'),
   SPENDING: require('@/assets/icons/common/coffee.png'),
 };
 
@@ -105,6 +121,7 @@ export function toDiscoveryInsight(
     annualSavingAmount,
     goalAccelerationDays,
     icon: DOMAIN_ICONS[issue.domain] ?? DOMAIN_ICONS.GOAL,
+    hasClusterEvidence: hasClusterEvidence(issue),
   };
 }
 

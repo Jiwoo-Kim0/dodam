@@ -1,5 +1,6 @@
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
@@ -9,6 +10,7 @@ import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/Refre
 import { ScreenState } from '@/components/screenState/ScreenState';
 import { routes } from '@/constants/routes';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
+import { colors } from '@/styles';
 import type { CoachMessageResponse } from '@/types/coachApi.types';
 import type {
   DiagnosisGoalImpactApiResponse,
@@ -23,11 +25,13 @@ import {
   recentPeriodLabel,
 } from './categorySpendingCopy';
 import { CategoryMonthlySpendingSection } from './components/CategoryMonthlySpendingSection';
+import { ClusterComparisonCard } from './components/ClusterComparisonCard';
 import { LoanRateComparisonCard } from './components/LoanRateComparisonCard';
 import { LoanRefinanceSection } from './components/LoanRefinanceSection';
 import { SpendingDiagnosisComparisonCard } from './components/SpendingDiagnosisComparisonCard';
 import {
   discoveryDomainLabel,
+  hasClusterEvidence,
   isCategorySpendingIssue,
   parseIssueRouteId,
   recommendationsForIssue,
@@ -61,7 +65,6 @@ export function DiscoveryInsightDetailScreen({
   );
   const [explanationError, setExplanationError] = useState<string | null>(null);
   const [isExplanationLoading, setIsExplanationLoading] = useState(false);
-  const [isCoachExpanded, setIsCoachExpanded] = useState(false);
   const [selectedRecommendationId, setSelectedRecommendationId] = useState<
     number | null
   >(null);
@@ -104,6 +107,7 @@ export function DiscoveryInsightDetailScreen({
   const spendingAnnualSaving = spendingRecommendation?.effect.annualCostSaving;
   const loanDiagnosis =
     issue !== null && isLoanHighInterestIssue(issue) ? loanRateDiagnosis(issue) : null;
+  const clusterContext = issue !== null && hasClusterEvidence(issue) ? issue.clusterContext : null;
   const goalDelay = isCategorySpending ? mostDelayedGoal(goalImpact) : null;
   // 목표 지연을 우선 보여주고, 목표가 없거나 스냅샷에 예상 달성일이 없으면 연간 금액으로 대신한다.
   const spendingImpact = !isCategorySpending
@@ -166,7 +170,6 @@ export function DiscoveryInsightDetailScreen({
     setGoalImpact(null);
     setExplanation(null);
     setIsExplanationLoading(false);
-    setIsCoachExpanded(false);
     setExplanationError(null);
     setSelectedRecommendationId(null);
     setRecommendationExplanation(null);
@@ -247,26 +250,19 @@ export function DiscoveryInsightDetailScreen({
   };
 
   const explanationText = coachMessage(explanation);
-  const hasLongExplanation = (explanationText?.length ?? 0) > 90;
   const coachSection = (
     <View style={styles.coachSection}>
       <Text style={styles.coachLabel}>도담의 조언</Text>
-      <Text
-        numberOfLines={hasLongExplanation && !isCoachExpanded ? 3 : undefined}
-        style={styles.adviceText}>
+      {/*
+        접기·펴기를 두지 않는다. 글자 수(90자)로 길이를 재던 방식은 실제 줄 수와 달라서,
+        세 줄 안에 들어가는 조언에도 "전체 보기"가 떠 눌러도 아무것도 바뀌지 않았다.
+        조언은 길어야 네댓 줄이라 처음부터 다 보여 주는 편이 낫다.
+      */}
+      <Text style={styles.adviceText}>
         {isExplanationLoading
           ? '조언을 불러오고 있어요.'
           : explanationText ?? explanationError ?? '표시할 조언이 없어요.'}
       </Text>
-      {hasLongExplanation ? (
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => setIsCoachExpanded((expanded) => !expanded)}>
-          <Text style={styles.inlineRetry}>
-            {isCoachExpanded ? '조언 접기' : '조언 전체 보기'}
-          </Text>
-        </Pressable>
-      ) : null}
       {explanationError ? (
         <Pressable
           accessibilityRole="button"
@@ -376,6 +372,9 @@ export function DiscoveryInsightDetailScreen({
             {loanDiagnosis ? (
               <LoanRateComparisonCard diagnosis={loanDiagnosis} />
             ) : null}
+
+            {/* 규칙만으로 찾은 문제는 군집 필드가 통째로 없어 카드를 그리지 않는다. */}
+            {clusterContext ? <ClusterComparisonCard cluster={clusterContext} /> : null}
 
             {spendingImpact ? (
               <View style={styles.impactCard}>
@@ -497,25 +496,48 @@ export function DiscoveryInsightDetailScreen({
                         <Text style={styles.recommendationDetail}>
                           {recommendation.description}
                         </Text>
-                        {recommendation.effect.annualCostSaving !== null ? (
-                          <View style={styles.savingRow}>
-                            <Text style={styles.savingLabel}>예상 절약액</Text>
-                            <Text style={styles.savingValue}>
-                              연 {formatNumber(recommendation.effect.annualCostSaving)}원 예상
-                            </Text>
-                          </View>
-                        ) : null}
+                        {/*
+                          소비 패턴 검토(REVIEW_SPENDING_PATTERN)는 줄일 금액을 사용자가 정하는
+                          추천이라 서버 효과가 전부 null이다. 행을 숨기면 추천마다 높이가 달라져
+                          빠진 것처럼 보이므로, 자리를 두고 산정 전이라고 알린다.
+                        */}
+                        <View style={styles.savingRow}>
+                          <Text style={styles.savingLabel}>예상 절약액</Text>
+                          <Text
+                            style={[
+                              styles.savingValue,
+                              recommendation.effect.annualCostSaving === null &&
+                                styles.savingValuePending,
+                            ]}>
+                            {recommendation.effect.annualCostSaving === null
+                              ? '절감액 산정 전'
+                              : `연 ${formatNumber(recommendation.effect.annualCostSaving)}원 예상`}
+                          </Text>
+                        </View>
                         <View style={styles.recommendationAction}>
                           <Text style={styles.recommendationActionText}>
                             {selectedRecommendationId === recommendation.recommendationId
                               ? '추천 이유 접기'
                               : '추천 이유 보기'}
                           </Text>
-                          <Text style={styles.recommendationActionIcon}>
-                            {selectedRecommendationId === recommendation.recommendationId
-                              ? '⌃'
-                              : '⌄'}
-                          </Text>
+                          {/* 글자 `⌄`는 폰트마다 크기·위치가 달라 글자와 중심이 안 맞는다. */}
+                          <SymbolView
+                            name={
+                              selectedRecommendationId === recommendation.recommendationId
+                                ? {
+                                    android: 'keyboard_arrow_up',
+                                    ios: 'chevron.up',
+                                    web: 'keyboard_arrow_up',
+                                  }
+                                : {
+                                    android: 'keyboard_arrow_down',
+                                    ios: 'chevron.down',
+                                    web: 'keyboard_arrow_down',
+                                  }
+                            }
+                            size={16}
+                            tintColor={colors.textSecondary}
+                          />
                         </View>
                       </Pressable>
 
