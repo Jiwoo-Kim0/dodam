@@ -1,13 +1,12 @@
 import { Image } from 'expo-image';
 import { SymbolView } from 'expo-symbols';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Text, View } from 'react-native';
 
 import { getTransactionCategoryIcon } from '@/constants/transactionCategoryIcons';
 import { colors, componentSize } from '@/styles';
 import { formatCurrency } from '@/utils/currency';
 import type { HomeSpendingCategory } from '../hooks/useHomeSummary';
 
-import { CardDetailButton } from './CardDetailButton';
 import { styles } from './SpendingTopList.styles';
 
 interface SpendingTopListProps {
@@ -15,7 +14,6 @@ interface SpendingTopListProps {
   isLoading: boolean;
   items: readonly HomeSpendingCategory[];
   monthLabel: string;
-  onDetailPress: () => void;
 }
 
 export function SpendingTopList({
@@ -23,17 +21,10 @@ export function SpendingTopList({
   isLoading,
   items,
   monthLabel,
-  onDetailPress,
 }: SpendingTopListProps) {
   return (
-    <Pressable
-      accessibilityLabel={`${monthLabel} 소비 TOP 3 자세히 보기`}
-      accessibilityRole="button"
-      onPress={onDetailPress}
-      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
-    >
+    <View style={styles.card}>
       <Text style={styles.title}>{`${monthLabel} 소비 TOP 3`}</Text>
-      <CardDetailButton />
 
       {isLoading ? (
         <ActivityIndicator color={colors.primary.green} style={styles.status} />
@@ -82,6 +73,6 @@ export function SpendingTopList({
           </View>
         </View>
       ))}
-    </Pressable>
+    </View>
   );
 }
