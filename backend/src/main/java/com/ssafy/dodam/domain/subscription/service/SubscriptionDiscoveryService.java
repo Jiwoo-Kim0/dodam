@@ -39,6 +39,9 @@ import org.springframework.transaction.annotation.Transactional;
  * <ol>
  *   <li>최근 `lookbackMonths`개월(기본 6, 1~12)의 EXPENSE·숨김 아님·가맹점명 있는 거래를 읽는다. NON_SPENDING(저축·이체)은 뺀다</li>
  *   <li>가맹점명(공백·대소문자 무시)과 금액이 같은 거래를 한 묶음으로 본다. 금액이 다르면(요금제 변경 등) 다른 묶음이다</li>
+ *   <li>묶음이 구독 성격이어야 한다: 거래 카테고리(가장 많이 붙은 것)가 {@code SUBSCRIPTION}이거나 가맹점명이 서비스 카탈로그와 맞아야 한다.
+ *       보험료·관리비·통신비·학원비처럼 매달 같은 금액이 같은 이름으로 나가는 고정비는 아래 주기 조건을 그대로 만족하므로 이 단계에서 걸러야 한다.
+ *       카테고리가 붙지 않은 카드 거래(예: 미분류 "유튜브 프리미엄")는 카탈로그 매칭으로 건진다</li>
  *   <li>서로 다른 결제일이 `minOccurrences`건(기본 3, 2~12) 이상이고, 연속 결제 사이 평균 간격이 주기 범위(주 5~9일, 월 25~36일,
  *       연 350~380일)에 들어야 후보다. 간격이 불규칙하면 뺀다</li>
  *   <li>이미 등록된 정기결제(CANCELED 제외)와 이름이 같으면 뺀다. 취소한 뒤에도 결제가 계속되면 다시 후보로 보인다</li>
@@ -51,6 +54,8 @@ public class SubscriptionDiscoveryService {
 
     public static final int DEFAULT_MIN_OCCURRENCES = 3;
     public static final int DEFAULT_LOOKBACK_MONTHS = 6;
+    /** 거래 카테고리 코드(`transaction_category.code`) 중 구독 결제로 보는 것. */
+    static final String SUBSCRIPTION_CATEGORY_CODE = "SUBSCRIPTION";
 
     private final JdbcRecurringPaymentReader recurringPaymentReader;
     private final SubscriptionRepository subscriptionRepository;
@@ -100,6 +105,13 @@ public class SubscriptionDiscoveryService {
     }
 
     private Optional<RecurringPaymentCandidateResponse> toCandidate(List<RecurringPaymentRow> rows, int minimum, LocalDate today) {
+        RecurringPaymentRow sample = rows.get(0);
+        String categoryCode = mode(rows.stream().map(RecurringPaymentRow::categoryCode).filter(Objects::nonNull).toList());
+        Optional<CatalogEntry> matched = catalog.match(sample.merchantName());
+        if (!isSubscriptionLike(categoryCode, matched)) {
+            return Optional.empty();
+        }
+
         List<LocalDate> dates = rows.stream().map(RecurringPaymentRow::transactionDate).distinct().sorted().toList();
         if (dates.size() < minimum) {
             return Optional.empty();
@@ -114,7 +126,6 @@ public class SubscriptionDiscoveryService {
             return Optional.empty();
         }
 
-        RecurringPaymentRow sample = rows.get(0);
         Integer suggestedDay = cycle == BillingCycle.WEEKLY ? null : mode(dates.stream().map(LocalDate::getDayOfMonth).toList());
         LocalDate lastDate = dates.get(dates.size() - 1);
         LocalDate expectedNext = cycle.next(lastDate, suggestedDay);
@@ -122,8 +133,6 @@ public class SubscriptionDiscoveryService {
             expectedNext = cycle.next(expectedNext, suggestedDay);
         }
         Long cardId = mode(rows.stream().map(RecurringPaymentRow::cardId).filter(Objects::nonNull).toList());
-        String categoryCode = mode(rows.stream().map(RecurringPaymentRow::categoryCode).filter(Objects::nonNull).toList());
-        Optional<CatalogEntry> matched = catalog.match(sample.merchantName());
 
         return Optional.of(new RecurringPaymentCandidateResponse(
                 sample.merchantName().strip(),
@@ -172,6 +181,14 @@ public class SubscriptionDiscoveryService {
                     category.name(), category.label(), counts.getOrDefault(category.name(), 0)));
         }
         return responses;
+    }
+
+    /**
+     * 구독 성격 판정. 카테고리 `SUBSCRIPTION`이거나 카탈로그와 맞으면 구독으로 본다. INSURANCE·HOUSING 같은 제외 목록 방식은
+     * 헬스장·학원·통신비·대출 상환·정기 배송이 전부 같은 주기 조건을 만족해 목록이 계속 늘어나므로 쓰지 않는다.
+     */
+    static boolean isSubscriptionLike(String categoryCode, Optional<CatalogEntry> matched) {
+        return SUBSCRIPTION_CATEGORY_CODE.equalsIgnoreCase(categoryCode) || matched.isPresent();
     }
 
     static String normalizeName(String name) {
