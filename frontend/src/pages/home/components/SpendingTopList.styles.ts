@@ -1,6 +1,6 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, componentSize, fontFamily, fontSize, radius, spacing } from '@/styles';
+import { colors, fontFamily, fontSize, radius, spacing } from '@/styles';
 
 export const styles = StyleSheet.create({
   card: {
@@ -9,9 +9,6 @@ export const styles = StyleSheet.create({
     minHeight: 236,
     paddingHorizontal: spacing[4],
     paddingVertical: spacing[4],
-  },
-  cardPressed: {
-    opacity: componentSize.bottomSheet.pressedOpacity,
   },
   /** 리포트 화면과 같은 카드 제목 규칙이다. 제목은 작고 연하게, 값이 눈에 먼저 들어오게 한다. */
   title: {
