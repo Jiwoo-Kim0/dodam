@@ -5,7 +5,8 @@ import java.util.Locale;
 /**
  * 정기결제 카테고리 코드와 표시 이름. `subscription.category`는 VARCHAR(50)으로 저장되고 금융망·seed가 넣은 값이
  * 여기에 없을 수도 있어 엔티티는 문자열로 들고, 이 enum은 카테고리 목록·서비스 카탈로그·필터 정규화에만 쓴다.
- * 시연 seed(DODAM_SUBSCRIPTION_SEED.sql)는 MUSIC / VIDEO / CLOUD / BOOK을 쓴다.
+ * 시연 seed(DODAM_SUBSCRIPTION_SEED.sql)는 MUSIC / VIDEO / CLOUD / BOOK을, 시연 계정용 DODAM_DEMO_SUBSCRIPTION_SEED.sql은
+ * 카탈로그 카테고리(VIDEO / MUSIC / BOOK / AI / SHOPPING / DELIVERY)를 쓴다.
  */
 public enum SubscriptionCategory {
     VIDEO("영상"),
