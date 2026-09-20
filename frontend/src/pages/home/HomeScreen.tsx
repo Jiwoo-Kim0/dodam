@@ -19,6 +19,7 @@ import { getFinanceErrorMessage } from '@/utils/financeErrorMessage';
 
 import { AssetSummaryCard } from './components/AssetSummaryCard';
 import { BriefingCard } from './components/BriefingCard';
+import { CoachChatFloatingButton } from './components/CoachChatFloatingButton';
 import { ExpenseSummaryCard } from './components/ExpenseSummaryCard';
 import { GoalCarousel } from './components/GoalCarousel';
 import { HomeHeader } from './components/HomeHeader';
@@ -225,6 +226,9 @@ export function HomeScreen() {
           />
         </View>
       </BouncyScrollView>
+
+      {/* 스크롤뷰 뒤에 두어야 목록 위에 뜬다. */}
+      <CoachChatFloatingButton onPress={() => router.push(routes.coachChat)} />
 
       <HomeMenuBottomSheet
         isConnected={user?.financeConnectionStatus === 'CONNECTED'}
