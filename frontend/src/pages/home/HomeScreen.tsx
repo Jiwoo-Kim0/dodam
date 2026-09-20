@@ -246,6 +246,10 @@ export function HomeScreen() {
           setIsMenuVisible(false);
           void handleLogout();
         }}
+        onSubscriptionsPress={() => {
+          setIsMenuVisible(false);
+          router.push(routes.subscriptions);
+        }}
         visible={isMenuVisible}
       />
     </SafeAreaLayout>
