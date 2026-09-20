@@ -23,11 +23,13 @@ import {
   recentPeriodLabel,
 } from './categorySpendingCopy';
 import { CategoryMonthlySpendingSection } from './components/CategoryMonthlySpendingSection';
+import { ClusterComparisonCard } from './components/ClusterComparisonCard';
 import { LoanRateComparisonCard } from './components/LoanRateComparisonCard';
 import { LoanRefinanceSection } from './components/LoanRefinanceSection';
 import { SpendingDiagnosisComparisonCard } from './components/SpendingDiagnosisComparisonCard';
 import {
   discoveryDomainLabel,
+  hasClusterEvidence,
   isCategorySpendingIssue,
   parseIssueRouteId,
   recommendationsForIssue,
@@ -104,6 +106,7 @@ export function DiscoveryInsightDetailScreen({
   const spendingAnnualSaving = spendingRecommendation?.effect.annualCostSaving;
   const loanDiagnosis =
     issue !== null && isLoanHighInterestIssue(issue) ? loanRateDiagnosis(issue) : null;
+  const clusterContext = issue !== null && hasClusterEvidence(issue) ? issue.clusterContext : null;
   const goalDelay = isCategorySpending ? mostDelayedGoal(goalImpact) : null;
   // 목표 지연을 우선 보여주고, 목표가 없거나 스냅샷에 예상 달성일이 없으면 연간 금액으로 대신한다.
   const spendingImpact = !isCategorySpending
@@ -376,6 +379,9 @@ export function DiscoveryInsightDetailScreen({
             {loanDiagnosis ? (
               <LoanRateComparisonCard diagnosis={loanDiagnosis} />
             ) : null}
+
+            {/* 규칙만으로 찾은 문제는 군집 필드가 통째로 없어 카드를 그리지 않는다. */}
+            {clusterContext ? <ClusterComparisonCard cluster={clusterContext} /> : null}
 
             {spendingImpact ? (
               <View style={styles.impactCard}>
