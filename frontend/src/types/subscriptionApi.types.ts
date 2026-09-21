@@ -14,6 +14,10 @@ export interface SubscriptionApiResponse {
   category: string | null;
   /** 카테고리 표시 이름. 서버에 정의되지 않은 코드는 코드 그대로 내려온다. */
   categoryLabel: string | null;
+  /** 이름이 서버 서비스 카탈로그와 맞으면 그 서비스 코드. 맞지 않으면 null. */
+  serviceCode: string | null;
+  /** `assets/icons/payments`의 아이콘 이름. 카탈로그에 아이콘이 없으면 null. */
+  iconKey: string | null;
   paymentAmount: number;
   billingCycle: SubscriptionBillingCycle;
   /** 월 환산 금액. WEEKLY는 ×52÷12, YEARLY는 ÷12를 원 단위로 반올림한 값이다. */

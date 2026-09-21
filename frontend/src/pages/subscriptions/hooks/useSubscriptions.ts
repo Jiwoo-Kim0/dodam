@@ -8,6 +8,8 @@ import type { SubscriptionApiResponse } from '@/types/subscriptionApi.types';
 export interface SubscriptionListItemModel {
   id: string;
   name: string;
+  /** 서버가 카탈로그에서 맞춰 준 아이콘 이름. 짝이 없으면 null이고 화면은 기타 아이콘을 쓴다. */
+  iconKey: string | null;
   /** 목록에 찍고 합계에 더하는 금액. 주기가 달라도 비교할 수 있도록 월 환산 금액을 쓴다. */
   monthlyAmount: number;
   /** 월 결제가 아닐 때만 채운다. 월 환산 금액이 실제 청구액과 다르다는 것을 알려 준다. */
@@ -23,6 +25,7 @@ function toListItem(subscription: SubscriptionApiResponse): SubscriptionListItem
   return {
     id: subscription.subscriptionId,
     name: subscription.name,
+    iconKey: subscription.iconKey,
     monthlyAmount: subscription.monthlyEquivalentAmount,
     billingCycleNote: BILLING_CYCLE_NOTES[subscription.billingCycle] ?? null,
   };

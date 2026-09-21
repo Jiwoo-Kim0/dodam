@@ -31,7 +31,7 @@ export function SubscriptionListItem({
       ]}>
       <Image
         contentFit="contain"
-        source={getSubscriptionServiceIcon(subscription.name)}
+        source={getSubscriptionServiceIcon(subscription.iconKey)}
         style={styles.serviceIcon}
       />
 
