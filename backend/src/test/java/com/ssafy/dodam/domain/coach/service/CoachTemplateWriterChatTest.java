@@ -21,7 +21,6 @@ class CoachTemplateWriterChatTest {
     @Test
     void speaksGoalDatesAndInterestSavingFromTheFacts() {
         CoachFacts facts = chat(new Section("시뮬레이션 결과(서버 계산)", List.of(
-                new Fact("시뮬레이션", "복합 시뮬레이션 (id 88)"),
                 new Fact("현재 예상 달성일(비상금 500만 원)", "2028-02-13"),
                 new Fact("실행 후 예상 달성일(비상금 500만 원)", "2027-10-15"),
                 new Fact("단축(비상금 500만 원)", "121일"),
@@ -34,17 +33,47 @@ class CoachTemplateWriterChatTest {
     }
 
     @Test
-    void delayAndNotComputableAreSaidWithoutInventingDates() {
+    void delayNotAchievableAndUnchangedAreSaidWithoutInventingDates() {
         CoachFacts facts = chat(new Section("시뮬레이션 결과(서버 계산)", List.of(
                 new Fact("현재 예상 달성일(비상금)", "2028-02-13"),
-                new Fact("실행 후 예상 달성일(비상금)", "계산 불가"),
+                new Fact("실행 후 예상 달성일(비상금)", "실행 후에도 달성 불가"),
                 new Fact("현재 예상 달성일(여행)", "2027-01-01"),
                 new Fact("실행 후 예상 달성일(여행)", "2027-03-02"),
                 new Fact("지연(여행)", "60일"))));
 
         assertThat(writer.write(facts)).isEqualTo(
-                "비상금 목표는 현재 2028-02-13에서 실행 후 계산 불가로 예상돼요. "
+                "비상금 목표는 실행 후에도 지금 속도로는 달성일을 예상할 수 없어요. "
                         + "여행 목표는 현재 2027-01-01에서 실행 후 2027-03-02로 60일 늦어질 것으로 예상돼요.");
+
+        CoachFacts nowAchievable = chat(new Section("시뮬레이션 결과(서버 계산)", List.of(
+                new Fact("현재 예상 달성일(비상금)", "현재 속도로는 달성 불가"),
+                new Fact("실행 후 예상 달성일(비상금)", "2028-05-01"))));
+        assertThat(writer.write(nowAchievable)).isEqualTo(
+                "비상금 목표는 지금 속도로는 달성일을 예상할 수 없지만, 실행 후에는 2028-05-01에 달성할 것으로 예상돼요.");
+
+        CoachFacts unchanged = chat(new Section("시뮬레이션 결과(서버 계산)", List.of(
+                new Fact("현재 예상 달성일(비상금)", "2026-09-21"),
+                new Fact("실행 후 예상 달성일(비상금)", "2026-09-21"))));
+        assertThat(writer.write(unchanged)).isEqualTo("비상금 목표 달성일은 2026-09-21로 변화가 없어요.");
+    }
+
+    @Test
+    void goalsWithoutDatesAreNotMentionedAndPartialScopeIsSaid() {
+        // 대출 추가 상환: 목표 달성일 사실이 없다 → 이자만 말한다("계산 불가"라는 문장이 나가지 않는다)
+        CoachFacts prepayment = chat(new Section("시뮬레이션 결과(서버 계산)", List.of(
+                new Fact("만기까지 이자 절감(수수료 제외)", "120,000원"))));
+        assertThat(writer.write(prepayment)).isEqualTo("만기까지 이자를 120,000원 아낄 수 있어요.");
+
+        // 복합(소비+대출): 소비 자식의 단독 결과를 범위를 밝히고 말한다
+        CoachFacts combined = chat(new Section("시뮬레이션 결과(서버 계산)", List.of(
+                new Fact("현재 예상 달성일(비상금)", "2028-02-13"),
+                new Fact("실행 후 예상 달성일(비상금)", "2027-10-15"),
+                new Fact("단축(비상금)", "121일"),
+                new Fact("달성일 계산 범위", "소비 줄이기·저축 변경만 반영(대출 상환·대환은 제외)"),
+                new Fact("평가 기간 금융비용 변화", "1,773,405원 → 1,389,405원"))));
+        assertThat(writer.write(combined)).isEqualTo(
+                "비상금 목표는 현재 2028-02-13에서 실행 후 2027-10-15로 121일 빨라질 것으로 예상돼요. "
+                        + CoachTemplateWriter.CHAT_GOAL_SCOPE_PARTIAL);
     }
 
     @Test

@@ -210,8 +210,12 @@ ACHIEVED·CANCELED는 종료 상태다. 어디로도 옮길 수 없고 다른 �
 
 ### 예상 달성일 `GET /goals/{goalId}/forecast?baseDate&months` (SAVING만)
 
-- `baseDate`(기본 오늘)에 `monthsToAchieve = ceil(남은 금액 / 저축속도)`개월을 더한 날이 `expectedAchievementDate`.
-  이미 달성했으면 0개월(= baseDate), 속도가 0이면 둘 다 null(현재 속도로는 달성 불가).
+- `expectedAchievementDate`는 **일 단위**다(S15P21D105-658, `GoalForecastFormula`): `남은 금액 / 저축속도`의 정수 개월은 `baseDate`
+  축의 달력 개월(`baseDate.plusMonths(n)`, 말일 복원)로, 나머지 금액은 그 다음 한 달의 실제 일수에 비례해 올림한 날짜로 더한다.
+  예: 남은 700만·속도 300만 → 2개월 + 100만/300만 × 그 달 일수(30일이면 10일). `monthsToAchieve = ceil(남은 금액 / 저축속도)`는
+  그대로 개월 올림이다("이 속도로 몇 달 더"). 이미 달성했으면 0개월(= baseDate), 속도가 0이면 둘 다 null(현재 속도로는 달성 불가).
+  658 전에는 `baseDate + monthsToAchieve개월`이었는데, 월 333만원 속도에서 월 5만원을 더 모아도 날짜가 안 움직여(월 단위 올림)
+  시뮬레이션·코치가 "변화 없음"만 말했다. 같은 식을 511 이력 `forecastDate`, 진단 546 goal-impact, 시뮬레이션 목표 영향이 모두 쓴다.
 - `daysDifference` = 예상일 − 목표일(음수면 조기 달성), `onSchedule` = 예상일 ≤ 목표일.
 - `projection[]`: baseDate 다음 달부터 `months`개월(기본 12, 1~120) 동안 `min(목표, 현재 + 속도 × n)`과 달성 여부.
 - 속도는 목표 생성 이후 평균이다. 이력(511)이 쌓이면 최근 N개월 속도로 바꿀 수 있다(남은 작업).

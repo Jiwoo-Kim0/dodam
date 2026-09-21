@@ -284,22 +284,24 @@ class ProductLoanSimulationCalculatorTest {
         assertThat(result.details()).containsEntry("keptBalance", 600_000L).containsEntry("remainingInstallments", 2)
                 .containsEntry("refinanceAmountMode", "EXPLICIT").containsEntry("comparisonGroup", "CREDIT");
         assertThat(result.assumptions()).contains(SimulationAssumptions.PARTIAL_REFINANCE_SPLIT_SCHEDULES, SimulationAssumptions.REMAINING_SCHEDULE_AS_TERM);
-        // 목표: 남은 500,000·속도 100,000, 3,000×2 절감 → 5개월 그대로(작은 절감)
-        assertThat(result.goalImpacts()).containsExactly(new SimulationResult.GoalImpact(1L, JAN_1.plusMonths(5), JAN_1.plusMonths(5)));
+        // 목표: 남은 500,000·속도 100,000, 3,000×2 절감 → 3/1 뒤 294,000을 기존 속도로: 2개월 + 94,000/100,000 × 31일 = 30일 → 5/31
+        // (658 전에는 월 단위 올림이라 5개월 그대로였다. 6,000 절감이 하루를 당긴다)
+        assertThat(result.goalImpacts()).containsExactly(new SimulationResult.GoalImpact(1L, JAN_1.plusMonths(5), LocalDate.of(2026, 5, 31)));
         assertThat(result.goalImpactDetails().get(0).status()).isEqualTo(GoalImpactDetail.COMPUTED);
         assertThat(result.goalImpactDetails().get(0).reasons()).contains(SimulationAssumptions.REPAYMENT_DELTA_ALLOCATED_TO_GOALS);
-        assertThat(result.after().goals().get(0).expectedAchievementDate()).isEqualTo(JAN_1.plusMonths(5));
+        assertThat(result.after().goals().get(0).expectedAchievementDate()).isEqualTo(LocalDate.of(2026, 5, 31));
     }
 
     @Test
     void refinanceGoalProjectionMatchesVerificationTable() {
-        // 남은 30,000·속도 10,000, 3,000/월×2 → 3개월 유지; 남은 25,000이면 2개월로 단축
+        // 남은 30,000·속도 10,000, 3,000/월×2 → 4,000 남아 3/14(GoalDateProjectionTest와 같은 사례); 남은 25,000이면 3/1로 단축
         ProductSnapshot target = loanProduct("CREDIT_REFINANCE", 2, "6", "BULLET", null);
         LoanRefinanceInput input = new LoanRefinanceInput(7L, 20L, 600_000L).withSnapshots(bulletLoan(LoanStatus.ACTIVE), target);
         SimulationResult same = refinance.calculate(baseline(JAN_1, goal(1, 30_000, 10_000, JAN_1)), input);
-        assertThat(same.goalImpacts().get(0)).isEqualTo(new SimulationResult.GoalImpact(1L, JAN_1.plusMonths(3), JAN_1.plusMonths(3)));
+        assertThat(same.goalImpacts().get(0)).isEqualTo(new SimulationResult.GoalImpact(1L, JAN_1.plusMonths(3), LocalDate.of(2026, 3, 14)));
         SimulationResult shorter = refinance.calculate(baseline(JAN_1, goal(1, 25_000, 10_000, JAN_1)), input);
-        assertThat(shorter.goalImpacts().get(0)).isEqualTo(new SimulationResult.GoalImpact(1L, JAN_1.plusMonths(3), JAN_1.plusMonths(2)));
+        // 남은 25,000: 현재 2개월 + 5,000/10,000 × 31일 = 16일 → 3/17. 실행 후 3/1(구간 비례 2/20이지만 3/1 절감을 먼저 쓰지 않는다)
+        assertThat(shorter.goalImpacts().get(0)).isEqualTo(new SimulationResult.GoalImpact(1L, LocalDate.of(2026, 3, 17), JAN_1.plusMonths(2)));
         // 여러 목표: 배분 합 = 3,000, 남은 금액 비례(2:1), 달성 목표는 기준일 유지
         SimulationResult multi = refinance.calculate(baseline(JAN_1, goal(1, 20_000, 10_000, JAN_1), goal(2, 10_000, 0, JAN_1), goal(3, 0, 0, JAN_1)), input);
         assertThat(multi.goalImpacts()).containsExactly(

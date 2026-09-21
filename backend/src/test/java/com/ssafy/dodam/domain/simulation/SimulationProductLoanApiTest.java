@@ -95,7 +95,7 @@ class SimulationProductLoanApiTest {
         FinancialProfile profile = FinancialProfile.empty(owner);
         profile.update(3_000_000L, null, null, null, null);
         profiles.save(profile);
-        // 3개월 전 생성, 잔액 1,000,000 → 속도 333,333, 남은 2,000,000 → 7개월(2026-08-01)
+        // 3개월 전 생성, 잔액 1,000,000 → 속도 333,333, 남은 2,000,000 → 6개월 + 1일(2026-07-02, 658 일 단위)
         Long accountId = insertAccount(owner, GOAL_ACCOUNT_NO, 1_000_000L);
         Goal goal = goals.save(Goal.create(owner, "비상금", GoalType.SAVING, NOW.minusMonths(3)));
         goalId = goal.getId();
@@ -143,7 +143,7 @@ class SimulationProductLoanApiTest {
                 .andExpect(jsonPath("$.data.simulation.cashflow.fullTermEndDate").value("2027-01-01"))
                 .andExpect(jsonPath("$.data.simulation.cashflow.months.length()").value(12))
                 .andExpect(jsonPath("$.data.simulation.goalImpacts[0].goalId").value(goalId))
-                .andExpect(jsonPath("$.data.simulation.goalImpacts[0].beforeForecastDate").value("2026-08-01"))
+                .andExpect(jsonPath("$.data.simulation.goalImpacts[0].beforeForecastDate").value("2026-07-02"))
                 .andExpect(jsonPath("$.data.simulation.goalImpacts[0].afterForecastDate").isEmpty())
                 .andExpect(jsonPath("$.data.simulation.goalImpacts[0].differenceDays").isEmpty())
                 .andExpect(jsonPath("$.data.simulation.goalImpacts[0].status").value("NOT_COMPUTABLE"))
@@ -348,7 +348,8 @@ class SimulationProductLoanApiTest {
     @Test
     void refinanceProjectsGoalsByRepaymentDateAndAllQueryPathsAgree() throws Exception {
         // 1,200,000 전액을 6% BULLET 2회로 대환: 이자 24,000 → 12,000, 2/1·3/1에 6,000씩 절감
-        // 목표: 남은 2,000,000·속도 333,333 → 7개월(8/1). 절감 반영: 1,660,667 → 1,321,334 → +4개월 = 6개월(7/1), -31일
+        // 목표: 남은 2,000,000·속도 333,333 → 6개월 + 2원 → 7/2. 절감 반영: 1,660,667 → 1,321,334 → 3/1 뒤 3개월 + 321,335/333,333 × 30일(29일) = 6/30, -2일
+        // (658 전에는 월 단위 올림이라 8/1 → 7/1, -31일이었다. 12,000원 절감이 한 달을 당기는 것이 과장이었다)
         String body = run(owner, "/loan/refinance", "{\"accountNo\":\"" + LOAN_NO + "\",\"targetProductId\":" + creditProduct + "}")
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.simulation.type").value("LOAN_REFINANCE"))
@@ -359,12 +360,12 @@ class SimulationProductLoanApiTest {
                 .andExpect(jsonPath("$.data.simulation.after.details.remainingInstallments").value(2))
                 .andExpect(jsonPath("$.data.simulation.after.details.comparisonGroup").value("CREDIT"))
                 .andExpect(jsonPath("$.data.simulation.cashflow.months[0].delta").value(6_000))
-                .andExpect(jsonPath("$.data.simulation.goalImpacts[0].beforeForecastDate").value("2026-08-01"))
-                .andExpect(jsonPath("$.data.simulation.goalImpacts[0].afterForecastDate").value("2026-07-01"))
-                .andExpect(jsonPath("$.data.simulation.goalImpacts[0].differenceDays").value(-31))
+                .andExpect(jsonPath("$.data.simulation.goalImpacts[0].beforeForecastDate").value("2026-07-02"))
+                .andExpect(jsonPath("$.data.simulation.goalImpacts[0].afterForecastDate").value("2026-06-30"))
+                .andExpect(jsonPath("$.data.simulation.goalImpacts[0].differenceDays").value(-2))
                 .andExpect(jsonPath("$.data.simulation.goalImpacts[0].status").value("COMPUTED"))
                 .andExpect(jsonPath("$.data.simulation.goalImpacts[0].reasons", org.hamcrest.Matchers.hasItem("REPAYMENT_DELTA_ALLOCATED_TO_GOALS")))
-                .andExpect(jsonPath("$.data.simulation.after.goals[0].expectedAchievementDate").value("2026-07-01"))
+                .andExpect(jsonPath("$.data.simulation.after.goals[0].expectedAchievementDate").value("2026-06-30"))
                 .andReturn().getResponse().getContentAsString();
         long id = json.readTree(body).at("/data/simulation/simulationId").asLong();
         JsonNode runImpacts = json.readTree(body).at("/data/simulation/goalImpacts");
@@ -373,7 +374,7 @@ class SimulationProductLoanApiTest {
         assertThat(json.readTree(detail).at("/data/goalImpacts")).isEqualTo(runImpacts);
         assertThat(json.readTree(goalImpact).at("/data")).isEqualTo(runImpacts);
         assertThat(jdbc.queryForObject("SELECT after_forecast_date FROM simulation_goal_impact WHERE simulation_id = ?", LocalDate.class, id))
-                .isEqualTo(LocalDate.of(2026, 7, 1));
+                .isEqualTo(LocalDate.of(2026, 6, 30));
         // 재사용 POST도 같은 배열, 명시 금액은 별개 지문(부분 대환)
         String reuse = run(owner, "/loan/refinance", "{\"accountNo\":\"" + LOAN_NO + "\",\"targetProductId\":" + creditProduct + "}")
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();

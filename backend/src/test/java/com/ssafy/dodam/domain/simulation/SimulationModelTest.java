@@ -27,7 +27,10 @@ class SimulationModelTest {
         assertThat(GoalAchievementProjection.expectedDate(-5, 100, BASE)).isEqualTo(BASE);
         assertThat(GoalAchievementProjection.expectedDate(100, 0, BASE)).isNull();
         assertThat(GoalAchievementProjection.expectedDate(1_000_000, 100_000, BASE)).isEqualTo(BASE.plusMonths(10));
-        assertThat(GoalAchievementProjection.expectedDate(1_000_001, 100_000, BASE)).isEqualTo(BASE.plusMonths(11));
+        // 658: 나머지 1원은 11번째 달의 일수에 비례해 올림 → 1일. 예전 월 단위 올림이면 11개월이었다
+        assertThat(GoalAchievementProjection.expectedDate(1_000_001, 100_000, BASE)).isEqualTo(BASE.plusMonths(10).plusDays(1));
+        assertThat(GoalAchievementProjection.expectedDate(1_050_000, 100_000, BASE))
+                .isEqualTo(BASE.plusMonths(10).plusDays((java.time.temporal.ChronoUnit.DAYS.between(BASE.plusMonths(10), BASE.plusMonths(11)) + 1) / 2));
         assertThat(SimulationGoalImpact.differenceDays(BASE, BASE.minusDays(3))).isEqualTo(-3);
         assertThat(SimulationGoalImpact.differenceDays(null, BASE)).isNull();
     }

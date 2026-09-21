@@ -9,7 +9,7 @@ const DOT_DURATION = 420;
 
 /**
  * 응답이 8~15초 걸려서 기다리는 동안 화면이 멈춘 것처럼 보이면 안 된다.
- * 점 세 개를 차례로 띄워 도리가 답을 쓰고 있다는 것만 알린다.
+ * 점 세 개를 차례로 띄워 토리가 답을 쓰고 있다는 것만 알린다.
  */
 export function CoachTypingBubble() {
   // ref로 들면 렌더 중 접근이라 `react-hooks/refs`에 걸린다. 한 번만 만들고 그대로 쓴다.
@@ -43,7 +43,7 @@ export function CoachTypingBubble() {
   }, [dots]);
 
   return (
-    <View accessibilityLabel="도리가 답변을 준비하고 있어요" accessible style={styles.bubble}>
+    <View accessibilityLabel="토리가 답변을 준비하고 있어요" accessible style={styles.bubble}>
       {dots.map((dot, index) => (
         <Animated.View
           key={index}

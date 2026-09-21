@@ -9,7 +9,7 @@ import type {
   CoachChatResponse,
 } from '@/types/coachApi.types';
 
-/** 화면에 쌓이는 대화 한 줄. 도리 쪽은 응답 전체를 들고 있어야 결과 카드를 그릴 수 있다. */
+/** 화면에 쌓이는 대화 한 줄. 토리 쪽은 응답 전체를 들고 있어야 결과 카드를 그릴 수 있다. */
 export type CoachChatTurn =
   | { id: string; role: 'user'; text: string }
   | { id: string; role: 'coach'; response: CoachChatResponse };
@@ -54,7 +54,7 @@ function errorMessage(error: unknown) {
 }
 
 /**
- * 도리에게 묻기 한 화면의 대화 상태.
+ * 토리에게 묻기 한 화면의 대화 상태.
  *
  * <p>`conversationId`는 서버가 만들고 30분·10턴 제한이 있다. 그대로 돌려보내면 대화가 이어지고,
  * 만료된 id를 보내도 서버가 같은 id로 새 대화를 시작하므로 FE가 먼저 지울 필요는 없다.

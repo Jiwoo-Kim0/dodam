@@ -1,5 +1,6 @@
 package com.ssafy.dodam.domain.goal;
 
+import com.ssafy.dodam.domain.goal.service.GoalForecastFormula;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
@@ -169,7 +170,8 @@ class GoalHistoryApiIntegrationTest {
                 .andExpect(jsonPath("$.data.content[2].event").value("AMOUNT_UPDATED"))
                 .andExpect(jsonPath("$.data.content[2].currentAmount").value(3_000_000))
                 .andExpect(jsonPath("$.data.content[2].progressRatePercent").value(30.0))
-                .andExpect(jsonPath("$.data.content[2].forecastDate").value(today.plusMonths(3).toString()))
+                // 658: 700만 / 300만 = 2개월 + 100만/300만 × 그 달 일수(올림) → 일 단위. 510 forecast와 같은 식
+                .andExpect(jsonPath("$.data.content[2].forecastDate").value(GoalForecastFormula.expectedDate(7_000_000, 3_000_000, today).toString()))
                 .andExpect(jsonPath("$.data.content[3].event").value("ACCOUNTS_UPDATED"))
                 .andExpect(jsonPath("$.data.content[3].currentAmount").value(2_000_000))
                 .andExpect(jsonPath("$.data.content[3].progressRatePercent").value(20.0))

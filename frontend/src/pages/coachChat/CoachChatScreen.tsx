@@ -2,14 +2,24 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { Fragment, useCallback, useRef } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 
 import { AppHeader } from '@/components/appHeader/AppHeader';
 import { routes } from '@/constants/routes';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import { colors } from '@/styles';
 import { COACH_CHAT_CHIPS, type CoachChatContext } from '@/types/coachApi.types';
 
+import { CoachChatInputBar } from './components/CoachChatInputBar';
 import { CoachChatResultCard } from './components/CoachChatResultCard';
 import { CoachTypingBubble } from './components/CoachTypingBubble';
 import { styles } from './CoachChatScreen.styles';
@@ -23,7 +33,14 @@ type CoachChatScreenProps = {
 export function CoachChatScreen({ context }: CoachChatScreenProps) {
   const router = useRouter();
   const scrollRef = useRef<ScrollView>(null);
-  const { turns, isSending, error, sendChip, retry, startNewConversation } =
+  const { user } = useCurrentUser();
+  /*
+   * 말풍선이 남는 폭을 다 쓰면 한 줄이 너무 길어 읽기 어렵다. 화면 폭에 비례해 잘라 둔다.
+   * 퍼센트 상한은 부모 폭이 정해지기 전에 계산돼 제한이 걸리지 않아 실제 값으로 준다.
+   */
+  const { width: windowWidth } = useWindowDimensions();
+  const bubbleMaxWidth = Math.round(windowWidth * 0.72);
+  const { turns, isSending, error, sendChip, sendMessage, retry, startNewConversation } =
     useCoachChat(context);
 
   const handleBackPress = useCallback(() => {
@@ -42,7 +59,7 @@ export function CoachChatScreen({ context }: CoachChatScreenProps) {
   const canReset = turns.length > 0 && !isSending;
 
   return (
-    <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
+    <SafeAreaLayout edges={['top', 'bottom', 'left', 'right']} style={styles.screen}>
       <AppHeader
         onBackPress={handleBackPress}
         right={
@@ -64,126 +81,153 @@ export function CoachChatScreen({ context }: CoachChatScreenProps) {
           </Pressable>
         }
         showBackButton
-        title="도리에게 묻기"
+        title="토리에게 묻기"
       />
 
-      {/*
-        공통 BouncyScrollView는 transform으로 스크롤을 흉내 내서, 아래 정렬(flex-end)과
-        내용이 늘어나는 대화 화면에서는 위치가 어긋난다. 여기서는 기본 ScrollView를 쓴다.
-      */}
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
-        ref={scrollRef}>
-        <View style={styles.coachRow}>
-          <Image
-            contentFit="contain"
-            source={require('@/assets/characters/dori/dori_questionmark.png')}
-            style={styles.avatar}
-          />
-          <View style={styles.coachBubble}>
-            <Text style={styles.coachText}>
-              바꾸면 어떻게 될지 궁금한 걸 물어보세요.{'\n'}
-              달성일과 절감액은 서버가 계산해 드려요.
-            </Text>
-          </View>
-        </View>
-
-        {turns.map((turn) => (
-          <Fragment key={turn.id}>
-            {turn.role === 'user' ? (
-              <View style={styles.userBubble}>
-                <Text style={styles.userText}>{turn.text}</Text>
-              </View>
-            ) : (
-              <View style={styles.coachRow}>
-                <Image
-                  contentFit="contain"
-                  source={require('@/assets/characters/dori/dori_memo.png')}
-                  style={styles.avatar}
-                />
-                <View style={styles.coachContent}>
-                  <View style={styles.coachBubble}>
-                    <Text style={styles.coachText}>{turn.response.message}</Text>
-                  </View>
-                  <CoachChatResultCard response={turn.response} />
-                </View>
-              </View>
-            )}
-          </Fragment>
-        ))}
-
-        {isSending ? (
+      {/* 입력창이 키보드에 가리지 않게 대화 영역과 입력 바를 함께 밀어 올린다. */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.chatArea}>
+        {/*
+          공통 BouncyScrollView는 transform으로 스크롤을 흉내 내서, 내용이 계속 늘어나는
+          대화 화면에서는 끝으로 내리는 위치가 어긋난다. 여기서는 기본 ScrollView를 쓴다.
+        */}
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+          ref={scrollRef}>
           <View style={styles.coachRow}>
             <Image
               contentFit="contain"
-              source={require('@/assets/characters/dori/dori_memo.png')}
+              source={require('@/assets/characters/tori/tori_chat.png')}
               style={styles.avatar}
             />
-            <CoachTypingBubble />
+            {/* 말풍선과 결과 카드가 같은 폭 안에 들어가도록 래퍼에서 한 번에 제한한다. */}
+            <View style={[styles.coachContent, { maxWidth: bubbleMaxWidth }]}>
+              <View style={styles.coachBubble}>
+                {/* 이름은 아직 못 받아왔을 수 있다. 그때는 호칭 없이 인사한다. */}
+                <Text style={styles.coachText}>
+                  {user?.name ? `안녕하세요, ${user.name}님! ` : '안녕하세요! '}
+                  저는 토리예요.{'\n'}
+                  바꾸면 뭐가 달라질지 궁금하시죠? 정확하게 계산해서 알려드릴게요.{'\n'}
+                  궁금한 건 언제든지 질문 주세요!
+                </Text>
+              </View>
+            </View>
           </View>
-        ) : null}
 
-        {error ? (
-          <View style={styles.noticeBlock}>
-            <Text style={styles.noticeText}>{error}</Text>
-            <Pressable
-              accessibilityRole="button"
-              onPress={retry}
-              style={({ pressed }) => [styles.noticeButton, pressed && styles.pressed]}>
-              <Text style={styles.noticeButtonText}>다시 시도</Text>
-            </Pressable>
-          </View>
-        ) : null}
+          {/*
+            첫 인사말에 따라붙는 예시 질문이다. 무엇을 물을 수 있는지 보여 주는 역할이라
+            대화가 시작되면 감춘다. 그 뒤로는 입력창으로 직접 물어보면 된다.
+          */}
+          {turns.length === 0 ? (
+            <View style={styles.chipList}>
+              {COACH_CHAT_CHIPS.map((chip) => (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: !canAsk }}
+                  disabled={!canAsk}
+                  key={chip.id}
+                  onPress={() => {
+                    void sendChip(chip.id, chip.label);
+                  }}
+                  style={({ pressed }) => [
+                    styles.chip,
+                    !canAsk && styles.chipDisabled,
+                    pressed && canAsk && styles.pressed,
+                  ]}>
+                  <Text style={[styles.chipText, !canAsk && styles.chipTextDisabled]}>
+                    {chip.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
 
-        {hitTurnLimit ? (
-          <View style={styles.noticeBlock}>
-            <Text style={styles.noticeText}>
-              이번 대화에서 물어볼 수 있는 횟수를 다 썼어요.
-            </Text>
-            <Pressable
-              accessibilityRole="button"
-              onPress={startNewConversation}
-              style={({ pressed }) => [styles.noticeButton, pressed && styles.pressed]}>
-              <Text style={styles.noticeButtonText}>새 대화 시작</Text>
-            </Pressable>
-          </View>
-        ) : null}
+          {turns.map((turn) => (
+            <Fragment key={turn.id}>
+              {turn.role === 'user' ? (
+                <View style={styles.userBubble}>
+                  <Text style={styles.userText}>{turn.text}</Text>
+                </View>
+              ) : (
+                <View style={styles.coachRow}>
+                  <Image
+                    contentFit="contain"
+                    source={require('@/assets/characters/tori/tori_chat.png')}
+                    style={styles.avatar}
+                  />
+                  <View style={[styles.coachContent, { maxWidth: bubbleMaxWidth }]}>
+                    <View style={styles.coachBubble}>
+                      <Text style={styles.coachText}>{turn.response.message}</Text>
+                    </View>
+                    <CoachChatResultCard response={turn.response} />
+                  </View>
+                </View>
+              )}
+            </Fragment>
+          ))}
 
-        {/* 상한에 걸리면 더 물을 수 없으므로 다음 질문 후보를 감춘다. */}
+          {isSending ? (
+            <View style={styles.coachRow}>
+              <Image
+                contentFit="contain"
+                source={require('@/assets/characters/tori/tori_chat.png')}
+                style={styles.avatar}
+              />
+              <CoachTypingBubble />
+            </View>
+          ) : null}
+
+          {error ? (
+            <View style={styles.noticeBlock}>
+              <Text style={styles.noticeText}>{error}</Text>
+              <Pressable
+                accessibilityRole="button"
+                onPress={retry}
+                style={({ pressed }) => [styles.noticeButton, pressed && styles.pressed]}>
+                <Text style={styles.noticeButtonText}>다시 시도</Text>
+              </Pressable>
+            </View>
+          ) : null}
+
+          {hitTurnLimit ? (
+            <View style={styles.noticeBlock}>
+              <Text style={styles.noticeText}>
+                이번 대화에서 물어볼 수 있는 횟수를 다 썼어요.
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                onPress={startNewConversation}
+                style={({ pressed }) => [styles.noticeButton, pressed && styles.pressed]}>
+                <Text style={styles.noticeButtonText}>새 대화 시작</Text>
+              </Pressable>
+            </View>
+          ) : null}
+        </ScrollView>
 
         {/*
-          다음에 물어볼 것을 내 쪽(오른쪽)에 둔다. 누르면 그대로 내 말풍선이 되므로,
-          하단 고정 바보다 "내가 고른 질문"이라는 게 잘 드러난다.
+          서버가 준 고지 문구다. 대화와 같이 흘러가면 위로 사라져서, 입력창 바로 위에 붙여 둔다.
+          답변이 하나도 없을 때는 아직 고지할 계산 결과가 없어 띄우지 않는다.
         */}
-        <View style={styles.chipList}>
-          {(hitTurnLimit ? [] : COACH_CHAT_CHIPS).map((chip) => (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ disabled: !canAsk }}
-              disabled={!canAsk}
-              key={chip.id}
-              onPress={() => {
-                void sendChip(chip.id, chip.label);
-              }}
-              style={({ pressed }) => [
-                styles.chip,
-                !canAsk && styles.chipDisabled,
-                pressed && canAsk && styles.pressed,
-              ]}>
-              <Text style={[styles.chipText, !canAsk && styles.chipTextDisabled]}>
-                {chip.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-
-        {/* 서버가 준 고지 문구다. 답변이 있을 때만 맨 아래에 한 번 둔다. */}
         {lastCoachTurn ? (
           <Text style={styles.disclaimer}>{lastCoachTurn.response.disclaimer}</Text>
         ) : null}
-      </ScrollView>
+
+        {/* 못 묻는 이유를 입력창이 직접 말해 준다. 답변 대기와 턴 상한은 안내가 달라야 한다. */}
+        <CoachChatInputBar
+          disabled={!canAsk}
+          onSend={sendMessage}
+          placeholder={
+            hitTurnLimit
+              ? '새 대화를 시작하면 다시 물어볼 수 있어요'
+              : isSending
+                ? '답변을 기다리고 있어요'
+                : '궁금한 걸 물어보세요'
+          }
+        />
+      </KeyboardAvoidingView>
     </SafeAreaLayout>
   );
 }

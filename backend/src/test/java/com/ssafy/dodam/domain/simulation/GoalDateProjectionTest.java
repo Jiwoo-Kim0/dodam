@@ -37,10 +37,11 @@ class GoalDateProjectionTest {
 
     @Test
     void smallSavingsKeepMonthCountAndLargerOnesShortenIt() {
-        // 남은 30,000·속도 10,000, 2/1·3/1에 3,000씩: 17,000 → 4,000 → 3개월(기존과 동일)
+        // 남은 30,000·속도 10,000, 2/1·3/1에 3,000씩: 17,000 → 4,000 → 3/1 이후 기존 속도로 4,000/10,000 × 31일 = 13일 → 3/14
+        // (658 전에는 월 단위 올림이라 3개월 그대로였다)
         NavigableMap<LocalDate, Long> saving = deltas(LocalDate.of(2026, 2, 1), 3_000L, LocalDate.of(2026, 3, 1), 3_000L);
-        assertThat(GoalDateProjection.project(30_000, 10_000, JAN_1, JAN_1.plusMonths(3), saving)).isEqualTo(JAN_1.plusMonths(3));
-        // 남은 25,000이면 12,000 → -1,000 → 2개월(기존 3개월에서 단축)
+        assertThat(GoalDateProjection.project(30_000, 10_000, JAN_1, JAN_1.plusMonths(3), saving)).isEqualTo(LocalDate.of(2026, 3, 14));
+        // 남은 25,000이면 12,000 → -1,000 → 구간 비례로는 2/20이지만 3/1의 절감을 그보다 먼저 쓰지 않으므로 3/1(기존 3개월에서 단축)
         assertThat(GoalDateProjection.project(25_000, 10_000, JAN_1, JAN_1.plusMonths(3), saving)).isEqualTo(JAN_1.plusMonths(2));
         // 음수(상환 증가)는 0 하한: 속도 10,000, -15,000이면 그 달 0
         assertThat(GoalDateProjection.project(20_000, 10_000, JAN_1, JAN_1.plusMonths(2),

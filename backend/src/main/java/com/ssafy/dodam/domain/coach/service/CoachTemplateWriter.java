@@ -37,23 +37,28 @@ public class CoachTemplateWriter {
         };
     }
 
-    /** 채팅 템플릿에서 읽는 라벨. {@link CoachSimulationFactFormatter}가 만드는 라벨과 같은 문자열이다. */
-    static final String LABEL_BEFORE_DATE = "현재 예상 달성일(";
-    static final String LABEL_AFTER_DATE = "실행 후 예상 달성일(";
-    static final String LABEL_SHORTENED = "단축(";
-    static final String LABEL_DELAYED = "지연(";
-    static final String LABEL_INTEREST_SAVING = "만기까지 이자 절감(수수료 제외)";
+    /** 채팅 템플릿에서 읽는 라벨·값. {@link CoachSimulationFactFormatter}가 만드는 문자열과 같아야 한다. */
+    static final String LABEL_BEFORE_DATE = CoachSimulationFactFormatter.LABEL_BEFORE_DATE;
+    static final String LABEL_AFTER_DATE = CoachSimulationFactFormatter.LABEL_AFTER_DATE;
+    static final String LABEL_SHORTENED = CoachSimulationFactFormatter.LABEL_SHORTENED;
+    static final String LABEL_DELAYED = CoachSimulationFactFormatter.LABEL_DELAYED;
+    static final String LABEL_GOAL_SCOPE = CoachSimulationFactFormatter.LABEL_GOAL_SCOPE;
+    static final String LABEL_INTEREST_SAVING = CoachSimulationFactFormatter.LABEL_INTEREST_SAVING;
     /** 실패한 도구를 담는 섹션 제목. {@code CoachChatService}가 같은 제목으로 넣는다. */
     static final String FAILED_SECTION_TITLE = "실행하지 못한 요청";
 
     static final String CHAT_NO_ANSWER = "지금은 답변을 만들 수 없어요. 잠시 후 다시 물어봐 주세요.";
     static final String CHAT_SEE_FACTS = "지금은 문장을 만들 수 없어서 계산 결과만 보여드려요.";
+    static final String CHAT_GOAL_SCOPE_PARTIAL = "목표 달성일은 소비 줄이기·저축 변경만 반영한 값이고, 대출 상환의 영향은 계산하지 않았어요.";
     /** 한 문장에 담는 목표 수. 목표가 더 많으면 나머지는 결과 카드가 보여준다. */
     private static final int CHAT_GOAL_LIMIT = 2;
 
     /**
      * 채팅 대체 문장(640 A-3). AI 없이도 "현재 A → 실행 후 B, N일 단축"을 서버 값으로 말한다 — 이것이 없으면
      * 도구는 실행됐는데 화면에 문장이 없어 사용자는 "계산이 안 됐다"고 읽는다. 값은 전부 facts에 이미 포맷된 문자열이다.
+     *
+     * <p>달성일 사실이 없는 목표(엔진이 변화를 계산하지 않은 것)는 말하지 않는다. "실행 후 계산 불가로 예상돼요" 같은 문장은
+     * 사용자에게 뜻이 없다. '달성 불가'는 값이 있는 것이므로(그 속도로는 목표 금액에 이르지 못함) 그대로 말한다.
      */
     private static String chat(CoachFacts facts) {
         StringBuilder text = new StringBuilder();
@@ -61,6 +66,7 @@ public class CoachTemplateWriter {
         LinkedHashMap<String, String[]> goals = new LinkedHashMap<>();
         String interestSaving = null;
         String firstFailure = null;
+        boolean partialGoalScope = false;
         for (CoachFacts.Section section : facts.sections()) {
             for (CoachFacts.Fact fact : section.facts()) {
                 String label = fact.label();
@@ -76,6 +82,8 @@ public class CoachTemplateWriter {
                     goals.computeIfAbsent(goalName(label, LABEL_SHORTENED), name -> new String[4])[2] = fact.value();
                 } else if (label.startsWith(LABEL_DELAYED)) {
                     goals.computeIfAbsent(goalName(label, LABEL_DELAYED), name -> new String[4])[3] = fact.value();
+                } else if (LABEL_GOAL_SCOPE.equals(label)) {
+                    partialGoalScope = true;
                 } else if (LABEL_INTEREST_SAVING.equals(label) && interestSaving == null) {
                     interestSaving = fact.value();
                 }
@@ -86,21 +94,15 @@ public class CoachTemplateWriter {
             if (written >= CHAT_GOAL_LIMIT) {
                 break;
             }
-            String[] values = entry.getValue();
-            if (values[0] == null && values[1] == null) {
+            String sentence = goalSentence(entry.getKey(), entry.getValue());
+            if (sentence == null) {
                 continue;
             }
-            text.append(entry.getKey()).append(" 목표는 현재 ").append(values[0] == null ? "계산 불가" : values[0])
-                    .append("에서 실행 후 ").append(values[1] == null ? "계산 불가" : values[1]);
-            if (values[2] != null) {
-                text.append("로 ").append(values[2]).append(" 빨라질 것으로 예상돼요.");
-            } else if (values[3] != null) {
-                text.append("로 ").append(values[3]).append(" 늦어질 것으로 예상돼요.");
-            } else {
-                text.append("로 예상돼요.");
-            }
-            text.append(' ');
+            text.append(sentence).append(' ');
             written++;
+        }
+        if (written > 0 && partialGoalScope) {
+            text.append(CHAT_GOAL_SCOPE_PARTIAL).append(' ');
         }
         if (interestSaving != null) {
             text.append("만기까지 이자를 ").append(interestSaving).append(" 아낄 수 있어요. ");
@@ -112,6 +114,28 @@ public class CoachTemplateWriter {
             return facts.sections().isEmpty() ? CHAT_NO_ANSWER : CHAT_SEE_FACTS;
         }
         return text.toString().strip();
+    }
+
+    /** 목표 하나의 문장. 현재·실행 후 값이 모두 있어야 말한다. 없으면 null. */
+    private static String goalSentence(String name, String[] values) {
+        String before = values[0];
+        String after = values[1];
+        if (before == null || after == null) {
+            return null;
+        }
+        if (CoachSimulationFactFormatter.AFTER_NOT_ACHIEVABLE.equals(after)) {
+            return name + " 목표는 실행 후에도 지금 속도로는 달성일을 예상할 수 없어요.";
+        }
+        if (CoachSimulationFactFormatter.BEFORE_NOT_ACHIEVABLE.equals(before)) {
+            return name + " 목표는 지금 속도로는 달성일을 예상할 수 없지만, 실행 후에는 " + after + "에 달성할 것으로 예상돼요.";
+        }
+        if (values[2] != null) {
+            return name + " 목표는 현재 " + before + "에서 실행 후 " + after + "로 " + values[2] + " 빨라질 것으로 예상돼요.";
+        }
+        if (values[3] != null) {
+            return name + " 목표는 현재 " + before + "에서 실행 후 " + after + "로 " + values[3] + " 늦어질 것으로 예상돼요.";
+        }
+        return name + " 목표 달성일은 " + after + "로 변화가 없어요.";
     }
 
     private static String goalName(String label, String prefix) {
