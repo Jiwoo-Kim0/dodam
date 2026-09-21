@@ -35,7 +35,7 @@ export const coachApi = {
       { body: request },
     ),
 
-  /** 도리에게 묻기 한 턴. `signal`로 화면을 벗어날 때 끊을 수 있다. */
+  /** 토리에게 묻기 한 턴. `signal`로 화면을 벗어날 때 끊을 수 있다. */
   chat: (request: CoachChatRequest, signal?: AbortSignal) =>
     apiClient.post<CoachChatResponse>(`${COACH_PATH}/chat`, {
       body: request,
