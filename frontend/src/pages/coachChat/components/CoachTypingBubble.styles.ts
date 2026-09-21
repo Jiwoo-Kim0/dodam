@@ -5,7 +5,6 @@ import { colors, radius, spacing } from '@/styles';
 export const styles = StyleSheet.create({
   bubble: {
     alignItems: 'center',
-    alignSelf: 'flex-start',
     backgroundColor: colors.white,
     borderBottomLeftRadius: radius.small,
     borderRadius: radius.card,

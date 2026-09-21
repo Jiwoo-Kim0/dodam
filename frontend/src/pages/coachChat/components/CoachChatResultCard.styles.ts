@@ -3,7 +3,9 @@ import { StyleSheet } from 'react-native';
 import { colors, fontFamily, fontSize, radius, spacing } from '@/styles';
 
 export const styles = StyleSheet.create({
+  /** 말풍선은 내용만큼만 커지지만 결과 카드는 남는 폭을 다 쓴다. */
   card: {
+    alignSelf: 'stretch',
     backgroundColor: colors.white,
     borderRadius: radius.card,
     marginTop: spacing[1],
