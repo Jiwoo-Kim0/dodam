@@ -1,5 +1,6 @@
 package com.ssafy.dodam.domain.simulation.service.calculator;
 
+import com.ssafy.dodam.domain.goal.service.GoalForecastFormula;
 import com.ssafy.dodam.domain.simulation.dto.SavingChangeInput;
 import com.ssafy.dodam.domain.simulation.dto.SimulationBaseline;
 import com.ssafy.dodam.domain.simulation.dto.SimulationResult.GoalImpactDetail;
@@ -27,9 +28,11 @@ import java.util.function.Predicate;
  *   <li>아니면 유효한 SPENDING 감소액을 합쳐 기준일 미달성 목표의 remaining 비중(goalId 오름차순, 마지막 목표 나머지)으로 한 번
  *       배분해 기준선 속도에 더한다. 이미 달성한 목표는 배분에서 제외하고 도중 달성한 목표 몫을 재배분하지 않는다.</li>
  * </ul>
- * 각 t(k)에 {@code max(0, 구간 저축액)}을 잔여액에서 빼고 처음 0 이하가 되는 t(k)가 달성일이다. 최대 유효기간 K 이후 미달성이면
- * 기준선 속도로 필요한 개월 수를 올림해 같은 축에서 이어 계산한다. 기준선 속도 0이면 null({@code SAVING_PACE_ZERO}).
+ * 각 구간 {@code (t(k−1), t(k)]}에 {@code max(0, 구간 저축액)}을 잔여액에서 빼고, 처음 0 이하가 되는 구간에서 구간 일수에 비례한
+ * 일 단위 날짜가 달성일이다({@link GoalForecastFormula#dateWithin}, 658). 최대 유효기간 K 이후 미달성이면 기준선 속도로 같은 축에서
+ * 이어 계산한다({@code GoalForecastFormula.expectedDate(…, offset=K)}). 기준선 속도 0이면 null({@code SAVING_PACE_ZERO}).
  * 예: 잔여 100만원·속도 10만원·감소액 10만원 1개월 유효 → 첫 달 20만원, 이후 10만원씩 → 9개월째 달성(5개월이 아니다).
+ * 속도가 변하지 않는 목표는 단독 식과 같은 날짜가 나온다(같은 축·같은 구간·같은 비례식).
  */
 final class CombinedGoalProjection {
     private CombinedGoalProjection() {
@@ -100,14 +103,15 @@ final class CombinedGoalProjection {
                 if (k == 1) {
                     firstPaces.put(goal.goalId(), pace);
                 }
-                left -= Math.max(0L, pace);
+                long contributed = Math.max(0L, pace);
+                left -= contributed;
                 if (left <= 0) {
-                    achieved = base.plusMonths(k);
+                    achieved = GoalForecastFormula.dateWithin(base.plusMonths(k - 1), base.plusMonths(k), left + contributed, contributed);
                     break;
                 }
             }
             if (achieved == null && basePace > 0) {
-                achieved = base.plusMonths(horizon + ceilDivide(left, basePace));
+                achieved = GoalForecastFormula.expectedDate(left, basePace, base, horizon);
             }
             afterDates.put(goal.goalId(), achieved);
             List<String> reasons = new ArrayList<>();
@@ -155,9 +159,5 @@ final class CombinedGoalProjection {
         }
         long share = shares.getOrDefault(goal.goalId(), new TreeMap<>()).getOrDefault(base.plusMonths(k), 0L);
         return Math.addExact(basePace, share);
-    }
-
-    private static long ceilDivide(long amount, long divisor) {
-        return (amount + divisor - 1) / divisor;
     }
 }

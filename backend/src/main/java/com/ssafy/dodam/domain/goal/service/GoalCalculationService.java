@@ -36,7 +36,8 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li>현재 확보 금액 = 연결 계좌 잔액 합. 조회 시점에 다시 계산하고 `goal.current_amount`도 갱신한다(동기화로 잔액이 바뀐 뒤에도 맞게).</li>
  *   <li>현재 저축속도(월평균 저축액) = 확보 금액 / 경과 개월(목표 생성일부터, 최소 1개월).</li>
  *   <li>필요 월 저축액 = 남은 금액 / 남은 개월(올림).</li>
- *   <li>예상 달성일 = 기준일 + (남은 금액 / 저축속도)개월(올림).</li>
+ *   <li>예상 달성일 = 기준일 축에서 (남은 금액 / 저축속도)개월. 정수 개월은 달력 개월, 나머지는 그 달의 일수에 비례해 올림
+ *       ({@link GoalForecastFormula}, 658). {@code monthsToAchieve}는 여전히 개월 올림이다.</li>
  *   <li>줄이기 목표: 이번 달 소비(506 정의)를 월 예산과 비교하고 현재 소비속도로 월말 소비를 예측한다.</li>
  * </ul>
  */
@@ -178,8 +179,9 @@ public class GoalCalculationService {
             monthsToAchieve = null;
             expected = null;
         } else {
-            monthsToAchieve = (int) ceilDivide(remaining, pace);
-            expected = base.plusMonths(monthsToAchieve);
+            monthsToAchieve = (int) GoalForecastFormula.monthsToAchieve(remaining, pace);
+            // 658: 마지막 달은 일할로 나눠 일 단위 날짜를 낸다. 월 단위 올림이면 속도가 조금 올라도 날짜가 움직이지 않는다
+            expected = GoalForecastFormula.expectedDate(remaining, pace, base);
         }
 
         List<GoalForecastResponse.Point> projection = new ArrayList<>();

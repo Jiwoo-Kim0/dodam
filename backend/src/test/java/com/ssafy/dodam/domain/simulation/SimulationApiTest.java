@@ -106,7 +106,7 @@ class SimulationApiTest {
         }
         expense(LocalDate.of(2026, 9, 3), 5_000_000L, null);
         accountId = insertAccount(owner, ACCOUNT_NO, 1_000_000L);
-        // 3개월 전 생성 → 속도 1,000,000 / 3 = 333,333, 남은 2,000,000 → 7개월
+        // 3개월 전 생성 → 속도 1,000,000 / 3 = 333,333, 남은 2,000,000 → 6개월 + 2원/333,333 × 31일(올림 1일) = 2027-03-14 (658 일 단위)
         Goal goal = goals.save(Goal.create(owner, "비상금", GoalType.SAVING, NOW.minusMonths(3)));
         goalId = goal.getId();
         savingGoals.save(SavingGoal.create(goalId, 3_000_000L, NOW.toLocalDate().plusYears(1)));
@@ -130,9 +130,10 @@ class SimulationApiTest {
                 .andExpect(jsonPath("$.data.simulation.cashflow.months.length()").value(12))
                 .andExpect(jsonPath("$.data.simulation.scenarios[0].sequenceNo").value(1))
                 .andExpect(jsonPath("$.data.simulation.goalImpacts[0].goalId").value(goalId))
-                .andExpect(jsonPath("$.data.simulation.goalImpacts[0].beforeForecastDate").value("2027-04-13"))
-                .andExpect(jsonPath("$.data.simulation.goalImpacts[0].afterForecastDate").value("2027-02-13"))
-                .andExpect(jsonPath("$.data.simulation.goalImpacts[0].differenceDays").value(-59))
+                .andExpect(jsonPath("$.data.simulation.goalImpacts[0].beforeForecastDate").value("2027-03-14"))
+                // 속도 433,333: 4개월(1,733,332) + 266,668/433,333 × 31일 = 19.08 → 20일 → 2027-02-02
+                .andExpect(jsonPath("$.data.simulation.goalImpacts[0].afterForecastDate").value("2027-02-02"))
+                .andExpect(jsonPath("$.data.simulation.goalImpacts[0].differenceDays").value(-40))
                 .andReturn().getResponse().getContentAsString();
         long id = json.readTree(body).at("/data/simulation/simulationId").asLong();
         assertThat(scenarios.findAllBySimulationIdOrderBySequenceNoAsc(id)).hasSize(1);
