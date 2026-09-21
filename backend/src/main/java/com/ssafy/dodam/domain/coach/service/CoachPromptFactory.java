@@ -33,7 +33,7 @@ public class CoachPromptFactory {
      * 프롬프트를 고쳐도 facts는 그대로라서 옛 문장이 계속 나간다. 진단 ruleVersion을 올려 연쇄로
      * 갈아엎는 방법도 있지만, 문구 한 줄 고치자고 전 사용자의 진단을 다시 실행할 수는 없다.
      */
-    public static final String VERSION = "673.1";
+    public static final String VERSION = "674.1";
 
     private static final String COMMON_RULES = """
             너는 개인 재무 관리 앱 '도담'의 금융 코치다. 사용자에게 존댓말로 설명한다.
@@ -102,13 +102,28 @@ public class CoachPromptFactory {
             """;
 
     /**
-     * 채팅 시스템 프롬프트(640 A-3). 공통 규칙 + 대화 규칙 + 선택 [화면 맥락](발견 상세에서 열었을 때의 진단 문제 facts).
+     * 첫 조언(674) 지시. 사용자가 묻기 전에 서버가 만드는 첫 문장이며, 도구를 부르지 않는다(1차 범위). 근거 섹션이 없는 항목이면
+     * 수치 없이 항목 설명만으로 제안하게 해 규칙 6(추측 금지)을 지킨다.
+     */
+    static final String OPENING_RULES = """
+            [첫 조언] 사용자는 아직 질문하지 않았다. 위 [화면 맥락] 항목에 대해 지금 해 볼 수 있는 행동 하나를 두 문장 이내로 제안하고,
+            마지막에 이어서 무엇을 물어볼 수 있는지 한 문장으로 안내한다. 도구를 부르지 않는다.
+            근거 섹션(현재 값·기준 값·탐지 근거·예상 효과)이 없으면 수치를 말하지 않고 항목 설명만으로 제안한다.
+            """;
+
+    /**
+     * 채팅 시스템 프롬프트(640 A-3). 공통 규칙 + 대화 규칙 + 선택 [화면 맥락](발견 상세·개선안 화면에서 열었을 때의 facts).
      * 이전 턴은 여기 넣지 않고 메시지 목록의 user/assistant 쌍으로 재생한다.
      */
     public String chatSystem(CoachFacts context) {
+        return chatSystem(context, false);
+    }
+
+    /** @param opening 첫 조언 턴이면 [첫 조언] 지시를 덧붙인다(674) */
+    public String chatSystem(CoachFacts context, boolean opening) {
         StringBuilder prompt = new StringBuilder(COMMON_RULES).append('\n').append(CHAT_RULES);
         if (context != null && !context.sections().isEmpty()) {
-            prompt.append("\n[화면 맥락] 사용자는 아래 진단 항목 화면에서 대화를 열었다. 질문이 이 항목과 관련되면 참고한다.\n");
+            prompt.append("\n[화면 맥락] 사용자는 아래 항목(진단 문제 또는 개선안) 화면에서 대화를 열었다. 질문이 이 항목과 관련되면 참고한다.\n");
             prompt.append("[대상] ").append(context.subject()).append('\n');
             context.notes().forEach(note -> prompt.append("[주의] ").append(note).append('\n'));
             context.sections().forEach(section -> {
@@ -116,6 +131,9 @@ public class CoachPromptFactory {
                 section.facts().forEach(fact ->
                         prompt.append("- ").append(fact.label()).append(": ").append(fact.value()).append('\n'));
             });
+        }
+        if (opening) {
+            prompt.append('\n').append(OPENING_RULES);
         }
         return prompt.toString();
     }

@@ -4,6 +4,7 @@ import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Objects;
 import java.util.regex.Pattern;
 
 /**
@@ -14,8 +15,10 @@ import java.util.regex.Pattern;
  * @param conversationId 서버가 만든 식별자({@code c_} + 16 hex). 요청으로 들어오는 값은 형식을 검사한다
  * @param turnCount      지금까지 처리한 턴 수. {@code turns}는 최근 N개로 잘리지만 이 값은 계속 오른다(턴 상한 판정용)
  * @param turns          최근 턴(오래된 것부터)
+ * @param contextKey     이 대화를 연 화면 맥락({@code CoachChatRequest.Context#key()}). 홈에서 열었으면 null. 요청의 맥락과 다르면
+ *                       서버가 새 대화를 시작한다(674) — 문제 A의 턴이 문제 B의 프롬프트에 재생되지 않게. 예전 저장분에는 없어 null로 읽힌다
  */
-public record CoachChatSession(String conversationId, int turnCount, List<Turn> turns) {
+public record CoachChatSession(String conversationId, int turnCount, List<Turn> turns, String contextKey) {
 
     public static final Pattern ID_PATTERN = Pattern.compile("c_[0-9a-f]{16}");
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -47,7 +50,15 @@ public record CoachChatSession(String conversationId, int turnCount, List<Turn> 
     }
 
     public static CoachChatSession start(String conversationId) {
-        return new CoachChatSession(conversationId, 0, List.of());
+        return start(conversationId, null);
+    }
+
+    public static CoachChatSession start(String conversationId, String contextKey) {
+        return new CoachChatSession(conversationId, 0, List.of(), contextKey);
+    }
+
+    public boolean hasContext(String key) {
+        return Objects.equals(contextKey, key);
     }
 
     public boolean exhausted(int maxTurns) {
@@ -61,6 +72,6 @@ public record CoachChatSession(String conversationId, int turnCount, List<Turn> 
         while (next.size() > Math.max(0, historyLimit)) {
             next.remove(0);
         }
-        return new CoachChatSession(conversationId, turnCount + 1, next);
+        return new CoachChatSession(conversationId, turnCount + 1, next, contextKey);
     }
 }

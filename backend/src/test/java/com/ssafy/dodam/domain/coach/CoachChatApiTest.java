@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
@@ -35,6 +36,8 @@ import com.ssafy.dodam.domain.diagnosis.entity.DiagnosisStatus;
 import com.ssafy.dodam.domain.diagnosis.entity.IssueSeverity;
 import com.ssafy.dodam.domain.diagnosis.repository.DiagnosisIssueRepository;
 import com.ssafy.dodam.domain.diagnosis.repository.DiagnosisRepository;
+import com.ssafy.dodam.domain.recommendation.entity.Recommendation;
+import com.ssafy.dodam.domain.recommendation.repository.RecommendationRepository;
 import com.ssafy.dodam.domain.user.entity.User;
 import com.ssafy.dodam.domain.user.repository.UserRepository;
 import java.time.LocalDateTime;
@@ -73,6 +76,7 @@ class CoachChatApiTest {
     @Autowired UserRepository users;
     @Autowired DiagnosisRepository diagnoses;
     @Autowired DiagnosisIssueRepository issues;
+    @Autowired RecommendationRepository recommendations;
     @MockitoBean CoachTextGenerator generator;
     @MockitoBean CoachToolDispatcher dispatcher;
     @MockitoBean CoachChatRateLimiter budget;
@@ -152,7 +156,10 @@ class CoachChatApiTest {
         for (String body : List.of("{}", "{\"message\":\"   \"}", "{\"chipId\":\"CHIP_NOPE\"}",
                 "{\"message\":\"안녕\",\"conversationId\":\"../x\"}",
                 "{\"message\":\"" + "가".repeat(301) + "\"}",
-                "{\"message\":\"안녕\",\"context\":{\"diagnosisId\":" + diagnosisId + "}}")) {
+                "{\"message\":\"안녕\",\"context\":{\"diagnosisId\":" + diagnosisId + "}}",
+                // 674: 진단 문제와 개선안을 섞은 context, 빈 context만 온 요청(첫 조언이 아니다 — 맥락이 없다)
+                "{\"context\":{\"diagnosisId\":" + diagnosisId + ",\"issueId\":" + issueId + ",\"recommendationId\":1}}",
+                "{\"context\":{}}")) {
             mvc.perform(post(CHAT).with(user(owner.toString())).contentType(JSON).content(body))
                     .andExpect(status().isBadRequest());
         }
@@ -488,5 +495,105 @@ class CoachChatApiTest {
         mvc.perform(post(CHAT).with(user(other.toString())).contentType(JSON)
                         .content("{\"message\":\"이거 어떻게 줄여?\",\"context\":{\"diagnosisId\":" + diagnosisId + ",\"issueId\":" + issueId + "}}"))
                 .andExpect(status().isNotFound());
+    }
+
+    // ---------- 첫 조언 (674) ----------
+
+    @Test
+    void openingAdviceComesFromTheIssueContextWithoutAUserMessage() throws Exception {
+        given(generator.chat(anyList(), anyList(), any())).willReturn(text("카페 지출이 늘었어요. 이번 주는 카페를 하루 한 번으로 줄여 보는 건 어때요? 얼마를 줄이면 목표가 얼마나 빨라지는지도 물어볼 수 있어요."));
+
+        MvcResult result = chat(owner, "{\"context\":{\"diagnosisId\":" + diagnosisId + ",\"issueId\":" + issueId + "}}");
+
+        assertThat(result.getResponse().getStatus()).isEqualTo(200);
+        var data = json.readTree(result.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8)).get("data");
+        assertThat(data.get("source").asText()).isEqualTo("AI");
+        assertThat(data.get("message").asText()).startsWith("카페 지출이 늘었어요.");
+        assertThat(data.get("conversationId").asText()).matches("c_[0-9a-f]{16}");
+        assertThat(data.get("toolResults")).isEmpty();
+        // 소비 문제라 칩이 소비 질문으로 바뀐다
+        assertThat(data.get("suggestedQuestions")).extracting(node -> node.asText())
+                .containsExactlyElementsOf(CoachChatService.SUGGESTED_FOR_SPENDING);
+        // 도구 없이 1회 호출, tool_choice none, 프롬프트에 [화면 맥락]과 [첫 조언]이 실린다
+        verify(dispatcher, never()).dispatch(any(), anyList());
+        ArgumentCaptor<ToolChoice> choice = ArgumentCaptor.forClass(ToolChoice.class);
+        verify(generator, times(1)).chat(anyList(), anyList(), choice.capture());
+        assertThat(choice.getValue().mode()).isEqualTo(ToolChoice.Mode.NONE);
+        List<ChatMessage> messages = capturedMessages(1).get(0);
+        assertThat(messages).extracting(ChatMessage::role).containsExactly("system", "user");
+        assertThat(messages.get(0).content()).contains("[화면 맥락]").contains("카페 지출이 늘었어요").contains("[첫 조언]").contains("도구를 부르지 않는다");
+        assertThat(messages.get(1).content()).isEqualTo(CoachChatService.OPENING_USER_TEXT);
+        // 세션에는 맥락 키와 서버 고정 문장이 남는다
+        ArgumentCaptor<CoachChatSession> saved = ArgumentCaptor.forClass(CoachChatSession.class);
+        verify(sessions).save(eq(owner), saved.capture());
+        assertThat(saved.getValue().contextKey()).isEqualTo("issue:" + diagnosisId + ":" + issueId);
+        assertThat(saved.getValue().turns().get(0).userMessage()).isEqualTo(CoachChatService.OPENING_USER_TEXT);
+    }
+
+    @Test
+    void openingAdviceFromARecommendationContextIsOwnOnlyAndSuggestsByDomain() throws Exception {
+        Long recommendationId = recommendations.save(Recommendation.pending(owner, diagnosisId, null, null, "LOAN", "PREPAY_LOAN",
+                "고금리 대출을 먼저 갚으세요", "금리가 높은 대출을 먼저 상환하면 이자 부담이 줄어듭니다.", 1,
+                new Recommendation.Effect(35_000L, null, null, null, null, null, null, null), "b".repeat(64), NOW)).getRecommendationId();
+        given(generator.chat(anyList(), anyList(), any())).willReturn(text("금리가 높은 대출부터 조금씩 더 갚아 보는 걸 권해요. 얼마를 더 갚으면 이자가 얼마나 줄어드는지 물어볼 수 있어요."));
+
+        MvcResult result = chat(owner, "{\"context\":{\"recommendationId\":" + recommendationId + "}}");
+
+        assertThat(result.getResponse().getStatus()).isEqualTo(200);
+        var data = json.readTree(result.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8)).get("data");
+        assertThat(data.get("source").asText()).isEqualTo("AI");
+        assertThat(data.get("suggestedQuestions")).extracting(node -> node.asText()).containsExactlyElementsOf(CoachChatService.SUGGESTED_FOR_LOAN);
+        String system = capturedMessages(1).get(0).get(0).content();
+        assertThat(system).contains("고금리 대출을 먼저 갚으세요").contains("35,000원").contains("[첫 조언]");
+
+        // 남의 개선안은 404, 없는 개선안도 404 — 존재 여부를 드러내지 않는다
+        mvc.perform(post(CHAT).with(user(other.toString())).contentType(JSON)
+                        .content("{\"context\":{\"recommendationId\":" + recommendationId + "}}"))
+                .andExpect(status().isNotFound());
+        mvc.perform(post(CHAT).with(user(owner.toString())).contentType(JSON).content("{\"context\":{\"recommendationId\":999999}}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void differentContextStartsANewConversationInsteadOfMixingTurns() throws Exception {
+        // 문제 A에서 한 턴 나눈 대화 id로 문제 B(다른 맥락)를 연다 → 새 대화, 이전 턴은 재생되지 않는다
+        CoachChatSession fromIssueA = CoachChatSession.start(CONVERSATION, "issue:1:2")
+                .append(new CoachChatSession.Turn("카페를 월 5만원 줄이면?", List.of("단축(비상금 500만 원): 40일")), 6);
+        given(sessions.find(owner, CONVERSATION)).willReturn(Optional.of(fromIssueA));
+        given(generator.chat(anyList(), anyList(), any())).willReturn(text("이 항목은 카페 지출이 늘어난 것이에요. 우선 이번 주 카페 방문을 한 번 줄여 보세요."));
+
+        MvcResult result = chat(owner, "{\"context\":{\"diagnosisId\":" + diagnosisId + ",\"issueId\":" + issueId + "},\"conversationId\":\"" + CONVERSATION + "\"}");
+
+        var data = json.readTree(result.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8)).get("data");
+        assertThat(data.get("conversationId").asText()).isNotEqualTo(CONVERSATION).matches("c_[0-9a-f]{16}");
+        List<ChatMessage> messages = capturedMessages(1).get(0);
+        assertThat(messages).extracting(ChatMessage::role).containsExactly("system", "user");
+        assertThat(messages).extracting(ChatMessage::content).noneMatch(content -> content != null && content.contains("40일"));
+        ArgumentCaptor<CoachChatSession> saved = ArgumentCaptor.forClass(CoachChatSession.class);
+        verify(sessions).save(eq(owner), saved.capture());
+        assertThat(saved.getValue().turnCount()).isEqualTo(1);
+        assertThat(saved.getValue().contextKey()).isEqualTo("issue:" + diagnosisId + ":" + issueId);
+
+        // 같은 맥락으로 이어 가면 그대로 이어진다(홈에서 맥락 없이 이어 가는 기존 경로와 같다)
+        reset(sessions);
+        given(sessions.find(owner, CONVERSATION)).willReturn(Optional.of(fromIssueA));
+        given(generator.chat(anyList(), anyList(), any())).willReturn(text("네, 더 줄일 수 있어요."));
+        MvcResult same = chat(owner, "{\"message\":\"더 줄이면?\",\"context\":{\"diagnosisId\":1,\"issueId\":2},\"conversationId\":\"" + CONVERSATION + "\"}");
+        // diagnosisId 1·issueId 2는 이 사용자 것이 아니므로 404 — 맥락 판정은 세션 로드 뒤, 소유권 검사에서 막힌다
+        assertThat(same.getResponse().getStatus()).isEqualTo(404);
+    }
+
+    @Test
+    void openingFallsBackToTheOpeningMessageWhenTheModelIsUnavailable() throws Exception {
+        given(generator.chat(anyList(), anyList(), any())).willThrow(new CoachGenerationException("timeout"));
+
+        mvc.perform(post(CHAT).with(user(owner.toString())).contentType(JSON)
+                        .content("{\"context\":{\"diagnosisId\":" + diagnosisId + ",\"issueId\":" + issueId + "}}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.source").value("TEMPLATE"))
+                .andExpect(jsonPath("$.data.degradedReason").value("AI_UNAVAILABLE"))
+                .andExpect(jsonPath("$.data.message").value(CoachChatService.OPENING_TEMPLATE_MESSAGE))
+                .andExpect(jsonPath("$.data.suggestedQuestions[0]").value(CoachChatService.SUGGESTED_FOR_SPENDING.get(0)));
+        verify(dispatcher, never()).dispatch(any(), anyList());
     }
 }
