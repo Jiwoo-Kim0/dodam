@@ -565,7 +565,7 @@ notes: "달성일·절감액은 서버 시뮬레이션 엔진이 계산한 값�
 
 ### 13-3. 채팅 서비스·API (A-3, 2026-09-18)
 
-`POST /api/v1/coach/chat` — 인증 필수, 본인 데이터만. 요청 `{message?, chipId?, context{diagnosisId, issueId}?, conversationId?}`, 응답은 아래.
+`POST /api/v1/coach/chat` — 인증 필수, 본인 데이터만. 요청 `{message?, chipId?, context{diagnosisId, issueId} | {recommendationId}?, conversationId?}`, 응답은 아래. 문장·칩 없이 `context`만 오면 **첫 조언**(§13-5).
 `message`·`chipId` 둘 다 없음, 알 수 없는 `chipId`, `conversationId` 형식(`c_` + 16 hex) 위반, 길이 초과(300자), `context` 반쪽 → 400. 남의 진단 문제 `context` → 404.
 그 밖의 모든 실패는 **200 + `source=TEMPLATE`** 이며, 이미 실행한 도구의 facts·`toolResults`는 그대로 내려간다.
 
@@ -693,3 +693,58 @@ notes: "달성일·절감액은 서버 시뮬레이션 엔진이 계산한 값�
 - [화면 맥락] facts에는 `영역: SPENDING`·`유형: CATEGORY_SPENDING_INCREASE` 같은 코드가 들어간다(3종 코치 조립기 공용). 프롬프트 규칙 7이 문장에 베끼는 것을 막고
   응답 `facts`에는 실리지 않지만, 한글로 바꾸는 일은 남아 있다(발견 맥락 첫 조언 작업에서 함께).
 - `CoachSensitiveDataGuard`는 형태가 분명한 식별자만 본다. 이름·주소는 조립기가 담지 않는 것으로 처리한다(§6).
+
+### 13-5. 발견 맥락 첫 조언과 진입 계약 (S15P21D105-674, 2026-09-21)
+
+발견 상세(진단 문제)나 개선안 카드에서 "토리에게 물어보기"로 들어오면, 사용자가 치기 전에 **그 항목에 대한 첫 문장**이 토리 말풍선으로 떠야 한다.
+기존 `POST /coach/chat`에 "맥락만 있는 요청"을 첫 조언으로 정의해 재사용했다 — 새 엔드포인트·새 응답 스키마 없이 FE는 요청 하나를 더 보낼 뿐이다.
+
+#### 13-5-1. 진입 계약 (FE 114)
+
+| 단계 | FE | BE |
+| --- | --- | --- |
+| 진입 | 발견 상세 → `/coach-chat?diagnosisId&issueId`, 개선안 → `/coach-chat?recommendationId`. **발견·개선안에서 열 때는 이전 대화 캐시(conversationId·turns)를 쓰지 않는다** | — |
+| 첫 호출 | `POST /coach/chat { context: {diagnosisId, issueId} }` 또는 `{ context: {recommendationId} }` — `message`·`chipId` 없음 | 맥락 facts(`CoachFactAssembler.inefficiency` / `.recommendation`)를 시스템 프롬프트 [화면 맥락]에 넣고 [첫 조언] 지시를 덧붙여 **도구 없이 1회** 호출(`tool_choice none`). 응답 `message`가 첫 조언, `conversationId`는 새 대화, `suggestedQuestions`는 영역별 맞춤 질문(§13-5-2) |
+| 이후 턴 | 기존과 같다. `context`를 매 요청에 그대로 붙이고 `conversationId`를 돌려보낸다 | 도구 선택·실행·2차 문장 경로 그대로. 첫 조언 턴은 세션에 서버 고정 문장("이 항목에 대해 지금 무엇을 해 볼 수 있는지 알려줘")으로 남아 다음 턴에 user로 재생된다 |
+| 맥락이 바뀌면 | 응답 `conversationId`가 보낸 것과 **다르면** 화면 대화 목록을 비운다 | 세션에 맥락 키(`issue:{d}:{i}` / `recommendation:{r}` / 홈은 null)를 저장한다. 요청 맥락이 세션과 다르고 턴이 있으면 **새 대화**를 시작해 새 id를 돌려준다 — 문제 A의 턴이 문제 B의 프롬프트에 재생되지 않게(이전 맥락 혼입 방지). 400으로 막지 않는 이유: FE 분기가 "id가 바뀌면 비운다" 하나로 끝난다 |
+| 오류 | — | 반쪽·섞인 `context`(`{diagnosisId}`만, `{issueId, recommendationId}`, `{}`) → **400**. 남의·없는 진단 문제·개선안 → **404**(존재 여부를 드러내지 않음). AI 꺼짐·실패·예산 → 200 `TEMPLATE` + "이 항목에 대해 궁금한 점을 물어봐 주세요. 아래 질문을 눌러도 좋아요." |
+
+첫 조언 응답 예:
+
+```json
+{ "topic": "CHAT", "source": "AI", "degradedReason": null, "conversationId": "c_9f2a…",
+  "message": "카페 지출이 늘었어요. 이번 주는 카페를 하루 한 번으로 줄여 보는 건 어때요? 얼마를 줄이면 목표가 얼마나 빨라지는지도 물어볼 수 있어요.",
+  "facts": { "topic": "CHAT", "subject": "토리에게 묻기", "sections": [], "notes": [] },
+  "toolResults": [],
+  "suggestedQuestions": ["카페를 월 5만원 줄이면?", "저축을 월 30만원으로 올리면?", "목표는 언제 달성해?"],
+  "disclaimer": "…" }
+```
+
+`facts`가 비어 있는 것은 정상이다 — 첫 조언은 도구를 실행하지 않는다(1차 범위 결정). 맥락 facts는 프롬프트에만 들어가고 응답에는 실리지 않는다(기존과 같음).
+
+#### 13-5-2. 맞춤 질문 (`suggestedQuestions`)
+
+맥락 facts의 `영역` 값으로 고른다(두 조립기가 같은 라벨을 쓴다). FE는 이 문자열을 그대로 `message`로 보내면 된다(칩 id 매핑 불필요 — 모델이 도구를 고른다).
+지금 FE는 정적 칩 3개(`COACH_CHAT_CHIPS`)만 그리므로 `suggestedQuestions`를 그리는 것은 FE 114의 일이다.
+
+| 영역 | 질문 |
+| --- | --- |
+| SPENDING · SUBSCRIPTION · CARD | 카페를 월 5만원 줄이면? / 저축을 월 30만원으로 올리면? / 목표는 언제 달성해? |
+| LOAN | 대출 100만원 더 갚으면? / 대환하면 이자를 얼마나 아껴? / 둘 다 하면? |
+| GOAL · SAVING · CASHFLOW | 목표는 언제 달성해? / 저축을 월 30만원으로 올리면? / 카페를 월 5만원 줄이면? |
+| 그 외·맥락 없음 | 시연 칩 3개(누른 칩 제외) — 기존과 같음 |
+
+#### 13-5-3. 구현 메모
+
+- `CoachChatRequest.Context`에 `recommendationId` 추가. `isIssue()`/`isRecommendation()`/`key()`. 유효성은 서비스 진입에서 본다(`CONTEXT_INVALID`).
+- `CoachChatSession.contextKey` 추가. 예전 Redis 저장분에는 없어 null로 읽히고, 홈(맥락 없음) 대화와 같은 취급이라 호환된다.
+- `CoachPromptFactory.chatSystem(context, opening)` — [첫 조언] 지시(`OPENING_RULES`): 행동 하나를 두 문장 이내, 마지막에 무엇을 물을 수 있는지 한 문장, 도구 금지,
+  근거 섹션이 없으면 수치 없이 설명만으로. `VERSION` 674.1.
+- 첫 조언도 673의 외부 송신 직전 재검사(`blockOutbound`)와 숫자 가드를 그대로 지난다. 허용 숫자 = 맥락 facts(진단 수치·효과 금액)라 모델이 "35,000원"을 옮기는 것은 통과한다.
+- 도구를 첫 조언에서 실행하는 안(예: 소비 문제면 바로 카페 5만원 시뮬레이션)은 1차에서 제외했다 — 진입마다 외부 호출 2회·시뮬레이션 행 생성, 금액을 서버가 임의로 정해야 함. 칩을 누르면 같은 결과가 나오므로 UX 손실은 한 탭이다.
+
+#### 13-5-4. 검증
+
+`CoachChatApiTest` 23건(+4): 진단 문제 첫 조언(도구 없음·NONE·프롬프트에 [화면 맥락]+[첫 조언]·맞춤 칩·세션 맥락 키), 개선안 첫 조언(LOAN 칩·효과 금액이 프롬프트에·남의 것 404·없는 것 404),
+맥락이 다른 대화 id → 새 id·이전 턴 미재생·같은 맥락은 이어짐, AI 실패 시 첫 조언 안내 문구. 반쪽·섞인 context 400은 기존 400 테스트에 추가. 코치 도메인 88건 + Redis 세션 저장소 4건 통과.
+남은 것: [화면 맥락] facts의 영문 코드(`영역: SPENDING`) 한글화, 앱 경유 실측(09-23).
