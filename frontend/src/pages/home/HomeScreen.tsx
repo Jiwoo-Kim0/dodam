@@ -19,6 +19,7 @@ import { getFinanceErrorMessage } from '@/utils/financeErrorMessage';
 
 import { AssetSummaryCard } from './components/AssetSummaryCard';
 import { BriefingCard } from './components/BriefingCard';
+import { CoachChatFloatingButton } from './components/CoachChatFloatingButton';
 import { ExpenseSummaryCard } from './components/ExpenseSummaryCard';
 import { GoalCarousel } from './components/GoalCarousel';
 import { HomeHeader } from './components/HomeHeader';
@@ -222,10 +223,12 @@ export function HomeScreen() {
             isLoading={isSummaryLoading}
             items={topSpending}
             monthLabel={monthLabel}
-            onDetailPress={() => router.push(routes.ledger)}
           />
         </View>
       </BouncyScrollView>
+
+      {/* 스크롤뷰 뒤에 두어야 목록 위에 뜬다. */}
+      <CoachChatFloatingButton onPress={() => router.push(routes.coachChat)} />
 
       <HomeMenuBottomSheet
         isConnected={user?.financeConnectionStatus === 'CONNECTED'}
@@ -242,6 +245,10 @@ export function HomeScreen() {
         onLogoutPress={() => {
           setIsMenuVisible(false);
           void handleLogout();
+        }}
+        onSubscriptionsPress={() => {
+          setIsMenuVisible(false);
+          router.push(routes.subscriptions);
         }}
         visible={isMenuVisible}
       />

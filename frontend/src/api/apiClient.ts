@@ -19,6 +19,8 @@ type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL?.trim().replace(/\/+$/, '');
 const AUTH_REFRESH_PATH = '/v1/auth/refresh';
+/** 일반 호출의 응답 대기 상한. AI 코치처럼 오래 걸리는 호출은 `timeoutMs`로 따로 늘린다. */
+const DEFAULT_TIMEOUT_MS = 15_000;
 
 let refreshRequest: Promise<AuthTokens> | null = null;
 
@@ -147,6 +149,8 @@ async function fetchOnce<T>(
     headers: requestHeaders,
     query,
     retryOnUnauthorized: _retryOnUnauthorized,
+    signal: callerSignal,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
     ...requestInit
   } = options;
   const headers = new Headers(requestHeaders);
@@ -160,6 +164,15 @@ async function fetchOnce<T>(
 
   const body = createRequestBody(requestBody, headers);
 
+  /*
+   * 타임아웃이 없으면 응답이 영영 안 오는 요청을 끊을 수 없다. 화면은 로딩에 갇히고
+   * 사용자는 재시도조차 못 누른다. 호출자가 준 signal도 함께 존중해야 해서 둘을 묶는다.
+   */
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(() => timeoutController.abort(), timeoutMs);
+  const abortByCaller = () => timeoutController.abort();
+  callerSignal?.addEventListener('abort', abortByCaller);
+
   let response: Response;
   try {
     response = await fetch(buildUrl(path, query), {
@@ -167,14 +180,22 @@ async function fetchOnce<T>(
       method,
       headers,
       body,
+      signal: timeoutController.signal,
     });
   } catch (error) {
+    // 호출자가 끊은 것과 시간이 다 된 것은 사용자에게 다른 말로 알려야 한다.
+    const isTimeout = timeoutController.signal.aborted && callerSignal?.aborted !== true;
     throw new ApiError({
       status: 0,
-      code: 'NETWORK_ERROR',
-      message: '서버에 연결할 수 없습니다. 네트워크 상태를 확인해주세요.',
+      code: isTimeout ? 'TIMEOUT' : 'NETWORK_ERROR',
+      message: isTimeout
+        ? '서버 응답이 너무 오래 걸려요. 잠시 후 다시 시도해주세요.'
+        : '서버에 연결할 수 없습니다. 네트워크 상태를 확인해주세요.',
       cause: error,
     });
+  } finally {
+    clearTimeout(timeoutId);
+    callerSignal?.removeEventListener('abort', abortByCaller);
   }
 
   return { response, data: () => parseResponse<T>(response) };

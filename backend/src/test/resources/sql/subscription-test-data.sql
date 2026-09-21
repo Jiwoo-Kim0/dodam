@@ -51,6 +51,8 @@ INSERT INTO transaction_category (category_id, code, name, default_spending_type
     (1, 'FOOD', '식비', 'VARIABLE', TRUE),
     (2, 'CAFE', '카페', 'VARIABLE', TRUE),
     (6, 'SHOPPING', '쇼핑', 'VARIABLE', TRUE),
+    (12, 'HOUSING', '주거·관리비', 'FIXED', TRUE),
+    (14, 'INSURANCE', '보험', 'FIXED', TRUE),
     (15, 'SUBSCRIPTION', '구독', 'FIXED', TRUE),
     (19, 'INCOME', '수입', 'NON_SPENDING', TRUE),
     (20, 'ETC', '기타', 'VARIABLE', TRUE);

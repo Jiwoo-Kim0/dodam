@@ -225,5 +225,7 @@ BE-A 담당 도메인별(H2 통합 + 단위):
 | Auth | `GET /v1/auth/session`, `POST /v1/auth/logout` | 200, 200 | userId 1, 세션 폐기 |
 
 - U0002~U0004도 로그인 200, `GET /v1/accounts/summary` 200, 미확인 알림 5·4·5로 확인했다.
+- (2026-09-20) 위 표의 구독 값은 8번 seed 기준이다. 15번 `DODAM_DEMO_SUBSCRIPTION_SEED.sql`을 적용하면 U0001은 구독 5개·월 54,590원이 되고, 9번 알림 seed를 다시 돌려야
+  `PAYMENT_DUE` 문구가 `도담 비디오`가 아닌 새 구독 이름으로 바뀐다(`backend/database/seeds/README.md` "시연 계정 구독 목록").
 - 패턴 분석은 `--analyze`로 서버 DB에 U0001의 분석 이력 1건을 만들었다(시연 홈에서 패턴 조회가 404가 되지 않도록 의도한 쓰기). U0002~U0004는 아직 분석 이력이 없어 시연 전 같은 방식으로 실행하거나 앱에서 분석을 호출해야 한다.
 - 알림함에 seed 외 알림(`GOAL_ACHIEVED` 2139)이 있는 것은 D10 이벤트 스케줄(08:00)이 서버에서 실제로 돌았다는 뜻이다.

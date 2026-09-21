@@ -22,6 +22,7 @@
 | 12 | `DODAM_USER_DEMOGRAPHICS_BACKFILL.sql` | 632 | V39. 2026-09-17 이전에 491로 적재한 DB에서 seed 사용자 4,000명의 `birth_date`·`gender`만 채운다(fixture·재적재 불필요, 멱등, 실회원 미접촉). 491 최신판을 새로 돌린 DB에는 필요 없다 |
 | 13 | `DODAM_DEMO_LOAN_SEED.sql` | 633 | 491, 1번(`KB_KOOKMIN` `KB 국민ONE대출`), V13, `backend/scripts/make_demo_loan_fixture.py`가 만든 fixture 1행(일반 테이블 `tmp_dodam_demo_loan_crypto`). 시연 사용자 U0003에만 고금리 신용대출 1건(연 8.5%, 잔액 12,998,492원)과 상환 8건을 넣는다. 재실행 멱등. 파일 끝 cleanup이 fixture도 지우므로 재실행 전에 fixture를 다시 만든다 |
 | 14 | `DODAM_DEMO_U0003_STORY_SEED.sql` | 636 | 6번(492)·8번·11번(625) 이후, V6. fixture 불필요. U0003 이름을 `김싸피`로 바꾸고 U0003의 변동 소비 거래(2026-03-01~09-27)만 지우고 월별 스토리(5월 여행 아웃라이어 1개월 + 카테고리 변화)로 다시 만든다(약 439건). 수입·고정비·구독·저축 행은 그대로. 재실행 멱등. 6번 또는 11번을 다시 돌리면 이 파일도 다시 실행한다 |
+| 15 | `DODAM_DEMO_SUBSCRIPTION_SEED.sql` | 655 | 6번(492)·8번·11번(625) 이후, V6·V30. fixture 불필요. 시연 사용자 U0001~U0004의 구독만 지우고 `SubscriptionServiceCatalog` 이름·요금의 구독 5~7건(23건)과 2026-03~09 구독 결제 거래 165건·결제 이력 158건으로 다시 만든다(2026-09-20 추가). 다른 3,996명은 8번 그대로. 재실행 멱등. 6번·8번·11번 중 하나를 다시 돌리면 이 파일도 다시 실행하고, 그 뒤 9번(알림)도 다시 돌린다 |
 
 2~5는 계좌·카드번호 원문을 파일에 두지 않기 위해 애플리케이션 코덱으로 만든 fixture 테이블(`tmp_dodam_*_crypto`, `*_account_keys`)이
 같은 스키마에 있어야 한다. 각 파일 머리말에 정확한 계약이 있다. 6~8은 fixture 없이 자연키(사용자 이메일, 계좌 유형·이름)로 참조한다.
@@ -165,6 +166,38 @@ docker compose exec -T -e MYSQL_PWD="$MYSQL_PASSWORD" mysql mysql --default-char
 
 적용 뒤 U0003으로 발견 화면을 새로 고쳐(`POST /diagnoses {"forceRefresh":true}` → 추천 생성) 새 소비 데이터 기준 진단을 만든다. 같은 날 만든 이전 진단은 `forceRefresh` 없이는 재사용된다.
 
+## 시연 계정 구독 목록 (`DODAM_DEMO_SUBSCRIPTION_SEED.sql`)
+
+8번은 사용자당 구독을 1건(짝수 사용자 2건), 이름은 `도담 뮤직`·`도담 비디오`·`도담 클라우드`·`도담 리딩` 4종으로만 만든다. 시연 계정 U0003(`seq ≡ 3 (mod 6)`)은
+"도담 뮤직 9,900원" 한 줄이라 구독을 여러 개 골라 월 절감액을 보여주는 "내 구독 보기" 화면이 성립하지 않고, FE 브랜드 아이콘도 이름으로 매칭돼 전부 기타 아이콘이 된다
+(`docs/subscription-backend-request.md` P1). 15번은 **U0001~U0004의 구독만** 백엔드 `SubscriptionServiceCatalog`의 실제 서비스명·요금으로 다시 만든다.
+
+전체 4,000명을 바꾸지 않는 이유: 구독 결제는 `spending_type = FIXED` 거래라 K-Means 피처(`FIXED_EXPENSE_SHARE` 등)에 들어간다. 4,000명의 구독 건수·금액을 바꾸면
+`train_cluster_model.py`로 학습한 군집 아티팩트와 또래 비교 수치가 함께 움직여 재학습이 필요하다. 시연 계정 4명만 바꾸면 모집단 통계에는 영향이 없다.
+
+- 사용자별 구독: U0001 5건(월 54,590) / U0002 6건(83,680) / U0003 7건(94,490) / U0004 5건(ACTIVE 4건 37,690 + `유튜브 프리미엄` PAUSED, 6월까지만 결제).
+  서비스: 넷플릭스 17,000·유튜브 프리미엄 14,900·쿠팡 와우 멤버십 7,890·스포티파이 10,900·밀리의서재 9,900·챗GPT 플러스 29,000·네이버플러스 멤버십 4,900·배민클럽 3,990·요기패스 2,900.
+  결제일은 3~25일로 분산했고 모두 27일 이전이라 9월 결제도 625 창(9/1~9/27) 안에 들어간다. 파일 머리말의 plan 표가 전부다.
+- U0003에는 **미등록** 반복결제 `디즈니+ 9,900`(27일)을 거래에만 7건 넣었다. `subscription` 행이 없으므로 `GET /subscriptions/candidates`가 U0003에서 정확히 이 1건을 돌려준다
+  (후보 판정에 카테고리 `SUBSCRIPTION`·카탈로그 매칭 필터가 있는 버전 기준).
+- 거래: 구독 1건당 월 1건, 주카드 결제(`payment_method CARD`, `spending_type FIXED`, 카테고리 `SUBSCRIPTION`, `merchant_name` = 서비스명). 거래 ID는 3~8월 `SEED-U0003-2026MM-SUB-nn`,
+  9월 `SEED-SEP-U0003-202609-SUB-nn`으로 492·625의 삭제 패턴에 걸리게 두었다. 이력은 거래와 같은 날짜·금액의 `SUCCESS` 1건씩. ACTIVE 구독의 `next_payment_date`는 10월 결제일.
+- 지우는 것: 네 사용자의 `SUB-U%` 구독·이력 전부(8번의 `SUB-U000x-01/02` 포함), 네 사용자의 `SEED-U%-SUB-%`·`SEED-SEP-U%-SUB-%` 거래 전부. 수입·고정비·변동·저축 행과 U0004의 MANUAL 거래는 건드리지 않는다.
+- 순서: 6번·8번·11번 뒤. **6번 또는 8번 또는 11번을 다시 돌리면 15번을 다시 실행한다.** 15번 적용 뒤 11번만 단독 재실행하면 11번 preflight(`구독 6건·금액 492 식 일치`)가 막혀 아무것도 쓰지 않으므로
+  9월을 다시 만들려면 8번 → 11번 → 15번 순으로 돌린다. 9번(알림 seed)은 가장 가까운 ACTIVE 구독 이름을 `PAYMENT_DUE` 문구에 복사하므로 15번 뒤에 9번을 다시 실행한다.
+- preflight: 시연 사용자 4·주카드 4·`SUBSCRIPTION` 카테고리 1·plan 24·492의 8월 행 4명·625의 9월 급여 행 4명. 하나라도 어긋나면 아무것도 쓰지 않는다.
+- 기대 건수: 구독 23, 거래 165(등록 158 + 디즈니+ 7), 이력 158, 이력-거래 불일치 0, 계약 위반 0, 다른 사용자 구독 5,994 유지.
+- 되돌리려면 8번 → 11번을 다시 실행한다(15번의 행은 두 파일의 삭제 패턴에 걸린다).
+
+서버 적용은 13·14번과 같은 방식(fixture 없이 seed 파일만):
+
+```bash
+set -a; . infra/.env; set +a
+cd infra
+docker compose exec -T -e MYSQL_PWD="$MYSQL_PASSWORD" mysql mysql --default-character-set=utf8mb4 -h127.0.0.1 -u"$MYSQL_USER" "$MYSQL_DATABASE" < ../backend/database/seeds/DODAM_DEMO_SUBSCRIPTION_SEED.sql
+docker compose exec -T -e MYSQL_PWD="$MYSQL_PASSWORD" mysql mysql --default-character-set=utf8mb4 -h127.0.0.1 -u"$MYSQL_USER" "$MYSQL_DATABASE" < ../backend/database/seeds/DODAM_NOTIFICATION_SEED.sql
+```
+
 ## 검증 상태
 
 2026-09-11 Docker `mysql:8.0`(8.0.46)에 V1~V17을 적용하고 1~7번을 순서대로 실행했다(fixture는 SHA2 기반 더미로 형식만 충족).
@@ -217,3 +250,7 @@ fixture를 다시 만들고 13번을 두 번째 실행해도 같은 `loan_id`·�
 INC 7·FIX 21·SUB 7·SAV 7 유지, 재실행 시 같은 결과·작업 테이블 잔존 없음. 백엔드를 띄워 U0003 로그인 → `GET /users/me` 이름 `김싸피`,
 `POST /diagnoses {"forceRefresh":true}` 문제 3건(식비 +51.5% HIGH, 카페 +45.0% MEDIUM, 고금리 대출 HIGH), `POST /recommendations/generate` 3건
 (식비 줄이기 연 2,120,004·대환 247,080·카페 줄이기 540,000). **서버 적용은 아직이다.**
+
+2026-09-20 (15번) 일회용 Docker `mysql:8.0`에 V1~V41 적용 + 최소 fixture(시연 사용자 4명·방관자 1명, 계좌·카드, 8번 모양 구독·거래, U0004 MANUAL 거래 1건)에서 15번을 두 번 실행했다.
+preflight `1 / 4 / 4 / 1 / 24 / 4 / 4`, 구독 23(U0001 5·U0002 6·U0003 7·U0004 5), 거래 165·이력 158, 이력-거래 불일치 0·계약 위반 0·카드 불일치 0, 방관자·MANUAL 행 유지, 재실행 결과 동일·작업 테이블 잔존 없음.
+전체 seed 체인(1~14번) 위의 재검증과 API 확인(`remaining-work.md` 512 "시연 seed" 절)은 남아 있다. **서버 적용은 아직이다.**
