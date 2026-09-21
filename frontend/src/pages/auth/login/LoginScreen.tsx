@@ -5,7 +5,6 @@ import { Alert, Pressable, Text, TextInput, View } from 'react-native';
 import { authApi, isApiError } from '@/api';
 import { routes } from '@/constants/routes';
 import { useGoogleLogin } from '@/hooks/useGoogleLogin';
-import { useKakaoLogin } from '@/hooks/useKakaoLogin';
 import { AuthScreenLayout } from '@/layout/authScreenLayout/AuthScreenLayout';
 import { colors } from '@/styles';
 import type { SocialLoginResult } from '@/types/auth.types';
@@ -23,11 +22,10 @@ import { styles } from './LoginScreen.styles';
 const isDemoLoginEnabled =
   __DEV__ || process.env.EXPO_PUBLIC_ENABLE_DEMO_LOGIN === 'true';
 
-type SubmissionType = 'kakao' | 'google' | 'demo';
+type SubmissionType = 'google' | 'demo';
 
 export function LoginScreen() {
   const router = useRouter();
-  const { login: loginWithKakao } = useKakaoLogin();
   const { login: loginWithGoogle } = useGoogleLogin();
   const [errorMessage, setErrorMessage] = useState('');
   const [submissionType, setSubmissionType] =
@@ -96,18 +94,6 @@ export function LoginScreen() {
   return (
     <AuthScreenLayout avoidKeyboard title={'로그인하고\n시작하기'}>
       <View style={styles.buttonGroup}>
-        <SocialLoginButton
-          label={submissionType === 'kakao' ? '카카오 로그인 중...' : undefined}
-          provider="kakao"
-          onPress={() =>
-            void handleSocialLogin(
-              'kakao',
-              loginWithKakao,
-              '카카오 로그인 중 문제가 발생했습니다. 다시 시도해주세요.',
-            )
-          }
-        />
-
         <SocialLoginButton
           label={submissionType === 'google' ? '구글 로그인 중...' : undefined}
           provider="google"
