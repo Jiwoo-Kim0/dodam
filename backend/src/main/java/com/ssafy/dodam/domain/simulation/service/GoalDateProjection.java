@@ -1,5 +1,6 @@
 package com.ssafy.dodam.domain.simulation.service;
 
+import com.ssafy.dodam.domain.goal.service.GoalForecastFormula;
 import com.ssafy.dodam.domain.simulation.dto.SimulationBaseline;
 import java.time.LocalDate;
 import java.util.Comparator;
@@ -10,13 +11,14 @@ import java.util.NavigableMap;
 import java.util.TreeMap;
 
 /**
- * 날짜별 절감액을 반영한 모으기 목표 예상 달성일(585 §10.5). {@link GoalAchievementProjection}의 월 단위 식을 그대로 두고,
- * 약정 상환일마다 발생하는 절감·증가분을 "그 날짜 이후 첫 투영일"에 얹는다.
+ * 날짜별 절감액을 반영한 모으기 목표 예상 달성일(585 §10.5). {@link GoalForecastFormula}와 같은 달력 개월 축 위에서
+ * 약정 상환일마다 발생하는 절감·증가분을 "그 날짜 이후 첫 투영 구간"에 얹는다.
  *
  * <p>투영일은 {@code t(k) = base.plusMonths(k)} (k ≥ 1, 최초 기준일 기준이라 말일이 복원된다). 구간 {@code (t(k−1), t(k)]}에
- * 실제로 발생한 절감액만 모아 {@code max(0, 기존 월 저축속도 + 구간 합)}을 t(k)에 반영한다. 양수 절감액을 발생일보다
- * 먼저 쓰지 않고, 음수여도 목표 원금을 인출하지 않는다(0 하한). 남은 금액이 처음 0 이하가 되는 t(k)가 달성일이다.
- * 마지막 사건을 포함한 구간 뒤에는 기존 속도로 필요한 개월 수를 같은 t(k) 축에서 이어 계산한다.
+ * 실제로 발생한 절감액만 모아 {@code max(0, 기존 월 저축속도 + 구간 합)}을 그 구간의 저축액으로 본다. 음수여도 목표 원금을
+ * 인출하지 않는다(0 하한). 남은 금액이 처음 0 이하가 되는 구간에서 달성일은 구간 일수에 비례한 일 단위 날짜다(658). 다만
+ * 양수 절감액을 발생일보다 먼저 쓰지 않으므로, 그 날짜가 구간 안의 마지막 양수 사건일보다 앞서면 사건일로 늦춘다.
+ * 마지막 사건을 포함한 구간 뒤에는 기존 속도로 같은 축에서 이어 계산한다({@code GoalForecastFormula.expectedDate(…, offset=k)}).
  *
  * <p>변화가 전혀 없으면 기준선 날짜를 그대로 돌려준다 — 같은 식이지만 "0 변화에서 before≠after"가 생길 여지를 없앤다.
  */
@@ -50,9 +52,17 @@ public final class GoalDateProjection {
             for (long value : deltas.subMap(previous, false, projection, true).values()) {
                 delta = Math.addExact(delta, value);
             }
-            left -= Math.max(0L, Math.addExact(pace, delta));
+            long contributed = Math.max(0L, Math.addExact(pace, delta));
+            left -= contributed;
             if (left <= 0) {
-                return projection;
+                LocalDate achieved = GoalForecastFormula.dateWithin(previous, projection, left + contributed, contributed);
+                LocalDate lastPositiveEvent = null;
+                for (Map.Entry<LocalDate, Long> event : deltas.subMap(previous, false, projection, true).entrySet()) {
+                    if (event.getValue() > 0) {
+                        lastPositiveEvent = event.getKey();
+                    }
+                }
+                return lastPositiveEvent != null && achieved.isBefore(lastPositiveEvent) ? lastPositiveEvent : achieved;
             }
             previous = projection;
             if (!projection.isBefore(lastEvent)) {
@@ -62,7 +72,7 @@ public final class GoalDateProjection {
         if (pace <= 0) {
             return null;
         }
-        return base.plusMonths(k + GoalAchievementProjection.ceilDivide(left, pace));
+        return GoalForecastFormula.expectedDate(left, pace, base, k);
     }
 
     /**

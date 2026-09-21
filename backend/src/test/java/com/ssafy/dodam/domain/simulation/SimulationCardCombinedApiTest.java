@@ -138,7 +138,7 @@ class SimulationCardCombinedApiTest {
                 .andExpect(jsonPath("$.data.simulation.cashflow.months[1].cumulative").value(-17_951))
                 .andExpect(jsonPath("$.data.simulation.cashflow.fullTermEndDate").value("2026-11-15"))
                 .andExpect(jsonPath("$.data.simulation.goalImpacts[0].goalId").value(goalId))
-                .andExpect(jsonPath("$.data.simulation.goalImpacts[0].beforeForecastDate").value("2027-04-15"))
+                .andExpect(jsonPath("$.data.simulation.goalImpacts[0].beforeForecastDate").value("2027-03-16"))
                 .andExpect(jsonPath("$.data.simulation.goalImpacts[0].afterForecastDate").isEmpty())
                 .andExpect(jsonPath("$.data.simulation.goalImpacts[0].status").value("NOT_COMPUTABLE"))
                 .andExpect(jsonPath("$.data.simulation.goalImpacts[0].reasons[0]").value("GOAL_ALLOCATION_UNKNOWN"))

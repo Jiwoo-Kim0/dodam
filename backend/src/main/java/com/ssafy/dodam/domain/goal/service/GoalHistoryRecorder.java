@@ -52,18 +52,11 @@ public class GoalHistoryRecorder {
         return rate.min(BigDecimal.valueOf(100).setScale(4, RoundingMode.HALF_UP));
     }
 
-    /** 510 {@code GoalCalculationService}의 예상 달성일과 같은 규칙. */
+    /** 510 {@code GoalCalculationService}의 예상 달성일과 같은 규칙({@link GoalForecastFormula}). */
     private static LocalDate forecastDate(Goal goal, SavingGoal savingGoal, LocalDate today) {
         long remaining = savingGoal.getTargetAmount() - goal.getCurrentAmount();
-        if (remaining <= 0) {
-            return today;
-        }
         long monthsElapsed = Math.max(1L, ChronoUnit.MONTHS.between(goal.getCreatedAt().toLocalDate(), today));
         long pace = goal.getCurrentAmount() / monthsElapsed;
-        if (pace <= 0) {
-            return null;
-        }
-        long months = BigDecimal.valueOf(remaining).divide(BigDecimal.valueOf(pace), 0, RoundingMode.CEILING).longValue();
-        return today.plusMonths(months);
+        return GoalForecastFormula.expectedDate(remaining, pace, today);
     }
 }
