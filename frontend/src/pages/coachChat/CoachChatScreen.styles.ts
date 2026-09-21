@@ -14,6 +14,10 @@ export const styles = StyleSheet.create({
   screen: {
     backgroundColor: colors.background,
   },
+  /** 대화 영역과 입력 바가 함께 키보드를 피해야 해서 한 겹으로 묶는다. */
+  chatArea: {
+    flex: 1,
+  },
   /** 공통 헤더의 액션 버튼과 같은 규격이다. */
   headerAction: {
     alignItems: 'center',
@@ -21,13 +25,9 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 36,
   },
-  /**
-   * `flexGrow`와 아래 정렬을 같이 줘야 대화가 적을 때 아래에 붙고, 많아지면 평범하게 스크롤된다.
-   * 위에서부터 쌓으면 아래가 휑해서 채팅으로 안 보인다.
-   */
+  /** 인사말이 맨 위에 오고 대화가 아래로 흐른다. 새 답변이 오면 자동으로 끝까지 내려간다. */
   scrollContent: {
     flexGrow: 1,
-    justifyContent: 'flex-end',
     paddingBottom: spacing[4],
     paddingHorizontal: semanticSpacing.screenMargin,
     paddingTop: spacing[4],
@@ -42,16 +42,20 @@ export const styles = StyleSheet.create({
     height: 32,
     width: 32,
   },
+  /** 아바타(32)와 간격(8)을 뺀 나머지를 차지한다. 말풍선은 이 폭 안에서만 커진다. */
   coachContent: {
+    alignItems: 'flex-start',
     flex: 1,
     minWidth: 0,
   },
+  /**
+   * 폭 제한은 `coachContent`가 실제 값으로 건다. 여기에 `maxWidth: '100%'`를 쓰면 부모 폭이
+   * 정해지기 전에 글자를 재서 화면 밖으로 넘친다.
+   */
   coachBubble: {
-    alignSelf: 'flex-start',
     backgroundColor: colors.white,
     borderBottomLeftRadius: radius.small,
     borderRadius: radius.card,
-    maxWidth: '100%',
     paddingHorizontal: spacing[4],
     paddingVertical: spacing[3],
   },
@@ -61,7 +65,7 @@ export const styles = StyleSheet.create({
     fontSize: fontSize.body2,
     lineHeight: 20,
   },
-  /** 내가 물은 것. 오른쪽에 붙여 도리 답변과 방향으로 구분한다. */
+  /** 내가 물은 것. 오른쪽에 붙여 토리 답변과 방향으로 구분한다. */
   userBubble: {
     alignSelf: 'flex-end',
     backgroundColor: colors.primary.green,
@@ -103,18 +107,25 @@ export const styles = StyleSheet.create({
     fontFamily: fontFamily.medium,
     fontSize: fontSize.body2,
   },
+  /** 스크롤 바깥이라 좌우 여백을 직접 준다. 입력창 위 각주라 최대한 작게 둔다. */
   disclaimer: {
     color: colors.textTertiary,
     fontFamily: fontFamily.regular,
     fontSize: fontSize.micro,
-    lineHeight: 15,
-    marginTop: spacing[4],
+    lineHeight: 14,
+    paddingBottom: spacing[1],
+    paddingHorizontal: semanticSpacing.screenMargin,
+    paddingTop: spacing[2],
   },
-  /** 다음 질문 후보. 내 말풍선과 같은 쪽에 세워 누르면 그대로 올라가는 흐름을 만든다. */
+  /**
+   * 첫 인사말 아래에 붙는 예시 질문이다. 아바타 폭(32)과 간격(8)만큼 들여써서 말풍선과 줄을 맞춘다.
+   * 토리가 건네는 말이라 왼쪽에 둔다.
+   */
   chipList: {
-    alignItems: 'flex-end',
+    alignItems: 'flex-start',
     gap: spacing[2],
-    marginTop: spacing[4],
+    marginTop: spacing[2],
+    paddingLeft: 40,
   },
   chip: {
     backgroundColor: colors.white,

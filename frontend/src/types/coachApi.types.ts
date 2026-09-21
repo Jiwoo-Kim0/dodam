@@ -61,7 +61,7 @@ export interface RecommendationExplanationRequest {
 }
 
 /**
- * 도리에게 묻기 시연 칩(§13-2-2). 서버가 LLM 없이 도구 호출로 바로 매핑하므로
+ * 토리에게 묻기 시연 칩(§13-2-2). 서버가 LLM 없이 도구 호출로 바로 매핑하므로
  * `chipId`만 보내면 되고 `message`는 생략한다.
  */
 export const COACH_CHAT_CHIPS = [
