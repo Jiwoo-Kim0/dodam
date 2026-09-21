@@ -187,9 +187,9 @@ async function loadTopSpending(yearMonth: string, previousYearMonth: string) {
 }
 
 export function useHomeSummary() {
-  const latestCompletedMonth = monthInfo(-1);
+  const currentMonth = monthInfo(0);
   const [data, setData] = useState<HomeSummaryData>({
-    monthLabel: latestCompletedMonth.monthLabel,
+    monthLabel: currentMonth.monthLabel,
     monthlyExpense: null,
     assetOverview: null,
     goals: [],
@@ -219,8 +219,9 @@ export function useHomeSummary() {
     }
 
     try {
-      const month = monthInfo(-1);
-      const previousMonth = monthInfo(-2);
+      // 홈은 이번 달을 보여준다. 목표 카드가 쓰는 이번 달 예산과 기준이 맞는다.
+      const month = monthInfo(0);
+      const previousMonth = monthInfo(-1);
       const results = await Promise.allSettled([
         ledgerApi.getMonthlySummary(month.yearMonth),
         assetApi.getAccountSummary(),
