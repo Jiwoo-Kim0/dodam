@@ -60,6 +60,12 @@ public class SavingsQueryRepository {
                 Map.of("userId", userId, "hash", hash), (rs, n) -> account(rs)).stream().findFirst();
     }
 
+    /** 678: 계좌번호 원문 없이 accountId로 본인 적금을 찾는다. 소유권 조건은 해시 조회와 같다. */
+    public Optional<SavingsAccountRow> findOwnedById(Long userId, Long accountId) {
+        return jdbc.query(ACCOUNT_COLUMNS + ACCOUNT_FROM + " AND a.account_id = :accountId",
+                Map.of("userId", userId, "accountId", accountId), (rs, n) -> account(rs)).stream().findFirst();
+    }
+
     public List<SavingsAccountRow> findAllOwned(Long userId) {
         return jdbc.query(ACCOUNT_COLUMNS + ACCOUNT_FROM + " ORDER BY a.account_id",
                 Map.of("userId", userId), (rs, n) -> account(rs));
@@ -69,7 +75,7 @@ public class SavingsQueryRepository {
      * 본인 적금의 납입 이력 전량.
      *
      * <p>일정·예상금액·월 저축액이 같은 목록을 여러 번 재사용하므로 요청당 한 번만 읽는다. 시연 데이터의
-     * 사용자당 납입 회차는 한 자릿수라 기간을 좁혀 다시 조회하는 이점이 없다.
+     * 사용자당 납입 회차는 한 자릿수(678 시연 계정 U0003만 200여 건)라 기간을 좁혀 다시 조회하는 이점이 없다.
      */
     public List<SavingsPaymentRow> findPayments(Long userId) {
         return jdbc.query(PAYMENT_COLUMNS + PAYMENT_FROM + " ORDER BY p.payment_date, p.savings_payment_id",
