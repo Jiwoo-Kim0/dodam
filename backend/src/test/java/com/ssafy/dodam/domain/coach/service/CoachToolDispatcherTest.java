@@ -261,8 +261,9 @@ class CoachToolDispatcherTest {
                 DiagnosisIssue.ofRule(500L, "SPENDING", "CATEGORY_SPENDING_INCREASE", IssueSeverity.HIGH, "식비 소비가 2개월째 늘고 있어요", "d", null, null, null, NOW),
                 DiagnosisIssue.ofRule(500L, "LOAN", "HIGH_INTEREST_RATE", IssueSeverity.HIGH, "금리가 높아요", "d", null, null, null, NOW)));
         CoachToolResult latest = dispatcher.dispatch(USER, List.of(new ToolCall("c3", "get_latest_diagnosis", "{}"))).get(0);
-        assertThat(latest.sections().get(0).facts()).contains(new Fact("종합 상태(서버 판정)", "RISK"), new Fact("문제 수", "2건"),
-                new Fact("문제 1 (HIGH)", "식비 소비가 2개월째 늘고 있어요"));
+        // 판정 코드(RISK·HIGH)는 사실에 넣지 않는다 — 모델 입력이자 결과 카드 값이다
+        assertThat(latest.sections().get(0).facts()).contains(new Fact("종합 상태(서버 판정)", "위험"), new Fact("문제 수", "2건"),
+                new Fact("문제 1 (심각도 높음)", "식비 소비가 2개월째 늘고 있어요"));
     }
 
     // ---------- fixtures ----------

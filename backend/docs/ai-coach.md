@@ -531,7 +531,7 @@ record ChatTurn(String content, List<ToolCall> toolCalls, String finishReason)
 | `CoachToolRegistry` | 도구 7개의 OpenAI function 스키마(§13-2-1)와 시연 칩 3개의 고정 매핑(§13-2-2). 인자는 전부 enum·description으로 고정, 사용자 식별자·계좌번호·loanId·goalId는 스키마에 없다 |
 | `CoachToolArguments` | 모델이 만든 인자 JSON 검증. 금액(정수·"50,000원"·소수 정수부, 0 이하·1억 초과 거부), 개월(1~120), 코드(허용 집합 밖 거부 — "카페" 같은 한글 값), 배열 |
 | `CoachToolDispatcher` | 호출 → 실행. 한 턴 **3개**까지(초과는 미실행 사유), 검증 실패(400·404·시뮬레이션 규칙·인자 오류)는 예외가 아니라 결과 `error`로(2차 호출이 "카페 월평균 소비보다 큰 금액이에요"처럼 그대로 전달), 그 외 실패는 고정 문구. 로그는 도구 이름·인자 키·simulationId만 |
-| `CoachSimulationFactFormatter` | `SimulationResponse` → 사실 문자열. `goalImpacts[]`(현재/실행 후 달성일·단축/지연 일수, `NOT_COMPUTABLE`은 "계산 불가"), `comparison.items/costs`의 `INTEREST_SAVING`·`INTEREST_TOTAL`·`FINANCE_COST_EVALUATED`·`PREPAYMENT_AMOUNT`·`REFINANCE_AMOUNT`만, `after.assumptions` 최대 6개. 월별 상환액 행·스냅샷 전체는 넘기지 않는다 |
+| `CoachSimulationFactFormatter` | `SimulationResponse` → 사실 문자열. `goalImpacts[]`(현재/실행 후 달성일·단축/지연 일수), `comparison.items/costs`의 `INTEREST_SAVING`·`INTEREST_TOTAL`·`FINANCE_COST_EVALUATED`·`PREPAYMENT_AMOUNT`·`REFINANCE_AMOUNT`만, `after.assumptions` 최대 6개를 **한글 문장으로**(표에 없는 코드는 생략). 월별 상환액 행·스냅샷 전체·simulationId·유형 코드는 넘기지 않는다 — 사실은 모델 입력이면서 응답 `facts`로 FE 결과 카드에 그대로 그려지고 세션 이력에 남는다. **`NOT_COMPUTABLE` 목표는 달성일 줄을 만들지 않고** [주의]로만 알린다(대출 추가 상환·대환처럼 자금 출처를 모르는 유형, 그 유형이 섞인 복합). 복합에서 소비·저축 자식이 정확히 하나면 그 자식의 단독 결과(`after.details.children[].goalImpacts`)를 `달성일 계산 범위: 소비 줄이기·저축 변경만 반영(대출 상환·대환은 제외)` 사실과 함께 대신 쓴다. 날짜가 없는 것은 값으로 말한다: 현재 `현재 속도로는 달성 불가`, 실행 후 `실행 후에도 달성 불가`(`SAVING_PACE_ZERO` 포함). 변화 0일은 단축·지연 줄이 없다 |
 | `CoachToolResult` | 결과 1건(`toolCallId, tool, simulationId, created, sections, notes, error`). `toModelText()`가 2차 호출의 tool 메시지 본문("[제목]/- 라벨: 값/※ 주의")을 만든다 |
 
 #### 13-2-1. 도구 7개
@@ -546,8 +546,9 @@ record ChatTurn(String content, List<ToolCall> toolCalls, String finishReason)
 | `get_goal_forecast` | `goalName?` | `GoalCalculationService.getForecast` 3인자 | 목표 없음·여럿(되묻기) |
 | `get_latest_diagnosis` | — | 최신 완료 진단 + 문제 상위 5건(제목·심각도) | 완료 진단 없음 |
 
-시뮬레이션 도구의 사실: `시뮬레이션(제목·id)`, 목표별 `현재/실행 후 예상 달성일`·`단축/지연 N일`, `만기까지 이자 절감(수수료 제외)`, `만기까지 총 이자(현재 → 실행 후)`, 복합이면 `평가 기간 금융비용 변화`, `적용 가정(서버)`.
-notes: "달성일·절감액은 서버 시뮬레이션 엔진이 계산한 값이다. 새 숫자를 만들지 말 것." (+ 계산 불가 목표가 있으면 날짜 추정 금지).
+시뮬레이션 도구의 사실: 목표별 `현재/실행 후 예상 달성일`·`단축/지연 N일`(엔진이 계산한 목표만), 복합에서 자식 결과를 대신 쓰면 `달성일 계산 범위`, `만기까지 이자 절감(수수료 제외)`, `만기까지 총 이자(현재 → 실행 후)`, 복합이면 `평가 기간 금융비용 변화`, `적용 가정(서버)`(한글 문장). 제목·simulationId는 사실에 없다(FE "자세히"는 `toolResults[].simulationId`).
+notes: "달성일·절감액은 서버 시뮬레이션 엔진이 계산한 값이다. 새 숫자를 만들지 말 것." (+ 달성일을 계산하지 않은 목표가 있으면 "목표 달성일을 언급하거나 추정하지 말 것", 자식 결과를 대신 썼으면 "소비 줄이기·저축 변경 부분만 반영한 값", '달성 불가'가 있으면 날짜 추정 금지).
+템플릿(`CoachTemplateWriter.chat`)도 같은 규칙이다: 달성일 사실이 없는 목표는 문장에 넣지 않는다("실행 후 계산 불가로 예상돼요"가 나가지 않는다). `get_latest_diagnosis`의 종합 상태·심각도도 코드(`RISK`·`HIGH`)가 아니라 `위험`·`심각도 높음`으로 넘긴다.
 
 #### 13-2-2. 시연 칩 (LLM 1차 호출 없음)
 
