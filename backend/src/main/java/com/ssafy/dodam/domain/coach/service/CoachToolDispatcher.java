@@ -10,6 +10,8 @@ import com.ssafy.dodam.domain.coach.dto.CoachFacts.Section;
 import com.ssafy.dodam.domain.coach.service.CoachTextGenerator.ToolCall;
 import com.ssafy.dodam.domain.diagnosis.entity.Diagnosis;
 import com.ssafy.dodam.domain.diagnosis.entity.DiagnosisIssue;
+import com.ssafy.dodam.domain.diagnosis.entity.DiagnosisStatus;
+import com.ssafy.dodam.domain.diagnosis.entity.IssueSeverity;
 import com.ssafy.dodam.domain.diagnosis.repository.DiagnosisIssueRepository;
 import com.ssafy.dodam.domain.diagnosis.repository.DiagnosisRepository;
 import com.ssafy.dodam.domain.goal.dto.response.GoalForecastResponse;
@@ -140,8 +142,9 @@ public class CoachToolDispatcher {
         SimulationRunner.Outcome outcome = runner.run(userId, input);
         SimulationResponse response = simulations.toResponse(userId, outcome.simulation());
         log.info("Coach tool simulated: tool={} simulationId={} created={}", call.name(), response.simulationId(), outcome.created());
+        CoachSimulationFactFormatter.Formatted formatted = formatter.format(response);
         return CoachToolResult.ok(call.id(), call.name(), response.simulationId(), outcome.created(),
-                formatter.sections(response), formatter.notes(response));
+                formatted.sections(), formatted.notes());
     }
 
     SpendingSimulationRequest spendingRequest(CoachToolArguments arguments) {
@@ -253,17 +256,41 @@ public class CoachToolDispatcher {
         Diagnosis diagnosis = latest.get();
         List<Fact> facts = new ArrayList<>();
         facts.add(new Fact("진단 완료 시각", CoachFormat.dateTime(diagnosis.getCompletedAt())));
-        facts.add(new Fact("종합 상태(서버 판정)", diagnosis.getOverallStatus() == null ? "판정 없음" : diagnosis.getOverallStatus().name()));
+        facts.add(new Fact("종합 상태(서버 판정)", statusText(diagnosis.getOverallStatus())));
         facts.add(new Fact("문제 수", CoachFormat.count(diagnosis.getIssueCount())));
         int index = 1;
         for (DiagnosisIssue issue : issues.findAllOwned(userId, diagnosis.getDiagnosisId())) {
             if (index > 5) {
                 break;
             }
-            facts.add(new Fact("문제 " + index++ + " (" + issue.getSeverity().name() + ")", issue.getTitle()));
+            facts.add(new Fact("문제 " + index++ + " (심각도 " + severityText(issue.getSeverity()) + ")", issue.getTitle()));
         }
         return CoachToolResult.ok(call.id(), call.name(), null, null, List.of(new Section("최근 진단(서버 판정)", facts)),
                 List.of("문제 목록과 심각도는 서버 진단 규칙의 판정이다. 새 문제를 만들거나 심각도를 바꾸지 말 것."));
+    }
+
+    /** 진단 판정 코드의 사용자용 표기. 영문 코드({@code RISK}, {@code HIGH})는 사실에 넣지 않는다 — 모델 입력이자 결과 카드 값이다. */
+    static String statusText(DiagnosisStatus status) {
+        if (status == null) {
+            return "판정 없음";
+        }
+        return switch (status) {
+            case HEALTHY -> "양호";
+            case CAUTION -> "주의";
+            case RISK -> "위험";
+        };
+    }
+
+    static String severityText(IssueSeverity severity) {
+        if (severity == null) {
+            return "미기록";
+        }
+        return switch (severity) {
+            case LOW -> "낮음";
+            case MEDIUM -> "보통";
+            case HIGH -> "높음";
+            case CRITICAL -> "심각";
+        };
     }
 
     // ---------- 라벨 매칭 ----------

@@ -114,7 +114,6 @@ class CoachChatApiTest {
     private static CoachToolResult combinedOk(String callId) {
         return CoachToolResult.ok(callId, "simulate_combined", 88L, true,
                 List.of(new Section("시뮬레이션 결과(서버 계산)", List.of(
-                        new Fact("시뮬레이션", "복합 시뮬레이션 (id 88)"),
                         new Fact("현재 예상 달성일(비상금 500만 원)", "2028-02-13"),
                         new Fact("실행 후 예상 달성일(비상금 500만 원)", "2027-10-15"),
                         new Fact("단축(비상금 500만 원)", "121일"),
@@ -181,7 +180,7 @@ class CoachChatApiTest {
         assertThat(data.get("conversationId").asText()).matches("c_[0-9a-f]{16}");
         assertThat(data.get("message").asText()).contains("121일");
         assertThat(data.get("facts").get("subject").asText()).isEqualTo("복합 시뮬레이션");
-        assertThat(data.get("facts").get("sections").get(0).get("facts").get(3).get("value").asText()).isEqualTo("121일");
+        assertThat(data.get("facts").get("sections").get(0).get("facts").get(2).get("value").asText()).isEqualTo("121일");
         assertThat(data.get("toolResults")).hasSize(1);
         assertThat(data.get("toolResults").get(0).get("tool").asText()).isEqualTo("simulate_combined");
         assertThat(data.get("toolResults").get(0).get("simulationId").asLong()).isEqualTo(88L);
