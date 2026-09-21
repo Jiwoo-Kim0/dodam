@@ -42,13 +42,14 @@ export const styles = StyleSheet.create({
     height: 19,
     width: 19,
   },
+  /** 무엇에 썼는지를 카드에서 먼저 읽게 한다. 금액과 같은 굵기로 한 단계 크게 둔다. */
   categoryLabel: {
     color: colors.textPrimary,
     flex: 1,
     flexShrink: 1,
-    fontFamily: fontFamily.medium,
-    fontSize: fontSize.body2,
-    lineHeight: 18,
+    fontFamily: fontFamily.semiBold,
+    fontSize: fontSize.buttonSmall,
+    lineHeight: 22,
   },
   categoryAmount: {
     color: colors.textPrimary,

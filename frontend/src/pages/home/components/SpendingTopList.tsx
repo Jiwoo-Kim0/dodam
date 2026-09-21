@@ -53,10 +53,10 @@ export function SpendingTopList({
           <View style={styles.amountGroup}>
             <Text style={styles.categoryAmount}>{formatCurrency(item.amount)}</Text>
             {item.direction === 'none' ? (
-              <Text style={styles.changeLabel}>지난 달과 같아요</Text>
+              <Text style={styles.changeLabel}>지난달과 같아요</Text>
             ) : (
               <View style={styles.changeGroup}>
-                <Text style={styles.changeLabel}>{`지난 달 대비 ${item.changePercent}%`}</Text>
+                <Text style={styles.changeLabel}>{`지난달 대비 ${item.changePercent}%`}</Text>
                 <SymbolView
                   name={
                     item.direction === 'down'
