@@ -4,7 +4,7 @@ import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * 도리에게 묻기(채팅, S15P21D105-640 A-3) 설정. {@code app.coach.chat}.
+ * 토리에게 묻기(채팅, S15P21D105-640 A-3) 설정. {@code app.coach.chat}.
  *
  * <p>3종 코치와 값을 따로 두는 이유: 채팅은 자유 입력 한 턴에 외부 호출이 최대 2회 나가고(1차 도구 선택, 2차 문장),
  * 사용자가 연달아 묻는다. 같은 예산을 쓰면 채팅 몇 번에 진단 화면의 코치 문장이 템플릿으로 떨어진다.

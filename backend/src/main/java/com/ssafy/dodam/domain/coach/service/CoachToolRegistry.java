@@ -12,7 +12,7 @@ import java.util.Set;
 import org.springframework.stereotype.Component;
 
 /**
- * "도리에게 묻기" 도구 목록(640 A-2, 계획 §1-4). 모델에게 보내는 OpenAI function 스키마와 시연 칩의 고정 매핑을 한 곳에 둔다.
+ * "토리에게 묻기" 도구 목록(640 A-2, 계획 §1-4). 모델에게 보내는 OpenAI function 스키마와 시연 칩의 고정 매핑을 한 곳에 둔다.
  *
  * <p>스키마 원칙: 인자는 전부 <b>enum·description으로 고정</b>한다(637 실측에서 설명 없는 문자열 인자에 "카페" 같은 한글 값이 들어왔다).
  * 사용자 식별자·계좌번호·loanId·goalId는 스키마에 없다 — 대출·목표는 이름(라벨)으로 받고 서버가 본인 것 중에서 찾는다.

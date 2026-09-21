@@ -9,6 +9,6 @@ public enum CoachTopic {
     /** 추천 근거 설명 */
     RECOMMENDATION_EXPLANATION,
 
-    /** 도리에게 묻기 — 대화형 시뮬레이션 에이전트(S15P21D105-640 A-3). {@code POST /coach/chat} 전용이며 캐시하지 않는다. */
+    /** 토리에게 묻기 — 대화형 시뮬레이션 에이전트(S15P21D105-640 A-3). {@code POST /coach/chat} 전용이며 캐시하지 않는다. */
     CHAT
 }
