@@ -13,6 +13,16 @@ import type { SocialLoginResult } from '@/types/auth.types';
 import { SocialLoginButton } from './components/SocialLoginButton';
 import { styles } from './LoginScreen.styles';
 
+/**
+ * 개발용 로그인을 띄울지 여부.
+ *
+ * <p>릴리스 빌드는 `__DEV__`가 꺼져 데모 칸이 사라지는데, 내부 배포 APK는 소셜 로그인 없이
+ * 들어가야 해서 빌드 프로필에서 따로 켠다(`eas.json`의 development·preview).
+ * 실제 배포용 `production` 프로필에는 켜 두지 않는다.
+ */
+const isDemoLoginEnabled =
+  __DEV__ || process.env.EXPO_PUBLIC_ENABLE_DEMO_LOGIN === 'true';
+
 type SubmissionType = 'kakao' | 'google' | 'demo';
 
 export function LoginScreen() {
@@ -112,7 +122,7 @@ export function LoginScreen() {
 
         <SocialLoginButton provider="naver" onPress={showNaverComingSoon} />
 
-        {__DEV__ ? (
+        {isDemoLoginEnabled ? (
           <View style={styles.demoSection}>
             <Text style={styles.demoTitle}>개발용 로그인</Text>
             <TextInput
