@@ -389,3 +389,277 @@ POST /diagnoses {"forceRefresh":true}  → diagnosisId=10, cached=false, RISK, �
 실제로는 preflight가 앞에서 막아주고 파일이 멱등이라 다시 돌리면 복구되지만, 트랜잭션으로 감싼
 의도는 지금 형태로는 성립하지 않는다. 작업 테이블 생성을 `START TRANSACTION` **앞으로** 옮기면 해결된다.
 
+
+---
+
+## 2026-09-18 — API 19 Improvement · API 20 Report 완료 기준 재점검 (S15P21D105-590 · 635)
+
+> Day 11 갈래 A에서 구현한 두 API가 **완료 기준을 실제로 만족하는지** 다시 확인한 기록이다.
+> 확인 → 발견 → 고친 것 → 안 고치고 넘긴 것 순으로 적는다.
+
+### 1. 무엇을 기준으로 봤나
+
+요청받은 완료 기준 두 줄을 그대로 체크리스트로 썼다.
+
+| # | 완료 기준 | 결론 |
+| --- | --- | --- |
+| A | 추천 수락과 개선 행동을 **중복 없이** 연결 | 충족 |
+| B | **예상 효과**와 **실제 관측값**을 구분 | 충족 |
+| C | **소유권** 검증 | 충족 |
+| D | **기간** 검증 | 충족 |
+| E | **페이지** 검증 | 충족 |
+| F | **재진단 중복 방지** | 충족 |
+| G | **리포트 기반** 응답 | 충족 |
+
+확인 방법은 세 가지를 겹쳤다 — ① 명세서 CSV와 컨트롤러 1:1 대조, ② 로컬 테스트 실행,
+③ **시연 서버(`j15d105.p.ssafy.io`) 실호출**. 코드만 읽고 "되어 있다"고 적지 않았다.
+
+### 2. 엔드포인트 대조 — 19종 전부 있다
+
+`docs/API명세서/19 Improvement …_all.csv`(11건) · `20 Report …_all.csv`(8건)와
+`ImprovementController` · `ReportController`를 한 줄씩 맞췄다. **빠진 엔드포인트도, 명세에 없는데 열려 있는
+엔드포인트도 없다.**
+
+| API 19 | 메서드 · 경로 | 시연 서버 |
+| --- | --- | --- |
+| 개선 결과 요약 | GET `/improvements/summary` | 200 |
+| 개선 행동 이력 | GET `/improvements/actions` | 200 |
+| 개선 행동 상세 | GET `/improvements/actions/{actionId}` | 404(없는 id, 정상) |
+| 실행 전후 비교 | GET `/improvements/actions/{actionId}/comparison` | 404(없는 id, 정상) |
+| 절감금액 | GET `/improvements/savings` | 200 |
+| 부채감소액 | GET `/improvements/debt-reduction` | 200 |
+| 소비감소액 | GET `/improvements/spending-reduction` | 200 |
+| 저축증가액 | GET `/improvements/saving-increase` | 200 |
+| 목표달성일 개선 | GET `/improvements/goal-impact` | 200 |
+| 월별 개선추이 | GET `/improvements/monthly-trend` | 200 |
+| 재진단 요청 | POST `/improvements/rediagnose` | **호출하지 않음**(6절 참조) |
+
+| API 20 | 메서드 · 경로 | 시연 서버 |
+| --- | --- | --- |
+| 데일리 브리핑 | GET `/reports/daily` | 200 |
+| 월간 리포트 | GET `/reports/monthly` | 200 |
+| 리포트 목록 | GET `/reports` | 200 |
+| 월간 소비패턴 | GET `/reports/monthly/spending-pattern` | 200 |
+| 리포트 상세 | GET `/reports/{reportId}` | 200 |
+| 월간 목표변화 | GET `/reports/monthly/goal-impact` | 200 |
+| 다음달 예정비용 | GET `/reports/monthly/upcoming-expenses` | 200 |
+| 월간 개선행동 요약 | GET `/reports/monthly/improvements` | 200 |
+
+### 3. 완료 기준별 근거
+
+**A. 중복 없는 연결.** 개선 행동을 만드는 입구가 하나뿐이다 — `RecommendationStatusService`가
+같은 트랜잭션에서 부르는 `ImprovementActionRecorder`. API 19에는 행동을 만들거나 상태를 바꾸는
+엔드포인트가 아예 없다. 중복은 **3중으로** 막혀 있다.
+
+- DB: `uk_improvement_action_recommendation_id` (V37) — 추천 1건당 행동 1행
+- 엔티티: 같은 `@UniqueConstraint`를 `ImprovementAction`에도 선언 (H2 테스트는 Flyway를 끄고 엔티티로
+  스키마를 만들어서, 여기 없으면 테스트에서 검증이 안 된다)
+- 코드: DEFERRED → 재수락은 `INSERT`가 아니라 `replan()` — 기존 행의 기준선만 다시 잡는다
+
+테스트 `deferAndReacceptDoesNotCreateASecondAction`이 수락 → 보류 → 재수락 후 `hasSize(1)`을 단언한다.
+
+**B. 예상 ≠ 실측.** `improvement_action`의 금액 컬럼은 **전부 실측값**이고, 예상치는 `recommendation`에만
+있다. 응답에서 `expectedMonthlySaving`(추천)과 `actualMonthlySaving`(행동)이 다른 소스에서 온다.
+측정 전에는 `actual*`·`measuredAt`이 **null이고 0이 아니다** — "효과 0원"과 "아직 모름"을 구분한다.
+`ImprovementSummaryResponse`도 실측만 더하고, `measuredActions`로 "합계 0"의 의미를 구분해 준다.
+테스트 `acceptCreatesOneActionAndKeepsExpectedApartFromActual`이 `expected=12000`,
+`actual` 부재를 함께 단언한다.
+
+**C~E. 소유권 · 기간 · 페이지.** 시연 서버 실호출 결과.
+
+```
+/reports/999999                              [404] RESOURCE_NOT_FOUND  리포트를 찾을 수 없습니다.
+/improvements/actions/999999                 [404] RESOURCE_NOT_FOUND  개선 행동을 찾을 수 없습니다.
+/improvements/actions/999999/comparison      [404] RESOURCE_NOT_FOUND
+/improvements/actions/abc                    [400] INVALID_REQUEST
+/improvements/actions?page=-1                [400] VALIDATION_ERROR
+/improvements/actions?size=101               [400] VALIDATION_ERROR
+/improvements/actions?startDate=09-10&endDate=09-01   [400] 시작일은 종료일보다 늦을 수 없습니다.
+/improvements/monthly-trend?startMonth=2026-9         [400] YYYY-MM 형식의 유효한 연월이어야 합니다.
+/improvements/monthly-trend?2025-01~2026-09           [400] 조회 기간은 최대 12개월까지 가능합니다.
+/reports/monthly?yearMonth=2026-09           [400] 아직 끝나지 않은 월의 리포트는 만들 수 없습니다.
+/reports/monthly?yearMonth=2026-13           [400] YYYY-MM 형식…
+/reports/daily?date=2026-09-18               [400] 아직 끝나지 않은 날의 브리핑은 만들 수 없습니다.
+/reports?size=0                              [400] VALIDATION_ERROR
+/reports?type=WEEKLY                         [400] INVALID_REQUEST
+/reports/monthly/goal-impact?goalId=999999   [404] 목표를 찾을 수 없습니다.
+/reports/monthly/upcoming-expenses?2028-10   [400] 예정 비용은 12개월 뒤까지 조회할 수 있습니다.
+```
+
+소유권은 **없는 리소스와 타인 리소스를 구분하지 않는다**(둘 다 404). 리포지터리 메서드에 `userId`
+조건이 박혀 있어 서비스 코드가 검사를 빠뜨릴 수 없는 구조다.
+
+**F. 재진단 중복 방지.** `ImprovementRediagnoseService`가 진단을 다시 구현하지 않고 진단 실행 API와
+**같은 `DiagnosisRunner`**를 부른다. 그래서 중복 방지가 `DiagnosisExecutionStore.admit()` 하나로 모인다 —
+임대 5분 안에 진행 중 접수가 있으면 409, 같은 날 같은 규칙 버전의 완료 진단이 있으면 그것을 그대로
+돌려주고(`created:false`, 200), 아니면 새로 실행(201). `forceRefresh`를 열지 않은 것이 이 API의
+"중복 요청 방지"다. `goalId`는 `admit()`이 소유권까지 확인한다.
+테스트 `rediagnoseCreatesOnceAndReusesTheSameDayResult`가 201 → 200 전이를 단언한다.
+
+**G. 리포트 기반 응답.** 소비패턴·목표변화·개선행동 요약은 조회 시점에 다시 집계하지 않고
+**저장된 월간 리포트의 JSON을 읽는다.** 같은 달을 두 경로로 집계하면 합계가 어긋나기 때문이다.
+시연 서버에서 확인: `/reports/monthly`의 `totalExpense 6,455,800`과
+`/reports/monthly/spending-pattern`의 `totalExpense 6,455,800`이 같은 값이다(둘 다 reportId=1에서 나왔다).
+`READY`로 굳은 리포트는 재생성하지 않고, `NO_TRANSACTIONS`·`INSUFFICIENT_DATA`만 다음 조회 때 다시 만든다.
+
+### 4. 고친 것 — 3곳
+
+`./gradlew test` 전체 **1,231건 통과 / 실패 0**(수정 전후 모두).
+
+#### (1) 월별 개선추이가 `ImprovementClock`이 아니라 벽시계를 쓰고 있었다 — 값이 조용히 사라지는 경로
+
+`ImprovementQueryService`의 나머지 10종은 전부 `clock.today()`를 쓰는데
+`monthlyTrend`만 `monthPeriods.resolve(startMonth, endMonth)` 2-인자 오버로드를 불렀다. 이 오버로드는
+안에서 `YearMonth.now(SERVICE_ZONE)`을 직접 읽는다.
+
+**왜 고쳤나.** 단순한 취향 문제가 아니다. 추이의 **버킷 키**는 `measuredAt`·`completedAt`에서 나오고
+이 값들은 `ImprovementClock`이 찍는다. 반면 **버킷 경계**는 벽시계가 정했다. 두 기준이 어긋나면
+`buckets.get(month)`가 `null`을 돌려주고 코드가 `continue`로 넘어간다 — **에러 없이 그 달의 절감액이
+응답에서 빠진다.** 운영에서는 두 시계가 같아 지금 당장 틀린 값이 나오지는 않지만, 시계를 고정하는
+모든 상황(테스트·시연용 시각 이동)에서 바로 깨진다. 실제로 기존 테스트가 이 사실을 알고
+"공용 정책이 실제 현재 월을 본다"는 주석과 함께 **우회하고 있었다.**
+
+**어떻게 고쳤나.** `YearMonthPeriodPolicy`에 이미 있던 3-인자 `resolve(start, end, currentMonth)`를
+package-private → `public`으로 열고(다른 호출부 영향 없음, 추가만 한 셈이다) 기준월을 넘겨준다.
+
+```java
+// before
+YearMonthPeriod period = monthPeriods.resolve(startMonth, endMonth);
+// after
+YearMonthPeriod period = monthPeriods.resolve(startMonth, endMonth, YearMonth.from(clock.today()));
+```
+
+테스트도 우회 주석을 지우고, **파라미터를 모두 생략했을 때 고정 시계의 현재 월로 끝나는 6개월**이
+나오는지(`2026-04`~`2026-09`, 6개) 단언을 추가했다. 이제 실제 날짜가 흘러도 이 테스트는 흔들리지 않는다.
+
+- `backend/src/main/java/com/ssafy/dodam/global/policy/YearMonthPeriodPolicy.java`
+- `backend/src/main/java/com/ssafy/dodam/domain/improvement/service/ImprovementQueryService.java`
+- `backend/src/test/java/com/ssafy/dodam/domain/improvement/ImprovementApiTest.java`
+
+#### (2) 스냅샷의 사유 코드가 대출 건수만큼 중복 적재됐다
+
+`ImprovementSnapshotReader`가 금리 없는 대출을 만날 때마다 `unavailable.add(LOAN_RATE_UNAVAILABLE)`을
+했다. 금리 없는 대출이 3건이면 같은 코드가 3번 들어가고, 그대로 `before_snapshot` JSON에 **굳는다**
+(스냅샷은 수락 시점 기준선이라 나중에 다시 만들지 않는다).
+
+**왜 고쳤나.** `unavailable`은 주석에도 "값을 만들지 못한 항목의 **사유 코드**"라고 적혀 있는 집합인데
+실제로는 개수가 대출 건수를 드러내는 리스트였다. 소비자가 코드 존재 여부로 분기하면 지금도 동작하지만,
+저장된 JSON이 대출 건수에 따라 달라지는 것은 스냅샷의 의도가 아니다.
+
+**어떻게 고쳤나.** `ArrayList` → `LinkedHashSet`(입력 순서 유지)으로 바꾸고 record에 넣을 때
+`List.copyOf`로 변환했다. `monthlyInterest`를 null로 접는 `contains` 판정과 `forecastDate()`가
+집합에 코드를 더하는 순서(Java 인자 왼→오 평가)는 그대로다.
+
+- `backend/src/main/java/com/ssafy/dodam/domain/improvement/service/ImprovementSnapshotReader.java`
+
+### 5. 안 고치고 넘기는 것 — 코드가 아니라 **시연 데이터** 문제 3건
+
+시연 서버 실호출에서 나온 것들이다. 코드는 정상이고 데이터가 비어 있다.
+
+#### (1) U0003에 수락된 추천이 0건이라 API 19가 통째로 비어 있다
+
+```
+GET /recommendations/summary
+  byStatus: {PENDING: 22, ACCEPTED: 0, REJECTED: 0, DEFERRED: 0, COMPLETED: 0}
+GET /improvements/summary
+  totalActions: 0, byStatus 전부 0, totalMonthlySaving: 0
+```
+
+개선 행동은 **추천 수락으로만** 생기므로 수락이 0건이면 API 19 화면이 전부 빈 상태로 보인다.
+시연 전에 추천 1건 이상 수락이 필요하다. **다른 사람 계정 데이터라 내가 수락하지 않았다**
+(day-12 §18에서 목표 예산값을 그대로 둔 것과 같은 이유다).
+
+#### (2) 지금 수락해도 "전후 비교"와 "절감액"은 시연에서 못 본다 ← 이게 더 중요하다
+
+측정 정책상 **수락한 달은 전·후 어느 쪽에도 넣지 않고**, 실행 후는 **완료된 달**이 1개월 이상 쌓여야 열린다
+(`ImprovementMeasurementPolicy`). 즉 **2026-09-18에 수락하면 after 창은 2026-11-01에야 열린다.**
+그 전까지는 계속 이렇게 나온다.
+
+| 화면 | 수락 직후 값 |
+| --- | --- |
+| 실행 전후 비교 | `unavailableReason: AFTER_PERIOD_NOT_READY` |
+| 절감/부채/소비/저축 4종 | `totalAmount: 0`, `contributingActions: 0` |
+| 개선 행동 상세 | `actualMonthlySaving: null` |
+
+"20일치 소비를 한 달치와 비교하면 반드시 개선으로 보인다"를 막는 의도된 정책이라 **코드로 완화하면 안 된다.**
+시연에서 전후 비교를 보여주려면 `improvement_action.planned_at`을 **2026-07 이전으로 둔 시드**가 필요하다
+(예: 7월 수락 → 8월이 완료 월이라 after 창이 열린다). 636 시드와 같은 방식으로 만들 수 있다.
+
+#### (3) `goal_history.forecast_date`가 비어 있어 월간 목표변화의 달성일 칸이 전부 null
+
+```
+GET /reports/monthly/goal-impact
+  forecastDateAtStart: null, forecastDateAtEnd: null, advancedDays: null
+  (startAmount·endAmount·contributed·progressRatio는 정상)
+GET /improvements/goal-impact
+  currentForecastDate: "2027-07-18"   ← 지금 계산하면 값이 나온다
+```
+
+계산 자체는 된다(위 두 줄이 그 증거다). 앱이 쓰는 `GoalHistoryRecorder.record()`는 모으기 목표면
+`forecast_date`를 같이 넣는데, 시연용 `goal_history` 행은 **SQL로 직접 적재돼서** 그 칸이 비어 있다.
+리포트는 "오늘의 잔액이 아니라 기록된 시점 값"만 읽는 설계라(지난달을 재현하려면 그래야 한다)
+과거 행을 채우지 않는 한 null이 유지된다. → 시드에 `forecast_date`를 채우면 해결된다. **API 20 결함 아님.**
+
+### 6. 내가 시연 서버에 한 일 / 하지 않은 일
+
+한 일 (읽기 + 부수효과 1건):
+- API 19/20 조회 19종 + 음성 케이스 22종 호출
+- `GET /reports/daily` 호출로 **`report` 행 1건이 새로 생성됐다**(reportId=2, period 2026-09-17).
+  "끝난 기간을 조회하면 없을 때 만들어 저장한다"는 설계된 동작이고, 어차피 시연에 필요한 행이다.
+
+하지 않은 일 (의도적으로):
+- `POST /improvements/rediagnose` — 같은 날 캐시에 걸리면 무해하지만 빗나가면 진단 11번이 생기고,
+  추천은 진단 10번에 묶여 있어 **발견 화면이 비어 보이는 day-12 §17과 같은 상황**이 된다. 중복 방지는
+  로컬 테스트로 확인했다.
+- `POST /recommendations/{id}/accept` — 5-(1). 남의 계정 상태를 바꾸지 않았다.
+
+### 7. 참고로 남기는 관찰 2개 (조치 없음)
+
+- **`generatedAt` 정밀도.** 리포트를 **막 만든 응답**은 엔티티의 나노초를 그대로 돌려주고
+  (`2026-09-18T14:35:12.561317925`), 이후 조회는 MySQL `DATETIME`이 초로 반올림한 값을 돌려준다
+  (`14:35:13`). 같은 리포트인데 첫 응답과 두 번째 응답의 `generatedAt`이 다르다. FE가 이 값을 캐시 키로
+  쓰면 한 번 헛돈다. 화면 표시용으로만 쓰면 무해해서 그대로 뒀다.
+- **V37 이전에 ACCEPTED된 추천에는 행동 행이 없다.** `ImprovementActionRecorder`는 COMPLETED·REJECTED를
+  `ifPresent`로만 처리하므로 없는 행을 나중에 만들지 않는다(기준선을 수락 시점에 잡아야 해서 맞는 선택이다).
+  현재 시연 계정은 ACCEPTED가 0건이라 해당 사항이 없다. 백필이 필요해지면 그때 마이그레이션으로 다룬다.
+
+### 8. 결론
+
+**완료 기준 7개 모두 충족. 빠진 엔드포인트 없음. 고친 것 3곳(추이 기준월 1건 + 스냅샷 사유 코드 1건 + 그 테스트).**
+남은 것은 전부 시연 데이터이고, 그중 **5-(2) "전후 비교를 보려면 planned_at 과거 시드가 필요하다"**가
+시연 준비에 제일 먼저 필요하다.
+
+### 9. 4절 수정사항을 590 브랜치로 분리해 올린 기록
+
+> 기록 작성은 2026-09-21. 커밋·push는 09-18에 했고, 그 사이 저장소가 두 번 움직여서 그 과정을 남긴다.
+
+**왜 브랜치를 나눴나.** 4절 수정은 backend 4개 파일이고 1~3·5~8절 점검 기록은 `infra/todo/jiw/day-12.md`다.
+전자는 590(BE 티켓), 후자는 475(인프라)에 속한다. 처음에는 한 커밋(`95a2d28`)에 둘 다 담아 475에 올렸는데,
+590으로 옮기려 보니 `day-12.md`가 **590에는 없는 파일**이라 cherry-pick이 충돌한다. 그래서
+**backend 4개 파일만** 590에 따로 커밋하고, `day-12.md`는 475에 남겼다.
+
+| 브랜치 | 커밋 | 내용 |
+| --- | --- | --- |
+| 475 | `95a2d28` | backend 4개 + `day-12.md`·`README.md` (원본) |
+| 590 | `501067e` | backend 4개만 (+23 −8) → push 완료, 현재 `origin/develop`에도 들어가 있다 |
+
+**작업 중 저장소가 움직였다 (기록해 둘 것).** 590으로 옮기는 작업을 두 턴에 걸쳐 했는데, 그 사이에
+로컬 저장소 상태가 바뀌어 있었다.
+
+- 처음 측정: 590 tip `6e92e3f`, 475가 590보다 **107 커밋** 앞섬, HEAD는 475
+- 다음 턴: 590 tip `e93f6fe`(640 코치 채팅), 590이 **develop와 완전 동기화**(0/0), 475는 590보다 2 커밋,
+  **HEAD가 이미 590으로 옮겨져 있었다**
+
+그래서 앞 턴에서 세워둔 `git checkout 95a2d28 -- backend/`를 그대로 실행했더니 무관한 파일 **27개**
+(coach·diagnosis·recommendation 등 develop 쪽 변경)까지 워킹트리에 올라왔다.
+`git restore --staged --worktree backend/`로 되돌리고, **파일 4개를 경로로 명시해서** 다시 적용했다.
+
+> 교훈: 브랜치를 오가는 작업은 디렉터리 단위(`-- backend/`)로 떠오지 말고 **파일 경로를 명시**한다.
+> 측정값(ahead/behind, tip 해시)은 턴이 바뀌면 다시 재어야 한다 — 여러 사람이 같은 클론을 만진다.
+
+**커밋 전 검증.** 590은 그때 develop와 같은 상태였으므로 4절 변경이 새 코드 위에서도 도는지 다시 확인했다.
+`./gradlew test` **1,298건 통과 / 실패·에러 0 / skip 24** (475에서 잰 1,231건과 개수가 다른 것은
+그 사이 develop에 640 코치 채팅 테스트가 들어왔기 때문이다).
+
+**push.** `git push origin S15P21D105-590-improvement-report` — fast-forward라 force 불필요.
+origin/590이 `6e92e3f` → `501067e`로 올라가면서 develop 105커밋 + 내 1커밋이 함께 반영됐다.
