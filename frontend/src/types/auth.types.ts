@@ -24,12 +24,15 @@ export interface PasswordLoginRequest {
   password: string;
 }
 
-/** 백엔드가 지원하는 소셜 로그인 공급자. 네이버는 아직 미지원이다. */
+/**
+ * 백엔드가 지원하는 소셜 로그인 공급자(backend/docs/auth-social.md).
+ * 서버는 카카오도 받지만 앱에서는 구글만 쓴다. 네이버는 아직 미지원이다.
+ */
 export type SocialProvider = 'kakao' | 'google';
 
 /**
  * POST /v1/auth/social/{provider} 요청 본문.
- * 카카오는 SDK access token, 구글은 ID token(JWT)을 담는다.
+ * 구글은 ID token(JWT)을 담는다.
  */
 export interface SocialLoginRequest {
   token: string;

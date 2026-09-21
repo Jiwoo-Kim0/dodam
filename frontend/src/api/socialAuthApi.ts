@@ -28,10 +28,6 @@ export async function loginWithSocialToken(
   return { auth: data, isNewUser: status === 201 };
 }
 
-export function loginWithKakao(accessToken: string) {
-  return loginWithSocialToken('kakao', accessToken);
-}
-
 /** 구글은 accessToken이 아니라 id_token(JWT)을 보낸다. */
 export function loginWithGoogle(idToken: string) {
   return loginWithSocialToken('google', idToken);
@@ -39,6 +35,5 @@ export function loginWithGoogle(idToken: string) {
 
 export const socialAuthApi = {
   loginWithSocialToken,
-  loginWithKakao,
   loginWithGoogle,
 };
