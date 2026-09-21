@@ -69,7 +69,7 @@ public class CoachController {
     }
 
     /**
-     * 도리에게 묻기(S15P21D105-640 A-3). 자유 입력이면 모델이 도구를 고르고, {@code chipId}면 서버 고정 매핑으로 바로 실행한다.
+     * 토리에게 묻기(S15P21D105-640 A-3). 자유 입력이면 모델이 도구를 고르고, {@code chipId}면 서버 고정 매핑으로 바로 실행한다.
      * 어떤 실패도 200 + {@code source=TEMPLATE}이다. 401·404·400(빈 질문·잘못된 chipId·길이 초과)만 예외다.
      */
     @PostMapping("/chat")

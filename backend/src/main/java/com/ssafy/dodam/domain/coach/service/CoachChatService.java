@@ -24,7 +24,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
- * 도리에게 묻기 — 대화형 시뮬레이션 에이전트(S15P21D105-640 A-3, 계획 §1-2).
+ * 토리에게 묻기 — 대화형 시뮬레이션 에이전트(S15P21D105-640 A-3, 계획 §1-2).
  *
  * <p>한 턴의 흐름:
  * <ol>
@@ -47,7 +47,9 @@ public class CoachChatService {
 
     private static final Logger log = LoggerFactory.getLogger(CoachChatService.class);
 
-    static final String SUBJECT_DEFAULT = "도리에게 묻기";
+    static final String SUBJECT_DEFAULT = "토리에게 묻기";
+    /** 외부로 나가는 메시지에서 식별자 형태가 발견됐을 때. 정상 흐름에서는 나지 않으며, 나면 조립기·포매터 회귀다(§6). */
+    static final String OUTBOUND_BLOCKED_LOG = "Coach chat outbound payload blocked before the external call: userId={} role={} violations={}";
     static final String MESSAGE_REQUIRED = "질문 또는 chipId가 필요합니다.";
     public static final String SENSITIVE_MESSAGE =
             "계좌번호·카드번호처럼 긴 숫자는 채팅에 적지 말아 주세요. 번호를 빼고 다시 물어봐 주시면 도와드릴게요.";
@@ -142,6 +144,11 @@ public class CoachChatService {
             if (!generator.isAvailable()) {
                 return finish(userId, session, userText, chipId, CoachDegradedReason.AI_DISABLED, emptyFacts(), List.of(), null);
             }
+            // 673: 시스템 프롬프트([화면 맥락] facts 포함)·재생 턴을 외부로 보내기 직전에 한 번 더 본다. 사용자 문장은 이미 봤지만
+            // 맥락 facts는 진단 JSON에서 온 값이라 조립기 필터를 새 키가 통과할 수 있다. 예산을 깎기 전에 검사한다
+            if (blockOutbound(userId, messages)) {
+                return finish(userId, session, userText, chipId, CoachDegradedReason.SENSITIVE_DATA_BLOCKED, emptyFacts(), List.of(), null);
+            }
             if (!rateLimiter.tryAcquire(userId)) {
                 log.warn("Coach chat call refused by the per-user budget: userId={}", userId);
                 return finish(userId, session, userText, chipId, CoachDegradedReason.RATE_LIMITED, emptyFacts(), List.of(), null);
@@ -171,12 +178,17 @@ public class CoachChatService {
             if (!generator.isAvailable()) {
                 return finish(userId, session, userText, chipId, CoachDegradedReason.AI_DISABLED, facts, results, null);
             }
+            messages.add(ChatMessage.assistant(null, calls));
+            results.forEach(result -> messages.add(ChatMessage.tool(result.toolCallId(), result.toModelText())));
+            // 673: 도구 결과에는 목표 이름·대출 계좌명처럼 사용자가 적은 문자열이 섞인다. 서버 포맷 숫자(천단위 구분)는 걸리지 않고
+            // 식별자 형태만 걸린다. 걸리면 외부로 보내지 않고 템플릿이 facts로 말한다 — 계산 결과는 사용자 본인 것이라 화면에는 나간다
+            if (blockOutbound(userId, messages)) {
+                return finish(userId, session, userText, chipId, CoachDegradedReason.SENSITIVE_DATA_BLOCKED, facts, results, null);
+            }
             if (!rateLimiter.tryAcquire(userId)) {
                 log.warn("Coach chat second call refused by the per-user budget: userId={}", userId);
                 return finish(userId, session, userText, chipId, CoachDegradedReason.RATE_LIMITED, facts, results, null);
             }
-            messages.add(ChatMessage.assistant(null, calls));
-            results.forEach(result -> messages.add(ChatMessage.tool(result.toolCallId(), result.toModelText())));
             ChatTurn second;
             try {
                 second = generator.chat(messages, tools, ToolChoice.none());
@@ -208,6 +220,22 @@ public class CoachChatService {
             log.warn("Coach chat answer is longer than the prompt asked: length={} limit={}", trimmed.length(), limit);
         }
         return finish(userId, session, userText, chipId, null, facts, results, trimmed);
+    }
+
+    /**
+     * 외부로 나갈 메시지 전체(시스템 프롬프트·재생 턴·사용자 문장·도구 결과)에 식별자 형태가 있으면 true. 3종 코치가 프롬프트 직전에
+     * 하는 검사({@code CoachService})와 같은 규칙이며, 채팅은 재료가 요청마다 달라(맥락 facts·도구 결과) 두 번 본다.
+     * 정상 흐름에서는 걸리지 않으므로 ERROR로 남긴다 — 걸렸다면 어느 조립기·포매터가 새 값을 흘린 것이다. 내용은 남기지 않는다.
+     */
+    private boolean blockOutbound(Long userId, List<ChatMessage> messages) {
+        for (ChatMessage message : messages) {
+            List<String> violations = sensitive.scan(message.content());
+            if (!violations.isEmpty()) {
+                log.error(OUTBOUND_BLOCKED_LOG, userId, message.role(), violations);
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 턴을 세션에 남기고 응답을 만든다. {@code aiAnswer}가 null이면 템플릿 경로다. */
