@@ -200,9 +200,11 @@ class RecommendationApiTest {
                 .andExpect(jsonPath("$.data.byDomain.SAVING").value(2))
                 .andExpect(jsonPath("$.data.expectedContributionAmount").value(2_000_000))
                 .andExpect(jsonPath("$.data.expectedMonthlyCostSaving").value(0))
-                // 발견 수치는 최신 진단 한 건만 본다
+                // 발견 수치는 최신 진단 한 건만 본다. 675: 목표 위험(GOAL) 문제와 그 추천(저축 늘리기)은 발견 목록에 없으므로 뺀다
                 .andExpect(jsonPath("$.data.discovery.diagnosisId").value(latestDiagnosis))
-                .andExpect(jsonPath("$.data.discovery.openRecommendationCount").value(1))
+                .andExpect(jsonPath("$.data.discovery.issueCount").value(0))
+                .andExpect(jsonPath("$.data.discovery.openRecommendationCount").value(0))
+                .andExpect(jsonPath("$.data.discovery.notes").value(org.hamcrest.Matchers.hasItems("GOAL_ISSUES_EXCLUDED", "NO_OPEN_RECOMMENDATION")))
                 .andExpect(jsonPath("$.data.discovery.expectedAnnualCostSaving").value(org.hamcrest.Matchers.nullValue()));
         mvc.perform(get("/api/v1/recommendations/summary").with(user(other.toString())))
                 .andExpect(jsonPath("$.data.total").value(0)).andExpect(jsonPath("$.data.byStatus.PENDING").value(0))
