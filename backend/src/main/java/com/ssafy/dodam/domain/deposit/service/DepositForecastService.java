@@ -103,8 +103,14 @@ public class DepositForecastService {
     }
 
     public DepositMaturityForecastResponse maturityForecast(Long userId, String accountNo) {
-        DepositAccountRow deposit = lookup.require(userId, accountNo);
-        LocalDate today = clock.today();
+        return maturityForecast(lookup.require(userId, accountNo), clock.today());
+    }
+
+    /**
+     * 이미 소유권이 확인된 예금 행의 만기 예상. 678의 accountId 기준 조회가 계산식을 복제하지 않고
+     * 같은 결과를 내도록 진입점만 나눈 것이다. 기준일은 호출자가 한 번 읽어 넘긴다.
+     */
+    public DepositMaturityForecastResponse maturityForecast(DepositAccountRow deposit, LocalDate today) {
         List<String> assumptions = sorted(BASE_ASSUMPTIONS);
 
         List<String> reasons = commonReasons(deposit, today);
