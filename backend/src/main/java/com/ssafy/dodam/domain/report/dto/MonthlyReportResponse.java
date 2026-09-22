@@ -30,7 +30,7 @@ import java.time.LocalDateTime;
  * </ul>
  * 635 이전에 만들어진 READY 리포트는 세 필드가 비어 있다가 {@code /reports/monthly} 조회 때 채워진다(합계는 그대로).
  *
- * @param diagnosisId    그 달 안에 완료된 가장 최근 진단. 없으면 null
+ * @param diagnosisId    그 달 말일까지 완료된 가장 최근 진단(694). 없으면 null
  * @param overallStatus  위 진단의 종합 상태(HEALTHY / CAUTION / RISK). 진단이 없으면 null
  */
 public record MonthlyReportResponse(

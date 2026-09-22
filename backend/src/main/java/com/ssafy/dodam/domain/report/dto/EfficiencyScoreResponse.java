@@ -13,7 +13,8 @@ import java.util.List;
  *
  * <ul>
  *   <li>항목 점수는 모두 0~100 정수다. 계산할 수 없는 항목은 {@code score = null} + {@code unavailableReason}이며
- *       {@code status = UNAVAILABLE}이다. 0점과 "모름"은 다르다.</li>
+ *       {@code status = UNAVAILABLE}이다. 0점과 "모름"은 다르다. {@code score} 키는 null이어도 항상 직렬화한다 —
+ *       FE가 {@code === null}로 계산 불가를 판정하므로 키가 빠지면 {@code undefined}가 되어 구분이 깨진다(694).</li>
  *   <li>전체 점수는 계산된 항목의 <b>단순 평균</b>(반올림)이다. 계산된 항목이 {@code minimumDimensions}보다 적으면
  *       전체 점수도 null이고 {@code unavailableReason = INSUFFICIENT_DIMENSIONS}다. 계산 불가 항목을 0점으로 넣어
  *       평균을 끌어내리지 않는다.</li>
@@ -66,7 +67,6 @@ public record EfficiencyScoreResponse(
      *                          DIAGNOSIS_NOT_FOUND
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Dimension(
             String key,
             String label,
@@ -74,10 +74,10 @@ public record EfficiencyScoreResponse(
             int maxScore,
             String status,
             String description,
-            Double value,
-            String valueType,
-            String grade,
-            String unavailableReason
+            @JsonInclude(JsonInclude.Include.NON_NULL) Double value,
+            @JsonInclude(JsonInclude.Include.NON_NULL) String valueType,
+            @JsonInclude(JsonInclude.Include.NON_NULL) String grade,
+            @JsonInclude(JsonInclude.Include.NON_NULL) String unavailableReason
     ) {
     }
 }
