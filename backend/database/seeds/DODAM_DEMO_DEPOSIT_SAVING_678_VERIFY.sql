@@ -7,10 +7,11 @@
 -- snapshot so the app's saving pace = current / elapsed months is realistic).
 --
 -- Expected after load (and unchanged after a rerun):
---   Q1  3 rows: 5,500,000 / 12,100,000 / 78,000,000, paid_count 11 / 121 / 78, paid_sum = balance,
+--   Q1  3 rows: 3,300,000 / 12,100,000 / 30,000,000, paid_count 11 / 121 / 60, paid_sum = balance,
 --       scheduled_count 0 / 1 / 0, future_paid_count 0, withdrawal_owner_ok 1, product_ok 1
---   Q2  1 row: current_amount 95,600,000, target 150,000,000, linked_count 3, progress 63.7333, history_count 61
---       (GOAL_CREATED 2021-09-21 24,100,000 + month-end AMOUNT_UPDATED 60 rows, last 2026-08-31 94,000,000)
+--       (목돈적금: expiry 2026-03-15 already passed, next_payment_date = expiry, no SCHEDULED row — matured account)
+--   Q2  1 row: current_amount 45,400,000, target 150,000,000, linked_count 3, progress 30.2667, history_count 61
+--       (GOAL_CREATED 2021-09-21 9,600,000 + month-end AMOUNT_UPDATED 60 rows, last 2026-08-31 45,000,000)
 --   Q3  account_ids / goal_id identical between the first load and the rerun; payment_checksum identical
 --   Q4  every count equals the baseline (rows of other users and U0003's non-678 rows are untouched)
 --   Q5  0 / 0

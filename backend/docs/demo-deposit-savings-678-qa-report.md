@@ -2,6 +2,8 @@
 
 작성일: 2026-09-21. 계획: [demo-deposit-savings-678-plan.md](demo-deposit-savings-678-plan.md). 브랜치 `S15P21D105-678-db`(원격 생성분을 최신 `develop` 69c0f04까지 fast-forward).
 
+> **2026-09-22 개정**: 679(급여 3,012,400) 수지에 맞춰 적금 수치를 축소했다(청년도약 50만→30만, 목돈적금 100만×78회→50만×60회 만기 완료). 2~4절은 개정 전 수치(2026-09-21)의 실측 기록이며, 개정판의 실측은 **7절**이 대체한다. 현재 seed의 기대값은 seeds README 16번 절과 7절을 따른다.
+
 ## 1. 검증 환경
 
 | 항목 | 값 |
@@ -96,3 +98,54 @@ H2 통합 테스트: `DepositSavingForecastApiIntegrationTest` 12건 통과(기�
 - `.\gradlew.bat clean build`(전체 테스트 포함) **BUILD SUCCESSFUL**, 3분 43초. 테스트 1,326건 실행, 실패 0, 오류 0, 생략 24(MySQL 전용 등 조건부 테스트).
 - `git diff --check` 공백 오류 없음. 작업 파일은 로컬 규약대로 CRLF.
 - 커밋·push·MR·시연 서버 적재는 수행하지 않았다.
+
+## 7. 2026-09-22 개정판 재검증 (급여 3,012,400 수지 반영)
+
+### 7-1. 변경 수치
+
+| 계좌 | 개정 전 | 개정 후 |
+| --- | --- | --- |
+| 신한 청년도약계좌 | 500,000 × 11회 = 5,500,000 | **300,000 × 11회 = 3,300,000** (개설·만기·다음 납입 동일) |
+| 주택청약종합저축 | 100,000 × 121회 = 12,100,000 | 변경 없음 |
+| 내집마련 목돈적금 | 1,000,000 × 78회 = 78,000,000, 만기 2027-04-15, 다음 납입 2026-10-15 | **500,000 × 60회 = 30,000,000 완납**, 개설 2021-03-15, **만기 2026-03-15(도래)**, SCHEDULED 없음, `next_payment_date` = 만기일, 상태 `ACTIVE` |
+| 납입 행 | 211(PAID 210 + SCHEDULED 1) | **193(PAID 192 + SCHEDULED 1)** |
+| 목표 `내 집 마련 준비` | 95,600,000 / 150,000,000 = 63.7333% | **45,400,000 / 150,000,000 = 30.2667%**, 이력 61건(GOAL_CREATED 9,600,000, 2026-08-31 45,000,000) |
+| 월 납입 합(현금흐름 유출) | 1,600,000 | **400,000** |
+
+결정 배경: 679가 U0003 급여를 5,700,000에서 3,012,400으로 낮추면서 8월 기준 저축 여력이 약 45만원이 됐다. 목돈적금은 삭제하지 않고 이미 만기가 지난 계좌로 바꿔 목표 확보액과 자산 합계에 원금 3,000만원을 남겼다. 목표는 의도적으로 뒤처진 상태(`INSUFFICIENT`)가 되어 발견 화면의 `SAVING_GOAL_RISK`에 노출된다.
+
+만기 지난 계좌를 `ACTIVE`로 둔 이유: `CLOSED`는 계좌 요약·자산 합계에서 제외된다(`AccountAnalysisService`). `next_payment_date`를 NULL로 두면 `SavingsScheduleCalculator`가 만기 검사보다 먼저 `INCOMPLETE_SAVINGS_TERMS`를 사용자 예측 전체에 남기므로 만기일을 넣었다. 만기가 지난 `ACTIVE` 적금은 예정 납입을 만들지 않고 사유도 남기지 않는다(실측 확인).
+
+### 7-2. Seed 적재
+
+일회용 Docker `dodam-679-mysql`(`dodam_679_test`, V1~V41 + 1~17번이 개정 전 상태로 적재됨)에서 실행. 기존 세 계좌(9213·9214·9215)의 해시·암호문을 fixture 테이블로 옮겨 같은 키로 만든 fixture와 동일한 재실행 경로를 탔다(새 키의 fixture는 별도 계좌를 추가하므로 쓰지 않았다).
+
+- preflight `ready=1 / user 1 / withdrawal 1 / fixture 3 / valid 3 / distinct 3 / product 1 / payments 193 / future_paid 0 / hash_conflict 0 / goal_name_conflict 0 / marker_goal 1 / link_conflict 0`.
+- 계좌·납입·목표가 7-1 표와 일치. `account_id`·`goal_id` 유지.
+- 새 fixture로 한 번 더 실행: VERIFY Q1~Q5 출력 `diff` 없음(납입 체크섬 1685565487), 작업 테이블 0.
+- 개정 전 상태에서 개정판을 돌려도 계좌 upsert·납입 삭제 후 재생성·이력 재계산으로 수렴한다(위 실행이 그 경로다).
+
+### 7-3. API 실측 (678 JAR, 같은 DB에 개정판 17번까지 적재, U0003 임시 비밀번호로 로그인 후 원복)
+
+| API | 결과 |
+| --- | --- |
+| `GET /deposit-savings?type=SAVINGS` | 3건. 목돈적금 `expiryDate 2026-03-15`·`monthlyAmount 500,000`·`ACTIVE`, 청년도약 `monthlyAmount 300,000` |
+| `GET /deposit-savings/summary` | totalCount 4, totalBalance **65,400,000**(예금 20,000,000 + 적금 45,400,000) |
+| `GET /deposit-savings/maturities?withinDays=365` | 0건(목돈적금은 이미 만기, 나머지는 창 밖) |
+| `GET /deposit-savings/9215/maturity-forecast` (청년도약) | COMPLETE, principal 3,300,000, expectedPrincipal 18,000,000, 세전 2,061,172, 세액 317,420, 세후 1,743,752, **expectedAmount 19,743,752**, 1,515일 |
+| `GET /deposit-savings/9213/maturity-forecast` (목돈적금) | COMPLETE, `daysUntilMaturity` **−191**, expectedPrincipal 30,000,000, 세후이자 2,095,496, expectedAmount 32,095,496. 적금 경로는 만기 경과에 `ALREADY_MATURED` 사유를 내지 않는다(예금 경로 전용) |
+| `GET /savings/payment-schedules` | `complete=true`, reasons 없음, 3개월 6건 1,200,000(청약 STORED_SCHEDULED 10/15 + ESTIMATED_MONTHLY) — 목돈적금 예정 없음 |
+| `POST /cashflow/forecasts` (9/22, 90일) | `SAVINGS_*` 사유 없음. 이벤트 8건: 대출 10/10 410,331·카드 10/15 845,390·적금 10~12월 매월 300,000 + 100,000. 최소 잔액 15,004,279 |
+| `GET /deposit-savings/rate` | 9월 400,000 / 3,012,400 = **13.28%** |
+| `GET /goals/8192/progress` | 45,400,000 / 150,000,000, 30.3%, expectedProgress 62.5, gap −32.2 → **BEHIND** |
+| `GET /goals/8192/required-saving` | monthsElapsed 60, averageMonthlySaving **756,666**, requiredMonthlySaving 2,905,556, shortfall 2,148,890 → **INSUFFICIENT**, 소득 대비 96.5% |
+| `GET /goals/8192/forecast` | monthsToAchieve 139, expectedAchievementDate **2038-03-30**, onSchedule false |
+| `GET /goals/8192/risk` | riskLevel **HIGH**, factors `PACE_INSUFFICIENT`·`BEHIND_SCHEDULE` |
+| `POST /diagnoses {forceRefresh}` | 5건: `SAVING_GOAL_RISK` HIGH(내 집 마련)·MEDIUM(노트북 바꾸기), FOOD +51.5%, CAFE +45.0%, 고금리 대출 |
+| 보안 | 무인증 401 |
+
+### 7-4. 미검증·주의
+
+- Gradle 빌드·테스트는 다시 돌리지 않았다(Java 변경 없음, seed·문서만 개정). H2 통합 테스트 fixture는 seed와 무관하다.
+- 시연 서버 적재 절차는 그대로다(서버 키로 fixture 생성 → 16번). 개정 전 16번이 적재된 서버라면 같은 절차의 재실행으로 수렴한다.
+- 계획서 `demo-deposit-savings-678-plan.md`의 수치는 개정 전이며 수정하지 않았다.
