@@ -380,17 +380,32 @@ public class CoachChatService {
         return sources;
     }
 
-    /** 맥락이 없을 때의 기본 칩(시연 칩 3개). 맥락이 있으면 영역별 질문으로 바꾼다(674). 라벨 {@code 영역}은 두 조립기가 같은 이름으로 넣는다. */
+    /**
+     * 맥락이 없을 때의 기본 칩(시연 칩 3개). 맥락이 있으면 영역별 질문으로 바꾼다(674). 라벨 {@code 영역}은 두 조립기가 같은 이름으로 넣는다.
+     *
+     * <p>소비 영역의 첫 칩은 맥락의 <b>항목 카테고리·증가액</b>으로 만든다(S15P21D105-701, FE 669 요청). 영역 단위 고정 표라 식비 문제에서도 "카페를 월 5만원 줄이면?"이
+     * 나가 첫 조언("식비 어디에 많이 썼는지…")과 겉돌았다. 카테고리는 진단 문제 {@code currentValue.categoryName}(또는 추천 근거의 {@code categoryCode})에서,
+     * 금액은 {@code increaseAmount}(진단이 잡은 지난달 증가분)를 만원 단위로 반올림해 쓴다 — 조언이 말하는 "늘어난 만큼"과 같은 크기라 시뮬레이션 결과가
+     * 조언과 이어진다. 시뮬레이션 대상이 아닌 카테고리(고정비·구독 등)이거나 카테고리를 찾지 못하면 종전 칩 그대로다.
+     */
     static final String DOMAIN_LABEL = "영역";
-    public static final List<String> SUGGESTED_FOR_SPENDING = List.of("카페를 월 5만원 줄이면?", "저축을 월 30만원으로 올리면?", "목표는 언제 달성해?");
+    static final String CATEGORY_NAME_KEY = "categoryName";
+    static final String CATEGORY_CODE_KEY = "categoryCode";
+    static final String INCREASE_AMOUNT_KEY = "increaseAmount";
+    static final long DEFAULT_REDUCTION_MAN_WON = 5;
+    public static final String SUGGESTED_SAVING = "저축을 월 30만원으로 올리면?";
+    public static final String SUGGESTED_GOAL_DATE = "목표는 언제 달성해?";
+    public static final List<String> SUGGESTED_FOR_SPENDING = List.of("카페를 월 5만원 줄이면?", SUGGESTED_SAVING, SUGGESTED_GOAL_DATE);
     public static final List<String> SUGGESTED_FOR_LOAN = List.of("대출 100만원 더 갚으면?", "대환하면 이자를 얼마나 아껴?", "둘 다 하면?");
-    public static final List<String> SUGGESTED_FOR_GOAL = List.of("목표는 언제 달성해?", "저축을 월 30만원으로 올리면?", "카페를 월 5만원 줄이면?");
+    public static final List<String> SUGGESTED_FOR_GOAL = List.of(SUGGESTED_GOAL_DATE, SUGGESTED_SAVING, "카페를 월 5만원 줄이면?");
 
     static List<String> suggestedQuestions(String chipId, CoachFacts context) {
         String domain = domainOf(context);
         if (domain != null) {
             List<String> tailored = switch (domain) {
-                case "SPENDING", "SUBSCRIPTION", "CARD" -> SUGGESTED_FOR_SPENDING;
+                case "SPENDING", "SUBSCRIPTION", "CARD" -> categoryQuestion(context)
+                        .map(first -> List.of(first, SUGGESTED_SAVING, SUGGESTED_GOAL_DATE))
+                        .orElse(SUGGESTED_FOR_SPENDING);
                 case "LOAN" -> SUGGESTED_FOR_LOAN;
                 case "GOAL", "SAVING", "CASHFLOW" -> SUGGESTED_FOR_GOAL;
                 default -> null;
@@ -401,6 +416,55 @@ public class CoachChatService {
         }
         String used = chipId == null ? null : CoachToolRegistry.chipLabel(chipId).orElse(null);
         return CoachToolRegistry.chipLabels().stream().filter(label -> !label.equals(used)).toList();
+    }
+
+    /** "식비를 월 18만원 줄이면?" — 맥락에 시뮬레이션 가능한 카테고리가 있을 때만. 금액이 없으면 5만원. */
+    public static Optional<String> categoryQuestion(CoachFacts context) {
+        String code = factEndingWith(context, CATEGORY_CODE_KEY);
+        String name = factEndingWith(context, CATEGORY_NAME_KEY);
+        if (code != null && !CoachToolRegistry.SPENDING_CATEGORY_CODE_SET.contains(code)) {
+            return Optional.empty();
+        }
+        if (name == null) {
+            name = code == null ? null : CoachToolRegistry.SPENDING_CATEGORY_NAMES.get(code);
+        }
+        if (name == null || name.isBlank()) {
+            return Optional.empty();
+        }
+        long manWon = DEFAULT_REDUCTION_MAN_WON;
+        String amount = factEndingWith(context, INCREASE_AMOUNT_KEY);
+        if (amount != null) {
+            String digits = amount.replaceAll("[^0-9]", "");
+            if (!digits.isEmpty() && digits.length() <= 12) {
+                manWon = Math.max(1L, Math.round(Long.parseLong(digits) / 10_000.0));
+            }
+        }
+        return Optional.of(name + objectParticle(name) + " 월 " + manWon + "만원 줄이면?");
+    }
+
+    /** 맥락 facts에서 라벨이 {@code key} 또는 {@code *.key}인 첫 값. 진단 문제는 라벨이 키 그대로, 추천 근거는 {@code 근거코드.키}다. */
+    private static String factEndingWith(CoachFacts context, String key) {
+        if (context == null) {
+            return null;
+        }
+        for (Section section : context.sections()) {
+            for (Fact fact : section.facts()) {
+                String label = fact.label();
+                if (label != null && (label.equals(key) || label.endsWith("." + key))) {
+                    return fact.value();
+                }
+            }
+        }
+        return null;
+    }
+
+    /** 마지막 글자에 받침이 있으면 "을", 없으면 "를". 한글이 아니면 "를". */
+    public static String objectParticle(String word) {
+        char last = word.charAt(word.length() - 1);
+        if (last < 0xAC00 || last > 0xD7A3) {
+            return "를";
+        }
+        return (last - 0xAC00) % 28 == 0 ? "를" : "을";
     }
 
     private static String domainOf(CoachFacts context) {

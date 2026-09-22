@@ -33,6 +33,12 @@ public class CoachToolRegistry {
     public static final List<String> SPENDING_CATEGORY_CODES = List.of(
             "FOOD", "CAFE", "GROCERY", "PUBLIC_TRANSPORT", "TAXI", "SHOPPING", "BEAUTY", "CULTURE", "TRAVEL", "MEDICAL", "EDUCATION", "ETC");
     public static final Set<String> SPENDING_CATEGORY_CODE_SET = Set.copyOf(SPENDING_CATEGORY_CODES);
+    /** 시뮬레이션 대상 카테고리의 표시 이름(V6 `transaction_category.name`). 맞춤 질문 칩이 코드만 있는 맥락에서 이름을 만들 때 쓴다. */
+    public static final java.util.Map<String, String> SPENDING_CATEGORY_NAMES = java.util.Map.ofEntries(
+            java.util.Map.entry("FOOD", "식비"), java.util.Map.entry("CAFE", "카페"), java.util.Map.entry("GROCERY", "마트·편의점"),
+            java.util.Map.entry("PUBLIC_TRANSPORT", "대중교통"), java.util.Map.entry("TAXI", "택시"), java.util.Map.entry("SHOPPING", "쇼핑"),
+            java.util.Map.entry("BEAUTY", "뷰티·미용"), java.util.Map.entry("CULTURE", "문화·여가"), java.util.Map.entry("TRAVEL", "여행"),
+            java.util.Map.entry("MEDICAL", "의료·건강"), java.util.Map.entry("EDUCATION", "교육"), java.util.Map.entry("ETC", "기타"));
     /** 복합 시뮬레이션의 자식 유형(계획 1차 범위). */
     public static final List<String> COMBINED_SCENARIO_TYPES = List.of("SPENDING", "SAVING", "LOAN_PREPAYMENT", "LOAN_REFINANCE");
     public static final Set<String> COMBINED_SCENARIO_TYPE_SET = Set.copyOf(COMBINED_SCENARIO_TYPES);
@@ -117,7 +123,7 @@ public class CoachToolRegistry {
     private ToolDefinition spendingReduction() {
         ObjectNode schema = object();
         ObjectNode properties = schema.putObject("properties");
-        enumProperty(properties, "category", "줄일 소비 카테고리 코드. 사용자가 '카페'라고 하면 CAFE, '외식·배달'은 FOOD, '택시'는 TAXI. 전체 소비를 줄이는 질문이면 생략",
+        enumProperty(properties, "category", "줄일 소비 카테고리 코드. 사용자가 '카페'라고 하면 CAFE, '식비'·'외식·배달'은 FOOD, '택시'는 TAXI, '마트·편의점'은 GROCERY, '문화·여가'는 CULTURE. 전체 소비를 줄이는 질문이면 생략",
                 SPENDING_CATEGORY_CODES);
         integerProperty(properties, "monthlyReduction", "한 달에 줄일 금액(원). '5만원'은 50000");
         integerProperty(properties, "durationMonths", "몇 개월 동안 유지할지(1~120). 말하지 않았으면 생략");
