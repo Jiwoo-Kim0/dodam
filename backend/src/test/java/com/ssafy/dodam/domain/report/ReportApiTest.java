@@ -158,7 +158,7 @@ class ReportApiTest {
                 .andExpect(jsonPath("$.data.cardSpending").value(1_450_000))
                 .andExpect(jsonPath("$.data.cardSpendingPreviousMonth").value(1_560_000))
                 .andExpect(jsonPath("$.data.cardSpendingDifferenceFromPreviousMonth").value(-110_000))
-                .andExpect(jsonPath("$.data.efficiency.calculationVersion").value("efficiency-v2"))
+                .andExpect(jsonPath("$.data.efficiency.calculationVersion").value("efficiency-v3"))
                 .andExpect(jsonPath("$.data.efficiency.maxScore").value(100))
                 .andExpect(jsonPath("$.data.efficiency.availableDimensionCount").value(6))
                 .andExpect(jsonPath("$.data.efficiency.dimensions.length()").value(6))
@@ -170,10 +170,10 @@ class ReportApiTest {
                 // 저축 400,000 / 3,200,000 = 0.125 → 42
                 .andExpect(jsonPath("$.data.efficiency.dimensions[1].key").value("SAVING"))
                 .andExpect(jsonPath("$.data.efficiency.dimensions[1].score").value(42))
-                // 고정 900,000 / 소비 1,450,000 = 0.6207 → 20 (CHECK)
+                // 고정 900,000 / 소비 1,450,000 = 0.6207 → (0.8 − 0.6207) / 0.4 = 45 (NORMAL)
                 .andExpect(jsonPath("$.data.efficiency.dimensions[2].key").value("FIXED_EXPENSE"))
-                .andExpect(jsonPath("$.data.efficiency.dimensions[2].score").value(20))
-                .andExpect(jsonPath("$.data.efficiency.dimensions[2].status").value("CHECK"))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[2].score").value(45))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[2].status").value("NORMAL"))
                 // 신용등급 B → 85
                 .andExpect(jsonPath("$.data.efficiency.dimensions[3].key").value("CREDIT"))
                 .andExpect(jsonPath("$.data.efficiency.dimensions[3].score").value(85))
@@ -186,11 +186,12 @@ class ReportApiTest {
                 .andExpect(jsonPath("$.data.efficiency.dimensions[5].key").value("INEFFICIENCY"))
                 .andExpect(jsonPath("$.data.efficiency.dimensions[5].score").value(75))
                 .andExpect(jsonPath("$.data.efficiency.dimensions[5].value").value(1))
-                // 전체 = (100 + 42 + 20 + 85 + 70 + 75) / 6 = 65.3 → 65
-                .andExpect(jsonPath("$.data.efficiency.score").value(65))
-                // 7월: 100 · 36 · 100(고정지출 0) · 85, 예측·진단 없음 → (100+36+100+85)/4 = 80 → 65 − 80
-                .andExpect(jsonPath("$.data.efficiency.previousMonthDifference").value(-15))
-                .andExpect(jsonPath("$.data.efficiency.summary").value("지출 관리는 안정적이지만 고정지출 관리가 필요해요."))
+                // 전체 = (100 + 42 + 45 + 85 + 70 + 75) / 6 = 69.5 → 70
+                .andExpect(jsonPath("$.data.efficiency.score").value(70))
+                // 7월: 100 · 36 · 100(고정지출 0) · 85, 7월 말까지 예측·진단이 없어 생성 시점 최신(8월 실행분 70·75)으로 폴백
+                // → (100+36+100+85+70+75)/6 = 77.7 → 78 → 70 − 78
+                .andExpect(jsonPath("$.data.efficiency.previousMonthDifference").value(-8))
+                .andExpect(jsonPath("$.data.efficiency.summary").value("지출 관리는 안정적이에요. 저축을 조금 더 챙겨 보세요."))
                 .andExpect(jsonPath("$.data.diagnosisId").value(diagnosis.getDiagnosisId()))
                 // 697 주요 지표: 효율 점수와 같은 입력. 저축률 0.125(7월 0.1094), 고정지출 비중 0.6207(7월 0), 카드 사용액, 대출 잔액(현재 값·이력 없음)
                 .andExpect(jsonPath("$.data.metrics.calculationVersion").value("report-metrics-v1"))
@@ -237,7 +238,8 @@ class ReportApiTest {
         mvc.perform(get("/api/v1/reports/monthly").with(user(owner.toString())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.efficiency.availableDimensionCount").value(3))
-                .andExpect(jsonPath("$.data.efficiency.score").value(54))
+                // (100 + 42 + 45) / 3 = 62.3 → 62
+                .andExpect(jsonPath("$.data.efficiency.score").value(62))
                 .andExpect(jsonPath("$.data.efficiency.unavailableReason").doesNotExist())
                 // 계산 불가 항목의 score는 키를 빼지 않고 null로 내려간다. 키가 빠지면 FE(=== null 판정)가 undefined를 그린다(694)
                 .andExpect(jsonPath("$.data.efficiency.dimensions[3].score", nullValue()))
@@ -247,8 +249,8 @@ class ReportApiTest {
                 .andExpect(jsonPath("$.data.efficiency.dimensions[3].unavailableReason").value("CREDIT_SCORE_MISSING"))
                 .andExpect(jsonPath("$.data.efficiency.dimensions[4].unavailableReason").value("FORECAST_NOT_FOUND"))
                 .andExpect(jsonPath("$.data.efficiency.dimensions[5].unavailableReason").value("DIAGNOSIS_NOT_FOUND"))
-                // 7월은 3개 계산(100·36·100) → 79 → 54 − 79
-                .andExpect(jsonPath("$.data.efficiency.previousMonthDifference").value(-25))
+                // 7월은 3개 계산(100·36·100) → 79 → 62 − 79
+                .andExpect(jsonPath("$.data.efficiency.previousMonthDifference").value(-17))
                 // 697 패턴: 자료 없음은 "위험 없음"이 아니다
                 .andExpect(jsonPath("$.data.metrics.patterns[1].status").value("UNAVAILABLE"))
                 .andExpect(jsonPath("$.data.metrics.patterns[1].unavailableReason").value("DIAGNOSIS_NOT_FOUND"))
@@ -312,6 +314,30 @@ class ReportApiTest {
     }
 
     @Test
+    void fallsBackToLatestRunWhenNothingIsCompletedByMonthEnd() throws Exception {
+        // 8월 말일까지 예측·진단이 하나도 없고 9월 실행분만 있다 → 8월 리포트는 그것을 쓰되 근거 문장에 밝힌다(694).
+        // 가입 첫 달 사용자처럼 이력이 없는 경우 두 항목이 영원히 계산 불가로 남지 않게 한다
+        CashflowForecast september = forecasts.save(CashflowForecast.start(owner, LocalDate.of(2026, 9, 1), 30, "v1", null,
+                LocalDateTime.of(2026, 9, 1, 9, 0)));
+        september.complete(500_000L, 300_000L, -50_000L, LocalDate.of(2026, 9, 10), LocalDateTime.of(2026, 9, 1, 9, 1));
+        forecasts.save(september);
+        risks.save(CashflowRisk.of(september.getForecastId(), LocalDate.of(2026, 9, 10), "BALANCE_SHORTAGE", RiskSeverity.CRITICAL,
+                "잔액 부족", -50_000L));
+        Diagnosis septemberDiagnosis = diagnoses.save(Diagnosis.start(owner, null, LocalDateTime.of(2026, 9, 2, 9, 0)));
+        septemberDiagnosis.complete(0, 0, DiagnosisStatus.HEALTHY, "v6-last-month-vs-3m", null, LocalDateTime.of(2026, 9, 2, 9, 1));
+        diagnoses.save(septemberDiagnosis);
+
+        mvc.perform(get("/api/v1/reports/monthly").with(user(owner.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.efficiency.dimensions[4].score").value(60))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[4].description").value("가장 최근 예측 기준으로 예정 잔액 위험 1건이 있어요."))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[5].score").value(100))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[5].description").value("가장 최근 진단 기준으로 점검이 필요한 항목이 없어요."))
+                .andExpect(jsonPath("$.data.diagnosisId").value(septemberDiagnosis.getDiagnosisId()))
+                .andExpect(jsonPath("$.data.overallStatus").value("HEALTHY"));
+    }
+
+    @Test
     void reportsFrozenBefore635GetScoreAndCardSpendingWithoutChangingTotals() throws Exception {
         String first = mvc.perform(get("/api/v1/reports/monthly").with(user(owner.toString())))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
@@ -322,7 +348,7 @@ class ReportApiTest {
         String second = mvc.perform(get("/api/v1/reports/monthly").with(user(owner.toString())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.reportId").value(reportId))
-                .andExpect(jsonPath("$.data.efficiency.score").value(54))
+                .andExpect(jsonPath("$.data.efficiency.score").value(62))
                 .andExpect(jsonPath("$.data.cardSpending").value(1_450_000))
                 .andReturn().getResponse().getContentAsString();
         // 합계·생성 시각은 그대로다(READY 리포트는 고정)

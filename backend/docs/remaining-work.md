@@ -2,7 +2,17 @@
 
 마지막 갱신: 2026-09-22
 
-백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 629, 632, 587, 589, 611, 627, 628, 633, 635, 636, 640·641, 675, 697이다.
+백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 629, 632, 587, 589, 611, 627, 628, 633, 635, 636, 640·641, 675, 696이다.
+
+## S15P21D105-696 — [BE] 소비 증가 추천 목표 기여 계산 (advancedDays·후보 goalId)
+
+계약: [discovery-report-metrics-675.md](discovery-report-metrics-675.md) §3-1·§5, [recommendation-api.md](recommendation-api.md) §2. 675에서 분리한 후속 구현(607 요청 2). 브랜치는 675 위에 쌓였다.
+
+- [x] `REDUCE_CATEGORY_SPENDING` 생성기 `696.1`: 스냅샷 `goals[].forecast`로 현재·개선 달성일·`advancedDays`·`contributionAmount`, 대상 목표(요청 goalId, 없으면 가장 밀린 모으기 목표) → `Recommendation.goalId`, 근거 `GOAL_FORECAST_ADVANCE`. `RecommendationCandidate.goalId` 추가(9-arg 생성자 유지), 저장소 소유·일치 검증. 저축 늘리기·소비 줄이기 추천도 대상 목표를 싣는다.
+- [ ] **시연 서버**: 배포 뒤 U0001~U0004 `POST /diagnoses {forceRefresh:true}` → `POST /recommendations/generate`를 다시 실행해야 696.1 추천이 생긴다(기존 627.3 추천은 남고 FE 목록은 최신 진단 기준). U0003(내 집 마련 목표, 678)에서 `advancedDays`·`goal-impact` 실측.
+- [ ] FE 인계(114): `RecommendationEffectApiResponse`에 `currentForecastDate`·`improvedForecastDate`·`contributionAmount`(nullable) 추가 → 발견 상세 지연 배너를 `daysDifference`("지금 속도면")에서 추천 `advancedDays` + 근거 `goalName`(인과 문구)으로 전환 가능.
+- [ ] 서비스 초기값: 대상 목표 선택(가장 밀린 모으기 목표)과 "늘어난 금액 전부를 그 목표 저축에 돌린다" 가정. 기획이 다른 배분을 원하면 생성기 버전을 올린다.
+- [ ] 우선순위 점수에 `advancedDays`(30일당 5점)가 들어가 목표가 있는 사용자는 소비 증가 추천 순위가 올라간다. 시연 계정에서 대환·소비 추천 순서 변화 확인.
 
 ## S15P21D105-675 — [BE] 발견·리포트 지표 계약 및 비효율 데이터 요건 정리
 
@@ -14,7 +24,8 @@
 - [x] FE 114 공유표(지표별 비교군·단위·기준선·null 의미)와 발견 상세 스냅샷 키 확정.
 - [ ] 정현진 확인: §2 표의 `제안` 항목(적용/보류 판단, 임계값), GOAL 유지 결정. 확인되면 `제안` 표시를 지운다.
 - [ ] FE 114 공유: §3 표 전달. `DiagnosisApiResponse.discoveryIssueCount` 타입 추가는 선택(발견 홈 개수·요약을 서버 값으로 전환할 때).
-- [ ] 후속 구현(§5): **696** 소비 증가 추천 목표 기여(advancedDays·후보 goalId), **697** 리포트 `metrics`(V44). 둘 다 코드·테스트 준비 완료, 브랜치 `S15P21D105-696-*`·`S15P21D105-697-report-metrics`.
+- [ ] 후속 구현(§5): **696** 소비 증가 추천 목표 기여(이 브랜치에 포함, 위 절), **697** 리포트 `metrics`(V43, 브랜치 `S15P21D105-697-report-metrics`).
+
 ## S15P21D105-697 — [BE] 월간 리포트 주요 지표·금융 생활 패턴 서버 제공 (V44)
 
 계약: [improvement-report-contract.md](improvement-report-contract.md) §7. 675(지표 계약)에서 분리한 후속 구현.

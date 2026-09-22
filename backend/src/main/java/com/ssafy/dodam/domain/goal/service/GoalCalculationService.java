@@ -34,7 +34,9 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>기획안 「모으기 목표 달성 위험」·「줄이기 목표 초과 위험」의 파생 데이터를 그대로 구현했다.
  * <ul>
  *   <li>현재 확보 금액 = 연결 계좌 잔액 합. 조회 시점에 다시 계산하고 `goal.current_amount`도 갱신한다(동기화로 잔액이 바뀐 뒤에도 맞게).</li>
- *   <li>현재 저축속도(월평균 저축액) = 확보 금액 / 경과 개월(목표 생성일부터, 최소 1개월).</li>
+ *   <li>현재 저축속도(월 저축액) = 연결 계좌의 최근 {@value GoalSavingPaceReader#WINDOW_MONTHS}개 완료 월 순증가
+ *       ({@link GoalSavingPaceReader}, 694). 예전 "확보 금액 / 목표 생성 후 경과 개월"은 잔액이 있는 계좌를 연결하는 순간
+ *       속도가 부풀어 버렸다.</li>
  *   <li>필요 월 저축액 = 남은 금액 / 남은 개월(올림).</li>
  *   <li>예상 달성일 = 기준일 축에서 (남은 금액 / 저축속도)개월. 정수 개월은 달력 개월, 나머지는 그 달의 일수에 비례해 올림
  *       ({@link GoalForecastFormula}, 658). {@code monthsToAchieve}는 여전히 개월 올림이다.</li>
@@ -69,6 +71,7 @@ public class GoalCalculationService {
     private final FinancialProfileRepository financialProfileRepository;
     private final JdbcSpendingAnalysisReader spendingAnalysisReader;
     private final GoalHistoryRecorder goalHistoryRecorder;
+    private final GoalSavingPaceReader paceReader;
     private final GoalClock goalClock;
 
     public GoalCalculationService(
@@ -79,6 +82,7 @@ public class GoalCalculationService {
             FinancialProfileRepository financialProfileRepository,
             JdbcSpendingAnalysisReader spendingAnalysisReader,
             GoalHistoryRecorder goalHistoryRecorder,
+            GoalSavingPaceReader paceReader,
             GoalClock goalClock
     ) {
         this.goalRepository = goalRepository;
@@ -88,6 +92,7 @@ public class GoalCalculationService {
         this.financialProfileRepository = financialProfileRepository;
         this.spendingAnalysisReader = spendingAnalysisReader;
         this.goalHistoryRecorder = goalHistoryRecorder;
+        this.paceReader = paceReader;
         this.goalClock = goalClock;
     }
 
@@ -333,7 +338,8 @@ public class GoalCalculationService {
             goalHistoryRecorder.record(goal, savingGoal, GoalHistoryEvent.AMOUNT_UPDATED, now);
         }
 
-        return new SavingContext(goal, savingGoal, current, allocation.accounts().size(), today);
+        return new SavingContext(goal, savingGoal, current, allocation.accounts().size(),
+                paceReader.monthlyPace(userId, allocation, today), today);
     }
 
     private SpendingContext spendingContext(Long userId, Goal goal, SpendingGoal spendingGoal, LocalDate today) {
@@ -378,14 +384,18 @@ public class GoalCalculationService {
         private final SavingGoal savingGoal;
         private final long current;
         private final int linkedAccountCount;
+        /** 현재 저축속도({@link GoalSavingPaceReader}). 기준일에 대해 한 번 읽는다 */
+        private final long pace;
         private final LocalDate today;
         private final LocalDate startDate;
 
-        private SavingContext(Goal goal, SavingGoal savingGoal, long current, int linkedAccountCount, LocalDate today) {
+        private SavingContext(Goal goal, SavingGoal savingGoal, long current, int linkedAccountCount, long pace,
+                LocalDate today) {
             this.goal = goal;
             this.savingGoal = savingGoal;
             this.current = current;
             this.linkedAccountCount = linkedAccountCount;
+            this.pace = pace;
             this.today = today;
             this.startDate = goal.getCreatedAt().toLocalDate();
         }
@@ -434,7 +444,7 @@ public class GoalCalculationService {
             return gap <= -PACE_TOLERANCE_POINT ? "BEHIND" : "ON_TRACK";
         }
 
-        /** 목표 생성일부터 기준일까지 경과 개월(최소 1). 첫 달에도 저축속도를 정의할 수 있게 한다. */
+        /** 목표 생성일부터 기준일까지 경과 개월(최소 1). 응답 표시용이며 저축속도 계산에는 더 이상 쓰지 않는다(694). */
         int monthsElapsed() {
             return (int) Math.max(1L, ChronoUnit.MONTHS.between(startDate, today));
         }
@@ -450,7 +460,7 @@ public class GoalCalculationService {
         }
 
         long averageMonthlySaving() {
-            return current / monthsElapsed();
+            return pace;
         }
 
         long requiredMonthlySaving() {

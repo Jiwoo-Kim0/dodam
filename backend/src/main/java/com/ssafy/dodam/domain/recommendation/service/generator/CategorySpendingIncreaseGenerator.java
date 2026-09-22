@@ -8,7 +8,10 @@ import com.ssafy.dodam.domain.recommendation.dto.RecommendationCandidate;
 import com.ssafy.dodam.domain.recommendation.dto.RecommendationInput;
 import com.ssafy.dodam.domain.recommendation.entity.Recommendation;
 import com.ssafy.dodam.domain.recommendation.service.RecommendationCandidateGenerator;
+import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
@@ -27,15 +30,27 @@ import org.springframework.stereotype.Component;
  *
  * <p>증가액이 0 이하면 후보를 만들지 않는다(진단 임계값상 나오지 않지만 방어한다). 후보 키는 카테고리 id라 같은 진단에서 멱등이다.
  * 근거 evidence의 {@code categoryCode}는 시뮬레이션 프리셋이 카테고리를 지정한 소비 감소 요청을 만들 때 읽는다.
+ *
+ * <p><b>목표 기여(696)</b>: 기획 원안의 발견 상세 문구("이 소비가 계속되면 '비상금' 목표가 약 N일 늦어질 수 있어요")를 만들 수 있도록
+ * 늘어난 금액을 모으기 목표 저축에 돌렸을 때의 예상 달성일 변화를 계산한다. 진단 스냅샷 {@code goals[].forecast}(546)의 남은 금액·현재
+ * 저축속도만 쓰고 현재 잔액으로 재계산하지 않는다({@link SavingGoalRiskGenerator}와 같은 식·같은 기준일). 대상 목표는
+ * {@link GeneratorSupport#savingGoalForForecast}가 고른 하나이며 {@code Recommendation.goalId}에 저장돼 {@code goal-impact}가
+ * {@code NO_GOAL}/{@code NOT_CALCULATED} 대신 날짜를 돌려준다. {@code currentForecastDate}는 현재 속도, {@code improvedForecastDate}는
+ * 현재 속도 + 증가액, {@code advancedDays = current − improved}(현재 속도가 0이면 현재 날짜가 없어 null), {@code contributionAmount = 증가액}.
+ * 근거 {@code GOAL_FORECAST_ADVANCE}에 계산 입력을 남긴다. 스냅샷에 조건을 만족하는 목표가 없으면 날짜 효과는 비고 근거도 없다(627.3과 같음).
  */
 @Component
 @Order(40)
 public class CategorySpendingIncreaseGenerator implements RecommendationCandidateGenerator {
-    /** 627.2 → 627.3: 진단 기준이 지난달 vs 직전 3개월 평균(631)으로 바뀌어 문구·evidence가 달라졌다. */
-    public static final String VERSION = "627.3";
+    /**
+     * 627.2 → 627.3: 진단 기준이 지난달 vs 직전 3개월 평균(631)으로 바뀌어 문구·evidence가 달라졌다.
+     * 627.3 → 696.1: 모으기 목표 예상 달성일 변화(advancedDays)·대상 goalId·근거 GOAL_FORECAST_ADVANCE 추가.
+     */
+    public static final String VERSION = "696.1";
     public static final String DOMAIN = "SPENDING";
     public static final String TYPE = "REDUCE_CATEGORY_SPENDING";
     public static final String REASON_INCREASE = "CATEGORY_SPENDING_INCREASE";
+    public static final String REASON_GOAL_FORECAST_ADVANCE = "GOAL_FORECAST_ADVANCE";
     public static final String CATEGORY_CODE_FIELD = "categoryCode";
     public static final String ANNUALIZATION_BASIS_FIELD = "annualizationBasis";
     public static final String SINGLE_MONTH_INCREASE_X12 = "SINGLE_MONTH_INCREASE_X12";
@@ -91,14 +106,47 @@ public class CategorySpendingIncreaseGenerator implements RecommendationCandidat
         }
         String recentLabel = recentMonths == 1 ? "지난달" : "최근 " + recentMonths + "개월 월평균";
         String baselineLabel = "직전 " + baselineMonths + "개월 월평균";
-        Recommendation.Effect effect = new Recommendation.Effect(increase, increase * MONTHS_PER_YEAR, null, null, null, null, null, null);
+        List<RecommendationCandidate.Reason> reasons = new ArrayList<>();
+        reasons.add(new RecommendationCandidate.Reason(REASON_INCREASE,
+                recentLabel + " " + label + " 소비 " + GeneratorSupport.won(monthlyAverage) + "이 " + baselineLabel + " "
+                        + GeneratorSupport.won(previousAverage) + "보다 " + GeneratorSupport.won(increase) + " 많아요.", evidence));
+
+        Optional<GeneratorSupport.SnapshotSavingGoal> goal = GeneratorSupport.savingGoalForForecast(input);
+        Recommendation.Effect effect;
+        Long goalId = null;
+        if (goal.isEmpty()) {
+            effect = new Recommendation.Effect(increase, increase * MONTHS_PER_YEAR, null, null, null, null, null, null);
+        } else {
+            GeneratorSupport.SnapshotSavingGoal target = goal.get();
+            goalId = target.goalId();
+            LocalDate base = GeneratorSupport.baseDate(input);
+            LocalDate currentDate = GeneratorSupport.expectedDate(target.remaining(), target.monthlyPace(), base);
+            LocalDate improvedDate = GeneratorSupport.expectedDate(target.remaining(), target.monthlyPace() + increase, base);
+            Integer advanced = GeneratorSupport.advancedDays(currentDate, improvedDate);
+            String goalLabel = target.name() == null ? "목표" : "'" + target.name() + "'";
+            ObjectNode forecastEvidence = json.createObjectNode();
+            forecastEvidence.put("goalId", target.goalId()).put("goalName", target.name()).put("baseDate", base.toString())
+                    .put("remainingAmount", target.remaining()).put("averageMonthlySaving", target.monthlyPace())
+                    .put("improvedMonthlySaving", target.monthlyPace() + increase)
+                    .put("currentForecastDate", currentDate == null ? null : currentDate.toString())
+                    .put("improvedForecastDate", improvedDate.toString());
+            if (advanced != null) {
+                forecastEvidence.put("advancedDays", advanced);
+            }
+            reasons.add(new RecommendationCandidate.Reason(REASON_GOAL_FORECAST_ADVANCE,
+                    currentDate == null
+                            ? "지금 저축 속도로는 " + goalLabel + " 달성일을 계산할 수 없어요. 이 금액을 저축에 더하면 " + improvedDate
+                                    + "에 달성할 수 있어요."
+                            : "이 금액을 " + goalLabel + " 저축에 더하면 예상 달성일이 " + currentDate + "에서 " + improvedDate + "로 "
+                                    + advanced + "일 앞당겨져요.",
+                    forecastEvidence));
+            effect = new Recommendation.Effect(increase, increase * MONTHS_PER_YEAR, null, null, currentDate, improvedDate, advanced,
+                    increase);
+        }
         return Outcome.of(new RecommendationCandidate(VERSION, TYPE + ":" + categoryId, issue.issueId(), DOMAIN, TYPE,
                 label + " 지출 줄여보기",
                 baselineLabel + " 수준으로 되돌리면 월 " + GeneratorSupport.won(increase) + "을 아낄 수 있어요.",
-                List.of(new RecommendationCandidate.Reason(REASON_INCREASE,
-                        recentLabel + " " + label + " 소비 " + GeneratorSupport.won(monthlyAverage) + "이 " + baselineLabel + " "
-                                + GeneratorSupport.won(previousAverage) + "보다 " + GeneratorSupport.won(increase) + " 많아요.", evidence)),
-                effect));
+                reasons, effect, goalId));
     }
 
     /** 진단이 저장한 {@code recentPeriod}/{@code baselinePeriod}의 개월 수. 627 최초 구현 이전 형식이거나 없으면 기본값. */

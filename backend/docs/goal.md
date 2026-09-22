@@ -189,11 +189,26 @@ ACHIEVED·CANCELED는 종료 상태다. 어디로도 옮길 수 없고 다른 �
 | 용어 | 정의 |
 | --- | --- |
 | 현재 확보 금액 `currentAmount` | 연결 계좌 확보액 합(조회 시 다시 계산, 626 정의) |
-| 경과 개월 `monthsElapsed` | 목표 생성일 → 기준일, 최소 1 (첫 달에도 속도를 정의) |
-| 현재 저축속도 `averageMonthlySaving` | currentAmount / monthsElapsed |
+| 경과 개월 `monthsElapsed` | 목표 생성일 → 기준일, 최소 1. 표시용이며 속도 계산에는 쓰지 않는다(694) |
+| 현재 저축속도 `averageMonthlySaving` | **연결 계좌의 최근 순증가**(694, `GoalSavingPaceReader`). 아래 "저축속도 정의" |
 | 남은 개월 `monthsRemaining` | 기준일 → 목표일, 올림. 목표일이 지났으면 0 |
 | 필요 월 저축액 `requiredMonthlySaving` | 남은 금액 / 남은 개월(올림). 남은 개월 0이면 남은 금액 전체 |
 | 기대 진행률 `expectedProgressRatePercent` | 경과 일수 / (생성일→목표일 전체 일수) × 100, 0~100 |
+
+### 저축속도 정의 (694, `GoalSavingPaceReader`)
+
+2026-09-22까지는 `currentAmount / monthsElapsed`였다. 잔액이 있는 계좌를 새 목표에 연결하면 그 잔액 전체가 "한 달에 모은 돈"이 되어
+(1,746만 원 계좌를 연결한 3,000만 원 목표가 "373일 빨라요", 예상일이 다음 달) 산식을 바꿨다. 목표 생성일은 돈이 모이는 속도와 무관하다.
+
+- 창: 기준일이 든 달을 뺀 **직전 3개 완료 월**(9/22 기준 → 6·7·8월). 급여일 전의 이번 달을 넣으면 매달 초마다 속도가 떨어지므로 뺀다.
+- 예·적금(전액 연결): 창 안의 `savings_payment` PAID 합 / 이력이 있는 개월 수(가입 월부터 센다). 창 안에 납입이 없고 창 **이후**에
+  가입한 적금은 약정 월 납입액(`deposit_saving.monthly_amount`, 만기 전)으로 본다. 예금·만기 적금·창 안에 가입했는데 납입이 없는 적금은 0.
+- 입출금(전액이든 담기든): **사용자 전체 순현금흐름**(수입 − 지출 − 이체, 숨긴 거래 제외) / 거래 이력이 있는 개월 수. `transaction.balance_after`가
+  비어 있고 카드 결제는 계좌 행 없이 승인만 원장에 있어 계좌 단위 잔액 변화를 재구성할 수 없다. 담은 금액은 여윳돈에서 옮겨지므로 여윳돈이 곧
+  속도다. 음수면 예·적금 납입을 상쇄한다. 입출금 하나를 여러 목표에 담으면 같은 여윳돈이 각 목표 속도에 들어간다 — 목표별 예상일은 "그 목표에만
+  여윳돈을 쓰면"의 뜻이다.
+- 합이 음수면 0(현재 속도로는 달성 불가 → `expectedAchievementDate = null`).
+- 511 이력의 `forecastDate`, 진단 546 goal-impact, 시뮬레이션 기준선(`SimulationBaseline.SavingGoal.averageMonthlySaving`)이 같은 정의를 쓴다.
 
 ### 진행률 `GET /goals/{goalId}/progress` (SAVING만, 줄이기는 400)
 
@@ -275,8 +290,10 @@ ACHIEVED·CANCELED는 종료 상태다. 어디로도 옮길 수 없고 다른 �
 - `GoalAccountApiIntegrationTest`(9건): 연결·모인 금액·진행률 갱신, 페이지, 빈 목록, 집합 교체·전체 해제, 같은 집합 idempotent·잔액 재반영,
   유형·상태·소유권·형식 검증 시 미반영, 다른 목표 연결 409·삭제된 목표 이어받기, 줄이기·종료 목표·타인 거절.
 - `GoalCalculationApiIntegrationTest`(10건): 진행률(잔액 재계산·저장, 기대 진행률·BEHIND/AHEAD/ACHIEVED), 필요 저축액(남은 개월 올림, 속도 비교,
-  소득 비율, 목표일 지남), 예상 달성일(속도 기준, 기준일 변경, 속도 0, 파라미터 검증), 소비목표 진행률(숨김 제외, 예상·절감액), 위험 판정(요인·수준·NONE).
-  생성일은 JDBC로 "오늘 − N개월"로 되돌려 날짜 의존을 없앴다.
+  소득 비율, 목표일 지남), 예상 달성일(속도 기준, 기준일 변경, 속도 0·잔액 있는 계좌를 새 목표에 연결해도 속도 0, 파라미터 검증), 소비목표 진행률(숨김 제외,
+  예상·절감액), 위험 판정(요인·수준·NONE). 생성일은 JDBC로 "오늘 − N개월"로 되돌리고, 속도는 직전 3개 완료 월의 `savings_payment`로 만든다(694).
+- `GoalSavingPaceReaderTest`(7건, 단위): 적금 납입 창·가입 월 나누기·창 이후 가입 약정액·만기, 입출금 순현금흐름·음수 상쇄·이번 달 첫 거래, 연결 없음,
+  `monthsCovered`.
 - `GoalHistoryApiIntegrationTest`(4건): 모으기 목표의 생성→연결→잔액 변화→수정→상태 변경이 event 순서대로 남고 값 없는 변경은 남지 않음,
   줄이기 목표(진행률 null)·삭제 기록, 기간·페이지·최신순·검증, 타인 404.
 - fixture `sql/goal-test-data.sql`이 `goal`·`saving_goal`·`spending_goal`·`goal_account`·`goal_history`·`account`를 ERD 컬럼으로 다시 만든다. 507 fixture(`transaction-test-data.sql`)도

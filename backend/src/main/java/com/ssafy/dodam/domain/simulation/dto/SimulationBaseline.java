@@ -45,7 +45,7 @@ public record SimulationBaseline(
      *
      * @param currentAmount           연결 계좌 잔액 합(없으면 0)
      * @param remaining               {@code max(0, target − current)}
-     * @param averageMonthlySaving    {@code current / max(1, 생성일부터 기준일까지 경과 개월)}
+     * @param averageMonthlySaving    현재 저축속도. Goal 도메인과 같은 정의({@code GoalSavingPaceReader}: 연결 계좌의 최근 완료 월 순증가, 694)
      * @param expectedAchievementDate 현재 속도 기준 예상 달성일. 속도 0이면 null
      * @param linkedAccountIds        연결 계좌 id. 계좌 지정 시뮬레이션이 영향 대상을 좁히는 데 쓴다
      */

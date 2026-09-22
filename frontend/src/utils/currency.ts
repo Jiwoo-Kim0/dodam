@@ -14,3 +14,12 @@ export function formatRoundedAmount(amount: number): string {
 export function formatCurrency(amount: number): string {
   return `${formatNumber(amount)}원`;
 }
+
+/**
+ * 계좌 잔액 표기. 서버가 원화가 아닌 계좌를 주면 `원`을 붙이면 금액을 잘못 읽게 되므로
+ * 통화 코드를 그대로 뒤에 붙인다(`assetApi`의 `AccountApiResponse.currency`).
+ */
+export function formatAccountBalance(amount: number, currency: string): string {
+  if (currency === 'KRW') return formatCurrency(amount);
+  return `${formatNumber(amount)} ${currency}`;
+}

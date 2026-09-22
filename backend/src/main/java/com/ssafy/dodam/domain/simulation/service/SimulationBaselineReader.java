@@ -9,6 +9,7 @@ import com.ssafy.dodam.domain.goal.repository.GoalRepository;
 import com.ssafy.dodam.domain.goal.repository.SavingGoalRepository;
 import com.ssafy.dodam.domain.goal.repository.SpendingGoalRepository;
 import com.ssafy.dodam.domain.goal.service.GoalAllocationReader;
+import com.ssafy.dodam.domain.goal.service.GoalSavingPaceReader;
 import com.ssafy.dodam.domain.simulation.dto.SimulationBaseline;
 import com.ssafy.dodam.domain.transaction.repository.JdbcSpendingAnalysisReader;
 import com.ssafy.dodam.domain.transaction.repository.JdbcSpendingReader;
@@ -19,7 +20,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.YearMonth;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -47,10 +47,11 @@ public class SimulationBaselineReader {
     private final SavingGoalRepository savingGoals;
     private final SpendingGoalRepository spendingGoals;
     private final GoalAllocationReader allocationReader;
+    private final GoalSavingPaceReader paceReader;
 
     public SimulationBaselineReader(FinancialProfileRepository profiles, JdbcSpendingReader spendingReader,
             JdbcSpendingAnalysisReader spendingAnalysisReader, GoalRepository goals, SavingGoalRepository savingGoals,
-            SpendingGoalRepository spendingGoals, GoalAllocationReader allocationReader) {
+            SpendingGoalRepository spendingGoals, GoalAllocationReader allocationReader, GoalSavingPaceReader paceReader) {
         this.profiles = profiles;
         this.spendingReader = spendingReader;
         this.spendingAnalysisReader = spendingAnalysisReader;
@@ -58,6 +59,7 @@ public class SimulationBaselineReader {
         this.savingGoals = savingGoals;
         this.spendingGoals = spendingGoals;
         this.allocationReader = allocationReader;
+        this.paceReader = paceReader;
     }
 
     public SimulationBaseline read(Long userId, LocalDate baseDate) {
@@ -113,10 +115,9 @@ public class SimulationBaselineReader {
             }
             GoalAllocationReader.GoalAllocation allocation = allocations.get(goal.getId());
             List<Long> linked = allocation == null ? List.of() : allocation.accountIds();
-            // 속도 = 모인 금액 / max(1, 경과 개월)
+            // 속도 = Goal 도메인과 같은 정의(694 GoalSavingPaceReader: 연결 계좌의 최근 완료 월 순증가)
             long current = allocation == null ? 0L : allocation.securedAmount();
-            long monthsElapsed = Math.max(1L, ChronoUnit.MONTHS.between(goal.getCreatedAt().toLocalDate(), baseDate));
-            long pace = current / monthsElapsed;
+            long pace = paceReader.monthlyPace(userId, allocation, baseDate);
             long remaining = Math.max(0L, detail.getTargetAmount() - current);
             result.add(new SimulationBaseline.SavingGoal(goal.getId(), goal.getName(), detail.getTargetAmount(), current,
                     remaining, pace, detail.getTargetDate(), GoalAchievementProjection.expectedDate(remaining, pace, baseDate),

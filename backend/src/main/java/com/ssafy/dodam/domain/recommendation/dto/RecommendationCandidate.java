@@ -13,6 +13,9 @@ import java.util.List;
  *                     식별 id)으로 만들고 시각·순번·표시 문구를 넣지 않는다
  * @param sourceIssueId 후보의 근거가 된 진단 문제. 여러 문제를 합쳐 만든 후보면 null
  * @param effect 효과 추정치. 547에서는 {@link Recommendation.Effect#NONE}
+ * @param goalId 이 후보가 겨냥한 목표(696). 날짜 효과({@code currentForecastDate}·{@code improvedForecastDate})를 계산한 목표이며
+ *               {@code Recommendation.goalId}에 저장된다. null이면 생성 요청의 goalId(진단 goalId)를 물려받는다. 목표를 지정하지
+ *               않은 진단에서도 목표 기여(goal-impact)가 {@code NO_GOAL}이 아니라 계산한 목표를 가리키게 하기 위한 필드다
  */
 public record RecommendationCandidate(
         String generatorVersion,
@@ -23,8 +26,15 @@ public record RecommendationCandidate(
         String title,
         String description,
         List<Reason> reasons,
-        Recommendation.Effect effect
+        Recommendation.Effect effect,
+        Long goalId
 ) {
+    /** 목표를 지정하지 않는 후보(요청 goalId를 물려받는다). */
+    public RecommendationCandidate(String generatorVersion, String candidateKey, Long sourceIssueId, String domain, String type,
+            String title, String description, List<Reason> reasons, Recommendation.Effect effect) {
+        this(generatorVersion, candidateKey, sourceIssueId, domain, type, title, description, reasons, effect, null);
+    }
+
     public RecommendationCandidate {
         requireText("generatorVersion", generatorVersion);
         requireText("candidateKey", candidateKey);

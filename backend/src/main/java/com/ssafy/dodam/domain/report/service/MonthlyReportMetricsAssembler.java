@@ -32,7 +32,8 @@ import org.springframework.transaction.annotation.Transactional;
  * discovery-report-metrics-675.md §2.
  *
  * <p>입력은 효율 점수({@link EfficiencyScoreCalculator})와 같다 — 리포트 합계(저장값), 고정지출 {@code bySpendingType.FIXED}, 그 달 말일까지
- * 완료된 가장 최근 진단({@code MonthlyReport.diagnosisId})의 문제, 기준일이 그 달 말일 이전인 마지막 완료 현금흐름 예측의 위험(694 기준). 두 카드의 숫자가
+ * 완료된 가장 최근 진단(없으면 생성 시점 최신, {@code MonthlyReport.diagnosisId})의 문제, 기준일이 그 달 말일 이전인 마지막 완료 현금흐름 예측
+ * (없으면 생성 시점 최신)의 위험 — 694 v3 기준. 폴백이면 문구에 "가장 최근 예측 기준으로"를 붙인다. 두 카드의 숫자가
  * 육각형 점수의 근거 수치와 어긋나지 않게 하기 위해서다. 대출 잔액만 월별 이력이 없어 생성(보강) 시점 현재 값({@code asOf = CURRENT})이다.
  *
  * <p>패턴 문구는 서버 템플릿이다. FE가 조합하던 3장(저축률·소비 증가·현금흐름)을 그대로 옮겼고, 소비 증가는 API 6 소비 급증(N개월 평균 대
@@ -168,7 +169,7 @@ public class MonthlyReportMetricsAssembler {
     private Pattern spendingIncreasePattern(Long userId, YearMonth month, Long diagnosisId) {
         if (diagnosisId == null) {
             return new Pattern(KEY_SPENDING_INCREASE, UNAVAILABLE, "소비 변화를 진단한 기록이 없어요",
-                    "이 달 말일까지 완료한 진단이 없어 소비 증가를 판정하지 못했어요.", month.toString(), REASON_DIAGNOSIS_NOT_FOUND, null);
+                    "완료한 진단이 없어 소비 증가를 판정하지 못했어요.", month.toString(), REASON_DIAGNOSIS_NOT_FOUND, null);
         }
         List<DiagnosisIssue> increases = issues.findAllOwned(userId, diagnosisId).stream()
                 .filter(issue -> SPENDING_INCREASE_ISSUE_TYPE.equals(issue.getType()))
@@ -201,21 +202,25 @@ public class MonthlyReportMetricsAssembler {
 
     private Pattern cashflowPattern(Long userId, YearMonth month) {
         // 694와 같은 기준: 기준일이 그 달 말일 이전인 마지막 완료 예측(효율 점수 CASHFLOW 항목과 같은 예측).
+        // 694 v3와 같은 기준: 말일 이전 마지막 완료 예측, 없으면 생성 시점 최신 완료 예측으로 폴백(근거에 "가장 최근 예측 기준"을 남긴다).
         Optional<CashflowForecast> forecast = forecasts
                 .findFirstByUserIdAndStatusAndBaseDateLessThanEqualOrderByBaseDateDescCompletedAtDescForecastIdDesc(
-                        userId, ForecastStatus.COMPLETED, month.atEndOfMonth());
+                        userId, ForecastStatus.COMPLETED, month.atEndOfMonth())
+                .or(() -> forecasts.findFirstByUserIdAndStatusOrderByCompletedAtDescForecastIdDesc(userId, ForecastStatus.COMPLETED));
         if (forecast.isEmpty()) {
             return new Pattern(KEY_CASHFLOW_RISK, UNAVAILABLE, "현금흐름 예측 데이터가 없어요",
-                    "이 달 말일까지 완료한 현금흐름 예측이 없어 예정 잔액 위험을 확인하지 못했어요.", month.toString(), REASON_FORECAST_NOT_FOUND, null);
+                    "완료한 현금흐름 예측이 없어 예정 잔액 위험을 확인하지 못했어요.", month.toString(), REASON_FORECAST_NOT_FOUND, null);
         }
         CashflowForecast f = forecast.get();
+        boolean afterMonthEnd = f.getBaseDate().isAfter(month.atEndOfMonth());
+        String prefix = afterMonthEnd ? "가장 최근 예측 기준으로 " : "";
         String period = f.getBaseDate() + "~" + f.getBaseDate().plusDays(f.getHorizonDays() == null ? 0 : f.getHorizonDays());
         List<CashflowRisk> found = risks.findOwned(userId, f.getForecastId(), null, null).stream()
                 .sorted(Comparator.comparing(CashflowRisk::getRiskDate).thenComparing(CashflowRisk::getRiskId))
                 .toList();
         if (found.isEmpty()) {
             return new Pattern(KEY_CASHFLOW_RISK, GOOD, "예정된 현금흐름 위험이 없어요",
-                    "예측 기간 안에 잔액 부족 위험이 발견되지 않았어요.", period, null, null);
+                    prefix + "예측 기간 안에 잔액 부족 위험이 발견되지 않았어요.", period, null, null);
         }
         CashflowRisk first = found.get(0);
         ObjectNode evidence = json.createObjectNode();
@@ -224,7 +229,8 @@ public class MonthlyReportMetricsAssembler {
         if (first.getExpectedBalance() != null) {
             evidence.put("expectedBalance", first.getExpectedBalance());
         }
-        return new Pattern(KEY_CASHFLOW_RISK, CHECK, "예상 잔액을 확인해 주세요", first.getMessage(), period, null, evidence);
+        evidence.put("afterMonthEnd", afterMonthEnd);
+        return new Pattern(KEY_CASHFLOW_RISK, CHECK, "예상 잔액을 확인해 주세요", prefix + first.getMessage(), period, null, evidence);
     }
 
     // ---------- 도우미 ----------
