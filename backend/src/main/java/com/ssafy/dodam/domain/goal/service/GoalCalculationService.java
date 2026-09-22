@@ -187,6 +187,10 @@ public class GoalCalculationService {
             monthsToAchieve = (int) GoalForecastFormula.monthsToAchieve(remaining, pace);
             // 658: 마지막 달은 일할로 나눠 일 단위 날짜를 낸다. 월 단위 올림이면 속도가 조금 올라도 날짜가 움직이지 않는다
             expected = GoalForecastFormula.expectedDate(remaining, pace, base);
+            if (beyondForecastHorizon(context, expected)) {
+                monthsToAchieve = null;
+                expected = null;
+            }
         }
 
         List<GoalForecastResponse.Point> projection = new ArrayList<>();
@@ -210,6 +214,27 @@ public class GoalCalculationService {
                 expected != null && !expected.isAfter(context.targetDate()),
                 projection
         );
+    }
+
+    /**
+     * 예상 달성일이 목표일을 <b>목표 기간(생성일 → 목표일)</b>만큼 더 넘어서면 날짜를 내지 않는다(703).
+     *
+     * <p>저축속도는 완료 월 3개월 치 거래로 재는데, 속도가 분모라 작아질수록 결과가 폭발한다(남은 1,790만 ÷ 월 10만 = 179개월).
+     * 그 값을 "2041-08-22"처럼 하루 단위로 단정하면 입력의 불확실성보다 출력이 훨씬 정밀해진다. 세운 기간만큼 더 걸린다는 것은
+     * 현재 계획으로는 사실상 다른 목표이므로, 속도 0과 같은 경계로 보고 {@code expectedAchievementDate}·{@code monthsToAchieve}·
+     * {@code daysDifference}를 null로 둔다. 화면은 대신 필요 월 저축액으로 안내한다.
+     *
+     * <p>기준을 "기준일부터 목표일까지 남은 기간"으로 두지 않은 이유는 두 가지다. 목표일이 가까울수록 상한이 0으로 수렴해
+     * 하루 지연까지 지워 버리고, 목표일이 지나면 어떤 예측도 낼 수 없게 된다. 목표 기간({@code totalDays})은 기준일과 무관하게 일정하다.
+     *
+     * <p>목표일 안에 들어오는 예측은 그대로 둔다. 조기 달성이나 소폭 지연은 표본이 짧아도 쓸 만한 정보다.
+     */
+    private static boolean beyondForecastHorizon(SavingContext context, LocalDate expected) {
+        LocalDate targetDate = context.targetDate();
+        if (expected == null || targetDate == null || !expected.isAfter(targetDate)) {
+            return false;
+        }
+        return ChronoUnit.DAYS.between(targetDate, expected) > context.totalDays();
     }
 
     // ---------- 소비목표 진행률 ----------

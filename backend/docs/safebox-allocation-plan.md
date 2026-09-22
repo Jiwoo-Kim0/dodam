@@ -230,7 +230,7 @@ GET /v1/goals/{goalId}/accounts?size=100  → accountType=DEMAND_DEPOSIT 항목�
 
 ## 9. 범위 밖
 
-- **예상 달성일 경계 정책**(표본 부족·목표일 초과 시 날짜 대신 상태). 별개 증상이며 이 계획과 독립적이다.
+- ~~**예상 달성일 경계 정책**~~ → 목표 기간 상한은 703에서 구현했다(`GoalCalculationService.beyondForecastHorizon`). 표본 부족(관측 개월 < 3) 요건은 아직이다.
 - **적금 예정 납입·만기 반영**(`savings_payment` SCHEDULED). 예상 달성일 정확도 개선이고 세이프박스와 무관하다.
 - **저축속도 창 3→6개월.** 시연 숫자가 전부 움직인다.
 - **여유자금 자동 담기 규칙**(급여일 다음 날 자동 담기 등). 스케줄러가 필요하다.
