@@ -113,6 +113,7 @@ public class RecommendationStore {
         lock(request.userId());
         Diagnosis diagnosis = requireCompletedOwnedDiagnosis(request.userId(), request.diagnosisId());
         requireGoalConsistent(request.userId(), diagnosis, request.goalId());
+        requireCandidateGoalsOwned(request);
         requireSourceIssuesBelongToDiagnosis(request);
 
         List<Saved> result = new ArrayList<>(request.candidates().size());
@@ -135,8 +136,10 @@ public class RecommendationStore {
 
     private Recommendation insert(SaveRequest request, PrioritizedCandidate prioritized, String key, LocalDateTime now) {
         RecommendationCandidate candidate = prioritized.candidate();
+        // 696: 후보가 날짜 효과를 계산한 목표가 있으면 그 목표를, 없으면 요청(진단) 목표를 저장한다.
+        Long goalId = candidate.goalId() != null ? candidate.goalId() : request.goalId();
         Recommendation saved = recommendations.save(Recommendation.pending(
-                request.userId(), request.diagnosisId(), request.goalId(), candidate.sourceIssueId(),
+                request.userId(), request.diagnosisId(), goalId, candidate.sourceIssueId(),
                 candidate.domain(), candidate.type(), candidate.title(), candidate.description(),
                 prioritized.priority(), candidate.effect(), key, now));
         Long id = saved.getRecommendationId();
@@ -188,6 +191,22 @@ public class RecommendationStore {
         }
         if (!Objects.equals(goalId, diagnosis.getGoalId())) {
             throw new BusinessException(ErrorCode.RECOMMENDATION_GOAL_MISMATCH);
+        }
+    }
+
+    // 696: 후보가 지정한 목표는 진단 스냅샷의 본인 목표에서만 나온다. 어긋나면 생성기 결함이므로 첫 INSERT 전에 실패시킨다.
+    // 목표 연계 진단(요청 goalId 있음)에서는 그 목표와 같아야 한다 — 다른 목표의 효과를 이 목표의 추천에 저장하지 않는다.
+    private void requireCandidateGoalsOwned(SaveRequest request) {
+        Set<Long> referenced = request.candidates().stream()
+                .map(p -> p.candidate().goalId())
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        for (Long goalId : referenced) {
+            if (request.goalId() != null && !request.goalId().equals(goalId)) {
+                throw new IllegalStateException("후보의 goalId가 생성 요청의 목표와 다릅니다: " + goalId);
+            }
+            goals.findByIdAndUserIdAndDeletedAtIsNull(goalId, request.userId())
+                    .orElseThrow(() -> new IllegalStateException("후보의 goalId가 이 사용자의 목표가 아닙니다: " + goalId));
         }
     }
 

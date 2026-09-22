@@ -83,11 +83,11 @@ Recommendation.Effect effect = new Recommendation.Effect(
 `daysDifference`는 목표 전체의 현재 지연이지 이 카테고리 때문에 생긴 지연이 아니므로, 인과 표현("이 소비가 계속되면")은
 의도적으로 쓰지 않았다. 관련 코드는 `frontend/src/pages/discovery/goalDelay.ts`.
 
-> **BE 회신(675 → 후속 696)**: 675에서는 계약만 정했다 — `REDUCE_CATEGORY_SPENDING` 추천이 진단 스냅샷 `goals[].forecast`(남은 금액·현재 저축속도)로 "늘어난 금액을 이 목표 저축에 돌리면"의
+> **BE 회신(675 계약 → 696 구현)**: `REDUCE_CATEGORY_SPENDING` 추천이 진단 스냅샷 `goals[].forecast`(남은 금액·현재 저축속도)로 "늘어난 금액을 이 목표 저축에 돌리면"의
 > `currentForecastDate`·`improvedForecastDate`·`advancedDays`(양수 = 앞당김)·`contributionAmount`(= 증가액)를 계산하고 대상 목표(요청 goalId, 없으면 **가장 많이 밀린 모으기 목표** = `goalDelay.ts`와 같은 규칙)를
 > `Recommendation.goalId`에 싣는다. 근거 `GOAL_FORECAST_ADVANCE`에 `goalName`·계산 입력. 현재 저축속도 0이면 `currentForecastDate`·`advancedDays`는 null, `improvedForecastDate`만 있다.
 > 원안 문구의 N("계속되면 N일 늦어짐")은 이 `advancedDays`와 같은 크기. 식은 510·시뮬레이션과 같은 `GoalForecastFormula`(일 단위), 현재 데이터로 재계산하지 않는다.
-> **구현은 S15P21D105-696**(코드·테스트 준비 완료). 배포 뒤 `POST /diagnoses {forceRefresh:true}` → `POST /recommendations/generate`를 다시 해야 새 버전 추천이 생긴다.
+> 구현 S15P21D105-696(생성기 `696.1`). 배포 뒤 `POST /diagnoses {forceRefresh:true}` → `POST /recommendations/generate`를 다시 해야 새 버전 추천이 생긴다.
 
 ---
 
