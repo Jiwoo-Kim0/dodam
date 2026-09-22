@@ -97,7 +97,10 @@ class SimulationCardCombinedApiTest {
         FinancialProfile profile = FinancialProfile.empty(owner);
         profile.update(3_000_000L, null, null, null, null);
         profiles.save(profile);
-        // 3개월 전 생성, 잔액 1,000,000 → 속도 333,333, 남은 2,000,000 → 7개월(2027-04-15)
+        // 저축속도(694): 입출금 연결이라 6·7·8월 순현금흐름 333,333 × 3 / 3 = 333,333, 남은 2,000,000 → 7개월(2027-04-15)
+        for (int month = 6; month <= 8; month++) {
+            income(LocalDate.of(2026, month, 25), 333_333L);
+        }
         Long accountId = insertAccount(owner, GOAL_ACCOUNT_NO, 1_000_000L);
         Long otherAccountId = insertAccount(other, OTHER_ACCOUNT_NO, 0L);
         Goal goal = goals.save(Goal.create(owner, "비상금", GoalType.SAVING, NOW.minusMonths(3)));
@@ -280,6 +283,8 @@ class SimulationCardCombinedApiTest {
                     payment_method, spending_type, summary, hidden, source_type, created_at)
                 VALUES (?, ?, ?, 'EXPENSE', 30000, 'CARD', 'VARIABLE', 'test', FALSE, 'SEED', ?)
                 """, UUID.randomUUID().toString(), owner, NOW.toLocalDate().minusMonths(1), NOW);
+        // 같은 달 수입을 같은 금액으로 넣어 첫 목표의 속도(순현금흐름 333,333)를 유지한다
+        income(NOW.toLocalDate().minusMonths(1), 30_000L);
         Goal second = goals.save(Goal.create(owner, "여행", GoalType.SAVING, NOW.minusMonths(1)));
         savingGoals.save(SavingGoal.create(second.getId(), 1_200_000L, NOW.toLocalDate().plusYears(1)));
         String request = "{\"scenarios\":["
@@ -477,6 +482,15 @@ class SimulationCardCombinedApiTest {
                 VALUES (?, 1, 'DEMAND_DEPOSIT', ?, 'TESTBANK', '테스트은행', ?, '1234-***-**123', '신용대출', 'CREDIT', 'BULLET', 'ACTIVE', 12,
                     ?, ?, ?, ?, 12, 15, ?, ?, NULL)
                 """, userId, productId, hasher.hash(accountNo), maturity.minusYears(1), maturity, balance, balance, next, NOW);
+    }
+
+    /** 저축속도(694 GoalSavingPaceReader)용 수입. 입출금 연결 목표의 속도는 직전 3개 완료 월의 사용자 순현금흐름이다. */
+    private void income(LocalDate date, long amount) {
+        jdbc.update("""
+                INSERT INTO `transaction` (transaction_id, user_id, transaction_date, transaction_type, amount,
+                    payment_method, spending_type, summary, hidden, source_type, created_at)
+                VALUES (?, ?, ?, 'INCOME', ?, 'ACCOUNT', 'NON_SPENDING', 'salary', FALSE, 'SEED', ?)
+                """, UUID.randomUUID().toString(), owner, date, amount, NOW);
     }
 
     private Long insertAccount(Long userId, String accountNo, long balance) {

@@ -15,19 +15,19 @@ import java.util.Map;
  * <p><b>모든 임계값은 서비스 초기값</b>이며 팀에서 검증한 기준이 아니다. 바꾸면 {@link #VERSION}을 올린다 — 저장된 과거
  * 리포트 점수는 그대로 남고 새 리포트만 새 산식을 쓴다.
  *
- * <p>버전 이력: {@code efficiency-v1}(635) → {@code efficiency-v2}(680, CREDIT 입력을 A~E 등급에서 예상 신용점수 우선으로.
- * 같은 날 694가 CASHFLOW·INEFFICIENCY 입력을 "그 달 안"에서 "그 달 말일까지 완료된 최신"으로 완화했으며 v2에 포함한다 —
- * 두 변경이 같이 배포되어 별도 버전을 만들지 않았다. {@link EfficiencyScoreCalculator} 참고).
+ * <p>버전 이력: {@code efficiency-v1}(635) → {@code efficiency-v2}(680, CREDIT 입력을 A~E 등급에서 예상 신용점수 우선으로)
+ * → {@code efficiency-v3}(694: FIXED_EXPENSE 임계값 0.3/0.7 → 0.4/0.8, CASHFLOW·INEFFICIENCY 입력을 "그 달 안"에서
+ * "그 달 말일까지 완료된 최신, 없으면 리포트 생성 시점 최신"으로 완화. {@link EfficiencyScoreCalculator} 참고).
  *
  * <table>
  *   <caption>항목별 산식(0~100, 선형 보간 후 반올림)</caption>
  *   <tr><th>항목</th><th>근거 수치</th><th>100점</th><th>0점</th></tr>
  *   <tr><td>SPENDING 지출 관리</td><td>소비 / 소득</td><td>≤ 0.5</td><td>≥ 1.0</td></tr>
  *   <tr><td>SAVING 저축</td><td>저축성 지출 / 소득</td><td>≥ 0.3</td><td>0</td></tr>
- *   <tr><td>FIXED_EXPENSE 고정지출</td><td>고정지출 / 소비</td><td>≤ 0.3</td><td>≥ 0.7</td></tr>
+ *   <tr><td>FIXED_EXPENSE 고정지출</td><td>고정지출 / 소비</td><td>≤ 0.4</td><td>≥ 0.8</td></tr>
  *   <tr><td>CREDIT 신용 관리</td><td>개인신용점수</td><td>1,000점</td><td>1점</td></tr>
- *   <tr><td>CASHFLOW 현금흐름</td><td>그 달 말일 기준 마지막 예측의 위험</td><td colspan="2">100 − Σ(CRITICAL 40, HIGH 30, MEDIUM 15, LOW 5), 하한 0</td></tr>
- *   <tr><td>INEFFICIENCY 비효율 관리</td><td>그 달 말일 기준 최신 완료 진단의 문제(GOAL 제외)</td><td colspan="2">100 − Σ(CRITICAL 30, HIGH 25, MEDIUM 15, LOW 10), 하한 0</td></tr>
+ *   <tr><td>CASHFLOW 현금흐름</td><td>그 달 말일 기준 마지막 예측(없으면 생성 시점 최신)의 위험</td><td colspan="2">100 − Σ(CRITICAL 40, HIGH 30, MEDIUM 15, LOW 5), 하한 0</td></tr>
+ *   <tr><td>INEFFICIENCY 비효율 관리</td><td>그 달 말일 기준 최신 완료 진단(없으면 생성 시점 최신)의 문제(GOAL 제외)</td><td colspan="2">100 − Σ(CRITICAL 30, HIGH 25, MEDIUM 15, LOW 10), 하한 0</td></tr>
  * </table>
  *
  * <p>상태는 GOOD ≥ 70, NORMAL 40~69, CHECK &lt; 40. 전체 점수는 계산된 항목의 단순 평균(반올림)이며 계산된 항목이
@@ -35,7 +35,7 @@ import java.util.Map;
  */
 public final class EfficiencyScorePolicy {
 
-    public static final String VERSION = "efficiency-v2";
+    public static final String VERSION = "efficiency-v3";
     public static final int MINIMUM_DIMENSIONS = 3;
 
     public static final String KEY_SPENDING = "SPENDING";
@@ -97,13 +97,18 @@ public final class EfficiencyScorePolicy {
         return available(KEY_SAVING, score, "소득의 " + percent(rate) + "%를 저축했어요.", rate, VALUE_RATIO, null);
     }
 
-    /** 고정지출 / 소비. 소비가 0이면 NO_SPENDING. */
+    /**
+     * 고정지출 / 소비. 소비가 0이면 NO_SPENDING.
+     *
+     * <p>임계값 0.4/0.8(v3). 고정지출에는 월세·관리비·대출 상환·보험·구독이 모두 들어가 1인 가구 시연 계정도 60%대라, v1의
+     * 0.3/0.7로는 70%부터 0점이 되어 "점검 필요"만 나왔다. 40% 이하를 만점, 80% 이상을 0점으로 둔다.
+     */
     public static Dimension fixedExpense(long fixedSpending, long totalSpending) {
         if (totalSpending <= 0) {
             return unavailable(KEY_FIXED_EXPENSE, REASON_NO_SPENDING, "이 달 소비가 없어 고정지출 비중을 계산하지 못했어요.");
         }
         double share = ratio(fixedSpending, totalSpending);
-        int score = linearDown(share, 0.3, 0.7);
+        int score = linearDown(share, 0.4, 0.8);
         return available(KEY_FIXED_EXPENSE, score, "전체 소비 중 고정지출이 " + percent(share) + "%예요.", share, VALUE_RATIO, null);
     }
 
@@ -129,35 +134,39 @@ public final class EfficiencyScorePolicy {
     }
 
     /**
-     * 그 달 말일 기준 마지막 현금흐름 예측의 위험. 예측이 없으면 FORECAST_NOT_FOUND.
+     * 그 달 말일 기준 마지막 현금흐름 예측(없으면 리포트 생성 시점 최신)의 위험. 예측이 하나도 없으면 FORECAST_NOT_FOUND.
      *
+     * @param afterMonthEnd  그 달 말일까지 예측이 없어 그 뒤 실행한 최신 예측을 썼는지. 근거 문장에 밝힌다
      * @param riskSeverities 위험별 심각도 이름(LOW/MEDIUM/HIGH/CRITICAL). 위험이 없으면 빈 목록
      */
-    public static Dimension cashflow(boolean forecastFound, List<String> riskSeverities) {
+    public static Dimension cashflow(boolean forecastFound, boolean afterMonthEnd, List<String> riskSeverities) {
         if (!forecastFound) {
-            return unavailable(KEY_CASHFLOW, REASON_FORECAST_NOT_FOUND, "이 달까지 실행한 현금흐름 예측이 없어 계산하지 못했어요.");
+            return unavailable(KEY_CASHFLOW, REASON_FORECAST_NOT_FOUND, "실행한 현금흐름 예측이 없어 계산하지 못했어요.");
         }
         int penalty = riskSeverities.stream().mapToInt(s -> CASHFLOW_PENALTIES.getOrDefault(s, 0)).sum();
         int score = clamp(EfficiencyScoreResponse.MAX_SCORE - penalty);
         int count = riskSeverities.size();
-        String description = count == 0 ? "예정된 잔액 위험이 없어요." : "예정 잔액 위험 " + count + "건이 있어요.";
+        String description = (afterMonthEnd ? "가장 최근 예측 기준으로 " : "")
+                + (count == 0 ? "예정된 잔액 위험이 없어요." : "예정 잔액 위험 " + count + "건이 있어요.");
         return available(KEY_CASHFLOW, score, description, (double) count, VALUE_COUNT, null);
     }
 
     /**
-     * 그 달 말일 기준 최신 완료 진단의 문제(GOAL 도메인 제외 — 607에서 목표 위험은 발견 대상이 아니다). 진단이 없으면
-     * DIAGNOSIS_NOT_FOUND.
+     * 그 달 말일 기준 최신 완료 진단(없으면 리포트 생성 시점 최신)의 문제(GOAL 도메인 제외 — 607에서 목표 위험은 발견 대상이
+     * 아니다). 진단이 하나도 없으면 DIAGNOSIS_NOT_FOUND.
      *
+     * @param afterMonthEnd   그 달 말일까지 진단이 없어 그 뒤 완료한 최신 진단을 썼는지. 근거 문장에 밝힌다
      * @param issueSeverities 문제별 심각도 이름. 문제가 없으면 빈 목록
      */
-    public static Dimension inefficiency(boolean diagnosisFound, List<String> issueSeverities) {
+    public static Dimension inefficiency(boolean diagnosisFound, boolean afterMonthEnd, List<String> issueSeverities) {
         if (!diagnosisFound) {
-            return unavailable(KEY_INEFFICIENCY, REASON_DIAGNOSIS_NOT_FOUND, "이 달까지 완료한 진단이 없어 계산하지 못했어요.");
+            return unavailable(KEY_INEFFICIENCY, REASON_DIAGNOSIS_NOT_FOUND, "완료한 진단이 없어 계산하지 못했어요.");
         }
         int penalty = issueSeverities.stream().mapToInt(s -> ISSUE_PENALTIES.getOrDefault(s, 0)).sum();
         int score = clamp(EfficiencyScoreResponse.MAX_SCORE - penalty);
         int count = issueSeverities.size();
-        String description = count == 0 ? "점검이 필요한 항목이 없어요." : "점검이 필요한 항목이 " + count + "건 있어요.";
+        String description = (afterMonthEnd ? "가장 최근 진단 기준으로 " : "")
+                + (count == 0 ? "점검이 필요한 항목이 없어요." : "점검이 필요한 항목이 " + count + "건 있어요.");
         return available(KEY_INEFFICIENCY, score, description, (double) count, VALUE_COUNT, null);
     }
 

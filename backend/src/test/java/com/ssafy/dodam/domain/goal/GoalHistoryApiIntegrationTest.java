@@ -28,6 +28,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -134,9 +135,13 @@ class GoalHistoryApiIntegrationTest {
 
     @Test
     void recordsEveryChangeOfASavingGoalNewestFirst() throws Exception {
+        // 저축속도(694): 입출금 연결이라 직전 3개 완료 월 순현금흐름 → 월 50만. 연결 계좌 잔액 200만은 속도에 들어가지 않는다
+        for (int back = 1; back <= 3; back++) {
+            insertIncome(today.minusMonths(back).withDayOfMonth(10), 500_000);
+        }
         long goalId = createSaving(10_000_000, today.plusMonths(10));
         // 1) 생성 → GOAL_CREATED (0원, 0%, 예상일 없음)
-        // 2) 계좌 연결 → ACCOUNTS_UPDATED (200만, 20%, 속도 200만/1개월 → 4개월 뒤)
+        // 2) 계좌 연결 → ACCOUNTS_UPDATED (200만, 20%, 남은 800만 / 50만 → 16개월 뒤)
         link(goalId, List.of(MAIN_ID));
         // 3) 잔액 변화 후 진행률 조회 → AMOUNT_UPDATED (300만, 30%)
         jdbcTemplate.update("UPDATE account SET balance = 3000000 WHERE account_id = 11");
@@ -170,12 +175,13 @@ class GoalHistoryApiIntegrationTest {
                 .andExpect(jsonPath("$.data.content[2].event").value("AMOUNT_UPDATED"))
                 .andExpect(jsonPath("$.data.content[2].currentAmount").value(3_000_000))
                 .andExpect(jsonPath("$.data.content[2].progressRatePercent").value(30.0))
-                // 658: 700만 / 300만 = 2개월 + 100만/300만 × 그 달 일수(올림) → 일 단위. 510 forecast와 같은 식
-                .andExpect(jsonPath("$.data.content[2].forecastDate").value(GoalForecastFormula.expectedDate(7_000_000, 3_000_000, today).toString()))
+                // 남은 700만 / 50만 = 14개월. 510 forecast와 같은 식(GoalForecastFormula)
+                .andExpect(jsonPath("$.data.content[2].forecastDate").value(GoalForecastFormula.expectedDate(7_000_000, 500_000, today).toString()))
+                .andExpect(jsonPath("$.data.content[2].forecastDate").value(today.plusMonths(14).toString()))
                 .andExpect(jsonPath("$.data.content[3].event").value("ACCOUNTS_UPDATED"))
                 .andExpect(jsonPath("$.data.content[3].currentAmount").value(2_000_000))
                 .andExpect(jsonPath("$.data.content[3].progressRatePercent").value(20.0))
-                .andExpect(jsonPath("$.data.content[3].forecastDate").value(today.plusMonths(4).toString()))
+                .andExpect(jsonPath("$.data.content[3].forecastDate").value(today.plusMonths(16).toString()))
                 .andExpect(jsonPath("$.data.content[4].event").value("GOAL_CREATED"))
                 .andExpect(jsonPath("$.data.content[4].currentAmount").value(0))
                 .andExpect(jsonPath("$.data.content[4].progressRatePercent").value(0.0))
@@ -255,6 +261,15 @@ class GoalHistoryApiIntegrationTest {
     }
 
     // ---------- helpers ----------
+
+    private void insertIncome(LocalDate date, long amount) {
+        jdbcTemplate.update(
+                """
+                INSERT INTO `transaction` (transaction_id, user_id, transaction_date, transaction_type, amount,
+                    payment_method, spending_type, summary, hidden, source_type, created_at)
+                VALUES (?, ?, ?, 'INCOME', ?, 'ACCOUNT', 'NON_SPENDING', 'salary', FALSE, 'SEED', ?)
+                """, UUID.randomUUID().toString(), userId, date, amount, SEEDED_AT);
+    }
 
     private long createSaving(long targetAmount, LocalDate targetDate) throws Exception {
         return create(Map.of("name", "모으기", "type", "SAVING", "targetAmount", targetAmount, "targetDate", targetDate.toString()));
