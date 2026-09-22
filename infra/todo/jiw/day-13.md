@@ -364,3 +364,78 @@ HikariCP 기본값이다. MySQL `max_connections`는 151인데 **앱은 10개만
 - [ ] 오류율과 로그를 잇는 상관 ID가 없다 — 5xx 급증 시 시간대로 Loki를 뒤져야 한다
 - [ ] DB 적재와 부하 실행 시간대 분리(monitoring.md §4)
 - [ ] 부하 생성 도구·시나리오는 215·317 담당
+
+### 20. Grafana 부하 테스트 대시보드
+
+부하 중에는 여러 지표를 **동시에** 봐야 판단이 선다. Explore에서 PromQL을 하나씩 치면
+"CPU는 괜찮은데 pending이 오른다" 같은 판단이 늦는다.
+
+`infra/monitoring/grafana/provisioning/dashboards/loadtest.json` — 12패널.
+
+| 행 | 패널 |
+| --- | --- |
+| 1 (판정) | 수집 대상 정상 · **DB풀 대기** · **5xx 오류율** · 지연 p95 · 처리량 |
+| 2 (응답) | 지연 분위수 p50/p95/p99 · 느린 엔드포인트 top7 |
+| 3 (DB) | HikariCP 풀(active/idle/pending/max) · MySQL(연결·슬로우·InnoDB 락 대기) |
+| 4 (자원) | JVM 힙과 GC · 호스트 CPU/메모리 · Redis(메모리·eviction·명령) |
+
+임계는 `monitoring.md` §3과 맞췄다(DB풀 대기 1/5, 5xx 0.5%/1%, p95 0.5s/1s).
+
+#### 판단 기준을 패널 description에 넣었다
+
+부하 중에 문서를 다시 열 여유는 없다. 패널 위에서 바로 읽히게 했다. 예:
+
+> (HikariCP) active가 max에 붙고 pending이 오르면 풀 고갈이다.
+> 기준선(2026-09-22) max=10은 HikariCP 기본값이며 MySQL max_connections는 151이다.
+
+#### rate 구간을 스냅샷과 다르게 뒀다
+
+| 용도 | 구간 | 이유 |
+| --- | --- | --- |
+| 대시보드 | `[1m]` | 부하 중 변화를 빨리 봐야 한다 |
+| `metrics-snapshot.py` | `[5m]` | 전후 비교는 흔들림이 적어야 한다 |
+
+**비교용 수치는 반드시 스냅샷 스크립트로 뜬다.** 구간이 다른 값을 섞어 비교하면 안 된다.
+
+#### 곁다리로 고친 것 — `overview.json`이 backend를 빼고 보고 있었다
+
+기존 "수집 대상 정상 여부" 패널이 `min(up{job!="backend"})`였다. 백엔드 지표가 늘 0이라
+넣어 둔 우회로 보이는데, **그 결과 backend가 죽어도 패널은 초록이었다.**
+8절에서 수집이 살아났으므로 제외를 해제했다(`min(up)`).
+
+경고를 울리게 하려고 만든 패널이 **울리지 않도록 조정돼 있었다**는 점에서, 17-1의
+`DEPLOY_SERVICES` 경고를 내가 읽지 않고 넘긴 것과 같은 종류의 문제다.
+
+#### Grafana는 디렉터리 마운트라 파일만 넣으면 반영된다
+
+`./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro` — **디렉터리** 마운트이고
+provider가 30초마다 다시 읽는다(`updateIntervalSeconds: 30`). 파일을 넣고 35초 뒤
+API 조회로 `uid=dodam-loadtest` 로드를 확인했다.
+
+17-2의 prometheus(단일 파일 마운트, 재생성 필요)와 **같은 스택 안에서 동작이 다르다.**
+설정을 바꿀 때 어느 쪽인지 먼저 봐야 한다.
+
+### 21. 오늘(2026-09-22) 마무리 상태
+
+| 항목 | 상태 |
+| --- | --- |
+| backend 지표 수집 | ✅ `up=1` (Day 6 이래 처음) |
+| MySQL·Redis exporter | ✅ `up=1` |
+| 기준 지표 정의·임계 | ✅ `monitoring.md` §3, 13종 |
+| 기준선 스냅샷 | ✅ `load-test-records.md` #1 (커밋 `36d911b`) |
+| 수집 스크립트 | ✅ `infra/scripts/metrics-snapshot.py` |
+| 부하 대시보드 | ✅ `dodam-loadtest` |
+| `deploy.sh` 서비스 목록 | ✅ exporter 2종 추가 |
+
+**부하 테스트(수 09-23 / 토 09-26) 관측 준비는 끝났다.**
+
+### 22. 남은 것
+
+- [ ] **`prometheus.yml`을 디렉터리 마운트로 바꾼다**(17-2). 지금은 파일을 고쳐도
+      컨테이너 재생성 없이는 반영되지 않는다. 부하 중 스크레이프 설정을 바꿀 일이 생기면 걸린다
+- [ ] **오류율과 로그를 잇는 상관 ID가 없다.** 5xx가 늘면 시간대로 Loki를 뒤져야 한다
+- [ ] **DB 적재와 부하 실행 시간대를 분리한다**(`monitoring.md` §4). seed 적재 중 측정은
+      디스크·CPU가 적재에 먹혀 결과가 오염된다
+- [ ] 부하 생성 도구·시나리오는 215(구동재)·317(정현진) 담당. 이 준비는 관측 쪽만 다룬다
+- [ ] 부하 중/개선 후 스냅샷을 `load-test-records.md`에 **커밋 해시와 함께** 이어 적는다
+- [ ] 병목 원인·잔여 한계를 PPT(315)에 전달 — 완료 기준
