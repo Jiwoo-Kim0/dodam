@@ -96,11 +96,42 @@ export const styles = StyleSheet.create({
     fontFamily: fontFamily.semiBold,
     fontSize: fontSize.caption,
   },
+  /** 띠를 어떻게 읽는지 알려 주는 한 줄. 범례 바로 아래에 붙여 함께 읽히게 한다. */
+  guideText: {
+    ...typography.caption,
+    color: colors.textTertiary,
+    lineHeight: 17,
+    marginTop: spacing[1],
+  },
   footnote: {
     color: colors.textTertiary,
     fontFamily: fontFamily.regular,
     fontSize: fontSize.micro,
     lineHeight: 14,
-    marginTop: spacing[2],
+    marginTop: spacing[3],
+  },
+  /** 평소엔 닫아 두는 보조 정보라 눌리는 곳임만 알 정도로 약하게 둔다. */
+  basisToggle: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    gap: spacing[1],
+    marginTop: spacing[1],
+    paddingVertical: spacing[1],
+  },
+  basisTogglePressed: {
+    opacity: 0.62,
+  },
+  basisToggleText: {
+    color: colors.textTertiary,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.micro,
+    lineHeight: 14,
+  },
+  basisText: {
+    color: colors.textTertiary,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.micro,
+    lineHeight: 15,
   },
 });

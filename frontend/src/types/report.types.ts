@@ -27,13 +27,19 @@ export interface ReportEfficiencyScore {
   unavailableMessage: string | null;
 }
 
-export type ReportPatternStatus = 'good' | 'check';
+/**
+ * 금융 생활 패턴 판정. `unavailable`은 '위험 없음'이 아니라 '판단할 자료가 없음'이다.
+ * 둘을 같은 모양으로 그리면 데이터가 없는 것을 안전하다고 읽게 된다(BE 697).
+ */
+export type ReportPatternStatus = 'good' | 'check' | 'unavailable';
 
 export interface ReportFinancePattern {
   id: string;
   status: ReportPatternStatus;
   title: string;
   description: string;
+  /** 판정이 본 기간. 서버가 주지 않으면 null이다. */
+  evidencePeriod: string | null;
   icon: ImageSourcePropType;
 }
 
@@ -92,6 +98,14 @@ export interface ReportPastSpending {
   topCategories: readonly ReportSpendingCategory[];
 }
 
+/** 뱃지 색을 정하는 기준. `neutral`은 또래와 비슷해 좋고 나쁨을 말하지 않는 상태다. */
+export type ReportPeerBadgeTone = 'good' | 'watch' | 'neutral';
+
+export interface ReportPeerBadge {
+  label: string;
+  tone: ReportPeerBadgeTone;
+}
+
 export interface ReportPeerFeature {
   key: string;
   /** 오각형 축에 들어갈 짧은 라벨이다. */
@@ -101,6 +115,11 @@ export interface ReportPeerFeature {
    * **바깥쪽일수록 좋은 상태**가 되게 맞춘다. 또래 중앙값은 뒤집어도 50이라 기준선은 그대로다.
    */
   axisValue: number;
+  /**
+   * 또래와 견준 한 줄 판정. 경계는 서버 `rankBand`, 좋고 나쁨은 서버 `direction`이 정하며
+   * FE가 기준을 새로 만들지 않는다. 서버가 모르는 구간을 보내면 `null`이다.
+   */
+  badge: ReportPeerBadge | null;
   /** 서버가 준 원래 백분위(0~100)다. 값이 클수록 큰 쪽이며 좋고 나쁨과는 무관하다. */
   percentile: number;
   /** 원본 비율 값이다. 또래 분포와 내 위치를 같은 축에 놓는 데 쓴다. */

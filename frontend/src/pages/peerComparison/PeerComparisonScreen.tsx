@@ -92,7 +92,7 @@ export function PeerComparisonScreen() {
 
             <View style={styles.card}>
               <Text style={styles.cardTitle}>항목별 또래 비교</Text>
-              <Text style={styles.cardDescription}>회색 구간 밖이면 또래와 다른 편이에요</Text>
+              <Text style={styles.cardDescription}>초록 점을 누르면 내 수치를 볼 수 있어요</Text>
 
               <View style={styles.bars}>
                 <PeerDistributionBars features={peerComparison.features} />
@@ -102,6 +102,10 @@ export function PeerComparisonScreen() {
                 <View style={styles.legendItem}>
                   <View style={styles.legendBandMark} />
                   <Text style={styles.legendText}>또래 절반</Text>
+                </View>
+                <View style={styles.legendItem}>
+                  <View style={styles.legendMedianMark} />
+                  <Text style={styles.legendText}>또래 중앙값</Text>
                 </View>
                 <View style={styles.legendItem}>
                   <View style={styles.legendDotMark} />

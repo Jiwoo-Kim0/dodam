@@ -39,6 +39,14 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: spacing[2],
   },
+  /** 소비 유형 이름에 딸린 기간 표기. 제목의 일부처럼 읽히게 바로 아래 붙인다. */
+  periodText: {
+    color: colors.textTertiary,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.micro,
+    lineHeight: 14,
+    marginTop: spacing[1],
+  },
   moreRow: {
     alignItems: 'center',
     borderTopColor: colors.divider,

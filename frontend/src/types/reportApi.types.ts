@@ -58,6 +58,28 @@ export interface MonthAmountsApiResponse {
   totalSaving: number;
 }
 
+/** 금융 생활 패턴 판정(697). `UNAVAILABLE`은 '위험 없음'이 아니라 '자료 없음'이다. */
+export type ReportPatternStatusApiResponse = 'GOOD' | 'CHECK' | 'UNAVAILABLE';
+
+/**
+ * 금융 생활 패턴 한 장(697). 순서가 고정된 3장이 내려온다.
+ * 문구는 서버 템플릿이고, 아이콘만 `key`로 FE가 고른다.
+ */
+export interface ReportPatternApiResponse {
+  key: string;
+  status: ReportPatternStatusApiResponse;
+  title: string;
+  description: string;
+  /** 판정이 본 기간. `2026-07 vs 2026-04~2026-06`처럼 비교 구간일 수 있다. */
+  evidencePeriod: string | null;
+  unavailableReason?: string;
+}
+
+export interface ReportMetricsApiResponse {
+  calculationVersion: string;
+  patterns: readonly ReportPatternApiResponse[];
+}
+
 export interface MonthlyReportApiResponse {
   reportId: number | null;
   type: string;
@@ -84,5 +106,7 @@ export interface MonthlyReportApiResponse {
   efficiency: EfficiencyScoreApiResponse | null;
   diagnosisId: number | null;
   overallStatus: string | null;
+  /** 697 이전에 굳은 리포트에는 없다. */
+  metrics?: ReportMetricsApiResponse | null;
   unavailableReason?: string;
 }
