@@ -1119,3 +1119,65 @@ FE에서 적재된 구독이 화면에 보인다고 확인했다. 13·14절로 �
 나중에 그 디렉터리를 보고 "이 코드가 돌고 있다"고 읽으면 틀리게 된다.
 
 - [ ] 다음 배포 때 680 파일이 서버 레포에 들어오는지 확인 — 재현하려면 파일이 레포에 있어야 한다
+
+### 17. 배포 실패 — `credit_score` 타입 불일치 (V43으로 수정)
+
+2026-09-22 배포가 사전 검증에서 실패했다. `a9b23c4` 이후 계속 실패 중이었다.
+
+```
+Schema-validation: wrong column type encountered in column [credit_score] in table [`user`];
+found [smallint (Types#SMALLINT)], but expecting [integer (Types#INTEGER)]
+```
+
+| | |
+| --- | --- |
+| `V42__user_credit_score.sql` | `credit_score` **SMALLINT** |
+| `User` 엔티티 | `Integer creditScore` → Hibernate는 **INTEGER** 기대 |
+
+`ddl-auto: validate`가 둘을 다르게 보고 기동을 거부했다. **서비스 중단은 없었다** —
+`deploy.sh`의 사전 검증(일회용 컨테이너 기동)이 걸러내고 코드를 `b8ebba3`으로 되돌렸다.
+
+#### 기록해 둘 것 — 실패한 배포가 스키마는 이미 올려놨다
+
+로그를 보면 순서가 이렇다.
+
+1. 일회용 컨테이너 기동 → **Flyway가 V42를 적용**(성공)
+2. 그다음 Hibernate 스키마 검증 → 타입 불일치로 실패
+3. `deploy.sh`가 **코드만** `b8ebba3`으로 롤백
+
+즉 **코드는 되돌아갔지만 마이그레이션은 DB에 남았다.** 그래서 어제 내가 `flyway_schema_history`를
+조회했을 때 V42가 이미 적용돼 있었고(16절), 680 seed도 그 컬럼에 정상 적재됐다.
+돌고 있는 backend는 옛 이미지라 `credit_score`를 매핑하지 않으므로 영향 없이 계속 동작했다.
+
+→ **사전 검증 실패 = 아무 일도 없었음이 아니다.** 스키마는 앞서 있을 수 있다.
+롤백 후 DB 상태를 확인하는 습관이 필요하다.
+
+#### 수정 — V43
+
+```sql
+ALTER TABLE `user` MODIFY COLUMN `credit_score` INT NULL;
+```
+
+**V42를 고치지 않은 이유**: 시연 서버에 이미 적용됐다. 파일을 고치면 Flyway 체크섬 검증이 깨져
+기동 자체가 막힌다. 적용된 마이그레이션은 수정하지 않고 새 번호로 바로잡는다.
+
+**엔티티를 고치지 않은 이유**: 점수 범위가 1~1000이라 SMALLINT가 도메인에는 더 맞고,
+엔티티에 `@JdbcTypeCode(SqlTypes.SMALLINT)`를 붙이면 컬럼을 그대로 둘 수 있다(이 레포는
+`@JdbcTypeCode(SqlTypes.JSON)`을 이미 쓴다). 다만 **MySQL 대상 테스트가 없어 로컬에서 검증할 수
+없었다.** 배포를 먼저 풀어야 하는 상황이라 결과가 자명한 쪽을 골랐다.
+680 담당자가 SMALLINT를 유지하고 싶다면 이 파일을 되돌리고 엔티티 쪽으로 옮기면 된다.
+
+#### 검증
+
+테스트는 H2 + Flyway 비활성이라 V43을 실행하지 않는다(1,329건 통과는 회귀 확인일 뿐이다).
+`CHECK` 제약이 걸린 컬럼에 `MODIFY`가 되는지는 **운영 테이블 대신 임시 테이블로 같은 형태를
+만들어** 확인했다.
+
+```
+CREATE TABLE tmp_v43_probe (... credit_score SMALLINT, CHECK (1~1000));
+INSERT (934), (NULL);  ALTER ... MODIFY credit_score INT NULL;
+→ COLUMN_TYPE = int, 값 934·NULL 그대로 보존. DROP 완료
+```
+
+- [ ] 머지 후 배포에서 V43이 적용되고 기동이 통과하는지 확인
+- [ ] 680 담당자에게 공유 — SMALLINT 유지를 원하면 엔티티 쪽으로 옮기는 선택지가 있다
