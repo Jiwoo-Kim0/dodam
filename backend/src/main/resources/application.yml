@@ -8,10 +8,21 @@ management:
   endpoints:
     web:
       exposure:
-        include: health
+        # prometheus는 컨테이너 네트워크 안에서만 접근된다. nginx가 외부 /actuator/를 404로 막는다.
+        include: health,prometheus
   endpoint:
     health:
       show-details: never
+  metrics:
+    tags:
+      application: dodam-backend
+    distribution:
+      # 부하 테스트(693)에서 p95·p99를 보려면 히스토그램이 있어야 한다.
+      # 이것 없이는 평균만 남아 꼬리 지연(느린 소수 요청)이 보이지 않는다.
+      percentiles-histogram:
+        http.server.requests: true
+      slo:
+        http.server.requests: 100ms,200ms,500ms,1s,2s,5s
 
 app:
   auth:

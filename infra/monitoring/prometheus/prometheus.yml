@@ -46,5 +46,15 @@ scrape_configs:
     metrics_path: /actuator/prometheus
     static_configs:
       - targets: ["backend:8080"]
+
+  # 부하 테스트(693) 병목 규명용. 앱 지표로는 "DB가 느리다"까지만 알 수 있고
+  # 슬로우 쿼리·락 대기·eviction 같은 서버 내부 원인은 여기서만 보인다.
+  - job_name: mysql
+    static_configs:
+      - targets: ["mysqld-exporter:9104"]
+
+  - job_name: redis
+    static_configs:
+      - targets: ["redis-exporter:9121"]
         labels:
           service: dodam-backend

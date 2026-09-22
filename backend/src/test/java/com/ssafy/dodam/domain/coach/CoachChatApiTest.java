@@ -102,7 +102,8 @@ class CoachChatApiTest {
         diagnosisId = diagnoses.save(diagnosis).getDiagnosisId();
         issueId = issues.save(DiagnosisIssue.ofRule(diagnosisId, "SPENDING", "CATEGORY_SPENDING_INCREASE", IssueSeverity.HIGH,
                 "카페 지출이 늘었어요", "최근 한 달 카페 지출이 이전 3개월 평균보다 늘었습니다.",
-                node("{\"ratio\": 0.45}"), node("{\"ratio\": 0.2}"), null, NOW)).getIssueId();
+                node("{\"ratio\": 0.45, \"categoryCode\": \"CAFE\", \"categoryName\": \"카페\", \"increaseAmount\": 45000}"),
+                node("{\"ratio\": 0.2}"), null, NOW)).getIssueId();
     }
 
     private com.fasterxml.jackson.databind.JsonNode node(String raw) {
@@ -511,9 +512,9 @@ class CoachChatApiTest {
         assertThat(data.get("message").asText()).startsWith("카페 지출이 늘었어요.");
         assertThat(data.get("conversationId").asText()).matches("c_[0-9a-f]{16}");
         assertThat(data.get("toolResults")).isEmpty();
-        // 소비 문제라 칩이 소비 질문으로 바뀐다
+        // 소비 문제라 칩이 소비 질문으로 바뀌고, 첫 칩은 항목 카테고리·증가액(45,000 → 5만원)으로 만든다(669 FE 요청)
         assertThat(data.get("suggestedQuestions")).extracting(node -> node.asText())
-                .containsExactlyElementsOf(CoachChatService.SUGGESTED_FOR_SPENDING);
+                .containsExactly("카페를 월 5만원 줄이면?", CoachChatService.SUGGESTED_SAVING, CoachChatService.SUGGESTED_GOAL_DATE);
         // 도구 없이 1회 호출, tool_choice none, 프롬프트에 [화면 맥락]과 [첫 조언]이 실린다
         verify(dispatcher, never()).dispatch(any(), anyList());
         ArgumentCaptor<ToolChoice> choice = ArgumentCaptor.forClass(ToolChoice.class);
@@ -593,7 +594,39 @@ class CoachChatApiTest {
                 .andExpect(jsonPath("$.data.source").value("TEMPLATE"))
                 .andExpect(jsonPath("$.data.degradedReason").value("AI_UNAVAILABLE"))
                 .andExpect(jsonPath("$.data.message").value(CoachChatService.OPENING_TEMPLATE_MESSAGE))
-                .andExpect(jsonPath("$.data.suggestedQuestions[0]").value(CoachChatService.SUGGESTED_FOR_SPENDING.get(0)));
+                .andExpect(jsonPath("$.data.suggestedQuestions[0]").value("카페를 월 5만원 줄이면?"));
         verify(dispatcher, never()).dispatch(any(), anyList());
+    }
+
+    /** 669: 식비 문제면 첫 칩이 "식비를 월 18만원 줄이면?"(증가액 176,667 → 만원 반올림). 카테고리를 못 읽으면 종전 칩 그대로. */
+    @Test
+    void suggestedQuestionsUseTheContextCategoryAndIncreaseAmount() throws Exception {
+        Long foodIssue = issues.save(DiagnosisIssue.ofRule(diagnosisId, "SPENDING", "CATEGORY_SPENDING_INCREASE", IssueSeverity.HIGH,
+                "식비 소비가 2개월째 늘고 있어요", "지난달 소비가 직전 3개월 평균보다 51% 높아요.",
+                node("{\"categoryId\": 1, \"categoryCode\": \"FOOD\", \"categoryName\": \"식비\", \"monthlyAverage\": 520000, \"increaseAmount\": 176667}"),
+                node("{\"previousMonthlyAverage\": 343333}"), null, NOW)).getIssueId();
+        given(generator.chat(anyList(), anyList(), any())).willReturn(text("식비가 늘어난 항목이라서 이번 달 식비에서 줄일 수 있는 지출을 먼저 확인해 보시면 좋아요."));
+
+        MvcResult result = chat(owner, "{\"context\":{\"diagnosisId\":" + diagnosisId + ",\"issueId\":" + foodIssue + "}}");
+        var data = json.readTree(result.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8)).get("data");
+        assertThat(data.get("suggestedQuestions")).extracting(node -> node.asText())
+                .containsExactly("식비를 월 18만원 줄이면?", CoachChatService.SUGGESTED_SAVING, CoachChatService.SUGGESTED_GOAL_DATE);
+
+        // 시뮬레이션 대상이 아닌 카테고리(구독)는 종전 칩 그대로 — 모델이 도구에 넣을 수 없는 카테고리를 칩으로 권하지 않는다
+        Long subscriptionIssue = issues.save(DiagnosisIssue.ofRule(diagnosisId, "SPENDING", "CATEGORY_SPENDING_INCREASE", IssueSeverity.MEDIUM,
+                "구독 소비가 늘었어요", "지난달 구독이 늘었어요.",
+                node("{\"categoryCode\": \"SUBSCRIPTION\", \"categoryName\": \"구독\", \"increaseAmount\": 9900}"), null, null, NOW)).getIssueId();
+        MvcResult fallback = chat(owner, "{\"context\":{\"diagnosisId\":" + diagnosisId + ",\"issueId\":" + subscriptionIssue + "}}");
+        var fallbackData = json.readTree(fallback.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8)).get("data");
+        assertThat(fallbackData.get("suggestedQuestions")).extracting(node -> node.asText())
+                .containsExactlyElementsOf(CoachChatService.SUGGESTED_FOR_SPENDING);
+
+        // 순수 함수 경계: 받침 조사, 금액 없음 → 5만원, 코드만 있는 추천 근거 라벨(근거코드.categoryCode)
+        assertThat(CoachChatService.objectParticle("외식")).isEqualTo("을");
+        assertThat(CoachChatService.objectParticle("카페")).isEqualTo("를");
+        com.ssafy.dodam.domain.coach.dto.CoachFacts codeOnly = new com.ssafy.dodam.domain.coach.dto.CoachFacts(
+                com.ssafy.dodam.domain.coach.dto.CoachTopic.CHAT, "s",
+                List.of(new Section("서버가 저장한 근거", List.of(new Fact("CATEGORY_SPENDING_INCREASE.categoryCode", "GROCERY")))), List.of());
+        assertThat(CoachChatService.categoryQuestion(codeOnly)).contains("마트·편의점을 월 5만원 줄이면?");
     }
 }

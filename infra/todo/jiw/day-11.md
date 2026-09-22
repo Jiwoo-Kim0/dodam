@@ -1179,7 +1179,9 @@ INSERT (934), (NULL);  ALTER ... MODIFY credit_score INT NULL;
 → COLUMN_TYPE = int, 값 934·NULL 그대로 보존. DROP 완료
 ```
 
-- [ ] 머지 후 배포에서 V43이 적용되고 기동이 통과하는지 확인
+- [x] ~~머지 후 배포에서 V43 적용·기동 확인~~ — 2026-09-22 11:08 적용(success=1), 컬럼 `int`,
+      `Started DodamApplication in 22.281 seconds`, 스키마 검증 오류 0건, `/api/health` 200,
+      신용점수 4,000명 보존. `a9b23c4`부터 막혀 있던 배포가 풀렸다
 - [ ] 680 담당자에게 공유 — SMALLINT 유지를 원하면 엔티티 쪽으로 옮기는 선택지가 있다
 
 #### 엔티티에도 주석을 달았다
