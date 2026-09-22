@@ -21,7 +21,7 @@ ENV_FILE="$APP_DIR/infra/.env"
 # 모니터링 서비스도 반드시 포함한다. 목록에서 빠지면 설정 파일이나 이미지 태그를
 # 고쳐 머지해도 배포가 반영하지 않아, 수동으로 올린 변경이 다음 배포의
 # git reset --hard에 밀려 조용히 원복된다. (Day 3에서 같은 방식으로 사고가 났었다)
-DEPLOY_SERVICES="${DEPLOY_SERVICES:-mysql redis backend nginx certbot prometheus node-exporter loki promtail grafana}"
+DEPLOY_SERVICES="${DEPLOY_SERVICES:-mysql redis backend nginx certbot prometheus node-exporter mysqld-exporter redis-exporter loki promtail grafana}"
 # 배포 검증은 두 단계로 한다.
 #
 #  1) readiness — 앱이 의존성(DB/Redis)에 실제로 붙었는가
@@ -276,6 +276,13 @@ docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --build --no-deps
 
 log "nginx 설정 리로드 (conf.d 변경 반영)"
 docker exec nginx nginx -s reload 2>/dev/null || log "nginx reload 생략(컨테이너 미기동?)"
+
+# prometheus.yml은 bind mount라 컨테이너가 재생성되지 않으면 그대로 남는다.
+# 위 `up -d`는 --force-recreate가 없어 서비스 정의·이미지가 그대로면 컨테이너를 건드리지 않는다.
+# nginx와 같은 이유로 여기서 설정만 다시 읽힌다(--web.enable-lifecycle이 켜져 있다).
+log "prometheus 설정 리로드 (스크레이프 잡 변경 반영)"
+docker exec prometheus wget -q --post-data="" -O- http://localhost:9090/-/reload >/dev/null 2>&1 \
+    || log "prometheus reload 생략(컨테이너 미기동?)"
 
 log "① readiness 검사 (의존성 포함): actuator/health"
 READY=0

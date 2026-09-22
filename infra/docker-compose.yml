@@ -276,7 +276,12 @@ services:
     mem_limit: 1g
     user: "65534:65534"          # nobody — 비루트 실행
     volumes:
-      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # 파일 하나가 아니라 디렉터리를 마운트한다.
+      # 단일 파일 마운트는 컨테이너가 기동 시점의 inode를 잡고 있어서, deploy.sh의
+      # `git reset --hard`가 파일을 새로 만들면(= inode 교체) 컨테이너는 옛 내용을 계속 본다.
+      # 2026-09-22에 exporter 잡을 추가했는데 리로드가 성공했는데도 반영되지 않았다(day-13 17-2).
+      # 디렉터리 마운트는 경로를 매번 다시 찾으므로 리로드만으로 반영된다.
+      - ./monitoring/prometheus:/etc/prometheus:ro
       - prometheus_data:/prometheus
     command:
       - --config.file=/etc/prometheus/prometheus.yml
