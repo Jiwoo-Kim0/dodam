@@ -92,6 +92,29 @@ rate = paidAmount × 100 ÷ 현재 등록 monthlyIncome
 
 실적 0은 저장 데이터 기준이며 데이터 적재 완료를 뜻하지 않는다. 이력 기간 밖 실제 저축 여부·현재 월말 예상 저축액은 알 수 없다.
 
+## 만기 예상 (accountId) — GET /api/v1/deposit-savings/{accountId}/maturity-forecast
+
+2026-09-21, S15P21D105-678에서 추가했다. 예금(536) `GET /api/v1/deposits/{accountNo}/maturity-forecast`와 적금(537) `GET /api/v1/savings/{accountNo}/maturity-forecast`는 계좌번호 원문을 경로로 받는데, FE는 목록 응답의 `accountId`·`accountNoMasked`만 갖고 원문을 보관하지 않아 호출할 수 없었다. 목록 카드에서 바로 예상 만기금액을 여는 경로를 두되 계산은 두 도메인 서비스의 것을 그대로 쓴다(`DepositForecastService.maturityForecast(row, today)`, `SavingsForecastCalculator.calculate(..., early=false)`). 기존 원문 경로 두 개는 유지한다. 루트 `docs/` API 명세에는 없는 보완 경로다.
+
+- `accountId`는 양의 정수다. 0·음수·숫자가 아닌 값은 400이다.
+- 소유권은 `(user_id, account_id)`로 조회 조건에서 끝난다. 없는 계좌, 타인 계좌, 예·적금이 아닌 계좌(입출금·마이너스)는 모두 404 `RESOURCE_NOT_FOUND`다. 셋을 구분하지 않아 응답으로 타인 계좌 ID의 존재를 확인할 수 없다.
+- 기준일은 `DepositSavingClock`에서 한 번만 읽어 두 도메인 계산에 같은 날짜를 넘긴다.
+- 원문 계좌번호는 요청·응답·로그 어디에도 나오지 않는다. 응답에는 `accountNoMasked`만 있다.
+
+| 필드 | 의미 |
+| --- | --- |
+| asOfDate / accountId / accountName / accountNoMasked / bankCode / type | 기준일과 계좌 식별. type은 DEPOSIT 또는 SAVINGS |
+| status / reasons / assumptions | COMPLETE 또는 UNAVAILABLE. UNAVAILABLE이면 아래 금액 필드가 모두 null이고 reasons에 각 도메인의 사유 코드가 그대로 온다(예금 `MISSING_DEPOSIT_DETAIL`·`MISSING_EXPIRY_DATE`·`INVALID_TERMS`·`ACCOUNT_CLOSED`·`ZERO_PRINCIPAL`, 적금 `INCOMPLETE_SAVINGS_TERMS`·`PAYMENT_HISTORY_BALANCE_MISMATCH`·`FUTURE_PAID_PAYMENT`·`ACCOUNT_CLOSED` 등). assumptions도 도메인 것을 그대로 싣는다 |
+| principal / interestRate / openingDate / expiryDate | 기준일 원금(예금은 잔액, 적금은 납입 원금 합. 이자 미포함)과 계약 조건. 상세행이 없으면 금리·날짜는 null |
+| daysUntilMaturity | 기준일부터 만기일까지 남은 일수. 만기일이 없으면 null, 지났으면 음수 |
+| expectedPrincipal | 만기 시점 원금. 예금은 principal과 같고, 적금은 납입 원금 + 만기 전 남은 예정 회차(저장 SCHEDULED 및 월 약정 추정) 합 |
+| expectedInterest / tax / expectedNetInterest | 세전이자 / 이자소득세 15.4% 원 단위 절사 / 세후이자. 예금은 개설일~만기일 계약일수, 적금은 회차별 실제 예치일수의 ACT/365 단리 |
+| expectedAmount | 만기 예상 수령액 = expectedPrincipal + expectedNetInterest. 추정치이며 우대금리·만기 후 이율·수수료는 반영하지 않는다 |
+
+계산 불가를 0원으로 표현하지 않는다. 만기일이 없는 청약형 적금은 `UNAVAILABLE` / `INCOMPLETE_SAVINGS_TERMS`다. 적금 잔액이 PAID 합과 다르면 `PAYMENT_HISTORY_BALANCE_MISMATCH`로 답하고 금액을 만들지 않는다.
+
+FE 인계(FE 담당 범위): 예적금 목록 카드에 `!` 아이콘 → 탭 시 이 API 호출 → 바텀시트에 `expectedAmount`를 크게, `expectedPrincipal`·`expectedNetInterest`·`expiryDate`·`daysUntilMaturity`를 보조로 표시. `UNAVAILABLE`이면 reasons별 문구(예: `INCOMPLETE_SAVINGS_TERMS` → "만기일이 없어 계산할 수 없어요"). "추정치" 안내를 붙인다.
+
 ## 스키마와 기존 seed
 
 - `V15__create_deposit_saving_and_savings_payment.sql`은 ERD의 두 테이블을 추가한다. V14는 미병합 534번용으로 남겼다.
@@ -125,3 +148,8 @@ MySQL 테스트는 localhost의 전용 빈 dodam_535_test 스키마만 허용한
 - `gradlew.bat clean build`: 컴파일·bootJar·jar 생성은 성공했으나 같은 카드 테스트 1건 때문에 전체 빌드는 실패했다. 전체 테스트 성공으로 보고하지 않는다.
 - 실패는 `CardQueryApiIntegrationTest.getsBenefitsAndEstimatedBenefitUsage`의 performanceShortfall 기대 300,000원 / 실제 268,000원이다. 테스트가 `today.minusDays(40)`에 만드는 32,000원 거래가 2026-09-10 실행 시 전월(8월 1일)에 들어가므로 전월 실적 0이라는 기대와 어긋난다. 변경 전 `4d10e73`을 격리 복사한 동일 테스트에서도 같은 실패를 재현했다. 535 범위 밖 카드 코드는 수정하지 않았다.
 - 변경 파일과 새 파일의 공백 검사를 통과했다. 커밋·push·MR·배포는 수행하지 않았다.
+
+2026-09-21 (678) 검증:
+
+- `DepositSavingForecastApiIntegrationTest` 12건 통과(H2, 기준일 2026-09-21 고정): 예금 COMPLETE(10,000,000·3.0%·365일 → 세전 300,000·세액 46,200·수령 10,253,800), 적금 COMPLETE(78회 납입 78,000,000 + 예정 6회 → 원금 84,000,000·세전 9,669,506·세액 1,489,103·수령 92,180,403), 만기 NULL 적금 `UNAVAILABLE/INCOMPLETE_SAVINGS_TERMS`, 상세 없는 예금 `UNAVAILABLE/MISSING_DEPOSIT_DETAIL`, 잔액 불일치 `PAYMENT_HISTORY_BALANCE_MISMATCH`, 입출금·타인·없는 ID 404, 0·음수·문자 ID 400, 무인증 401, 응답에 해시·암호문·원문 없음.
+- 기존 예금(536)·적금(537)·예적금(535) API 테스트는 변경 없이 통과했다(조회 메서드 추가만 있고 원문 경로의 동작은 그대로다).

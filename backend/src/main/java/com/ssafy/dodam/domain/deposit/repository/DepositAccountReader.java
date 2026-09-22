@@ -29,8 +29,9 @@ public class DepositAccountReader {
             LEFT JOIN deposit_saving d
               ON d.account_id = a.account_id AND d.user_id = a.user_id
                  AND d.account_type = a.account_type
-            WHERE a.user_id = :userId AND a.account_no_hash = :accountNoHash
-              AND a.account_type = '""" + DEPOSIT + "'";
+            WHERE a.user_id = :userId AND a.account_type = '""" + DEPOSIT + "'";
+    private static final String BY_HASH = " AND a.account_no_hash = :accountNoHash";
+    private static final String BY_ID = " AND a.account_id = :accountId";
 
     private final NamedParameterJdbcTemplate jdbc;
 
@@ -39,9 +40,22 @@ public class DepositAccountReader {
     }
 
     public Optional<DepositAccountRow> findOwnedDeposit(Long userId, String accountNoHash) {
+        return findOwned(SELECT_DEPOSIT + BY_HASH,
+                new MapSqlParameterSource("userId", userId).addValue("accountNoHash", accountNoHash));
+    }
+
+    /**
+     * 678: 계좌번호 원문이 없는 FE(목록의 accountId만 보유)를 위한 조회. 소유권 조건은 해시 조회와 같다.
+     */
+    public Optional<DepositAccountRow> findOwnedDepositById(Long userId, Long accountId) {
+        return findOwned(SELECT_DEPOSIT + BY_ID,
+                new MapSqlParameterSource("userId", userId).addValue("accountId", accountId));
+    }
+
+    private Optional<DepositAccountRow> findOwned(String sql, MapSqlParameterSource params) {
         List<DepositAccountRow> rows = jdbc.query(
-                SELECT_DEPOSIT,
-                new MapSqlParameterSource("userId", userId).addValue("accountNoHash", accountNoHash),
+                sql,
+                params,
                 (rs, rowNum) -> new DepositAccountRow(
                         rs.getLong("account_id"), rs.getString("account_name"),
                         rs.getString("bank_code"), rs.getString("bank_name"),
@@ -51,7 +65,7 @@ public class DepositAccountReader {
                         rs.getObject("opening_date", LocalDate.class),
                         rs.getObject("expiry_date", LocalDate.class),
                         rs.getObject("detail_id") != null));
-        // uk_account_user_account_hash가 (user_id, account_no_hash)를 유일하게 만들고 상세는 1:1이다.
+        // uk_account_user_account_hash가 (user_id, account_no_hash)를, PK가 account_id를 유일하게 만들고 상세는 1:1이다.
         return rows.stream().findFirst();
     }
 }

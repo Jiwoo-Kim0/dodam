@@ -23,6 +23,7 @@
 | 13 | `DODAM_DEMO_LOAN_SEED.sql` | 633 | 491, 1번(`KB_KOOKMIN` `KB 국민ONE대출`), V13, `backend/scripts/make_demo_loan_fixture.py`가 만든 fixture 1행(일반 테이블 `tmp_dodam_demo_loan_crypto`). 시연 사용자 U0003에만 고금리 신용대출 1건(연 8.5%, 잔액 12,998,492원)과 상환 8건을 넣는다. 재실행 멱등. 파일 끝 cleanup이 fixture도 지우므로 재실행 전에 fixture를 다시 만든다 |
 | 14 | `DODAM_DEMO_U0003_STORY_SEED.sql` | 636 | 6번(492)·8번·11번(625) 이후, V6. fixture 불필요. U0003 이름을 `김싸피`로 바꾸고 U0003의 변동 소비 거래(2026-03-01~09-27)만 지우고 월별 스토리(5월 여행 아웃라이어 1개월 + 카테고리 변화)로 다시 만든다(약 439건). 수입·고정비·구독·저축 행은 그대로. 재실행 멱등. 6번 또는 11번을 다시 돌리면 이 파일도 다시 실행한다 |
 | 15 | `DODAM_DEMO_SUBSCRIPTION_SEED.sql` | 655 | 6번(492)·8번·11번(625) 이후, V6·V30. fixture 불필요. 시연 사용자 U0001~U0004의 구독만 지우고 `SubscriptionServiceCatalog` 이름·요금의 구독 5~7건(23건)과 2026-03~09 구독 결제 거래 165건·결제 이력 158건으로 다시 만든다(2026-09-20 추가). 다른 3,996명은 8번 그대로. 재실행 멱등. 6번·8번·11번 중 하나를 다시 돌리면 이 파일도 다시 실행하고, 그 뒤 9번(알림)도 다시 돌린다 |
+| 16 | `DODAM_DEMO_DEPOSIT_SAVING_678_SEED.sql` | 678 | 1번(`SHINHAN_BANK` `신한 청년도약계좌`), 2번(491), 5번(524, U0003 예금이 먼저 있어야 7번 재실행이 목표 연결 계좌를 바꾸지 않는다), V15·V35, `backend/scripts/make_demo_deposit_savings_fixture.py`가 만든 fixture 3행(일반 테이블 `tmp_dodam_demo_deposit_saving_crypto`). 시연 사용자 U0003에만 적금 3건(청년도약 5,500,000·주택청약 12,100,000·내집마련 목돈적금 78,000,000원)과 납입 211회, 모으기 목표 '내 집 마련 준비'(1억 5,000만원) 연결을 넣는다(2026-09-21 추가). 재실행 멱등. 파일 끝 cleanup이 fixture도 지우므로 재실행 전에 fixture를 다시 만든다 |
 
 2~5는 계좌·카드번호 원문을 파일에 두지 않기 위해 애플리케이션 코덱으로 만든 fixture 테이블(`tmp_dodam_*_crypto`, `*_account_keys`)이
 같은 스키마에 있어야 한다. 각 파일 머리말에 정확한 계약이 있다. 6~8은 fixture 없이 자연키(사용자 이메일, 계좌 유형·이름)로 참조한다.
@@ -198,6 +199,47 @@ docker compose exec -T -e MYSQL_PWD="$MYSQL_PASSWORD" mysql mysql --default-char
 docker compose exec -T -e MYSQL_PWD="$MYSQL_PASSWORD" mysql mysql --default-character-set=utf8mb4 -h127.0.0.1 -u"$MYSQL_USER" "$MYSQL_DATABASE" < ../backend/database/seeds/DODAM_NOTIFICATION_SEED.sql
 ```
 
+## 시연 계정 U0003 예적금 보강 (`DODAM_DEMO_DEPOSIT_SAVING_678_SEED.sql`)
+
+524는 홀수 사용자에게 예금 1건만 만들어 U0003에는 적금이 없고 내 집 마련 시나리오를 보여줄 계좌가 없었다.
+스프린트 311(S15P21D105-678)에 따라 16번이 U0003에만 적금 3건과 모으기 목표 1건을 추가한다. 다른 3,999명과 U0003의 기존 계좌·목표·거래는 건드리지 않는다.
+시나리오 수치는 2026-09-21 사용자 지정값이며 계획·기대값은 `backend/docs/demo-deposit-savings-678-plan.md`에 있다.
+
+| 계좌 | 은행·상품 | 원금(잔액) | 납입·만기 |
+| --- | --- | ---: | --- |
+| `신한 청년도약계좌` | 신한은행, `financial_product_id` = 1번의 `신한 청년도약계좌`(자연키 정확히 1건 필수) | 5,500,000 | 월 500,000 × PAID 11회(2025-11-15~2026-09-15), 개설 2025-11-15, 만기 2030-11-15, 연 4.5000%, 다음 납입 2026-10-15 |
+| `주택청약종합저축` | KB국민은행, 상품 연결 없음(NULL) | 12,100,000 | 월 100,000 × PAID 121회(2016-09-15~2026-09-15) + SCHEDULED 1회(2026-10-15), 개설 2016-09-15, **만기 2036-09-15(합성)**, 연 2.8000%(시연 가정) |
+| `내집마련 목돈적금` | 우리은행, 상품 연결 없음(NULL) | 78,000,000 | 월 1,000,000 × PAID 78회(2020-04-15~2026-09-15), 개설 2020-04-15, 만기 2027-04-15(84개월), 연 3.2500%(시연 가정), 다음 납입 2026-10-15 |
+
+- 목표 `내 집 마련 준비`: `SAVING/ACTIVE`, 목표 150,000,000원, 목표일 2029-09-21, 세 계좌 연결(`contribution_amount` NULL = 잔액 전체), `current_amount` **95,600,000원**(63.7333%). `created_at = '2021-09-21 09:00:00'`이 678 목표의 식별 표지다(493은 `2026-03-01 09:00:00`).
+- 목표 생성일을 기준일이 아니라 **5년 전(2021-09-21)** 으로 둔 이유: `GoalCalculationService`의 저축속도는 `currentAmount / 생성 후 경과 개월(최소 1)`이라, 오늘 만든 목표에 9,560만원짜리 계좌를 연결하면 속도가 월 9,560만원·달성일 한 달 뒤로 튄다. 60개월 경과로 두면 속도 1,593,333원/월(실제 월 납입 합 1,600,000과 근사), 기대 진행률 62.5% vs 실제 63.7% `ON_TRACK`, 필요 저축 1,511,112 → `SUFFICIENT`, 예상 달성일 2029-07-26, 위험 `LOW`다.
+- `goal_history`는 `GOAL_CREATED`(2021-09-21, 당시 PAID 누적 24,100,000) + 월말 `AMOUNT_UPDATED` 60건(2021-09-30~2026-08-31, 세 계좌 PAID 누적합, 마지막 94,000,000) = 61건. 이력 조회 API는 12개월 창 제약이 있어 한 번에 전부 나열되지는 않는다. 재실행 시 678 목표의 `GOAL_CREATED`·`AMOUNT_UPDATED` 중 `created_at <= '2026-09-21 09:00:00'`인 seed 시대 행만 지우고 다시 만들며, 앱이 그 뒤에 남긴 이력은 보존한다.
+- `account.balance`는 원금(PAID 합)만 담는다(524 규약). 목돈적금의 만기 예상 수령액은 `GET /api/v1/deposit-savings/{accountId}/maturity-forecast`(678 추가)로 계산되며 2026-09-21 기준 원금 84,000,000 + 세후이자 8,180,403 = **92,180,403원**이다. 청약은 합성 만기 기준 29,714,000원이다.
+- 청약·목돈적금용 합성 상품은 카탈로그에 넣지 않았다. 상품 목록·금리 비교·추천이 `source_type`을 거르지 않아 4,000명 전체의 비교군에 섞이기 때문이다. 두 계좌는 `financial_product_id` NULL이고 이름으로만 상품을 표현한다.
+- 청약 만기 2036-09-15는 실제 상품 조건이 아니라 합성값이다(실제 주택청약종합저축은 만기가 없다). 만기 없는 적금이 있으면 `CashflowEventCollector`가 U0003 현금흐름 예측 전체에 `SAVINGS_INCOMPLETE_SAVINGS_TERMS`를 남기고 10월 이후 청약 납입을 예정에 넣지 못해, 2026-09-21 검토에서 합성 만기를 넣는 쪽으로 결정했다. 만기 예상 API는 이 만기로 계산한다(예상 원금 24,000,000·세후이자 5,714,000·수령 29,714,000).
+- 스키마가 표현하지 않는 것: 청년도약 정부기여금·비과세·우대조건, 청약 납입인정액·인정회차·순위·소득공제. `savings_payment` 회차 수를 청약 인정 횟수로 설명하지 않는다. U0003은 632 규칙상 2026년 43세라 실제 청년도약 가입 요건 밖이며 시연 데이터일 뿐이다.
+- 계좌번호 원문은 seed 규칙 `1100{순번6}{유형3}`(유형 402·403·404, 524의 401·633의 101과 겹치지 않음)이며 파일에 없다. fixture는 `make_demo_deposit_savings_fixture.py`가 `DATA_ENCRYPTION_KEY`·`NUMBER_HASH_KEY`로 만든다(13번과 같은 코덱 형식, `cryptography` 필요).
+- 출금계좌는 U0003의 seed 입출금 계좌(491 `source_type='SEED'`·`주거래 입출금`·ACTIVE)를 자연키로 찾는다. 시연 사용자가 나중에 연동한 SSAFY/MANUAL 입출금 계좌가 있어도 preflight가 막히지 않고 그 계좌를 출금계좌로 쓰지 않는다. preflight 12항목(사용자 1·출금계좌 1·fixture 3·유효 3·해시 중복 없음·상품 1·회차 211·미래 PAID 0·해시 충돌 0·동명 목표 충돌 0·표지 목표 ≤1·연결 충돌 0)이 하나라도 어긋나면 아무것도 쓰지 않는다. 사용자가 앱에서 같은 이름의 목표를 따로 만들었거나 fixture 계좌가 다른 목표에 연결돼 있으면 중단한다.
+- 재실행: 계좌는 `(user_id, account_no_hash)`로 같은 행을 갱신해 `account_id`가 유지되고, 목표도 표지로 같은 행을 갱신해 `goal_id`가 유지된다. 세 계좌의 `savings_payment`와 678의 `GOAL_CREATED` 이력만 지우고 다시 만든다. 영구 쓰기는 하나의 트랜잭션이며 DDL은 트랜잭션 밖에 있다.
+- 부수 효과: U0003 금융자산이 약 9,560만원 늘어 자산 현황·진단·리포트의 기존 기대값(13·14번)이 달라질 수 있다. 현금흐름 예측에는 월 1,600,000원 적금 납입 유출이 추가된다. 가계부 `transaction`에는 납입 거래를 넣지 않았다(312 거래 보강에서 같은 납입을 중복 생성하지 않도록 납입일·금액·계좌를 인계한다).
+- 7번(493)을 이 파일 뒤에 다시 돌려도 678 목표는 남는다(표지가 다름). 493의 연결 계좌 선택은 `MIN(account_id)`라 524 예금이 먼저 있어야 한다. 5번(524)을 다시 돌리면 U0003 예금 잔액만 바뀌고 이 파일의 계좌는 그대로다.
+- 적재 전후·재실행 비교는 `DODAM_DEMO_DEPOSIT_SAVING_678_VERIFY.sql`(읽기 전용, fixture 불필요) Q1~Q5로 한다. Q4는 적재 전에 한 번 받아 둔 기준값과 같아야 한다.
+
+서버 적용(13번과 같은 절차):
+
+```bash
+set -a; . infra/.env; set +a
+python3 backend/scripts/make_demo_deposit_savings_fixture.py > /tmp/demo_deposit_savings_fixture.sql
+cd infra
+docker compose exec -T -e MYSQL_PWD="$MYSQL_PASSWORD" mysql mysql --default-character-set=utf8mb4 -h127.0.0.1 -u"$MYSQL_USER" "$MYSQL_DATABASE" < ../backend/database/seeds/DODAM_DEMO_DEPOSIT_SAVING_678_VERIFY.sql   # 기준값
+docker compose exec -T -e MYSQL_PWD="$MYSQL_PASSWORD" mysql mysql --default-character-set=utf8mb4 -h127.0.0.1 -u"$MYSQL_USER" "$MYSQL_DATABASE" < /tmp/demo_deposit_savings_fixture.sql
+docker compose exec -T -e MYSQL_PWD="$MYSQL_PASSWORD" mysql mysql --default-character-set=utf8mb4 -h127.0.0.1 -u"$MYSQL_USER" "$MYSQL_DATABASE" < ../backend/database/seeds/DODAM_DEMO_DEPOSIT_SAVING_678_SEED.sql
+docker compose exec -T -e MYSQL_PWD="$MYSQL_PASSWORD" mysql mysql --default-character-set=utf8mb4 -h127.0.0.1 -u"$MYSQL_USER" "$MYSQL_DATABASE" < ../backend/database/seeds/DODAM_DEMO_DEPOSIT_SAVING_678_VERIFY.sql   # 비교
+rm /tmp/demo_deposit_savings_fixture.sql
+```
+
+되돌리려면 U0003의 678 행만 지운다(순서: `goal_history` → `goal_account` → `saving_goal` → `goal`(표지 `created_at = '2021-09-21 09:00:00'`) → `savings_payment` → `deposit_saving` → `account`(`account_type = 'SAVINGS' AND source_type = 'SEED' AND created_at = '2026-09-21 09:00:00'`, 사용자 이메일 조건)). 다른 사용자·다른 계좌는 조건에 걸리지 않는다.
+
 ## 검증 상태
 
 2026-09-11 Docker `mysql:8.0`(8.0.46)에 V1~V17을 적용하고 1~7번을 순서대로 실행했다(fixture는 SHA2 기반 더미로 형식만 충족).
@@ -254,3 +296,8 @@ INC 7·FIX 21·SUB 7·SAV 7 유지, 재실행 시 같은 결과·작업 테이�
 2026-09-20 (15번) 일회용 Docker `mysql:8.0`에 V1~V41 적용 + 최소 fixture(시연 사용자 4명·방관자 1명, 계좌·카드, 8번 모양 구독·거래, U0004 MANUAL 거래 1건)에서 15번을 두 번 실행했다.
 preflight `1 / 4 / 4 / 1 / 24 / 4 / 4`, 구독 23(U0001 5·U0002 6·U0003 7·U0004 5), 거래 165·이력 158, 이력-거래 불일치 0·계약 위반 0·카드 불일치 0, 방관자·MANUAL 행 유지, 재실행 결과 동일·작업 테이블 잔존 없음.
 전체 seed 체인(1~14번) 위의 재검증과 API 확인(`remaining-work.md` 512 "시연 seed" 절)은 남아 있다. **서버 적용은 아직이다.**
+
+2026-09-21 (16번) 로컬 Docker `mysql:8.0`에 V1~V41, 1번, 2번·5번(SHA2 더미 fixture), 7번, 10번을 적재한 뒤 `make_demo_deposit_savings_fixture.py`(로컬 테스트 키, 실제 코덱 형식) → 16번을 실행했다.
+preflight `1 / 1 / 1 / 3 / 3 / 3 / 1 / 211 / 0 / 0 / 0 / 0 / 0`, 적금 3건(8190·8191·8192, 잔액 78,000,000·12,100,000·5,500,000, 청년도약만 상품 연결)·납입 211건(PAID 210·SCHEDULED 1)·목표 1건(95,600,000 / 150,000,000, 연결 3, 이력 61).
+새 fixture로 2회 재실행해도 VERIFY Q1~Q5 출력이 동일(계좌·목표 ID·납입 체크섬 유지)하고 Q4 보존 지표는 적재 전 기준값과 같았다. fixture 1행 누락·동명 목표 충돌은 `ready=0`으로 아무것도 쓰지 않았고, 트랜잭션 중간에 CHECK 위반을 주입한 사본은 롤백돼 상태가 그대로였다.
+같은 DB로 백엔드를 기동해 U0003으로 로그인 → 목록 3건·요약 115,600,000·만기 예정 1건(206일), `GET /deposit-savings/8190/maturity-forecast` 92,180,403원(원문 경로와 같은 값), 청약 29,714,000원(합성 만기), `payment-schedules` `complete=true`, 현금흐름 예측에 `SAVINGS_*` 사유 없음, 적금 납입률 9월 28.07%(1,600,000/5,700,000), U0003에 MANUAL 입출금 계좌를 하나 더 넣고 재실행해도 preflight 통과·678 행 불변, 목표 8192 63.7%·연결 3건·속도 1,593,333/월·`ON_TRACK`·`SUFFICIENT`·예상 달성 2029-07-26·위험 `LOW`, 타인·입출금 계좌 404, U0004 목록에 미노출. 상세는 `backend/docs/demo-deposit-savings-678-qa-report.md`.
