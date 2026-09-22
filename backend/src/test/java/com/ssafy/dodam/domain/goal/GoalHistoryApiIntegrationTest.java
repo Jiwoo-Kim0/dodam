@@ -135,7 +135,7 @@ class GoalHistoryApiIntegrationTest {
 
     @Test
     void recordsEveryChangeOfASavingGoalNewestFirst() throws Exception {
-        // 저축속도(694): 입출금 연결이라 직전 3개 완료 월 순현금흐름 → 월 50만. 연결 계좌 잔액 200만은 속도에 들어가지 않는다
+        // 저축속도(694·702): 연결 입출금 계좌(11)의 직전 3개 완료 월 순현금흐름 → 월 50만. 연결 계좌 잔액 200만은 속도에 들어가지 않는다
         for (int back = 1; back <= 3; back++) {
             insertIncome(today.minusMonths(back).withDayOfMonth(10), 500_000);
         }
@@ -265,10 +265,10 @@ class GoalHistoryApiIntegrationTest {
     private void insertIncome(LocalDate date, long amount) {
         jdbcTemplate.update(
                 """
-                INSERT INTO `transaction` (transaction_id, user_id, transaction_date, transaction_type, amount,
+                INSERT INTO `transaction` (transaction_id, user_id, account_id, transaction_date, transaction_type, amount,
                     payment_method, spending_type, summary, hidden, source_type, created_at)
-                VALUES (?, ?, ?, 'INCOME', ?, 'ACCOUNT', 'NON_SPENDING', 'salary', FALSE, 'SEED', ?)
-                """, UUID.randomUUID().toString(), userId, date, amount, SEEDED_AT);
+                VALUES (?, ?, ?, ?, 'INCOME', ?, 'ACCOUNT', 'NON_SPENDING', 'salary', FALSE, 'SEED', ?)
+                """, UUID.randomUUID().toString(), userId, MAIN_ID, date, amount, SEEDED_AT);
     }
 
     private long createSaving(long targetAmount, LocalDate targetDate) throws Exception {

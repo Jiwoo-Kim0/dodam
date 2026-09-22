@@ -75,7 +75,7 @@ FE 요청 원문: [docs/discovery-backend-request.md](../../docs/discovery-backe
 | --- | --- | --- | --- | --- | --- |
 | "진단에서 N건 발견" | `GET /diagnoses/latest`·`/{id}`·`POST /diagnoses` → `discoveryIssueCount`(675) | 본인 최신 완료 진단 | 건 | — | 없음(항상 정수). `issueCount`(GOAL 포함)와 다르다 |
 | "전체 개선 시 연 N원 절감" | `GET /recommendations/summary` → `discovery.expectedAnnualCostSaving` | 최신 진단의 열린 추천(PENDING·ACCEPTED), GOAL 문제 추천 제외(675) | 원/년 | 문제별 최대 대안 하나 합산 | 금액 있는 추천 없음(`ANNUAL_SAVING_UNAVAILABLE`). 0원이 아니다 |
-| "목표 N일 단축" | `discovery.expectedGoalAdvanceDays` | 같음 | 일 | 추천별 `advancedDays` 최댓값(합산 아님, `GOAL_ADVANCE_IS_MAX_NOT_COMBINED`) | 값 있는 추천 없음. 675 시점엔 GOAL 제외로 대체로 null → 696 뒤 소비 증가 추천이 채움 |
+| "목표 N일 단축" | `discovery.expectedGoalAdvanceDays` | 같음 | 일 | 추천별 `advancedDays` 최댓값(합산 아님, `GOAL_ADVANCE_IS_MAX_NOT_COMBINED`). 소비 증가 추천은 개선 예상일이 목표일 이내일 때만 값을 냄(702) | 값 있는 추천이 없거나 개선 후에도 목표일보다 늦음(`GOAL_ADVANCE_UNAVAILABLE`) |
 | 발견 한 줄 "연 N원" | 추천 `effect.annualCostSaving` | 그 문제의 대안 중 최대 | 원/년 | 단월 증가 ×12(`annualizationBasis`) | 효과 없는 추천(군집 이탈·대환 추정 불가) |
 | 소비 증가 상세 | `currentValue.monthlyAverage`(=지난달) vs `benchmarkValue.previousMonthlyAverage` | 본인 과거 | 원/월, `increaseRatePercent` % | 직전 3개월 월평균(`baselinePeriod`) | 키 없음 = v5 이전 진단(`ruleVersion`으로 분기) |
 | 대출 상세 | `currentValue.interestRate` vs `referenceRate`, `rateDifference` | 같은 비교군·기간 밴드·상환방식 공시 상품(`comparableProductCount`) | 연 %, %p | 공시 최저금리 중앙값(`referenceMethod`) | `refinance.available=false` → 절감액 없음(`unavailableReason`: LOAN_OVERDUE·SCHEDULE_NOT_COMPUTABLE·NO_ELIGIBLE_PRODUCT). 수수료 제외(`feesIncluded=false`) |
