@@ -70,6 +70,10 @@ export function CoachChatScreen({ context }: CoachChatScreenProps) {
   const lastCoachTurn = turns.findLast((turn) => turn.role === 'coach');
   // 세션 턴 상한에 걸리면 같은 대화로는 더 못 묻는다. 새 대화로만 이어 갈 수 있다.
   const hitTurnLimit = lastCoachTurn?.response.degradedReason === 'SESSION_TURN_LIMIT';
+  /* 턴 상한에 걸리면 눌러도 보낼 수 없어, 질문 대신 새 대화 안내만 남긴다. */
+  const suggestedQuestions = hitTurnLimit
+    ? []
+    : (lastCoachTurn?.response.suggestedQuestions ?? []);
   const canAsk = !isSending && !hitTurnLimit;
   const canReset = turns.length > 0 && !isSending;
 
@@ -117,31 +121,38 @@ export function CoachChatScreen({ context }: CoachChatScreenProps) {
           keyboardShouldPersistTaps="handled"
           onContentSizeChange={scrollToEnd}
           ref={scrollRef}>
-          <View style={styles.coachRow}>
-            <Image
-              contentFit="contain"
-              source={require('@/assets/characters/tori/tori_chat.png')}
-              style={styles.avatar}
-            />
-            {/* 말풍선과 결과 카드가 같은 폭 안에 들어가도록 래퍼에서 한 번에 제한한다. */}
-            <View style={[styles.coachContent, { maxWidth: bubbleMaxWidth }]}>
-              <View style={styles.coachBubble}>
-                {/* 이름은 아직 못 받아왔을 수 있다. 그때는 호칭 없이 인사한다. */}
-                <Text style={styles.coachText}>
-                  {user?.name ? `안녕하세요, ${user.name}님! ` : '안녕하세요! '}
-                  저는 토리예요.{'\n'}
-                  바꾸면 뭐가 달라질지 궁금하시죠? 정확하게 계산해서 알려드릴게요.{'\n'}
-                  궁금한 건 언제든지 질문 주세요!
-                </Text>
+          {/*
+            발견에서 들어오면 첫 조언이 그 자리를 대신한다. 일반 인사까지 앞에 두면
+            정작 물어보러 온 항목 이야기가 두 번째 말풍선으로 밀린다.
+          */}
+          {context ? null : (
+            <View style={styles.coachRow}>
+              <Image
+                contentFit="contain"
+                source={require('@/assets/characters/tori/tori_chat.png')}
+                style={styles.avatar}
+              />
+              {/* 말풍선과 결과 카드가 같은 폭 안에 들어가도록 래퍼에서 한 번에 제한한다. */}
+              <View style={[styles.coachContent, { maxWidth: bubbleMaxWidth }]}>
+                <View style={styles.coachBubble}>
+                  {/* 이름은 아직 못 받아왔을 수 있다. 그때는 호칭 없이 인사한다. */}
+                  <Text style={styles.coachText}>
+                    {user?.name ? `안녕하세요, ${user.name}님! ` : '안녕하세요! '}
+                    저는 토리예요.{'\n'}
+                    바꾸면 뭐가 달라질지 궁금하시죠? 정확하게 계산해서 알려드릴게요.{'\n'}
+                    궁금한 건 언제든지 질문 주세요!
+                  </Text>
+                </View>
               </View>
             </View>
-          </View>
+          )}
 
           {/*
             첫 인사말에 따라붙는 예시 질문이다. 무엇을 물을 수 있는지 보여 주는 역할이라
-            대화가 시작되면 감춘다. 그 뒤로는 입력창으로 직접 물어보면 된다.
+            대화가 시작되면 감춘다. 그 뒤로는 서버가 준 맞춤 질문을 그린다.
+            발견에서 들어온 화면은 첫 조언과 함께 맞춤 질문이 오므로 정적 칩을 쓰지 않는다.
           */}
-          {turns.length === 0 ? (
+          {turns.length === 0 && !context ? (
             <View style={styles.chipList}>
               {COACH_CHAT_CHIPS.map((chip) => (
                 <Pressable
@@ -188,6 +199,34 @@ export function CoachChatScreen({ context }: CoachChatScreenProps) {
               )}
             </Fragment>
           ))}
+
+          {/*
+            서버가 맥락에 맞춰 골라 준 질문이다(계약 §13-5-2). 칩 id가 아니라 문장이라
+            자유 입력과 같은 경로로 보낸다. 답변을 기다리는 동안에는 감춘다.
+          */}
+          {!isSending && suggestedQuestions.length > 0 ? (
+            <View style={styles.chipList}>
+              {suggestedQuestions.map((question) => (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: !canAsk }}
+                  disabled={!canAsk}
+                  key={question}
+                  onPress={() => {
+                    void sendMessage(question);
+                  }}
+                  style={({ pressed }) => [
+                    styles.chip,
+                    !canAsk && styles.chipDisabled,
+                    pressed && canAsk && styles.pressed,
+                  ]}>
+                  <Text style={[styles.chipText, !canAsk && styles.chipTextDisabled]}>
+                    {question}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
 
           {isSending ? (
             <View style={styles.coachRow}>
