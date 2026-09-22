@@ -1,25 +1,32 @@
--- DODAM demo user U0003 ("김싸피") ledger realism seed: itemised fixed expenses, savings transfers, allowance, card bills
+-- DODAM demo user U0003 ("김싸피") ledger realism seed: itemised fixed expenses, savings transfers, salary, card bills
 -- Jira: S15P21D105-679 (스프린트 312 — 지출·고정지출·현금흐름 시연 데이터 보강)
 -- Dialect: MySQL 8.x
 -- Schema basis: V2 (financial_profile), V6 (transaction), V11 (card_billing_statement), V13 (loan_repayment), V15 (savings_payment)
 -- Dependency: 491 (user/account/profile), 522 (primary card), 492 + 625 (INC/FIX/SAV rows), 633 (loan + repayments),
---             636 (variable story), 655 (subscriptions), 678 (three savings accounts with 15th-of-month PAID instalments)
--- Dataset: U0003 only. Fixed 70 rows (10 items x 7 months), savings transfers 21, allowance 7, tax refund 1,
---          card billing statements 7 (PAID 6 + SCHEDULED 1), financial_profile fixed_expense / emergency_fund_target.
--- Snapshot: 2026-09-22 (planning: backend/docs/demo-ledger-cashflow-679-plan.md)
+--             636 (variable story), 655 (subscriptions), 678 rev. 2026-09-22 (two ACTIVE savings accounts paying on the 15th
+--             + one matured account without transfers)
+-- Dataset: U0003 only. Fixed 70 rows (10 items x 7 months), savings transfers 14, tax refund 1, salary amount override on
+--          the 7 existing INC-00 rows, card billing statements 7 (PAID 6 + SCHEDULED 1),
+--          financial_profile monthly_income / annual_income / fixed_expense / emergency_fund_target.
+-- Snapshot: 2026-09-22 (planning: backend/docs/demo-ledger-cashflow-679-plan.md; revised the same day: salary 3,012,400,
+--          no allowance row, savings 400,000/month — see the plan's revision note)
 --
 -- Why this file exists
 -- --------------------
--- 492 gives U0003 three synthetic fixed rows a month (주거 2,371,200 · 통신공과금 ~73만 · 보험 547,200 = 3,648,000, 64% of
--- income) plus a generic 1,710,000 saving transfer, while the loan instalment (633) and the three savings instalments (678,
--- 1,600,000/month) never appear in the ledger. Monthly outflow exceeds income by ~2.7M and the fixed rows look nothing like a
--- real bank statement. This file rebuilds U0003's non-variable ledger so that:
+-- 492 gives U0003 a 5,700,000 salary (491 formula: 2,300,000 + MOD(2 * 17, 38) * 100,000) and three synthetic fixed rows a month
+-- (주거 2,371,200 · 통신공과금 ~73만 · 보험 547,200 = 3,648,000) plus a generic 1,710,000 saving transfer, while the loan instalment
+-- (633) and the 678 savings instalments never appear in the ledger. The fixed rows look nothing like a real bank statement.
+-- This file rebuilds U0003's non-variable ledger so that:
+--   - the salary is 3,012,400 (decision 2026-09-22: a modest earner whose fixed costs weigh ~52% of income), written on the
+--     7 existing INC-00 rows and on financial_profile.monthly_income / annual_income (491 formula value is overwritten)
 --   - fixed expenses are itemised like a 43-year-old single tenant's statement (월세·관리비·정수기·통신·전기·가스·보험·대출)
---   - savings transfers equal the 678 savings_payment rows (500,000 + 100,000 + 1,000,000 on the 15th)
+--   - savings transfers equal the 678 savings_payment rows (300,000 + 100,000 on the 15th; the matured 목돈적금 has none)
 --   - the loan instalment (410,331 on the 10th) matches the 633 loan_repayment PAID rows
 --   - the card gets billing statements whose totals are the ledger's own card charges (no hard-coded amounts)
 --   - financial_profile.fixed_expense matches the new ledger (loan excluded: InstallmentAvailableFundsReader subtracts it separately)
--- Variable rows (636), subscription rows (655) and the salary rows (492/625 INC-00) are not touched.
+-- Budget check (Aug): salary 3,012,400 - spending 2,559,221 (fixed 1,565,221 incl. subs + variable 994,000) - savings 400,000
+-- = +53,179. May (travel month, variable 1,618,000) is the only deficit month by design.
+-- Variable rows (636) and subscription rows (655) are not touched; INC-00 rows keep their ids, dates and times.
 --
 -- Monthly plan (won)                       HOUSING   UTILITIES  INSURANCE  LOAN     fixed total   (subs 104,390 · variable per 636)
 -- ----------------------------------------------------------------------------------------------------------------------------
@@ -31,15 +38,16 @@
 --   2026-08  electricity peak               708,900   191,200    150,400    410,331   1,460,831
 --   2026-09                                 700,900   178,200    150,400    410,331   1,439,831
 -- 627 CATEGORY_SPENDING_INCREASE guard (Aug vs avg May..Jul, > 20% and >= 10,000): HOUSING +1.8%, UTILITIES +7.7%, others 0%
--- -> the diagnosis keeps the 636 outcome (FOOD, CAFE, high-interest loan). Allowance (ETC 300,000 every month) keeps ETC flat.
+-- -> the diagnosis keeps the 636 outcome (FOOD, CAFE, high-interest loan). No ETC row is added here (allowance dropped 2026-09-22).
 --
 -- Rows written per month
 -- ----------------------
 --   FIX-01..10  EXPENSE / FIXED / ACCOUNT, categories HOUSING·UTILITIES·INSURANCE·LOAN_REPAYMENT, early-morning auto-debit times
---   SAV-01..03  EXPENSE / NON_SPENDING / SAVING, 15th 09:35~09:37, merchant = savings account name (678)
---   TRF-01      EXPENSE / VARIABLE / ETC, 25th 07:05, 300,000 "어머니 / 용돈" (spending, like ledger apps treat family allowance;
---               NON_SPENDING would be counted as saving by the report's totalSaving)
---   INC-01      INCOME / NON_SPENDING, 2026-03-20 only, 412,350 "연말정산 환급금" (492 INC-00 salary rows stay as they are)
+--   SAV-01..02  EXPENSE / NON_SPENDING / SAVING, 15th 09:35~09:36, merchant = savings account name (678)
+--   INC-01      INCOME / NON_SPENDING, 2026-03-20 only, 412,350 "연말정산 환급금"
+--   INC-00      not written here; the 492/625 rows are kept and only their amount is set to 3,012,400
+--   TRF-01      no longer written (allowance to parents, dropped 2026-09-22); the delete below still removes rows of the
+--               earlier revision so a DB loaded with it converges
 --   ids: SEED-U0003-2026MM-<KIND>-nn (Mar..Aug), SEED-SEP-U0003-202609-<KIND>-nn (Sep) so 492 / 625 reruns delete them too
 --
 -- Card billing statements (card_billing_statement, PK card_id + billing_month)
@@ -52,18 +60,21 @@
 -- -------------------------
 -- - Run AFTER 6번(492), 8번, 11번(625), 13번(633), 14번(636), 15번(655), 16번(678). Rerunning this file alone is idempotent
 --   (deletes and regenerates its own rows; statements are deleted by (card, month) and rebuilt; profile values are overwritten).
--- - A 492 / 625 rerun deletes the FIX/SAV/TRF/INC-01 rows here and restores the flat 492 rows -> run this file again.
+-- - A 492 / 625 rerun deletes the FIX/SAV/INC-01 rows here and restores the flat 492 rows (salary rows are regenerated from
+--   financial_profile.monthly_income, i.e. 3,012,400 while this file's profile update stands) -> run this file again.
 -- - A 636 / 655 rerun changes the card totals -> run this file again so the statements follow the ledger.
--- - A 491 rerun resets financial_profile.fixed_expense / emergency_fund_target -> run this file again.
+-- - A 491 rerun resets financial_profile.monthly_income (5,700,000) / fixed_expense / emergency_fund_target -> run this file again
+--   (and 492 / 625 if they ran in between, otherwise the INC-00 rows keep 5,700,000 until this file overrides them).
 -- - Scratch tables are regular tables (tmp_dodam_679_*), dropped in the cleanup section (MySQL TEMPORARY tables cannot be
 --   referenced twice in one statement, ERROR 1137).
 -- - Permanent writes happen inside one transaction; DDL for scratch tables is outside it. Never run with `mysql --force`.
 --
 -- Preflight (one row when every check passes; otherwise nothing is written)
 -- --------------------------------------------------------------------------
---   context 1 (U0003, SEED 주거래 입출금 ACTIVE), card 1 (withdrawal_day 15), categories 7, savings accounts 3 (678 names, ACTIVE,
---   monthly_amount = plan), 678 PAID instalments on the 15th Mar..Sep = 21, loan 1 (633) with PAID 410,331 on the 10th Mar..Sep = 7,
---   492/625 salary months = 7, plan rows 10 x 7 = 70.
+--   context 1 (U0003, SEED 주거래 입출금 ACTIVE), card 1 (withdrawal_day 15), categories 7, savings accounts 2 (678 names of the
+--   paying accounts, ACTIVE, monthly_amount = plan), 678 PAID instalments on the 15th Mar..Sep = 14 (the matured 목돈적금 has
+--   no instalment in the window), loan 1 (633) with PAID 410,331 on the 10th Mar..Sep = 7, 492/625 salary months = 7,
+--   plan rows 10 x 7 = 70.
 --
 SET NAMES utf8mb4;
 SET time_zone = '+09:00';
@@ -184,9 +195,8 @@ CREATE TABLE tmp_dodam_679_saving_items (
   summary VARCHAR(255) NOT NULL
 );
 INSERT INTO tmp_dodam_679_saving_items VALUES
-  ('01', '신한 청년도약계좌',  500000, '09:35:00', '적금 자동이체'),
-  ('02', '주택청약종합저축',   100000, '09:36:00', '청약 자동이체'),
-  ('03', '내집마련 목돈적금', 1000000, '09:37:00', '적금 자동이체');
+  ('01', '신한 청년도약계좌',  300000, '09:35:00', '적금 자동이체'),
+  ('02', '주택청약종합저축',   100000, '09:36:00', '청약 자동이체');
 
 -- card charges per usage month (read-only input for the billing statements; built outside the transaction)
 DROP TABLE IF EXISTS tmp_dodam_679_card_usage;
@@ -232,14 +242,14 @@ FROM (
     (SELECT COUNT(*) FROM tmp_dodam_679_context) AS context_count,
     (SELECT COUNT(*) FROM tmp_dodam_679_context WHERE primary_card_id IS NOT NULL AND card_withdrawal_day = 15) AS card_count,
     (SELECT COUNT(*) FROM tmp_dodam_679_categories) AS category_count,
-    -- the three 678 accounts, ACTIVE, with the plan's monthly amount
+    -- the two paying 678 accounts, ACTIVE, with the plan's monthly amount (the matured 목돈적금 is not in the plan)
     (SELECT COUNT(*)
        FROM `account` a
        JOIN tmp_dodam_679_context ctx ON ctx.user_id = a.user_id
        JOIN deposit_saving ds ON ds.account_id = a.account_id
        JOIN tmp_dodam_679_saving_items si ON si.account_name = a.account_name AND si.amount = ds.monthly_amount
       WHERE a.account_type = 'SAVINGS' AND a.status = 'ACTIVE' AND a.source_type = 'SEED') AS savings_account_count,
-    -- one PAID instalment on the 15th of each month Mar..Sep per account (3 x 7)
+    -- one PAID instalment on the 15th of each month Mar..Sep per paying account (2 x 7)
     (SELECT COUNT(DISTINCT a.account_id, sp.payment_date)
        FROM savings_payment sp
        JOIN `account` a ON a.account_id = sp.deposit_saving_id
@@ -264,8 +274,8 @@ FROM (
     (SELECT COUNT(*) FROM tmp_dodam_679_fixed_plan p
       WHERE EXISTS (SELECT 1 FROM tmp_dodam_679_categories c WHERE c.code = p.category_code)) AS fixed_plan_count
 ) m
-WHERE m.context_count = 1 AND m.card_count = 1 AND m.category_count = 7 AND m.savings_account_count = 3
-  AND m.savings_paid_count = 21 AND m.loan_count = 1 AND m.loan_paid_count = 7 AND m.salary_month_count = 7
+WHERE m.context_count = 1 AND m.card_count = 1 AND m.category_count = 7 AND m.savings_account_count = 2
+  AND m.savings_paid_count = 14 AND m.loan_count = 1 AND m.loan_paid_count = 7 AND m.salary_month_count = 7
   AND m.fixed_plan_count = 70
   -- 유효 날짜 수만 세면 같은 날 다른 회차나 잘못된 금액의 추가 납입을 놓친다.
   -- 기간 내 PAID 전체 건수도 맞아야 날짜·금액이 일치하는 회차만 정확히 남는다.
@@ -274,7 +284,7 @@ WHERE m.context_count = 1 AND m.card_count = 1 AND m.category_count = 7 AND m.sa
        JOIN tmp_dodam_679_context ctx ON ctx.user_id = a.user_id
        JOIN tmp_dodam_679_saving_items si ON si.account_name = a.account_name
        WHERE a.account_type = 'SAVINGS' AND sp.status = 'PAID'
-         AND sp.payment_date BETWEEN '2026-03-01' AND '2026-09-30') = 21
+         AND sp.payment_date BETWEEN '2026-03-01' AND '2026-09-30') = 14
   AND (SELECT COUNT(*) FROM loan_repayment r
        JOIN tmp_dodam_679_context ctx ON ctx.loan_id = r.loan_id
        WHERE r.status = 'PAID'
@@ -289,7 +299,8 @@ SELECT 'DODAM_679_READY' AS check_name, COUNT(*) AS passed FROM tmp_dodam_679_pr
 START TRANSACTION;
 
 -- ---------------------------------------------------------------------------
--- 2. remove U0003's previous fixed / saving / allowance / refund rows (492 flat rows, 625 September rows, previous runs)
+-- 2. remove U0003's previous fixed / saving / refund rows (492 flat rows, 625 September rows, previous runs).
+--    TRF rows exist only in a DB loaded with the pre-revision file (allowance); they are removed and not recreated.
 -- ---------------------------------------------------------------------------
 DELETE tx FROM `transaction` tx
 JOIN tmp_dodam_679_context ctx ON ctx.user_id = tx.user_id
@@ -323,7 +334,7 @@ CROSS JOIN tmp_dodam_679_context ctx
 WHERE EXISTS (SELECT 1 FROM tmp_dodam_679_preflight pf WHERE pf.ready = 1);
 
 -- ---------------------------------------------------------------------------
--- 4. savings transfers (3 x 7, 15th) — mirror of the 678 instalments; the savings balances already hold the money
+-- 4. savings transfers (2 x 7, 15th) — mirror of the 678 instalments; the savings balances already hold the money
 -- ---------------------------------------------------------------------------
 INSERT INTO `transaction` (
   transaction_id, user_id, account_id, card_id, category_id,
@@ -344,24 +355,16 @@ CROSS JOIN tmp_dodam_679_context ctx
 WHERE EXISTS (SELECT 1 FROM tmp_dodam_679_preflight pf WHERE pf.ready = 1);
 
 -- ---------------------------------------------------------------------------
--- 5. allowance to parents (25th, ETC / VARIABLE) and the March tax refund (INCOME)
+-- 5. salary override (7 INC-00 rows keep id / date / time, amount -> 3,012,400) and the March tax refund (INCOME)
 -- ---------------------------------------------------------------------------
-INSERT INTO `transaction` (
-  transaction_id, user_id, account_id, card_id, category_id,
-  transaction_date, transaction_time, transaction_type, amount, balance_after,
-  merchant_name, payment_method, spending_type, summary, memo,
-  hidden, source_type, created_at, updated_at
-)
-SELECT
-  CONCAT(m.id_prefix, m.ym, '-TRF-01'),
-  ctx.user_id, ctx.primary_account_id, NULL, cat.category_id,
-  DATE_ADD(m.month_start, INTERVAL 24 DAY), '07:05:00', 'EXPENSE', 300000, NULL,
-  '어머니', 'ACCOUNT', 'VARIABLE', '용돈', NULL,
-  0, 'SEED', m.created_at, NULL
-FROM tmp_dodam_679_months m
-JOIN tmp_dodam_679_categories cat ON cat.code = 'ETC'
-CROSS JOIN tmp_dodam_679_context ctx
-WHERE EXISTS (SELECT 1 FROM tmp_dodam_679_preflight pf WHERE pf.ready = 1);
+UPDATE `transaction` tx
+JOIN tmp_dodam_679_context ctx ON ctx.user_id = tx.user_id
+SET tx.amount = 3012400,
+    tx.updated_at = '2026-09-22 09:00:00'
+WHERE tx.source_type = 'SEED' AND tx.transaction_type = 'INCOME'
+  AND (tx.transaction_id LIKE 'SEED-U0003-%-INC-00' OR tx.transaction_id LIKE 'SEED-SEP-U0003-%-INC-00')
+  AND tx.transaction_date BETWEEN '2026-03-01' AND '2026-09-30'
+  AND EXISTS (SELECT 1 FROM tmp_dodam_679_preflight pf WHERE pf.ready = 1);
 
 INSERT INTO `transaction` (
   transaction_id, user_id, account_id, card_id, category_id,
@@ -400,13 +403,16 @@ WHERE u.total_balance > 0
   AND EXISTS (SELECT 1 FROM tmp_dodam_679_preflight pf WHERE pf.ready = 1);
 
 -- ---------------------------------------------------------------------------
--- 7. financial_profile: fixed_expense = monthly fixed items excluding the loan (1,050,500 avg) + subscriptions (104,390),
+-- 7. financial_profile: monthly_income = the salary written above (annual = x12; 491 keeps annual = monthly x 12).
+--    fixed_expense = monthly fixed items excluding the loan (1,050,500 avg) + subscriptions (104,390),
 --    rounded to 10,000 -> 1,150,000. Loan excluded because InstallmentAvailableFundsReader subtracts loan repayments separately.
 --    emergency_fund_target keeps the 491 rule (fixed_expense x 4 for U0003).
 -- ---------------------------------------------------------------------------
 UPDATE financial_profile fp
 JOIN tmp_dodam_679_context ctx ON ctx.user_id = fp.user_id
-SET fp.fixed_expense = 1150000,
+SET fp.monthly_income = 3012400,
+    fp.annual_income = 36148800,
+    fp.fixed_expense = 1150000,
     fp.emergency_fund_target = 4600000,
     fp.updated_at = '2026-09-22 09:00:00'
 WHERE EXISTS (SELECT 1 FROM tmp_dodam_679_preflight pf WHERE pf.ready = 1);
@@ -432,7 +438,7 @@ COMMIT;
 -- ---------------------------------------------------------------------------
 -- 9. verification
 -- ---------------------------------------------------------------------------
--- 9a. rows per month and kind. Expected per month: FIX 10, SAV 3 (1,600,000), TRF 1 (300,000); INC-01 only in 2026-03.
+-- 9a. rows per month and kind. Expected per month: FIX 10, SAV 2 (400,000), INC 1 (3,012,400 salary); INC-01 only in 2026-03; no TRF.
 SELECT DATE_FORMAT(tx.transaction_date, '%Y-%m') AS ym,
        SUBSTRING_INDEX(SUBSTRING_INDEX(tx.transaction_id, '-', -2), '-', 1) AS kind,
        COUNT(*) AS row_count, SUM(tx.amount) AS total

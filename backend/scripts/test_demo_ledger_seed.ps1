@@ -31,7 +31,8 @@ SELECT CONCAT_WS('|', MIN(DATE_FORMAT(t.transaction_date, '%Y-%m')),
  SUM(t.transaction_id LIKE '%-FIX-%'), SUM(IF(t.transaction_id LIKE '%-FIX-%', t.amount, 0)),
  SUM(t.transaction_id LIKE '%-SAV-%'), SUM(IF(t.transaction_id LIKE '%-SAV-%', t.amount, 0)),
  SUM(t.transaction_id LIKE '%-TRF-%'), SUM(IF(t.transaction_id LIKE '%-TRF-%', t.amount, 0)),
- SUM(t.transaction_id LIKE '%-INC-01'), SUM(IF(t.transaction_id LIKE '%-INC-01', t.amount, 0)))
+ SUM(t.transaction_id LIKE '%-INC-01'), SUM(IF(t.transaction_id LIKE '%-INC-01', t.amount, 0)),
+ SUM(t.transaction_id LIKE '%-INC-00'), SUM(IF(t.transaction_id LIKE '%-INC-00', t.amount, 0)))
 FROM `transaction` t JOIN `user` u ON u.user_id = t.user_id
 WHERE u.email = 'seed.kmeans.u0003@dodam.invalid' AND t.source_type = 'SEED'
  AND t.transaction_date BETWEEN '2026-03-01' AND '2026-09-30'
@@ -41,7 +42,8 @@ GROUP BY DATE_FORMAT(t.transaction_date, '%Y-%m') ORDER BY DATE_FORMAT(t.transac
     if ($monthly.Count -ne 7) { throw 'Expected seven ledger months.' }
     for ($i = 0; $i -lt 7; $i++) {
         $refund = if ($i -eq 0) { '1|412350' } else { '0|0' }
-        $expected = ('2026-{0:00}|10|{1}|3|1600000|1|300000|{2}' -f ($i + 3), $fixedTotals[$i], $refund)
+        # FIX 10 / SAV 2 (400,000) / TRF 0 (allowance dropped 2026-09-22) / refund / salary 1 (3,012,400)
+        $expected = ('2026-{0:00}|10|{1}|2|400000|0|0|{2}|1|3012400' -f ($i + 3), $fixedTotals[$i], $refund)
         if ($monthly[$i] -ne $expected) { throw "Ledger expectation failed: $($monthly[$i])" }
     }
     $bills = @(Invoke-Sql @'
@@ -61,6 +63,12 @@ ORDER BY b.billing_month;
         $expected = '2026-{0:00}|{1}|{2}' -f ($i + 4), $billTotals[$i], $status
         if ($bills[$i] -ne $expected) { throw "Billing expectation failed: $($bills[$i])" }
     }
+    $profile = Invoke-Sql @'
+SELECT CONCAT_WS('|', fp.monthly_income, fp.annual_income, fp.fixed_expense, fp.emergency_fund_target)
+FROM financial_profile fp JOIN `user` u ON u.user_id = fp.user_id
+WHERE u.email = 'seed.kmeans.u0003@dodam.invalid';
+'@
+    if ($profile -ne '3012400|36148800|1150000|4600000') { throw "Profile expectation failed: $profile" }
 }
 
 function Get-Fingerprint {
