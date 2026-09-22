@@ -26,6 +26,17 @@
 - [ ] FE 114 공유: §3 표 전달. `DiagnosisApiResponse.discoveryIssueCount` 타입 추가는 선택(발견 홈 개수·요약을 서버 값으로 전환할 때).
 - [ ] 후속 구현(§5): **696** 소비 증가 추천 목표 기여(이 브랜치에 포함, 위 절), **697** 리포트 `metrics`(V43, 브랜치 `S15P21D105-697-report-metrics`).
 
+## S15P21D105-697 — [BE] 월간 리포트 주요 지표·금융 생활 패턴 서버 제공 (V44)
+
+계약: [improvement-report-contract.md](improvement-report-contract.md) §7. 675(지표 계약)에서 분리한 후속 구현.
+
+- [x] `MonthlyReport.metrics`(주요 지표 4 + 금융 생활 패턴 3) — `monthly_report.metrics_summary`(V44), `MonthlyReportMetricsAssembler`(`report-metrics-v1`). 697 이전 READY 리포트는 첫 월간 조회 때 보강(`supplementIfMissing` 확장). 효율 점수와 같은 입력이라 육각형 항목 `value`와 같은 수.
+- [ ] **시연 서버**: V44 적용(Flyway 자동. 김지우의 V43 `user_credit_score_int`가 먼저 들어와 번호를 옮겼다). 이미 생성된 8월 리포트는 다음 `GET /reports/monthly` 때 `metrics`가 채워진다. U0003 값(저축률·고정지출 비중이 효율 점수 항목 `value`와 같은지, SPENDING_INCREASE가 발견 화면 카테고리와 같은지) 확인.
+- [ ] FE 인계(114): `ReportKeyMetric`·`ReportFinancePattern`을 `metrics`로 전환하면 리포트 훅의 개별 API 9회 호출이 빠진다. `ReportPatternStatus`에 `unavailable` 추가.
+- [ ] 서비스 초기값: 저축률 양호 경계 20%(FE 임시값 이관), 소비 증가 판정을 진단 규칙(631)으로 통일(API 6 소비 급증과 다를 수 있음 — 627 절의 미해결 항목과 같은 줄기). 바꾸면 `report-metrics-v2`.
+- [ ] 대출 잔액 전월 비교는 월별 잔액 이력이 없어 `HISTORY_NOT_STORED`. 필요하면 대출 잔액 스냅샷(월말) 저장이 선행돼야 한다.
+- [ ] MySQL 검증: H2 통합 테스트(`ReportApiTest`)만 통과. JSON 컬럼 직렬화 경로는 V41과 같아 별도 실측하지 않았다. 서버 적용 후 `GET /reports/monthly` 1회로 확인.
+
 ## S15P21D105-640 — [BE, AI] 대화형 시뮬레이션 에이전트 · 군집 이탈 진단 연결
 
 계획: [docs/ai-coach-agent-cluster-plan.md](../../docs/ai-coach-agent-cluster-plan.md). 하위: 641 C-1(군집 이탈 규칙), C-2, A-1~A-3(BE), A-4·C-3(FE), 시연 seed 실측.

@@ -5,6 +5,7 @@ import com.ssafy.dodam.domain.diagnosis.entity.Diagnosis;
 import com.ssafy.dodam.domain.diagnosis.repository.DiagnosisRepository;
 import com.ssafy.dodam.domain.improvement.service.ImprovementMeasurementService;
 import com.ssafy.dodam.domain.report.dto.EfficiencyScoreResponse;
+import com.ssafy.dodam.domain.report.dto.MonthlyReportMetricsResponse;
 import com.ssafy.dodam.domain.report.dto.MonthlyReportResponse.Financial;
 import com.ssafy.dodam.domain.report.dto.MonthlyReportResponse.MonthAmounts;
 import com.ssafy.dodam.domain.report.entity.MonthlyReport;
@@ -44,6 +45,7 @@ public class MonthlyReportGenerator {
     private final MonthlyImprovementsAssembler improvements;
     private final ImprovementMeasurementService measurements;
     private final EfficiencyScoreCalculator efficiency;
+    private final MonthlyReportMetricsAssembler metrics;
     private final ReportRepository reportRows;
     private final MonthlyReportRepository monthlyRows;
     private final ReportJson json;
@@ -51,8 +53,8 @@ public class MonthlyReportGenerator {
     public MonthlyReportGenerator(ReportAmountReader amounts, JdbcReportReader reports, DiagnosisRepository diagnoses,
             MonthlySpendingPatternAssembler patterns, MonthlyGoalImpactAssembler goalImpacts,
             MonthlyImprovementsAssembler improvements, ImprovementMeasurementService measurements,
-            EfficiencyScoreCalculator efficiency, ReportRepository reportRows, MonthlyReportRepository monthlyRows,
-            ReportJson json) {
+            EfficiencyScoreCalculator efficiency, MonthlyReportMetricsAssembler metrics, ReportRepository reportRows,
+            MonthlyReportRepository monthlyRows, ReportJson json) {
         this.amounts = amounts;
         this.reports = reports;
         this.diagnoses = diagnoses;
@@ -61,6 +63,7 @@ public class MonthlyReportGenerator {
         this.improvements = improvements;
         this.measurements = measurements;
         this.efficiency = efficiency;
+        this.metrics = metrics;
         this.reportRows = reportRows;
         this.monthlyRows = monthlyRows;
         this.json = json;
@@ -88,6 +91,8 @@ public class MonthlyReportGenerator {
         Optional<Diagnosis> diagnosis = latestDiagnosis(userId, month);
         Long diagnosisId = diagnosis.map(Diagnosis::getDiagnosisId).orElse(null);
         EfficiencyScoreResponse score = efficiencyWithDifference(userId, month, totals, diagnosis.orElse(null), comparable);
+        MonthlyReportMetricsResponse keyMetrics = metrics.assemble(userId, month, totals, comparable ? previous : null,
+                card.current(), card.previous(), card.difference(), diagnosisId);
 
         return new Content(
                 transactionCount == 0 ? ReportDataStatus.NO_TRANSACTIONS : ReportDataStatus.READY,
@@ -97,23 +102,28 @@ public class MonthlyReportGenerator {
                 json.toJson(patterns.assemble(userId, month, totals, previous)),
                 json.toJson(goalImpacts.assemble(userId, month)),
                 json.toJson(improvements.assemble(userId, month)),
-                json.toJson(score));
+                json.toJson(score),
+                json.toJson(keyMetrics));
     }
 
     /**
-     * 635 이전에 굳힌 READY 리포트 보강. 저장된 합계는 그대로 두고 카드 사용액과 효율 점수만 계산한다. 효율 점수의
-     * 소비·저축·소득은 저장된 합계를 쓰므로 리포트 본문과 어긋나지 않는다.
+     * 635·697 이전에 굳힌 READY 리포트 보강. 저장된 합계는 그대로 두고 카드 사용액·효율 점수·주요 지표/패턴만 계산한다. 점수와 지표의
+     * 소비·저축·소득·전월 합계는 저장된 합계를 쓰므로 리포트 본문과 어긋나지 않는다. 카드 사용액이 이미 저장돼 있으면 그 값을 쓴다.
      */
     @Transactional
     public Supplement supplement(Long userId, YearMonth month, Financial stored, Long diagnosisId) {
         boolean comparable = stored.previousMonth() != null;
-        CardSpending card = cardSpending(userId, month, comparable);
+        CardSpending card = stored.hasCardSpending()
+                ? new CardSpending(stored.cardSpending(), stored.cardSpendingPreviousMonth(), stored.cardSpendingDifferenceFromPreviousMonth())
+                : cardSpending(userId, month, comparable);
         MonthAmounts totals = new MonthAmounts(stored.totalIncome(), stored.totalExpense(), stored.totalSpending(),
                 stored.totalSaving());
         Diagnosis diagnosis = diagnosisId == null ? null : diagnoses.findByDiagnosisIdAndUserId(diagnosisId, userId).orElse(null);
         EfficiencyScoreResponse score = efficiencyWithDifference(userId, month, totals, diagnosis, comparable);
+        MonthlyReportMetricsResponse keyMetrics = metrics.assemble(userId, month, totals, stored.previousMonth(),
+                card.current(), card.previous(), card.difference(), diagnosisId);
         return new Supplement(json.toJson(stored.withCardSpending(card.current(), card.previous(), card.difference())),
-                json.toJson(score));
+                json.toJson(score), json.toJson(keyMetrics));
     }
 
     private boolean comparable(Long userId, YearMonth previousMonth) {
@@ -185,11 +195,12 @@ public class MonthlyReportGenerator {
             JsonNode spendingSummary,
             JsonNode goalSummary,
             JsonNode improvementSummary,
-            JsonNode efficiencySummary
+            JsonNode efficiencySummary,
+            JsonNode metricsSummary
     ) {
     }
 
-    /** 635 이전 리포트에 덧붙일 두 JSON. */
-    public record Supplement(JsonNode financialSummary, JsonNode efficiencySummary) {
+    /** 635·697 이전 리포트에 덧붙일 세 JSON. */
+    public record Supplement(JsonNode financialSummary, JsonNode efficiencySummary, JsonNode metricsSummary) {
     }
 }

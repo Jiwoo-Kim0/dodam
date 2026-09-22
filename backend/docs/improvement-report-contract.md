@@ -427,6 +427,7 @@ API 19에는 행동을 만들거나 상태를 바꾸는 엔드포인트가 없�
 | `diagnosisId`·`overallStatus` | 그 달 **말일까지 완료된 가장 최근 진단**, 없으면 **리포트 생성 시점의 최신 완료 진단**(694, 이전엔 "그 달 안"). 진단이 하나도 없으면 둘 다 `null`. §6-4 |
 | `cardSpending`·`cardSpendingPreviousMonth`·`cardSpendingDifferenceFromPreviousMonth` (635) | 카드 사용액과 전월 대비 증감. 정의는 §6-2 |
 | `efficiency` (635) | 금융 효율 점수(전체 + 6개 항목). 정의는 §6-1. 635 이전 리포트는 첫 월간 조회 때 채워진다 |
+| `metrics` (697) | 주요 지표 4개 + 금융 생활 패턴 3장. 정의는 §7. 697 이전 리포트는 첫 월간 조회 때 채워진다 |
 
 `totalExpense = totalSpending + totalSaving`이 항상 성립한다.
 
@@ -681,4 +682,64 @@ FE가 지금 쓰는 `/spending/payment-methods`의 `CARD` 묶음과 같은 기�
 > 리포트에 반영하려면 그 사용자의 `monthly_report` → `report` 행(`type = MONTHLY`, 해당 `period`)을 지우고 다시 조회해야 한다.
 > 시연 준비 순서: seed 적재(680 신용점수 seed 포함) → 진단·예측 실행(8월 말까지 것이 없으면 이 실행분이 2순위로 들어간다) →
 > 기존 월간 리포트 행 삭제 → `GET /reports/monthly` 최초 조회.
+
+## 7. 697 — 주요 지표·금융 생활 패턴 (`MonthlyReport.metrics`, 2026-09-22)
+
+605 협의안의 "금융 생활 패턴"·"주요 지표" 카드를 서버 값으로 내린다. FE `useReportData`가 개별 API 12개(저축률·고정지출·결제수단·대출 요약·현금흐름 위험·소비 급증 ×
+이번 달/전월)를 조합해 만들던 것을 `GET /reports/monthly` 한 번으로 대체할 수 있다. 저장 컬럼 `monthly_report.metrics_summary`(**V44**), 조립기
+`MonthlyReportMetricsAssembler`(버전 `report-metrics-v1`). 697 이전 READY 리포트는 첫 월간 조회 때 채워진다(§6-1의 보강 경로와 같다).
+
+```json
+"metrics": {
+  "calculationVersion": "report-metrics-v1",
+  "keyMetrics": [
+    { "key": "SAVING_RATE", "label": "저축률", "valueType": "RATIO", "value": 0.125, "previousValue": 0.1094, "difference": 0.0156, "asOf": "MONTH" },
+    { "key": "FIXED_EXPENSE_SHARE", "label": "고정지출 비중", "valueType": "RATIO", "value": 0.6207, "previousValue": 0.0, "difference": 0.6207, "asOf": "MONTH" },
+    { "key": "CARD_SPENDING", "label": "카드 사용액", "valueType": "CURRENCY", "value": 1450000, "previousValue": 1560000, "difference": -110000, "asOf": "MONTH" },
+    { "key": "LOAN_BALANCE", "label": "대출 잔액", "valueType": "CURRENCY", "value": 32000000, "previousUnavailableReason": "HISTORY_NOT_STORED", "asOf": "CURRENT" }
+  ],
+  "patterns": [
+    { "key": "SAVING_RATE", "status": "CHECK", "title": "이번 달 저축률은 13%예요", "description": "수입 3,200,000원 중 400,000원을 저축했어요.",
+      "evidencePeriod": "2026-08", "evidence": { "income": 3200000, "saving": 400000, "rate": 0.125, "goodThreshold": 0.2 } },
+    { "key": "SPENDING_INCREASE", "status": "CHECK", "title": "식비 소비가 늘었어요", "description": "직전 3개월 평균보다 월 40,000원 늘었어요.",
+      "evidencePeriod": "2026-07 vs 2026-04~2026-06", "evidence": { "diagnosisId": 77, "issueId": 301, "issueCount": 1, "categoryCode": "FOOD", "categoryName": "식비", "increaseAmount": 40000, "baselineMonths": 3, "increaseRatePercent": 33.3 } },
+    { "key": "CASHFLOW_RISK", "status": "UNAVAILABLE", "title": "현금흐름 예측 데이터가 없어요", "description": "완료한 현금흐름 예측이 없어 예정 잔액 위험을 확인하지 못했어요.",
+      "evidencePeriod": "2026-08", "unavailableReason": "FORECAST_NOT_FOUND" }
+  ]
+}
+```
+
+### 7-1. 주요 지표 `keyMetrics[]` (순서 고정)
+
+| key | valueType | 이번 달 `value` | 전월 `previousValue` | 계산 불가 |
+| --- | --- | --- | --- | --- |
+| SAVING_RATE | RATIO(0~1, 4자리) | `totalSaving / totalIncome` — 효율 점수 SAVING 항목의 `value`와 같은 수 | 전월 합계로 같은 식 | 소득 0 → `INCOME_MISSING` |
+| FIXED_EXPENSE_SHARE | RATIO | `bySpendingType.FIXED / totalSpending` — FIXED_EXPENSE 항목의 `value`와 같은 수 | 전월 고정지출 / 전월 소비 | 소비 0 → `NO_SPENDING` |
+| CARD_SPENDING | CURRENCY(원) | §6-2 `cardSpending` | `cardSpendingPreviousMonth` | — |
+| LOAN_BALANCE | CURRENCY | `GET /loans/summary`의 `totalBalance`(ACTIVE·OVERDUE 잔액 합). **생성·보강 시점 현재 값**(`asOf = CURRENT`) | 없음 — `previousUnavailableReason = HISTORY_NOT_STORED` | 대출 없음은 0(모름이 아니다) |
+
+- `difference = value − previousValue`(부호 유지, 비율은 4자리 반올림). 어느 한쪽이 null이면 null.
+- 전월 규칙은 본문 `previousMonth`와 같다: 사용자 첫 거래 이전 달이면 `previousUnavailableReason = NO_PREVIOUS_MONTH`, 전월이 있는데 분모가 0이면 그 사유(`INCOME_MISSING`·`NO_SPENDING`).
+- 대출 잔액은 자산 총액과 별개의 지표다(605 요청대로 자산에서는 제외, 이 카드에는 유지). 월별 잔액 이력을 저장하지 않으므로 전월 비교는 하지 않는다 — 필요하면 `loan` 스냅샷 테이블이 선행돼야 한다([discovery-report-metrics-675.md](discovery-report-metrics-675.md) §3).
+
+### 7-2. 금융 생활 패턴 `patterns[]` (순서 고정, 3장)
+
+| key | GOOD | CHECK | UNAVAILABLE | evidencePeriod |
+| --- | --- | --- | --- | --- |
+| SAVING_RATE | 저축률 ≥ 20% | < 20% | 소득 0 → `INCOME_MISSING` | 기준월 |
+| SPENDING_INCREASE | 그 달 말일까지 완료된 가장 최근 진단, 없으면 생성 시점 최신 진단(`MonthlyReport.diagnosisId`, 694 v3 기준)에 `CATEGORY_SPENDING_INCREASE` 문제 없음 | 있음 — 증가액 최대 카테고리를 제목·설명에, `evidence.issueCount`에 건수 | 말일까지 진단 없음 → `DIAGNOSIS_NOT_FOUND` | 진단이 비교한 기간(`recentPeriod vs baselinePeriod`) |
+| CASHFLOW_RISK | 기준일이 그 달 말일 이전인 마지막 완료 예측, 없으면 생성 시점 최신 완료 예측(효율 점수 CASHFLOW 항목과 같은 예측, 694 v3 기준 — 폴백이면 문구 앞에 "가장 최근 예측 기준으로", `evidence.afterMonthEnd=true`)에 위험 없음 | 위험 있음 — 가장 이른 `riskDate`의 `message`를 설명에, `evidence`에 `riskCount·riskId·riskDate·severity·expectedBalance` | 말일까지 예측 없음 → `FORECAST_NOT_FOUND` | 예측 기준일~기준일+horizon |
+
+- **자료 없음(UNAVAILABLE)과 위험 없음(GOOD)을 구분한다**(605 요청 2). FE 임시 구현은 진단·예측이 없을 때도 "늘어난 소비가 없어요"를 보여 줄 수 있었다.
+- 소비 증가 판정은 API 6 `/spending/anomalies`(N개월 평균 대 N개월 평균)가 아니라 **진단 규칙**(지난달 vs 직전 3개월 평균, 631)이다. 발견 화면과 같은 판정을 쓰기 위해서다. 다만 그 진단이 본 "지난달"은 리포트 기준월의 전달일 수 있다(8월 리포트 ← 8월에 완료된 진단은 7월 vs 4~6월). `evidencePeriod`에 실제 비교 기간이 있으니 FE는 이를 그대로 표기한다.
+- 문구는 서버 템플릿이고 AI 문장이 아니다. 코치 문구는 API 21 그대로.
+- 저축률 20% 경계는 FE 임시 구현 값을 옮긴 **서비스 초기값**이다. 바꾸면 `calculationVersion`을 올린다(과거 리포트 저장본은 유지).
+
+### 7-3. FE 전환
+
+- `ReportKeyMetric`(저축률·고정지출·카드·대출)·`ReportFinancePattern`(3장)을 `metrics.keyMetrics[]`·`metrics.patterns[]`로 매핑하면 `ledgerApi.getSavingRatio×2`, `getFixedSpending×2`, `getPaymentMethodSpending×2`, `assetApi.getLoanSummary`, `cashflowApi.getRisks`, `ledgerApi.getSpendingAnomalies` 호출을 걷어낼 수 있다. 남는 개별 호출은 지난 소비 6개월(`getCategoryTrend`)·또래 비교·코치 문구다.
+- `status`는 FE의 `'good' | 'check'`에 `unavailable`을 추가해야 한다. `unavailable`은 "확인 중/자료 없음" 톤으로 그린다.
+- 아이콘은 `key`로 고른다(FE 상수). 서버는 아이콘을 내리지 않는다.
+
+- `value`·`previousValue`·`difference` 키는 null이어도 항상 직렬화한다(694와 같은 이유 — FE가 `=== null`로 판정). 사유·`evidence`·`asOf`만 없을 때 생략한다.
 

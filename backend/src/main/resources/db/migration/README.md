@@ -34,6 +34,8 @@
 | V40 | `pattern_analysis.peer_stats_json` 추가 (632 동년배 비교 결과 JSON, NULL 허용) | S15P21D105-632 |
 | V41 | `monthly_report.efficiency_summary` 추가 | S15P21D105-635 |
 | V42 | `user.credit_score`와 출처·산식 버전·산정 시각 추가 — SSAFY A~E 등급과 병행 | S15P21D105-680 |
+| V43 | `user.credit_score` SMALLINT → INT (엔티티 `Integer`와 정합, 배포 기동 실패 해소) | S15P21D105-475 |
+| V44 | `monthly_report.metrics_summary` 추가 (주요 지표·금융 생활 패턴 JSON) | S15P21D105-697 |
 
 ## 버전 번호 할당
 

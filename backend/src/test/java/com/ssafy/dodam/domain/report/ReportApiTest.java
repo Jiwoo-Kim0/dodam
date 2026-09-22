@@ -192,7 +192,44 @@ class ReportApiTest {
                 // → (100+36+100+85+70+75)/6 = 77.7 → 78 → 70 − 78
                 .andExpect(jsonPath("$.data.efficiency.previousMonthDifference").value(-8))
                 .andExpect(jsonPath("$.data.efficiency.summary").value("지출 관리는 안정적이에요. 저축을 조금 더 챙겨 보세요."))
-                .andExpect(jsonPath("$.data.diagnosisId").value(diagnosis.getDiagnosisId()));
+                .andExpect(jsonPath("$.data.diagnosisId").value(diagnosis.getDiagnosisId()))
+                // 697 주요 지표: 효율 점수와 같은 입력. 저축률 0.125(7월 0.1094), 고정지출 비중 0.6207(7월 0), 카드 사용액, 대출 잔액(현재 값·이력 없음)
+                .andExpect(jsonPath("$.data.metrics.calculationVersion").value("report-metrics-v1"))
+                .andExpect(jsonPath("$.data.metrics.keyMetrics.length()").value(4))
+                .andExpect(jsonPath("$.data.metrics.keyMetrics[0].key").value("SAVING_RATE"))
+                .andExpect(jsonPath("$.data.metrics.keyMetrics[0].valueType").value("RATIO"))
+                .andExpect(jsonPath("$.data.metrics.keyMetrics[0].value").value(0.125))
+                .andExpect(jsonPath("$.data.metrics.keyMetrics[0].previousValue").value(0.1094))
+                .andExpect(jsonPath("$.data.metrics.keyMetrics[0].difference").value(0.0156))
+                .andExpect(jsonPath("$.data.metrics.keyMetrics[1].key").value("FIXED_EXPENSE_SHARE"))
+                .andExpect(jsonPath("$.data.metrics.keyMetrics[1].value").value(0.6207))
+                .andExpect(jsonPath("$.data.metrics.keyMetrics[1].previousValue").value(0.0))
+                .andExpect(jsonPath("$.data.metrics.keyMetrics[2].key").value("CARD_SPENDING"))
+                .andExpect(jsonPath("$.data.metrics.keyMetrics[2].valueType").value("CURRENCY"))
+                .andExpect(jsonPath("$.data.metrics.keyMetrics[2].value").value(1_450_000))
+                .andExpect(jsonPath("$.data.metrics.keyMetrics[2].previousValue").value(1_560_000))
+                .andExpect(jsonPath("$.data.metrics.keyMetrics[2].difference").value(-110_000))
+                .andExpect(jsonPath("$.data.metrics.keyMetrics[3].key").value("LOAN_BALANCE"))
+                .andExpect(jsonPath("$.data.metrics.keyMetrics[3].value").value(0))
+                .andExpect(jsonPath("$.data.metrics.keyMetrics[3].asOf").value("CURRENT"))
+                // 전월 값 키는 null이어도 빠지지 않는다(694와 같은 이유)
+                .andExpect(jsonPath("$.data.metrics.keyMetrics[3].previousValue", nullValue()))
+                .andExpect(jsonPath("$.data.metrics.keyMetrics[3].previousUnavailableReason").value("HISTORY_NOT_STORED"))
+                // 697 패턴: 저축률 13% → CHECK(20% 미만), 진단에 소비 증가 문제 없음 → GOOD, 예측 HIGH 위험 1건 → CHECK
+                .andExpect(jsonPath("$.data.metrics.patterns.length()").value(3))
+                .andExpect(jsonPath("$.data.metrics.patterns[0].key").value("SAVING_RATE"))
+                .andExpect(jsonPath("$.data.metrics.patterns[0].status").value("CHECK"))
+                .andExpect(jsonPath("$.data.metrics.patterns[0].title").value("이번 달 저축률은 13%예요"))
+                .andExpect(jsonPath("$.data.metrics.patterns[0].description").value("수입 3,200,000원 중 400,000원을 저축했어요."))
+                .andExpect(jsonPath("$.data.metrics.patterns[0].evidencePeriod").value("2026-08"))
+                .andExpect(jsonPath("$.data.metrics.patterns[1].key").value("SPENDING_INCREASE"))
+                .andExpect(jsonPath("$.data.metrics.patterns[1].status").value("GOOD"))
+                .andExpect(jsonPath("$.data.metrics.patterns[2].key").value("CASHFLOW_RISK"))
+                .andExpect(jsonPath("$.data.metrics.patterns[2].status").value("CHECK"))
+                .andExpect(jsonPath("$.data.metrics.patterns[2].description").value("잔액 부족"))
+                .andExpect(jsonPath("$.data.metrics.patterns[2].evidencePeriod").value("2026-08-20~2026-09-19"))
+                .andExpect(jsonPath("$.data.metrics.patterns[2].evidence.riskCount").value(1))
+                .andExpect(jsonPath("$.data.metrics.patterns[2].evidence.expectedBalance").value(-50_000));
     }
 
     @Test
@@ -213,7 +250,12 @@ class ReportApiTest {
                 .andExpect(jsonPath("$.data.efficiency.dimensions[4].unavailableReason").value("FORECAST_NOT_FOUND"))
                 .andExpect(jsonPath("$.data.efficiency.dimensions[5].unavailableReason").value("DIAGNOSIS_NOT_FOUND"))
                 // 7월은 3개 계산(100·36·100) → 79 → 62 − 79
-                .andExpect(jsonPath("$.data.efficiency.previousMonthDifference").value(-17));
+                .andExpect(jsonPath("$.data.efficiency.previousMonthDifference").value(-17))
+                // 697 패턴: 자료 없음은 "위험 없음"이 아니다
+                .andExpect(jsonPath("$.data.metrics.patterns[1].status").value("UNAVAILABLE"))
+                .andExpect(jsonPath("$.data.metrics.patterns[1].unavailableReason").value("DIAGNOSIS_NOT_FOUND"))
+                .andExpect(jsonPath("$.data.metrics.patterns[2].status").value("UNAVAILABLE"))
+                .andExpect(jsonPath("$.data.metrics.patterns[2].unavailableReason").value("FORECAST_NOT_FOUND"));
 
         // 소득이 없는 달은 소득 기반 2개가 빠져 계산 항목이 1개 → 전체 점수 없음
         expense(LocalDate.of(2026, 6, 10), 700_000, "VARIABLE", null);
