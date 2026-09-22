@@ -1,9 +1,9 @@
 import { Image } from 'expo-image';
 import { Pressable, Text, View } from 'react-native';
 
-import { FINANCIAL_INSTITUTIONS } from '@/mocks/financeConnection';
 import type { GoalAccountApiResponse } from '@/types/goalApi.types';
 import { formatCurrency } from '@/utils/currency';
+import { findInstitutionByBankName } from '@/utils/institution';
 
 import { styles } from './GoalLinkedAccounts.styles';
 
@@ -34,11 +34,7 @@ export function GoalLinkedAccounts({
 
       <View style={styles.card}>
         {accounts.map((account, index) => {
-          const institution = FINANCIAL_INSTITUTIONS.find(
-            ({ name }) =>
-              account.bankName.includes(name.replace('은행', '')) ||
-              name.includes(account.bankName.replace('은행', '')),
-          );
+          const institution = findInstitutionByBankName(account.bankName);
 
           return (
             <View
