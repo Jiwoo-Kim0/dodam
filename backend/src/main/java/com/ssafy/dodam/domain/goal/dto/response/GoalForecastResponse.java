@@ -7,7 +7,7 @@ import java.util.List;
  * 예상 달성일(GET /goals/{goalId}/forecast). 모으기 목표 전용. 기획안 「현재 저축속도 기준 예상 목표 달성일」.
  *
  * @param baseDate                 예측 기준일(기본 오늘)
- * @param averageMonthlySaving     현재 저축속도(currentAmount / 경과 개월)
+ * @param averageMonthlySaving     현재 저축속도(연결 계좌의 최근 3개 완료 월 순증가, {@code GoalSavingPaceReader}, 694)
  * @param monthsToAchieve          남은 금액 / 저축속도(올림). 이미 달성했으면 0, 속도가 0이면 null
  * @param expectedAchievementDate  baseDate + monthsToAchieve. 속도가 0이면 null(현재 속도로는 달성 불가)
  * @param daysDifference           expectedAchievementDate − targetDate. 음수면 목표일보다 빨리 달성, 양수면 늦음. 예상일이 없으면 null
