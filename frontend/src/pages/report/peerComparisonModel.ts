@@ -4,9 +4,15 @@ import type {
   PeerFeatureApiResponse,
   PeerFeatureDirection,
   PeerGroupApiResponse,
+  PeerRankBand,
   PeerUnavailableReason,
 } from '@/types/patternApi.types';
-import type { ReportPeerComparison, ReportPeerFeature } from '@/types/report.types';
+import type {
+  ReportPeerBadge,
+  ReportPeerComparison,
+  ReportPeerFeature,
+} from '@/types/report.types';
+import { formatFeatureValue } from '@/utils/patternFeature';
 
 /**
  * 오각형 축 라벨. 서버 `displayName`은 `소득 대비 소비율`처럼 길어 축 라벨로 쓰면 잘리므로
@@ -18,6 +24,21 @@ const FEATURE_AXIS_LABELS: Record<string, string> = {
   fixedExpenseShare: '고정지출',
   discretionaryShare: '재량소비',
   spendingVolatility: '변동성',
+};
+
+/**
+ * 상세 화면 라벨 규칙. `{N}`은 서버가 준 분석 개월 수로 채운다.
+ *
+ * 금융 효율 점수 화면은 한 달치 점수를 보여 주는데 여기는 여러 달 평균이라, 라벨에 기간을
+ * 넣지 않으면 두 화면의 `소비율`이 같은 값처럼 읽힌다(698). 개월 수는 하드코딩하지 않고
+ * `analysisPeriod.months`를 그대로 쓴다.
+ */
+const FEATURE_DETAIL_LABEL_TEMPLATES: Record<string, string> = {
+  spendingToIncomeRatio: '{N}개월 평균 소비율',
+  savingRate: '{N}개월 평균 저축률',
+  fixedExpenseShare: '{N}개월 고정지출 비중',
+  discretionaryShare: '{N}개월 평균 재량소비 비중',
+  spendingVolatility: '{N}개월 소비 변동성',
 };
 
 /**
@@ -63,28 +84,77 @@ export const PEER_COMPARISON_NOT_ANALYZED: ReportPeerComparison = {
   message: '거래 데이터가 쌓이면 소비 유형과 또래 비교를 확인할 수 있어요',
 };
 
-function toPercentText(ratio: number | null) {
-  if (ratio === null) return null;
-  return `${Math.round(ratio * 100)}%`;
+/**
+ * 좋고 나쁨을 말하지 않는 특징(BE 670 회신).
+ *
+ * <p>서버 `direction`은 시뮬레이션·진단 규칙이 쓰므로 그대로 두고, 뱃지 색만 중립으로 둔다.
+ * 고정지출·재량소비는 많다고 낭비라 볼 수 없어 방향만 알려 준다(641 군집 비교 원칙).
+ */
+const NEUTRAL_TONE_FEATURES = new Set(['fixedExpenseShare', 'discretionaryShare']);
+
+/** 판정할 수 있는 구간. 서버가 구간을 늘리면 그 값은 판정 없이 지나간다. */
+const KNOWN_RANK_BANDS = new Set<string>(['TOP_10', 'UPPER', 'MIDDLE', 'LOWER', 'BOTTOM_10']);
+
+/**
+ * 또래와 견준 한 줄 판정.
+ *
+ * <p>경계는 서버 `rankBand`를 그대로 쓴다(TOP_10 ≥ 90 / UPPER ≥ 75 / MIDDLE / LOWER < 25 /
+ * BOTTOM_10 < 10). FE가 임계값을 따로 들면 서버가 기준을 바꿔도 따라가지 못한다.
+ * 좋고 나쁨은 서버 `direction`이 정하며, 여기서 새 기준을 만들지 않는다.
+ */
+function toBadge(
+  feature: string,
+  rankBand: PeerRankBand,
+  direction: PeerFeatureDirection,
+): ReportPeerBadge | null {
+  if (rankBand === 'MIDDLE') return { label: '비슷해요', tone: 'neutral' };
+  // 서버가 모르는 구간을 보내면 판정하지 않는다. 기본값으로 떨어뜨리면 없는 판정을 지어내게 된다.
+  if (!KNOWN_RANK_BANDS.has(rankBand)) return null;
+
+  const isHigh = rankBand === 'TOP_10' || rankBand === 'UPPER';
+  // 상·하위 10%까지 간 경우만 단정해 말하고, 그 안쪽은 '조금'을 붙인다.
+  const isExtreme = rankBand === 'TOP_10' || rankBand === 'BOTTOM_10';
+  const directionLabel = isHigh ? '높아요' : '낮아요';
+  const label = isExtreme ? directionLabel : `조금 ${directionLabel}`;
+
+  if (NEUTRAL_TONE_FEATURES.has(feature)) return { label, tone: 'neutral' };
+
+  const isBetter = isHigh === (direction === 'HIGHER_IS_BETTER');
+  return isBetter ? { label: '좋아요', tone: 'good' } : { label, tone: 'watch' };
 }
 
-function toFeature(feature: PeerFeatureApiResponse): ReportPeerFeature {
+function toFeature(feature: PeerFeatureApiResponse, months: number | null): ReportPeerFeature {
   const direction = feature.direction ?? FALLBACK_DIRECTIONS[feature.feature] ?? 'HIGHER_IS_BETTER';
+  const axisLabel = FEATURE_AXIS_LABELS[feature.feature] ?? feature.displayName;
+  const detailTemplate = FEATURE_DETAIL_LABEL_TEMPLATES[feature.feature];
 
   return {
+    badge: toBadge(feature.feature, feature.rankBand, direction),
     key: feature.feature,
-    label: FEATURE_AXIS_LABELS[feature.feature] ?? feature.displayName,
-    axisValue:
+    axisLabel,
+    // 개월 수를 모르면 기간 없이 축 라벨을 그대로 쓴다. 지어낸 기간을 적지 않는다.
+    detailLabel:
+      months === null || detailTemplate === undefined
+        ? axisLabel
+        : detailTemplate.replace('{N}', String(months)),
+    /*
+     * 낮을수록 좋은 특징만 백분위를 뒤집는다. 뒤집지 않으면 소비율이 높은 사람의 축이
+     * 바깥으로 뻗어 "좋아 보이는" 그래프가 된다.
+     */
+    healthPercentile:
       direction === 'LOWER_IS_BETTER'
         ? 100 - feature.percentileInPeer
         : feature.percentileInPeer,
-    percentile: feature.percentileInPeer,
-    userValue: feature.userValue,
-    peerP25: feature.peerP25,
-    peerMedian: feature.peerMedian,
-    peerP75: feature.peerP75,
-    userValueText: `${Math.round(feature.userValue * 100)}%`,
-    peerMedianText: toPercentText(feature.peerMedian),
+    peerPercentile: feature.percentileInPeer,
+    rawRatio: feature.userValue,
+    peerP25Ratio: feature.peerP25,
+    peerMedianRatio: feature.peerMedian,
+    peerP75Ratio: feature.peerP75,
+    rawRatioText: formatFeatureValue(feature.feature, feature.userValue),
+    peerMedianRatioText:
+      feature.peerMedian === null
+        ? null
+        : formatFeatureValue(feature.feature, feature.peerMedian),
   };
 }
 
@@ -148,7 +218,7 @@ export function toPeerComparison(
     groupLabel: toGroupLabel(peerGroup),
     sampleSize: peerGroup.sampleSize,
     isFallback: peerGroup.fallbackFrom !== null,
-    features: features.map(toFeature),
+    features: features.map((feature) => toFeature(feature, response.analysisPeriod?.months ?? null)),
     analysisPeriodLabel: toAnalysisPeriodLabel(response.analysisPeriod),
     insights: response.insights.map((insight) => insight.message),
   };

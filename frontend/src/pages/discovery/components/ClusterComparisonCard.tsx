@@ -1,12 +1,15 @@
-import { useMemo } from 'react';
-import { Text, View } from 'react-native';
+import { SymbolView } from 'expo-symbols';
+import { useMemo, useState } from 'react';
+import { Pressable, Text, View } from 'react-native';
 
+import { colors } from '@/styles';
 import type { DiagnosisClusterContextApiResponse } from '@/types/discoveryApi.types';
 
 import {
   clusterRankBandLabel,
   formatClusterRange,
   formatClusterValue,
+  formatClusterWindow,
 } from '../clusterComparisonModel';
 import { styles } from './ClusterComparisonCard.styles';
 
@@ -18,6 +21,8 @@ type ClusterComparisonCardProps = {
 const DOMAIN_HEADROOM = 1.25;
 
 export function ClusterComparisonCard({ cluster }: ClusterComparisonCardProps) {
+  const [isBasisOpen, setIsBasisOpen] = useState(false);
+
   const bar = useMemo(() => {
     // 특징마다 값의 크기가 달라(비중은 0~1, 변동성은 그 밖) 이 카드 안에서만 쓰는 축을 만든다.
     const domain = Math.max(cluster.userValue, cluster.p95, cluster.mean) * DOMAIN_HEADROOM;
@@ -46,7 +51,7 @@ export function ClusterComparisonCard({ cluster }: ClusterComparisonCardProps) {
       <Text style={styles.summary}>
         {cluster.clusterLabel}
         <Text style={styles.summaryMuted}>
-          {` · 표본 ${cluster.sampleSize.toLocaleString('ko-KR')}명`}
+          {` · 같은 유형 ${cluster.sampleSize.toLocaleString('ko-KR')}명과 비교했어요`}
         </Text>
       </Text>
 
@@ -65,14 +70,44 @@ export function ClusterComparisonCard({ cluster }: ClusterComparisonCardProps) {
 
       <View style={styles.legendRow}>
         <Text style={styles.legendText}>
-          {`기준 범위 ${formatClusterRange(cluster.feature, cluster.p5, cluster.p95)}`}
+          {`비슷한 유형 대부분 ${formatClusterRange(cluster.feature, cluster.p5, cluster.p95)}`}
         </Text>
         {rankLabel === null ? null : <Text style={styles.rankText}>{rankLabel}</Text>}
       </View>
 
-      <Text style={styles.footnote}>
-        {`${cluster.window} 기준 · ${cluster.modelVersion}`}
+      {/*
+        띠가 5~95분위라는 걸 분위수라는 말 없이 알려 준다. 이 설명이 없으면 띠가 '정상 범위'처럼
+        읽혀서, 밖으로 나간 것이 곧 잘못이라는 뜻으로 오해된다.
+      */}
+      <Text style={styles.guideText}>
+        가운데 띠는 같은 유형 100명 중 90명이 있는 구간이에요
       </Text>
+
+      <Text style={styles.footnote}>{`${formatClusterWindow(cluster.window)} 소비 기준`}</Text>
+
+      {/* 모델 버전은 값을 대조할 때만 필요해 접어 둔다. 평소에는 기간만 보이면 된다. */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: isBasisOpen }}
+        onPress={() => setIsBasisOpen((isOpen) => !isOpen)}
+        style={({ pressed }) => [styles.basisToggle, pressed && styles.basisTogglePressed]}>
+        <Text style={styles.basisToggleText}>분석 정보</Text>
+        <SymbolView
+          name={
+            isBasisOpen
+              ? { android: 'keyboard_arrow_up', ios: 'chevron.up', web: 'keyboard_arrow_up' }
+              : { android: 'keyboard_arrow_down', ios: 'chevron.down', web: 'keyboard_arrow_down' }
+          }
+          size={14}
+          tintColor={colors.textTertiary}
+        />
+      </Pressable>
+
+      {isBasisOpen ? (
+        <Text style={styles.basisText}>
+          {`분석 모델 ${cluster.modelVersion} · 비교 항목 ${cluster.displayName}`}
+        </Text>
+      ) : null}
     </View>
   );
 }

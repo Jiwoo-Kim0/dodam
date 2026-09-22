@@ -2,7 +2,6 @@ import { useCallback, useRef, useState } from 'react';
 
 import {
   assetApi,
-  cashflowApi,
   coachApi,
   isApiError,
   ledgerApi,
@@ -12,7 +11,6 @@ import {
 } from '@/api';
 import type {
   MonthlyReport,
-  ReportFinancePattern,
   ReportMetricChange,
   ReportPeerComparison,
 } from '@/types/report.types';
@@ -20,6 +18,7 @@ import { getTransactionCategoryIcon } from '@/constants/transactionCategoryIcons
 import { formatCurrency } from '@/utils/currency';
 
 import { toEfficiencyScore } from '../efficiencyScoreModel';
+import { toFinancePatterns } from '../financePatternModel';
 import {
   PEER_COMPARISON_NOT_ANALYZED,
   toPeerComparison,
@@ -122,7 +121,6 @@ async function fetchReport(): Promise<MonthlyReport> {
     currentPayments,
     previousPayments,
     loans,
-    cashflowRisks,
     anomalies,
     coachSummary,
     peerComparison,
@@ -137,66 +135,14 @@ async function fetchReport(): Promise<MonthlyReport> {
     ledgerApi.getPaymentMethodSpending(reportMonth.yearMonth),
     ledgerApi.getPaymentMethodSpending(previousMonth.yearMonth),
     assetApi.getLoanSummary(),
-    loadOptionalResource(cashflowApi.getRisks()),
     ledgerApi.getSpendingAnomalies(anomalyStart.yearMonth, reportMonth.yearMonth),
     loadCoachSummary(),
     loadPeerComparison(),
     loadOptionalResource(reportApi.getMonthly(reportMonth.yearMonth)),
   ]);
 
-  const risks = cashflowRisks?.risks ?? [];
   const anomaly = anomalies?.anomalies[0];
-  const patterns: ReportFinancePattern[] = [
-    {
-      id: 'saving-rate',
-      status: (currentRatio.savingRatioPercent ?? 0) >= 20 ? 'good' : 'check',
-      title: currentRatio.savingRatioPercent === null
-        ? '저축률을 계산할 소득 정보가 없어요'
-        : `이번 달 저축률은 ${Math.round(currentRatio.savingRatioPercent)}%예요`,
-      description: currentRatio.incomeSource === 'NONE'
-        ? '금융 기본정보에 월소득을 등록하면 분석할 수 있어요'
-        : `수입 ${formatCurrency(currentRatio.income)} 중 ${formatCurrency(Math.max(0, currentRatio.remaining))}이 남았어요`,
-      icon: require('@/assets/icons/common/report_piggy.png'),
-    },
-    anomaly
-      ? {
-          id: `anomaly-${anomaly.code}`,
-          status: 'check',
-          title: `${anomaly.name} 소비가 늘고 있어요`,
-          description: `이전 기간보다 월평균 ${formatCurrency(anomaly.increaseAmount)} 증가했어요`,
-          icon: require('@/assets/icons/common/report_bag.png'),
-        }
-      : {
-          id: 'spending-stable',
-          status: 'good',
-          title: '급격하게 늘어난 소비가 없어요',
-          description: '최근 소비 흐름이 이전 기간과 비슷하게 유지되고 있어요',
-          icon: require('@/assets/icons/common/report_bag.png'),
-        },
-    cashflowRisks === null
-      ? {
-          id: 'cashflow-unavailable',
-          status: 'check',
-          title: '현금흐름 예측 데이터가 없어요',
-          description: '금융 데이터 연결 후 예정 잔액 위험을 확인할 수 있어요',
-          icon: require('@/assets/icons/common/report_coins.png'),
-        }
-      : risks[0]
-      ? {
-          id: `cashflow-${risks[0].riskId}`,
-          status: 'check',
-          title: '예상 잔액을 확인해 주세요',
-          description: risks[0].message,
-          icon: require('@/assets/icons/common/report_coins.png'),
-        }
-      : {
-          id: 'cashflow-stable',
-          status: 'good',
-          title: '예정된 현금흐름 위험이 없어요',
-          description: '현재 예측 기간에는 잔액 부족 위험이 발견되지 않았어요',
-          icon: require('@/assets/icons/common/report_coins.png'),
-        },
-  ];
+  const patterns = toFinancePatterns(monthlyReport?.metrics ?? null);
 
   // 카드 사용액은 서버 집계(카드 식별자 또는 결제수단 CARD)를 쓴다. 결제수단 이름을 FE에서 문자열로
   // 거르던 방식은 이름이 예상과 다르면 조용히 빠져서, 월간 리포트를 못 받은 경우에만 대비책으로 남긴다.
@@ -215,7 +161,7 @@ async function fetchReport(): Promise<MonthlyReport> {
     yearMonth: reportMonth.yearMonth,
     monthLabel: reportMonth.label,
     userName: user.name,
-    efficiencyScore: toEfficiencyScore(monthlyReport?.efficiency ?? null),
+    efficiencyScore: toEfficiencyScore(monthlyReport?.efficiency ?? null, monthlyReport?.period),
     patterns,
     patternCoachingMessage:
       coachSummary?.message.trim() ||

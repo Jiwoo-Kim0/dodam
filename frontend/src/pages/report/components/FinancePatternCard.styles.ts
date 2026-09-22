@@ -21,7 +21,10 @@ export const styles = StyleSheet.create({
     gap: spacing[3],
     paddingVertical: spacing[2],
   },
-  /** 아이콘 배경이 상태 표시를 겸한다. 기본은 좋은 상태, 주의가 필요하면 노란 배경이다. */
+  /**
+   * 아이콘 배경이 상태 표시를 겸한다. 기본은 좋은 상태, 주의가 필요하면 노란 배경이다.
+   * 자료가 없을 때는 색을 빼서 '위험 없음'과 섞이지 않게 한다.
+   */
   patternIconFrame: {
     alignItems: 'center',
     backgroundColor: colors.primary.lightGreen,
@@ -32,6 +35,13 @@ export const styles = StyleSheet.create({
   },
   patternIconFrameCheck: {
     backgroundColor: colors.report.checkBadge,
+  },
+  patternIconFrameUnavailable: {
+    backgroundColor: colors.ledger.softSurface,
+  },
+  /** 판단할 자료가 없는 줄. 결론이 아니라 빈 상태라 글자도 한 단계 낮춘다. */
+  patternIconUnavailable: {
+    opacity: 0.45,
   },
   patternIcon: {
     height: 24,
@@ -54,5 +64,13 @@ export const styles = StyleSheet.create({
     fontSize: fontSize.caption,
     lineHeight: 17,
     marginTop: 2,
+  },
+  /** 판정 근거 기간. 결론이 아니라 각주라 가장 낮은 단계로 둔다. */
+  patternPeriod: {
+    color: colors.textTertiary,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.micro,
+    lineHeight: 14,
+    marginTop: spacing[1],
   },
 });

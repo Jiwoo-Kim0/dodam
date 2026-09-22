@@ -1,6 +1,9 @@
 package com.ssafy.dodam.domain.pattern.repository;
 
+import com.ssafy.dodam.domain.pattern.dto.response.PatternFeatureSummary.SourceFingerprint;
+import java.sql.Timestamp;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.List;
 import java.util.Map;
@@ -82,6 +85,15 @@ public class JdbcPatternFeatureReader {
             ORDER BY total DESC, category.code
             """;
 
+    // (700) 재사용 판정용 지문. 숨김 필터를 걸지 않아 숨김 전환도 updated_at으로 잡힌다. 원문·식별정보는 읽지 않는다.
+    private static final String SOURCE_FINGERPRINT_SQL = """
+            SELECT COUNT(*) AS cnt, COALESCE(SUM(amount), 0) AS amount_sum,
+                   MAX(created_at) AS last_created_at, MAX(updated_at) AS last_updated_at
+            FROM `transaction`
+            WHERE user_id = :userId
+              AND transaction_date BETWEEN :startDate AND :endDate
+            """;
+
     private static final String LIQUIDITY_SQL = """
             SELECT COALESCE(SUM(CASE WHEN account_type = 'DEMAND_DEPOSIT' AND status = 'ACTIVE' THEN balance ELSE 0 END), 0)
                        AS liquid_balance,
@@ -121,6 +133,13 @@ public class JdbcPatternFeatureReader {
     public List<CategoryPatternRow> readUserCategories(Long userId, LocalDate startDate, LocalDate endDate) {
         return jdbcTemplate.query(USER_CATEGORY_SQL, window(startDate, endDate).addValue("userId", userId),
                 (rs, i) -> new CategoryPatternRow(rs.getString("code"), rs.getString("name"), rs.getLong("total"), rs.getLong("cnt")));
+    }
+
+    /** 분석 기간 안 사용자 거래의 지문(700). 같은 날 완료 분석을 재사용해도 되는지 판정하는 데 쓴다. */
+    public SourceFingerprint readSourceFingerprint(Long userId, LocalDate startDate, LocalDate endDate) {
+        return jdbcTemplate.queryForObject(SOURCE_FINGERPRINT_SQL, window(startDate, endDate).addValue("userId", userId),
+                (rs, i) -> new SourceFingerprint(rs.getLong("cnt"), rs.getLong("amount_sum"),
+                        toLocalDateTime(rs.getTimestamp("last_created_at")), toLocalDateTime(rs.getTimestamp("last_updated_at"))));
     }
 
     public LiquidityRow readLiquidity(Long userId) {
@@ -169,6 +188,10 @@ public class JdbcPatternFeatureReader {
     }
 
     /** 사용자·월별 집계 한 행. 금액 단위는 원. */
+    private static LocalDateTime toLocalDateTime(Timestamp timestamp) {
+        return timestamp == null ? null : timestamp.toLocalDateTime();
+    }
+
     public record MonthlyPatternRow(
             Long userId,
             YearMonth yearMonth,

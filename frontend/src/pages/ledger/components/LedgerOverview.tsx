@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LayoutChangeEvent } from 'react-native';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { SymbolView } from 'expo-symbols';
@@ -119,61 +119,87 @@ export function LedgerOverview({
   const [transactionListY, setTransactionListY] = useState(0);
   const [collapsedStickyCalendarHeight, setCollapsedStickyCalendarHeight] = useState(0);
   const [scrollOffset, setScrollOffset] = useState(0);
-  const categoryById = new Map(categories.map((category) => [category.id, category]));
-  const visibleTransactions = (
-    showHiddenTransactions ? hiddenTransactions : transactions
-  ).filter((transaction) => showHiddenTransactions || !transaction.hidden);
-  const displayCategorySummaries = categorySummaries
-    .filter((summaryItem) =>
-      transactions.some(
-        (transaction) => transaction.categoryId === summaryItem.categoryId,
-      ),
-    )
-    .slice(0, 3);
-  const totalsByDate = new Map(dailyTotals.map((total) => [total.date, total]));
-  const calendarDays = getOverviewCalendarDays(year, month);
-  const now = new Date();
-  const focusDay =
-    year === now.getFullYear() && month === now.getMonth() + 1
-      ? now.getDate()
-      : new Date(year, month, 0).getDate();
-  const initialSelectedDate = toDateKeyFromParts(year, month, focusDay);
-  const [selectedDate, setSelectedDate] = useState(initialSelectedDate);
-  const selectedIndex = calendarDays.findIndex(
-    (day) => day.dateKey === selectedDate,
+  /*
+   * 아래 파생값은 스크롤 위치(`scrollOffset`)가 바뀔 때마다 다시 계산되고 있었다. 스크롤 한 프레임마다
+   * 거래를 정렬하고 날짜별로 묶는 일이 반복돼 목록이 길수록 눈에 띄게 끊긴다. 실제로 값이 바뀌는
+   * 입력에만 묶어 둔다.
+   */
+  const categoryById = useMemo(
+    () => new Map(categories.map((category) => [category.id, category])),
+    [categories],
   );
-  const weekStart = Math.max(0, Math.floor(selectedIndex / 7) * 7);
-  const displayedCalendarDays = isCalendarExpanded
-    ? calendarDays
-    : calendarDays.slice(weekStart, weekStart + 7);
-  const filteredTransactions = visibleTransactions.filter((transaction) => {
-    if (selectedCategoryId && transaction.categoryId !== selectedCategoryId) return false;
-    const query = searchQuery.trim().toLocaleLowerCase('ko-KR');
-    if (!query) return true;
-    const categoryLabel = categoryById.get(transaction.categoryId)?.label ?? '';
-    return `${transaction.merchantName} ${categoryLabel}`
-      .toLocaleLowerCase('ko-KR')
-      .includes(query);
+  const visibleTransactions = useMemo(
+    () =>
+      (showHiddenTransactions ? hiddenTransactions : transactions).filter(
+        (transaction) => showHiddenTransactions || !transaction.hidden,
+      ),
+    [hiddenTransactions, showHiddenTransactions, transactions],
+  );
+  /** 달력 점 표시용. 날짜마다 거래 목록을 훑으면 날짜 수 × 거래 수가 되어 미리 한 번만 모은다. */
+  const datesWithTransactions = useMemo(
+    () => new Set(visibleTransactions.map((transaction) => transaction.transactionDate)),
+    [visibleTransactions],
+  );
+  const displayCategorySummaries = useMemo(() => {
+    // 거래에 실제로 쓰인 카테고리만 남긴다. 매번 `some`으로 훑지 않도록 한 번만 모은다.
+    const usedCategoryIds = new Set(transactions.map((transaction) => transaction.categoryId));
+    return categorySummaries
+      .filter((summaryItem) => usedCategoryIds.has(summaryItem.categoryId))
+      .slice(0, 3);
+  }, [categorySummaries, transactions]);
+  const totalsByDate = useMemo(
+    () => new Map(dailyTotals.map((total) => [total.date, total])),
+    [dailyTotals],
+  );
+  const calendarDays = useMemo(() => getOverviewCalendarDays(year, month), [year, month]);
+  /* 이번 달이면 오늘, 지난달이면 말일을 처음 선택 날짜로 둔다. 첫 렌더에만 쓰인다. */
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const now = new Date();
+    const focusDay =
+      year === now.getFullYear() && month === now.getMonth() + 1
+        ? now.getDate()
+        : new Date(year, month, 0).getDate();
+    return toDateKeyFromParts(year, month, focusDay);
   });
-  const recentTransactions = [...filteredTransactions]
-    .sort((left, right) =>
+  const displayedCalendarDays = useMemo(() => {
+    if (isCalendarExpanded) return calendarDays;
+
+    const selectedIndex = calendarDays.findIndex((day) => day.dateKey === selectedDate);
+    const weekStart = Math.max(0, Math.floor(selectedIndex / 7) * 7);
+    return calendarDays.slice(weekStart, weekStart + 7);
+  }, [calendarDays, isCalendarExpanded, selectedDate]);
+  /** 날짜별로 묶은 전체 거래. 정렬과 그룹핑이 이 화면에서 가장 무거워 한 번만 돈다. */
+  const allGroups = useMemo(() => {
+    const query = searchQuery.trim().toLocaleLowerCase('ko-KR');
+    const filteredTransactions = visibleTransactions.filter((transaction) => {
+      if (selectedCategoryId && transaction.categoryId !== selectedCategoryId) return false;
+      if (!query) return true;
+
+      const categoryLabel = categoryById.get(transaction.categoryId)?.label ?? '';
+      return `${transaction.merchantName} ${categoryLabel}`
+        .toLocaleLowerCase('ko-KR')
+        .includes(query);
+    });
+
+    const sorted = [...filteredTransactions].sort((left, right) =>
       `${right.transactionDate} ${right.transactionTime}`.localeCompare(
         `${left.transactionDate} ${left.transactionTime}`,
       ),
-    )
-  ;
-  const allGroups = Array.from(
-    recentTransactions.reduce<Map<string, LedgerTransaction[]>>(
-      (groups, transaction) => {
+    );
+
+    return Array.from(
+      sorted.reduce<Map<string, LedgerTransaction[]>>((groups, transaction) => {
         const group = groups.get(transaction.transactionDate) ?? [];
         group.push(transaction);
         groups.set(transaction.transactionDate, group);
         return groups;
-      },
-      new Map(),
-    ),
+      }, new Map()),
+    );
+  }, [categoryById, searchQuery, selectedCategoryId, visibleTransactions]);
+  const recentGroups = useMemo(
+    () => allGroups.slice(0, visibleDateCount),
+    [allGroups, visibleDateCount],
   );
-  const recentGroups = allGroups.slice(0, visibleDateCount);
   const hasMoreGroups = allGroups.length > visibleDateCount;
   const showStickyCalendar = calendarY > 0 && scrollOffset >= calendarY;
   const selectCalendarDate = (dateKey: string) => {
@@ -419,9 +445,7 @@ export function LedgerOverview({
               {displayedCalendarDays.map((day) => {
                 const total = totalsByDate.get(day.dateKey);
                 const isSelected = day.dateKey === selectedDate;
-                const hasTransactions = visibleTransactions.some(
-                  (transaction) => transaction.transactionDate === day.dateKey,
-                );
+                const hasTransactions = datesWithTransactions.has(day.dateKey);
                 return (
                   <View key={day.dateKey} style={styles.overviewCalendarCell}>
                     <Pressable
@@ -528,9 +552,7 @@ export function LedgerOverview({
             {displayedCalendarDays.map((day) => {
               const total = totalsByDate.get(day.dateKey);
               const isSelected = day.dateKey === selectedDate;
-              const hasTransactions = visibleTransactions.some(
-                (transaction) => transaction.transactionDate === day.dateKey,
-              );
+              const hasTransactions = datesWithTransactions.has(day.dateKey);
               return (
                 <View key={day.dateKey} style={styles.overviewCalendarCell}>
                   <Pressable
