@@ -37,13 +37,14 @@ public interface CashflowForecastRepository extends JpaRepository<CashflowForeca
     );
 
     /**
-     * 기준일이 기간 안에 있는 완료 예측 중 가장 늦은 기준일의 최신 실행(635 월간 리포트 현금흐름 항목).
-     * 리포트 달 안에서 마지막으로 본 예측이 그 달의 현금흐름 상태다.
+     * 기준일이 {@code endDate} 이전인 완료 예측 중 가장 늦은 기준일의 최신 실행(635 월간 리포트 현금흐름 항목).
+     * 리포트 달 말일 시점에 사용자가 마지막으로 본 예측이 그 달의 현금흐름 상태다. 하한을 두지 않는 이유는 694에
+     * 있다 — 예측 기준일은 항상 실행일이라 지난 달의 예측을 나중에 만들 수 없고, "그 달 안"으로 자르면 한 달이라도
+     * 예측을 건너뛴 사용자의 리포트는 영원히 계산 불가로 남는다.
      */
-    Optional<CashflowForecast> findFirstByUserIdAndStatusAndBaseDateBetweenOrderByBaseDateDescCompletedAtDescForecastIdDesc(
+    Optional<CashflowForecast> findFirstByUserIdAndStatusAndBaseDateLessThanEqualOrderByBaseDateDescCompletedAtDescForecastIdDesc(
             Long userId,
             ForecastStatus status,
-            LocalDate startDate,
             LocalDate endDate
     );
 
