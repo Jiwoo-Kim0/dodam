@@ -74,13 +74,15 @@ export const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
   },
+  /** 또래 중앙값. 1px이면 회색 띠 위에서 묻혀 범례를 달아도 못 찾는다. 색은 낮추고 굵기로 세운다. */
   medianTick: {
     backgroundColor: colors.border,
-    bottom: -2,
-    marginLeft: -0.5,
+    borderRadius: radius.round,
+    bottom: -3,
+    marginLeft: -1,
     position: 'absolute',
-    top: -2,
-    width: 1,
+    top: -3,
+    width: 2,
   },
   /** 점을 눌렀을 때만 뜨는 수치. 트랙 위로 띄워 막대를 가리지 않는다. */
   tooltipAnchor: {

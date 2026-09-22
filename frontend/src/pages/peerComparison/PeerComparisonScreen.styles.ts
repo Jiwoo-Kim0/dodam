@@ -115,6 +115,13 @@ export const styles = StyleSheet.create({
     height: 6,
     width: 14,
   },
+  /** 막대 위 중앙값 눈금과 같은 모양이어야 범례가 가리키는 대상이 분명하다. */
+  legendMedianMark: {
+    backgroundColor: colors.border,
+    borderRadius: radius.round,
+    height: 12,
+    width: 2,
+  },
   legendDotMark: {
     backgroundColor: colors.primary.green,
     borderColor: colors.white,
