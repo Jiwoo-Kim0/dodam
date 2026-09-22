@@ -43,7 +43,7 @@ class GoalSavingPaceReaderTest {
         reader = new GoalSavingPaceReader(jdbc);
         given(jdbc.readPaidPaymentTotals(anyCollection(), any(), any())).willReturn(Map.of());
         given(jdbc.readTerms(anyCollection())).willReturn(Map.of());
-        given(jdbc.readFirstTransactionDate(USER)).willReturn(Optional.empty());
+        given(jdbc.readFirstTransactionDate(eq(USER), anyCollection())).willReturn(Optional.empty());
     }
 
     @Test
@@ -52,7 +52,7 @@ class GoalSavingPaceReaderTest {
         given(jdbc.readPaidPaymentTotals(eq(List.of(21L)), eq(FROM), eq(TO))).willReturn(Map.of(21L, 1_200_000L));
 
         assertThat(reader.monthlyPace(USER, allocation(savings(21L, 17_460_000L)), TODAY)).isEqualTo(400_000L);
-        verify(jdbc, never()).readNetCashflow(any(), any(), any());
+        verify(jdbc, never()).readNetCashflow(any(), anyCollection(), any(), any());
     }
 
     @Test
@@ -82,31 +82,43 @@ class GoalSavingPaceReaderTest {
     }
 
     @Test
-    void demandDepositPaceIsUserNetCashflowAndNegativeOffsetsSavings() {
+    void demandDepositPaceIsLinkedAccountNetCashflowAndNegativeOffsetsSavings() {
         // 입출금 연결: 3개월 순현금흐름 159,537 → 월 53,179. 계좌 잔액·담은 금액은 속도에 들어가지 않는다
-        given(jdbc.readFirstTransactionDate(USER)).willReturn(Optional.of(LocalDate.of(2026, 3, 1)));
-        given(jdbc.readNetCashflow(USER, FROM, TO)).willReturn(159_537L);
+        given(jdbc.readFirstTransactionDate(USER, List.of(3L))).willReturn(Optional.of(LocalDate.of(2026, 3, 1)));
+        given(jdbc.readNetCashflow(USER, List.of(3L), FROM, TO)).willReturn(159_537L);
         assertThat(reader.monthlyPace(USER, allocation(demand(3L, 17_460_000L)), TODAY)).isEqualTo(53_179L);
 
         // 적금 40만을 붓지만 입출금은 월 10만씩 줄고 있다 → 30만. 합이 음수면 0
         given(jdbc.readPaidPaymentTotals(eq(List.of(21L)), eq(FROM), eq(TO))).willReturn(Map.of(21L, 1_200_000L));
-        given(jdbc.readNetCashflow(USER, FROM, TO)).willReturn(-300_000L);
+        given(jdbc.readNetCashflow(USER, List.of(3L), FROM, TO)).willReturn(-300_000L);
         assertThat(reader.monthlyPace(USER, allocation(demand(3L, 1_000_000L), savings(21L, 5_000_000L)), TODAY))
                 .isEqualTo(300_000L);
-        given(jdbc.readNetCashflow(USER, FROM, TO)).willReturn(-1_800_000L);
+        given(jdbc.readNetCashflow(USER, List.of(3L), FROM, TO)).willReturn(-1_800_000L);
         assertThat(reader.monthlyPace(USER, allocation(demand(3L, 1_000_000L), savings(21L, 5_000_000L)), TODAY)).isZero();
     }
 
     @Test
     void demandDepositWithHistoryOnlyThisMonthHasNoPaceYet() {
         // 이번 달에 첫 거래 → 완료 월 이력이 없어 0. 8월에 시작했으면 8월 한 달로 나눈다
-        given(jdbc.readFirstTransactionDate(USER)).willReturn(Optional.of(LocalDate.of(2026, 9, 2)));
-        given(jdbc.readNetCashflow(USER, FROM, TO)).willReturn(0L);
+        given(jdbc.readFirstTransactionDate(USER, List.of(3L))).willReturn(Optional.of(LocalDate.of(2026, 9, 2)));
+        given(jdbc.readNetCashflow(USER, List.of(3L), FROM, TO)).willReturn(0L);
         assertThat(reader.monthlyPace(USER, allocation(demand(3L, 500_000L)), TODAY)).isZero();
 
-        given(jdbc.readFirstTransactionDate(USER)).willReturn(Optional.of(LocalDate.of(2026, 8, 20)));
-        given(jdbc.readNetCashflow(USER, FROM, TO)).willReturn(250_000L);
+        given(jdbc.readFirstTransactionDate(USER, List.of(3L))).willReturn(Optional.of(LocalDate.of(2026, 8, 20)));
+        given(jdbc.readNetCashflow(USER, List.of(3L), FROM, TO)).willReturn(250_000L);
         assertThat(reader.monthlyPace(USER, allocation(demand(3L, 500_000L)), TODAY)).isEqualTo(250_000L);
+    }
+
+    @Test
+    void demandDepositQueryReceivesOnlyLinkedDemandAccountIds() {
+        List<Long> linkedDemandIds = List.of(3L, 5L);
+        given(jdbc.readFirstTransactionDate(USER, linkedDemandIds)).willReturn(Optional.of(LocalDate.of(2026, 6, 1)));
+        given(jdbc.readNetCashflow(USER, linkedDemandIds, FROM, TO)).willReturn(600_000L);
+
+        assertThat(reader.monthlyPace(USER,
+                allocation(demand(3L, 500_000L), savings(4L, 300_000L), demand(5L, 200_000L)), TODAY))
+                .isEqualTo(200_000L);
+        verify(jdbc).readNetCashflow(USER, linkedDemandIds, FROM, TO);
     }
 
     @Test

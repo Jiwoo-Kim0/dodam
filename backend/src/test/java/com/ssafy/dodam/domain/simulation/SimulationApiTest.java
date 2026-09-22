@@ -105,11 +105,11 @@ class SimulationApiTest {
             expense(LocalDate.of(2026, month, 20), 400_000L, null);
         }
         expense(LocalDate.of(2026, 9, 3), 5_000_000L, null);
-        // 저축속도(694): 입출금 연결이라 6·7·8월 순현금흐름 = (933,333 − 600,000) × 3 / 3 = 333,333
-        for (int month = 6; month <= 8; month++) {
-            income(LocalDate.of(2026, month, 25), 933_333L);
-        }
         accountId = insertAccount(owner, ACCOUNT_NO, 1_000_000L);
+        // 저축속도(694·702): 연결 입출금 계좌의 6·7·8월 순현금흐름 333,333 × 3 / 3 = 333,333. 위 지출은 계좌도 카드도 없어 속도에 들어가지 않는다
+        for (int month = 6; month <= 8; month++) {
+            income(accountId, LocalDate.of(2026, month, 25), 333_333L);
+        }
         // 속도 333,333, 남은 2,000,000 → 6개월 + 2원/333,333 × 31일(올림 1일) = 2027-03-14 (658 일 단위)
         Goal goal = goals.save(Goal.create(owner, "비상금", GoalType.SAVING, NOW.minusMonths(3)));
         goalId = goal.getId();
@@ -382,13 +382,16 @@ class SimulationApiTest {
                 """, UUID.randomUUID().toString(), owner, categoryId, date, amount, NOW);
     }
 
-    /** 저축속도(694 GoalSavingPaceReader)용 수입. 입출금 연결 목표의 속도는 직전 3개 완료 월의 사용자 순현금흐름이다. */
-    private void income(LocalDate date, long amount) {
+    /**
+     * 저축속도(694·702 GoalSavingPaceReader)용 수입. 입출금 연결 목표의 속도는 직전 3개 완료 월 중 목표에 연결된 입출금 계좌의
+     * 순현금흐름이므로 수입 행에 그 계좌의 account_id를 넣는다. 계좌도 카드도 없는 지출 행은 속도에 들어가지 않는다.
+     */
+    private void income(Long accountId, LocalDate date, long amount) {
         jdbc.update("""
-                INSERT INTO `transaction` (transaction_id, user_id, transaction_date, transaction_type, amount,
+                INSERT INTO `transaction` (transaction_id, user_id, account_id, transaction_date, transaction_type, amount,
                     payment_method, spending_type, summary, hidden, source_type, created_at)
-                VALUES (?, ?, ?, 'INCOME', ?, 'ACCOUNT', 'NON_SPENDING', 'salary', FALSE, 'SEED', ?)
-                """, UUID.randomUUID().toString(), owner, date, amount, NOW);
+                VALUES (?, ?, ?, ?, 'INCOME', ?, 'ACCOUNT', 'NON_SPENDING', 'salary', FALSE, 'SEED', ?)
+                """, UUID.randomUUID().toString(), owner, accountId, date, amount, NOW);
     }
 
     private Long insertAccount(Long userId, String accountNo, long balance) {

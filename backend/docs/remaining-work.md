@@ -2,7 +2,20 @@
 
 마지막 갱신: 2026-09-22
 
-백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 629, 632, 587, 589, 611, 627, 628, 633, 635, 636, 640·641, 675, 696이다.
+백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 629, 632, 587, 589, 611, 627, 628, 633, 635, 636, 640·641, 675, 696, 701, 702이다.
+
+## S15P21D105-702 — [BE] 저축속도 연결 계좌 한정·소비 증가 추천 단축 일수 목표일 검사
+
+계약: [goal.md](goal.md) §저축속도, [recommendation-api.md](recommendation-api.md) §2 `CATEGORY_SPENDING_INCREASE`(버전 `702.1`), [discovery-report-metrics-675.md](discovery-report-metrics-675.md) §3.
+
+- [x] 모으기 목표 저축속도의 입출금 부분을 사용자 전체 순현금흐름에서 **목표에 연결된 입출금 계좌의 순현금흐름**으로 한정(`JdbcGoalPaceReader`). 연결 계좌의 거래(`account_id`)와 그 계좌에서 대금이 빠지는 카드의 승인(`card.withdrawal_account_id`)을 센다 — 시연 seed는 변동 지출의 70%가 카드(`account_id NULL`)라 카드를 빼면 속도가 부풀려진다(09-22 정현진 결정). 카드 대금 결제는 `card_billing_statement`에만 있어 이중 계산 없음. 연결 입출금이 없으면 조회하지 않는다. 511 이력·546 goal-impact·시뮬레이션 기준선이 같은 정의를 쓴다. H2 SQL 검증 `JdbcGoalPaceReaderIntegrationTest`.
+- [x] `REDUCE_CATEGORY_SPENDING` 생성기 `702.1`: 개선 예상일이 스냅샷 `forecast.targetDate` 이내일 때만 `advancedDays`를 낸다. 목표일을 넘으면 날짜는 유지하고 `advancedDays = null`, 근거 evidence `goalImpactStatus = TARGET_DATE_NOT_MET`, 문구 "…이지만 목표일 …보다 늦어요." 요약 `expectedGoalAdvanceDays`도 그만큼 줄어든다.
+- [x] 통합 테스트 fixture(`Simulation*ApiTest` 3개, `GoalHistoryApiIntegrationTest`)의 수입 행에 연결 계좌 `account_id`를 넣도록 갱신. fixture의 지출 행은 계좌도 카드도 없어 속도에 들어가지 않으므로 `SimulationApiTest`의 수입을 933,333 → 333,333으로 바꿔 예상일(2027-03-14)을 유지했다.
+- [ ] 서비스 초기값 — 카드 귀속은 카드의 `withdrawal_account_id`만 본다. `card_id`도 `account_id`도 없는 거래(수동 입력 등)는 어느 목표에도 들어가지 않는다. 해지 카드의 과거 승인은 상태로 걸러내지 않는다.
+- [ ] 702 이전과의 차이: 연결하지 않은 계좌·카드의 거래가 빠지므로 입출금 계좌를 여러 개 가진 사용자는 속도가 달라진다. 시연 seed는 주거래 계좌 하나에 카드도 그 계좌라 BALANCED 코호트(U0001)의 속도는 702 이전과 같아야 한다 — 배포 뒤 실측으로 확인.
+- [ ] **시연 서버**: U0003은 678 seed가 적금 3개만 연결(입출금 미연결)해 속도가 바뀌지 않는다. U0001(입출금 연결)의 `GET /goals/{id}/forecast` 속도·예상일이 유지되는지 배포 뒤 실측하고, 진단 `forceRefresh` → 추천 재생성으로 `702.1` 추천을 만든다(696.1 추천은 남는다).
+- [ ] FE 인계(114): 발견 요약 "목표 N일 단축"이 `GOAL_ADVANCE_UNAVAILABLE`로 비는 경우가 늘 수 있다. 근거 `GOAL_FORECAST_ADVANCE.evidence.goalImpactStatus`로 "개선해도 목표일을 넘어요" 문구를 붙일 수 있다.
+- [ ] MySQL 검증: H2 통합 테스트만 통과. `account_id IN (:accountIds)`는 표준 SQL이라 별도 실측하지 않았다.
 
 ## S15P21D105-701 — [BE] 코치 칩 제안 개선 (맞춤 질문에 항목 카테고리·증가액)
 

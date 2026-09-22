@@ -197,7 +197,7 @@ class RecommendationGeneratorTest {
         Outcome outcome = categorySpending.generate(input(), issue(21L, "SPENDING", "CATEGORY_SPENDING_INCREASE", IssueSeverity.MEDIUM,
                 current, benchmark, evidence));
         RecommendationCandidate candidate = outcome.candidates().get(0);
-        assertThat(candidate.generatorVersion()).isEqualTo("696.1");
+        assertThat(candidate.generatorVersion()).isEqualTo("702.1");
         // 스냅샷에 목표가 없으면 날짜 효과·목표 근거가 없다(627.3과 같다)
         assertThat(candidate.goalId()).isNull();
         assertThat(candidate.effect().improvedForecastDate()).isNull();
@@ -257,7 +257,8 @@ class RecommendationGeneratorTest {
         // 7: 남은 1,200,000 · 속도 100,000/월 · 30일 지연 → 대상. 8: 더 밀렸지만 SPENDING. 9: forecast 없음(v3 이전). 10: 덜 밀림
         ObjectNode emergency = goals.addObject().put("goalId", 7L).put("type", "SAVING");
         emergency.putObject("goalSnapshot").put("name", "비상금");
-        emergency.putObject("forecast").put("remainingAmount", 1_200_000L).put("averageMonthlySaving", 100_000L).put("daysDifference", 30L);
+        emergency.putObject("forecast").put("remainingAmount", 1_200_000L).put("averageMonthlySaving", 100_000L)
+                .put("targetDate", "2027-06-01").put("daysDifference", 30L);
         goals.addObject().put("goalId", 8L).put("type", "SPENDING").putObject("forecast").put("daysDifference", 90L);
         goals.addObject().put("goalId", 9L).put("type", "SAVING").putObject("goalSnapshot").put("name", "여행");
         ObjectNode house = goals.addObject().put("goalId", 10L).put("type", "SAVING");
@@ -279,6 +280,8 @@ class RecommendationGeneratorTest {
         assertThat(forecast.path("goalName").asText()).isEqualTo("비상금");
         assertThat(forecast.path("baseDate").asText()).isEqualTo("2026-09-13");
         assertThat(forecast.path("improvedMonthlySaving").asLong()).isEqualTo(140_000L);
+        assertThat(forecast.path("targetDate").asText()).isEqualTo("2027-06-01");
+        assertThat(forecast.path("goalImpactStatus").asText()).isEqualTo("TARGET_DATE_MET");
         assertThat(forecast.path("advancedDays").asInt()).isEqualTo(105);
         assertThat(candidate.reasons().get(1).description())
                 .isEqualTo("이 금액을 '비상금' 저축에 더하면 예상 달성일이 2027-09-13에서 2027-05-31로 105일 앞당겨져요.");
@@ -289,6 +292,18 @@ class RecommendationGeneratorTest {
         assertThat(noForecast.goalId()).isNull();
         assertThat(noForecast.effect().advancedDays()).isNull();
         assertThat(noForecast.reasons()).hasSize(1);
+
+        // 개선 예상일이 목표일보다 늦으면 날짜 변화는 제공하되, 발견 요약에 쓰는 단축 일수는 노출하지 않는다.
+        emergency.withObject("forecast").put("targetDate", "2027-05-01");
+        RecommendationCandidate stillLate = categorySpending.generate(noGoalRequested, increase).candidates().get(0);
+        assertThat(stillLate.effect().currentForecastDate()).isEqualTo(LocalDate.of(2027, 9, 13));
+        assertThat(stillLate.effect().improvedForecastDate()).isEqualTo(LocalDate.of(2027, 5, 31));
+        assertThat(stillLate.effect().advancedDays()).isNull();
+        assertThat(stillLate.reasons().get(1).evidence().path("goalImpactStatus").asText())
+                .isEqualTo("TARGET_DATE_NOT_MET");
+        assertThat(stillLate.reasons().get(1).evidence().has("advancedDays")).isFalse();
+        assertThat(stillLate.reasons().get(1).description())
+                .isEqualTo("이 금액을 '비상금' 저축에 더하면 예상 달성일은 2027-05-31이지만 목표일 2027-05-01보다 늦어요.");
 
         // 현재 속도 0(연결 계좌 없음)이면 현재 달성일이 없어 단축일은 null, 개선 달성일만 있다
         emergency.putObject("forecast").put("remainingAmount", 1_200_000L).put("averageMonthlySaving", 0L).put("daysDifference", 30L);

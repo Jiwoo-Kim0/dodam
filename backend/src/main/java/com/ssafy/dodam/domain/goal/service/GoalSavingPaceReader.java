@@ -22,10 +22,10 @@ import org.springframework.stereotype.Component;
  * <ul>
  *   <li>예·적금(전액 연결): 창 안의 PAID 납입 합 / 납입 이력이 있는 개월 수. 창 안에 납입이 없고 창 이후에 가입한 계좌는
  *       약정 월 납입액(만기 전)으로 본다. 예금·만기 적금은 0.</li>
- *   <li>입출금(전액이든 담기든): 사용자 전체의 순현금흐름(수입 − 지출·이체) / 거래 이력이 있는 개월 수. 계좌별 잔액 이력이 없어
- *       계좌 단위로 재구성할 수 없고({@link JdbcGoalPaceReader}), 담은 금액은 사용자 여윳돈에서 옮겨지므로 여윳돈이 곧 속도다.
- *       음수면 예·적금 납입을 상쇄한다(적금은 붓지만 입출금이 줄고 있는 상태). 입출금 하나를 여러 목표에 담으면 같은 여윳돈이
- *       각 목표 속도에 들어간다 — 목표별 예상일은 "그 목표에만 여윳돈을 쓰면"의 뜻이다.</li>
+ *   <li>입출금(전액이든 담기든): 목표에 연결된 입출금 계좌의 순현금흐름(수입 − 지출·이체) / 거래 이력이 있는 개월 수.
+ *       그 계좌에서 대금이 빠지는 카드의 승인 거래도 포함한다({@link JdbcGoalPaceReader}). 연결하지 않은 계좌·카드의 거래는
+ *       포함하지 않는다. 연결된 입출금 계좌에서 연결된 예·적금으로 이체하면 입출금 출금과 PAID 납입이 상쇄되므로 같은 저축을
+ *       중복 계산하지 않는다. 음수면 예·적금 납입을 상쇄한다.</li>
  * </ul>
  * 합이 음수면 0(현재 속도로는 달성 불가). 창을 완료 월로만 잡는 이유는 급여일 전의 이번 달을 넣으면 수입 없이 지출만 잡혀
  * 속도가 매달 초에 떨어졌다 올라오기 때문이다.
@@ -58,8 +58,10 @@ public class GoalSavingPaceReader {
                 .filter(item -> GoalAllocationReader.isExclusiveType(item.account().getAccountType()))
                 .map(item -> item.account().getId())
                 .toList();
-        boolean hasDemandDeposit = allocation.accounts().stream()
-                .anyMatch(item -> item.account().getAccountType() == AccountType.DEMAND_DEPOSIT);
+        List<Long> demandDeposits = allocation.accounts().stream()
+                .filter(item -> item.account().getAccountType() == AccountType.DEMAND_DEPOSIT)
+                .map(item -> item.account().getId())
+                .toList();
 
         long pace = 0L;
         if (!exclusive.isEmpty()) {
@@ -69,10 +71,10 @@ public class GoalSavingPaceReader {
                 pace += depositPace(paid.get(accountId), terms.get(accountId), first, last, today);
             }
         }
-        if (hasDemandDeposit) {
-            int months = monthsCovered(first, last, reader.readFirstTransactionDate(userId).orElse(null));
+        if (!demandDeposits.isEmpty()) {
+            int months = monthsCovered(first, last, reader.readFirstTransactionDate(userId, demandDeposits).orElse(null));
             if (months > 0) {
-                pace += reader.readNetCashflow(userId, from, to) / months;
+                pace += reader.readNetCashflow(userId, demandDeposits, from, to) / months;
             }
         }
         return Math.max(0L, pace);
