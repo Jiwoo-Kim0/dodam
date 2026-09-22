@@ -53,7 +53,7 @@ export function PeerComparisonChart({ features }: PeerComparisonChartProps) {
     return {
       labels: features.map((feature, index) => ({
         key: feature.key,
-        label: feature.label,
+        label: feature.axisLabel,
         point: pointAt(index, count, LABEL_RADIUS),
       })),
       medianPolygon: toPolygon(
@@ -62,10 +62,10 @@ export function PeerComparisonChart({ features }: PeerComparisonChartProps) {
       outerPolygon: toPolygon(features.map((_, index) => pointAt(index, count, MAX_RADIUS))),
       userPoints: features.map((feature, index) => ({
         key: feature.key,
-        point: pointAt(index, count, radiusFor(feature.axisValue)),
+        point: pointAt(index, count, radiusFor(feature.healthPercentile)),
       })),
       userPolygon: toPolygon(
-        features.map((feature, index) => pointAt(index, count, radiusFor(feature.axisValue))),
+        features.map((feature, index) => pointAt(index, count, radiusFor(feature.healthPercentile))),
       ),
     };
   }, [features]);

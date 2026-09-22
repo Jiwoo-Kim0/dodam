@@ -161,7 +161,7 @@ async function fetchReport(): Promise<MonthlyReport> {
     yearMonth: reportMonth.yearMonth,
     monthLabel: reportMonth.label,
     userName: user.name,
-    efficiencyScore: toEfficiencyScore(monthlyReport?.efficiency ?? null),
+    efficiencyScore: toEfficiencyScore(monthlyReport?.efficiency ?? null, monthlyReport?.period),
     patterns,
     patternCoachingMessage:
       coachSummary?.message.trim() ||

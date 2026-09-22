@@ -27,6 +27,21 @@ const FEATURE_AXIS_LABELS: Record<string, string> = {
 };
 
 /**
+ * 상세 화면 라벨 규칙. `{N}`은 서버가 준 분석 개월 수로 채운다.
+ *
+ * 금융 효율 점수 화면은 한 달치 점수를 보여 주는데 여기는 여러 달 평균이라, 라벨에 기간을
+ * 넣지 않으면 두 화면의 `소비율`이 같은 값처럼 읽힌다(698). 개월 수는 하드코딩하지 않고
+ * `analysisPeriod.months`를 그대로 쓴다.
+ */
+const FEATURE_DETAIL_LABEL_TEMPLATES: Record<string, string> = {
+  spendingToIncomeRatio: '{N}개월 평균 소비율',
+  savingRate: '{N}개월 평균 저축률',
+  fixedExpenseShare: '{N}개월 고정지출 비중',
+  discretionaryShare: '{N}개월 평균 재량소비 비중',
+  spendingVolatility: '{N}개월 소비 변동성',
+};
+
+/**
  * 특징별 방향. 서버가 `features[].direction`으로 내려 주며 이 표는 값이 빠졌을 때만 쓰는 대비책이다.
  * 방향을 모른 채 백분위를 그대로 그리면 축마다 좋고 나쁨이 뒤섞여 그래프가 의미를 잃는다.
  */
@@ -108,24 +123,35 @@ function toBadge(
   return isBetter ? { label: '좋아요', tone: 'good' } : { label, tone: 'watch' };
 }
 
-function toFeature(feature: PeerFeatureApiResponse): ReportPeerFeature {
+function toFeature(feature: PeerFeatureApiResponse, months: number | null): ReportPeerFeature {
   const direction = feature.direction ?? FALLBACK_DIRECTIONS[feature.feature] ?? 'HIGHER_IS_BETTER';
+  const axisLabel = FEATURE_AXIS_LABELS[feature.feature] ?? feature.displayName;
+  const detailTemplate = FEATURE_DETAIL_LABEL_TEMPLATES[feature.feature];
 
   return {
     badge: toBadge(feature.feature, feature.rankBand, direction),
     key: feature.feature,
-    label: FEATURE_AXIS_LABELS[feature.feature] ?? feature.displayName,
-    axisValue:
+    axisLabel,
+    // 개월 수를 모르면 기간 없이 축 라벨을 그대로 쓴다. 지어낸 기간을 적지 않는다.
+    detailLabel:
+      months === null || detailTemplate === undefined
+        ? axisLabel
+        : detailTemplate.replace('{N}', String(months)),
+    /*
+     * 낮을수록 좋은 특징만 백분위를 뒤집는다. 뒤집지 않으면 소비율이 높은 사람의 축이
+     * 바깥으로 뻗어 "좋아 보이는" 그래프가 된다.
+     */
+    healthPercentile:
       direction === 'LOWER_IS_BETTER'
         ? 100 - feature.percentileInPeer
         : feature.percentileInPeer,
-    percentile: feature.percentileInPeer,
-    userValue: feature.userValue,
-    peerP25: feature.peerP25,
-    peerMedian: feature.peerMedian,
-    peerP75: feature.peerP75,
-    userValueText: formatFeatureValue(feature.feature, feature.userValue),
-    peerMedianText:
+    peerPercentile: feature.percentileInPeer,
+    rawRatio: feature.userValue,
+    peerP25Ratio: feature.peerP25,
+    peerMedianRatio: feature.peerMedian,
+    peerP75Ratio: feature.peerP75,
+    rawRatioText: formatFeatureValue(feature.feature, feature.userValue),
+    peerMedianRatioText:
       feature.peerMedian === null
         ? null
         : formatFeatureValue(feature.feature, feature.peerMedian),
@@ -192,7 +218,7 @@ export function toPeerComparison(
     groupLabel: toGroupLabel(peerGroup),
     sampleSize: peerGroup.sampleSize,
     isFallback: peerGroup.fallbackFrom !== null,
-    features: features.map(toFeature),
+    features: features.map((feature) => toFeature(feature, response.analysisPeriod?.months ?? null)),
     analysisPeriodLabel: toAnalysisPeriodLabel(response.analysisPeriod),
     insights: response.insights.map((insight) => insight.message),
   };
