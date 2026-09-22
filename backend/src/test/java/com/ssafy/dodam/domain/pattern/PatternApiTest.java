@@ -3,16 +3,21 @@ package com.ssafy.dodam.domain.pattern;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.ssafy.dodam.domain.finance.entity.FinanceConnection;
 import com.ssafy.dodam.domain.finance.repository.FinanceConnectionRepository;
+import com.ssafy.dodam.domain.pattern.dto.response.PatternFeatureSummary.SourceFingerprint;
 import com.ssafy.dodam.domain.pattern.entity.AnalysisMode;
 import com.ssafy.dodam.domain.pattern.entity.PatternAnalysis;
 import com.ssafy.dodam.domain.pattern.entity.PatternAnalysisStatus;
@@ -21,7 +26,9 @@ import com.ssafy.dodam.domain.pattern.service.ClusterModelProvider;
 import com.ssafy.dodam.domain.pattern.service.PatternAnalysisExecutionStore;
 import com.ssafy.dodam.domain.pattern.service.PatternClock;
 import com.ssafy.dodam.domain.user.entity.User;
+import com.ssafy.dodam.domain.user.entity.UserRole;
 import com.ssafy.dodam.domain.user.repository.UserRepository;
+import com.ssafy.dodam.global.security.AuthPrincipal;
 import com.ssafy.dodam.global.exception.BusinessException;
 import com.ssafy.dodam.global.exception.ErrorCode;
 import java.sql.Timestamp;
@@ -38,6 +45,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -60,6 +69,7 @@ class PatternApiTest {
             YearMonth.of(2026, 3), YearMonth.of(2026, 4), YearMonth.of(2026, 5),
             YearMonth.of(2026, 6), YearMonth.of(2026, 7), YearMonth.of(2026, 8));
     private static final int PER_ARCHETYPE = 12;
+    private static final SourceFingerprint FINGERPRINT = new SourceFingerprint(0, 0, null, null);
 
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper json;
@@ -308,22 +318,118 @@ class PatternApiTest {
                 .andExpect(jsonPath("$.code").value("PATTERN_ANALYSIS_NOT_FOUND"));
     }
 
+    /**
+     * 700: 같은 날 재사용은 분석 기간 안 원천 거래가 그대로일 때만이다. 일반 사용자 경로(수동 거래 API·분류·숨김)를 그대로 타서
+     * 변경 뒤 오래된 분석이 재사용되지 않는지, 기간 밖·타인 변경은 재사용을 깨지 않는지 본다.
+     */
+    @Test
+    void 원천_거래가_바뀌면_같은_날에도_재사용하지_않고_기간_밖_변경은_재사용한다() throws Exception {
+        seedPopulation();
+        long id = analyzeExpecting(false);
+        analyzeExpecting(true, id);
+
+        // 추가(수동 거래 등록, 기간 안)
+        String added = json.readTree(mvc.perform(post("/api/v1/transactions").with(principal(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"transactionDate\":\"2026-07-20\",\"transactionType\":\"EXPENSE\",\"amount\":15000,"
+                                + "\"categoryId\":" + categories.get("FOOD") + ",\"paymentMethod\":\"CASH\"}"))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString()).at("/data/transactionId").asText();
+        long afterAdd = analyzeExpecting(false);
+        assertThat(afterAdd).isGreaterThan(id);
+        analyzeExpecting(true, afterAdd);
+
+        // 카테고리 변경
+        mvc.perform(patch("/api/v1/transactions/{id}/category", added).with(principal(owner))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"categoryId\":" + categories.get("GROCERY") + "}"))
+                .andExpect(status().isOk());
+        long afterCategory = analyzeExpecting(false);
+        assertThat(afterCategory).isGreaterThan(afterAdd);
+        analyzeExpecting(true, afterCategory);
+
+        // 숨김
+        mvc.perform(patch("/api/v1/transactions/{id}/visibility", added).with(principal(owner))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"hidden\":true}"))
+                .andExpect(status().isOk());
+        long afterHide = analyzeExpecting(false);
+        assertThat(afterHide).isGreaterThan(afterCategory);
+        analyzeExpecting(true, afterHide);
+
+        // 삭제(하드 삭제 — updated_at이 남지 않으므로 건수·금액 합으로 잡아야 한다)
+        mvc.perform(delete("/api/v1/transactions/{id}", added).with(principal(owner)))
+                .andExpect(status().isOk());
+        long afterDelete = analyzeExpecting(false);
+        assertThat(afterDelete).isGreaterThan(afterHide);
+        analyzeExpecting(true, afterDelete);
+
+        // 기간 밖(이번 달·기간 이전 달) 추가와 타인 거래 추가는 현재 분석을 무효화하지 않는다.
+        for (String date : List.of("2026-09-10", "2026-02-28")) {
+            mvc.perform(post("/api/v1/transactions").with(principal(owner))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"transactionDate\":\"" + date + "\",\"transactionType\":\"EXPENSE\",\"amount\":99000,"
+                                    + "\"categoryId\":" + categories.get("FOOD") + "}"))
+                    .andExpect(status().isCreated());
+        }
+        Long other = newUser("타인");
+        seedMonths(other, Archetype.SAVER, 0);
+        mvc.perform(post("/api/v1/transactions").with(principal(other))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"transactionDate\":\"2026-07-20\",\"transactionType\":\"EXPENSE\",\"amount\":15000,"
+                                + "\"categoryId\":" + categories.get("FOOD") + "}"))
+                .andExpect(status().isCreated());
+        analyzeExpecting(true, afterDelete);
+        assertThat(analyses.findFirstByUserIdAndStatusOrderByAnalyzedAtDescIdDesc(other, PatternAnalysisStatus.COMPLETED)).isEmpty();
+    }
+
+    /** 700 이전 완료 행은 지문이 없으므로 같은 날이어도 재사용하지 않는다. 오래된 결과 노출보다 한 번의 재계산이 낫다. */
+    @Test
+    void 지문이_없는_이전_분석은_같은_날에도_재사용하지_않는다() throws Exception {
+        seedPopulation();
+        long id = analyzeExpecting(false);
+        JsonNode summary = json.readTree(jdbc.queryForObject(
+                "SELECT feature_summary_json FROM pattern_analysis WHERE analysis_id = ?", String.class, id));
+        assertThat(summary.at("/sourceFingerprint/transactionCount").asLong()).isEqualTo(36);
+        ((ObjectNode) summary).remove("sourceFingerprint");
+        jdbc.update("UPDATE pattern_analysis SET feature_summary_json = ? FORMAT JSON WHERE analysis_id = ?", summary.toString(), id);
+
+        long recomputed = analyzeExpecting(false);
+        assertThat(recomputed).isGreaterThan(id);
+        analyzeExpecting(true, recomputed);
+    }
+
+    private long analyzeExpecting(boolean cached) throws Exception {
+        return json.readTree(mvc.perform(post("/api/v1/patterns/analyze").with(user(owner.toString())))
+                .andExpect(status().is(cached ? 200 : 201))
+                .andExpect(jsonPath("$.data.cached").value(cached))
+                .andReturn().getResponse().getContentAsString()).at("/data/analysis/analysisId").asLong();
+    }
+
+    private void analyzeExpecting(boolean cached, long expectedId) throws Exception {
+        assertThat(analyzeExpecting(cached)).isEqualTo(expectedId);
+    }
+
+    /** 거래 API는 @AuthenticationPrincipal AuthPrincipal을 쓰므로 실제 주체 객체로 인증한다(SimulationApiTest와 같다). */
+    private static org.springframework.test.web.servlet.request.RequestPostProcessor principal(Long userId) {
+        return authentication(new UsernamePasswordAuthenticationToken(new AuthPrincipal(userId, 1L, UserRole.USER), null,
+                List.of(new SimpleGrantedAuthority(UserRole.USER.authority()))));
+    }
+
     @Test
     void 진행_중_접수는_중복을_막고_폐기하면_바로_다시_받는다() {
-        var admitted = execution.admit(owner, AnalysisMode.HYBRID, false, 6);
+        var admitted = execution.admit(owner, AnalysisMode.HYBRID, false, 6, FINGERPRINT);
         assertThat(admitted.cached()).isFalse();
-        assertThatThrownBy(() -> execution.admit(owner, AnalysisMode.HYBRID, true, 6))
+        assertThatThrownBy(() -> execution.admit(owner, AnalysisMode.HYBRID, true, 6, FINGERPRINT))
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getErrorCode()).isEqualTo(ErrorCode.PATTERN_ANALYSIS_IN_PROGRESS);
 
         execution.abandon(owner, admitted.analysis().getId());
         assertThat(analyses.findById(admitted.analysis().getId())).isEmpty();
-        var next = execution.admit(owner, AnalysisMode.HYBRID, false, 6);
+        var next = execution.admit(owner, AnalysisMode.HYBRID, false, 6, FINGERPRINT);
         assertThat(next.cached()).isFalse();
 
         // 임대가 지난 접수는 새 접수를 막지 못하고, 늦게 도착한 완료는 만료로 거부된다.
         given(clock.now()).willReturn(NOW.plusMinutes(6));
-        var replacement = execution.admit(owner, AnalysisMode.HYBRID, false, 6);
+        var replacement = execution.admit(owner, AnalysisMode.HYBRID, false, 6, FINGERPRINT);
         assertThat(replacement.analysis().getId()).isGreaterThan(next.analysis().getId());
         assertThatThrownBy(() -> execution.complete(owner, next.analysis().getId(),
                 new PatternAnalysisExecutionStore.Completion(null, null, null)))

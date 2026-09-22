@@ -4,6 +4,7 @@ import com.ssafy.dodam.domain.finance.repository.FinanceConnectionRepository;
 import com.ssafy.dodam.domain.pattern.dto.request.AnalyzePatternRequest;
 import com.ssafy.dodam.domain.pattern.dto.response.AnalyzePatternResult;
 import com.ssafy.dodam.domain.pattern.dto.response.ClusterProfileResponse;
+import com.ssafy.dodam.domain.pattern.dto.response.PatternFeatureSummary.SourceFingerprint;
 import com.ssafy.dodam.domain.pattern.entity.AnalysisMode;
 import com.ssafy.dodam.domain.pattern.entity.PatternAnalysis;
 import com.ssafy.dodam.domain.pattern.repository.JdbcPatternFeatureReader;
@@ -69,10 +70,13 @@ public class PatternAnalysisRunner {
         int lookbackMonths = properties.lookbackMonths();
         PatternWindow window = PatternWindow.endingBefore(clock.today(), lookbackMonths);
 
+        // (700) 지문은 집계보다 먼저 읽는다. 둘 사이에 거래가 바뀌면 저장 지문이 실제 입력보다 오래된 쪽이 되어 다음 요청이
+        // 재계산한다. 순서가 반대면 바뀐 거래를 반영하지 않은 결과가 새 지문으로 굳어 재사용된다.
+        SourceFingerprint fingerprint = reader.readSourceFingerprint(userId, window.startDate(), window.endDate());
         List<MonthlyPatternRow> rows = reader.readUserMonthly(userId, window.startDate(), window.endDate());
         requireAnalyzableData(userId, rows);
 
-        Admission admission = store.admit(userId, requestedMode, forceRefresh, lookbackMonths);
+        Admission admission = store.admit(userId, requestedMode, forceRefresh, lookbackMonths, fingerprint);
         if (admission.cached()) {
             return new AnalyzePatternResult(assembler.toResponse(admission.analysis()), true);
         }
@@ -84,7 +88,8 @@ public class PatternAnalysisRunner {
                 throw new BusinessException(ErrorCode.PATTERN_INSUFFICIENT_DATA);
             }
             ClusterAssigner.Outcome outcome = assigner.evaluate(requestedMode, features, forceRefresh);
-            Completion completion = new Completion(features, assembler.toJson(assembler.summarize(requestedMode, features, outcome)),
+            Completion completion = new Completion(features,
+                    assembler.toJson(assembler.summarize(requestedMode, features, outcome, fingerprint)),
                     outcome.assigned() ? attachment(userId, analysisId, outcome.cluster()) : null);
             PatternAnalysis completed = store.complete(userId, analysisId, completion);
             return new AnalyzePatternResult(assembler.toResponse(completed), false);

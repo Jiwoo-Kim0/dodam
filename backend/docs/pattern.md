@@ -83,7 +83,9 @@ seed 사용자(`seed.kmeans.u0001` ~ `u4000`)는 `finance_connection` 행이 없
 
 월 소득(`incomeBasis`): 기간 INCOME 거래가 있으면 그 월평균(TRANSACTIONS), 없으면 `financial_profile.monthly_income`(PROFILE), 둘 다 없으면 NONE.
 
-`featureSummary`에는 요청·적용 모드, fallback 사유, 기간, 소득 출처, 월평균 7종, 변동계수, 유동성 잔액·개월, 모델 표본 수, 군집 입력 특징, 월별 집계가 남는다.
+`featureSummary`에는 요청·적용 모드, fallback 사유, 기간, 소득 출처, 월평균 7종, 변동계수, 유동성 잔액·개월, 모델 표본 수, 군집 입력 특징, 월별 집계와
+원천 거래 지문(`sourceFingerprint`, 700)이 남는다. 지문은 분석 기간 안 사용자 거래를 **숨김 포함**으로 집계한 `transactionCount`·`amountSum`·`lastCreatedAt`·`lastUpdatedAt`이며
+같은 날 재사용 판정에만 쓴다(아래). 700 이전 분석에는 없다(`null`).
 
 ## 실행 흐름 (516)
 
@@ -91,7 +93,10 @@ seed 사용자(`seed.kmeans.u0001` ~ `u4000`)는 `finance_connection` 행이 없
 
 1. 기간 거래가 0건이면 접수하지 않고 409(연결 상태에 따라 코드 분기).
 2. `PatternAnalysisExecutionStore.admit`(사용자 행 비관적 잠금): 임대 5분 안의 RUNNING이 있으면 409. `forceRefresh=false`이고 **오늘**(Asia/Seoul) 완료된 결과가
-   같은 기간·같은 요청 모드로 있으면 그 결과를 200으로 돌려준다(요청 모드가 다르면 재사용하지 않음). 아니면 RUNNING 행을 만든다.
+   같은 기간·같은 요청 모드이고 **저장된 원천 거래 지문이 지금 지문과 같으면** 그 결과를 200으로 돌려준다. 아니면 RUNNING 행을 만든다.
+   - 지문(700)은 접수 전에 집계보다 먼저 읽는다. 분석 기간 안 거래의 추가(건수·`created_at`), 삭제(건수·금액 합 — 수동 거래 삭제는 하드 삭제라 `updated_at`이 남지 않는다),
+     숨김·카테고리·금액 변경(`updated_at`)이 모두 지문을 바꾼다. 기간 밖 거래와 다른 사용자 거래는 지문에 들어가지 않으므로 재사용을 깨지 않는다.
+   - 재사용하지 않는 경우: 요청 모드가 다름(RULE_ONLY ↔ HYBRID), 지문이 다름, 700 이전 분석이라 지문이 없음(배포 후 사용자당 첫 요청 한 번은 재계산된다).
 3. 잠금 밖에서 지표 계산, HYBRID면 군집 배정(아래).
 4. `complete`(다시 잠금): RUNNING이고 임대 안이고 이후 접수가 없을 때만 COMPLETED로 바꾼다. 아니면 `PATTERN_ANALYSIS_EXPIRED`.
 5. `BusinessException`이면 접수 행 삭제, 그 외 런타임 오류면 FAILED로 남긴다. 군집 모델 오류는 여기까지 오지 않는다(RULE_ONLY 전환).
@@ -344,6 +349,7 @@ seed 사용자의 `finance_connection`이 없어도 분석은 되며(데이터 �
 **주의**: seed는 성향별 소비 비율을 규칙으로 만든 합성 데이터라 ARI 1.0은 "설계를 되찾았다"는 뜻이지 실사용자 성능이 아니다.
 - 통합(H2, `PatternApiTest`): 성향 4종 × 12명 모집단 + 본인(저축형 + 대출상환 + 입출금 계좌). HYBRID 배정("저축 중심형")·같은 날 재사용·forceRefresh, RULE_ONLY 요청·모드 불일치
   비재사용·잘못된 모드 400, 모집단 부족 fallback, 데이터 2개월 사용자 fallback, 데이터 없음(연결 상태별 409)·조회 404/409·기본 프로필, 소비/자금운용/우선순위 조회와
-  최근 분석의 clusterProfile 반영, 인증·소유권, 접수 중복·폐기·임대 만료.
+  최근 분석의 clusterProfile 반영, 인증·소유권, 접수 중복·폐기·임대 만료. 700: 거래 API로 기간 안 거래를 추가·분류 변경·숨김·삭제할 때마다 비재사용,
+  기간 밖(이번 달·기간 이전 달)·타인 거래 추가는 재사용, 지문 없는 이전 분석은 재계산.
 - MySQL(`PatternMySqlIntegrationTest`, `PATTERN_MYSQL_TEST_URL`로 활성화): V31 스키마 `validate`, 실제 MySQL 집계 SQL, JSON 객체 저장(`JSON_EXTRACT`), 41명 모집단 HYBRID 배정.
   2026-09-14 Docker mysql:8.0에서 통과. seed 4,000명 실측은 remaining-work 516 절 참고.
