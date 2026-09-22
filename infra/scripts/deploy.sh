@@ -277,6 +277,13 @@ docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --build --no-deps
 log "nginx 설정 리로드 (conf.d 변경 반영)"
 docker exec nginx nginx -s reload 2>/dev/null || log "nginx reload 생략(컨테이너 미기동?)"
 
+# prometheus.yml은 bind mount라 컨테이너가 재생성되지 않으면 그대로 남는다.
+# 위 `up -d`는 --force-recreate가 없어 서비스 정의·이미지가 그대로면 컨테이너를 건드리지 않는다.
+# nginx와 같은 이유로 여기서 설정만 다시 읽힌다(--web.enable-lifecycle이 켜져 있다).
+log "prometheus 설정 리로드 (스크레이프 잡 변경 반영)"
+docker exec prometheus wget -q --post-data="" -O- http://localhost:9090/-/reload >/dev/null 2>&1 \
+    || log "prometheus reload 생략(컨테이너 미기동?)"
+
 log "① readiness 검사 (의존성 포함): actuator/health"
 READY=0
 for i in $(seq 1 "$HEALTH_RETRIES"); do
