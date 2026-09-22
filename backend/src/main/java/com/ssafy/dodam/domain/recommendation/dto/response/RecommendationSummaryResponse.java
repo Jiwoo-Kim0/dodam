@@ -24,8 +24,8 @@ public record RecommendationSummaryResponse(
      * 최신 완료 진단 하나를 기준으로 한 "전체 개선 시" 수치. 위의 사용자 전체 합계와 달리 진단 한 건에 묶인 열린
      * 추천(PENDING·ACCEPTED)만 보며, 같은 문제({@code sourceIssueId})의 대안 추천은 절감액이 큰 하나만 센다.
      *
-     * @param issueCount              진단이 찾은 문제 수
-     * @param openRecommendationCount 계산에 넣은 열린 추천 수(중복 제거 전)
+     * @param issueCount              발견 화면이 세는 문제 수(675) — 진단 문제 중 GOAL 도메인을 뺀 수. {@code DiagnosisResponse.discoveryIssueCount}와 같다
+     * @param openRecommendationCount 계산에 넣은 열린 추천 수(중복 제거 전, GOAL 문제에서 나온 추천 제외)
      * @param expectedAnnualCostSaving 문제별 최대 연 절감액의 합. 금액 있는 추천이 없으면 null
      * @param expectedGoalAdvanceDays 열린 추천의 {@code advancedDays} 최댓값. 값이 있는 추천이 없으면 null
      * @param notes                   계산 가정·불가 사유 코드
@@ -45,6 +45,9 @@ public record RecommendationSummaryResponse(
         public static final String NO_OPEN_RECOMMENDATION = "NO_OPEN_RECOMMENDATION";
         public static final String ANNUAL_SAVING_UNAVAILABLE = "ANNUAL_SAVING_UNAVAILABLE";
         public static final String GOAL_ADVANCE_UNAVAILABLE = "GOAL_ADVANCE_UNAVAILABLE";
+        /** (675) 목표 위험(GOAL) 문제와 그 문제에서 나온 추천은 발견 목록에 없으므로 문제 수·절감액·단축일에서 뺐다. */
+        public static final String GOAL_ISSUES_EXCLUDED = "GOAL_ISSUES_EXCLUDED";
+        public static final String EXCLUDED_ISSUE_DOMAIN = "GOAL";
 
         public Discovery {
             notes = List.copyOf(notes);

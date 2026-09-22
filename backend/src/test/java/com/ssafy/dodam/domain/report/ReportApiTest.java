@@ -1,6 +1,7 @@
 package com.ssafy.dodam.domain.report;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -210,6 +211,8 @@ class ReportApiTest {
                 .andExpect(jsonPath("$.data.metrics.keyMetrics[3].key").value("LOAN_BALANCE"))
                 .andExpect(jsonPath("$.data.metrics.keyMetrics[3].value").value(0))
                 .andExpect(jsonPath("$.data.metrics.keyMetrics[3].asOf").value("CURRENT"))
+                // 전월 값 키는 null이어도 빠지지 않는다(694와 같은 이유)
+                .andExpect(jsonPath("$.data.metrics.keyMetrics[3].previousValue", nullValue()))
                 .andExpect(jsonPath("$.data.metrics.keyMetrics[3].previousUnavailableReason").value("HISTORY_NOT_STORED"))
                 // 697 패턴: 저축률 13% → CHECK(20% 미만), 진단에 소비 증가 문제 없음 → GOOD, 예측 HIGH 위험 1건 → CHECK
                 .andExpect(jsonPath("$.data.metrics.patterns.length()").value(3))
@@ -236,7 +239,10 @@ class ReportApiTest {
                 .andExpect(jsonPath("$.data.efficiency.availableDimensionCount").value(3))
                 .andExpect(jsonPath("$.data.efficiency.score").value(54))
                 .andExpect(jsonPath("$.data.efficiency.unavailableReason").doesNotExist())
-                .andExpect(jsonPath("$.data.efficiency.dimensions[3].score").doesNotExist())
+                // 계산 불가 항목의 score는 키를 빼지 않고 null로 내려간다. 키가 빠지면 FE(=== null 판정)가 undefined를 그린다(694)
+                .andExpect(jsonPath("$.data.efficiency.dimensions[3].score", nullValue()))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[3].value").doesNotExist())
+                .andExpect(jsonPath("$.data.efficiency.dimensions[3].grade").doesNotExist())
                 .andExpect(jsonPath("$.data.efficiency.dimensions[3].status").value("UNAVAILABLE"))
                 .andExpect(jsonPath("$.data.efficiency.dimensions[3].unavailableReason").value("CREDIT_SCORE_MISSING"))
                 .andExpect(jsonPath("$.data.efficiency.dimensions[4].unavailableReason").value("FORECAST_NOT_FOUND"))
@@ -260,6 +266,49 @@ class ReportApiTest {
                 // 6월은 사용자 첫 거래가 있는 달이라 5월 비교 대상이 없다 → 카드 전월 필드도 null
                 .andExpect(jsonPath("$.data.cardSpending").value(700_000))
                 .andExpect(jsonPath("$.data.cardSpendingPreviousMonth").doesNotExist());
+    }
+
+    @Test
+    void cashflowAndInefficiencyUseLatestForecastAndDiagnosisUpToMonthEnd() throws Exception {
+        // 8월 안에는 예측·진단이 없고, 7월 말 실행분과 9월 실행분만 있다(694).
+        // 7월 것은 8월 말일 시점에 사용자가 알던 마지막 상태라 8월 리포트에 들어가고, 9월 것은 8월 리포트가 보지 않는다.
+        CashflowForecast july = forecasts.save(CashflowForecast.start(owner, LocalDate.of(2026, 7, 30), 30, "v1", null,
+                LocalDateTime.of(2026, 7, 30, 9, 0)));
+        july.complete(500_000L, 300_000L, 100_000L, null, LocalDateTime.of(2026, 7, 30, 9, 1));
+        forecasts.save(july);
+        CashflowForecast september = forecasts.save(CashflowForecast.start(owner, LocalDate.of(2026, 9, 1), 30, "v1", null,
+                LocalDateTime.of(2026, 9, 1, 9, 0)));
+        september.complete(500_000L, 300_000L, -50_000L, LocalDate.of(2026, 9, 10), LocalDateTime.of(2026, 9, 1, 9, 1));
+        forecasts.save(september);
+        risks.save(CashflowRisk.of(september.getForecastId(), LocalDate.of(2026, 9, 10), "BALANCE_SHORTAGE", RiskSeverity.CRITICAL,
+                "잔액 부족", -50_000L));
+        Diagnosis julyDiagnosis = diagnoses.save(Diagnosis.start(owner, null, LocalDateTime.of(2026, 7, 31, 23, 0)));
+        julyDiagnosis.complete(1, 0, DiagnosisStatus.CAUTION, "v6-last-month-vs-3m", null, LocalDateTime.of(2026, 7, 31, 23, 1));
+        diagnoses.save(julyDiagnosis);
+        issues.save(DiagnosisIssue.ofRule(julyDiagnosis.getDiagnosisId(), "LOAN", "HIGH_INTEREST_RATE", IssueSeverity.MEDIUM,
+                "금리", "높아요", null, null, null, LocalDateTime.of(2026, 7, 31, 23, 1)));
+        Diagnosis septemberDiagnosis = diagnoses.save(Diagnosis.start(owner, null, LocalDateTime.of(2026, 9, 2, 9, 0)));
+        septemberDiagnosis.complete(3, 2, DiagnosisStatus.RISK, "v6-last-month-vs-3m", null, LocalDateTime.of(2026, 9, 2, 9, 1));
+        diagnoses.save(septemberDiagnosis);
+
+        mvc.perform(get("/api/v1/reports/monthly").with(user(owner.toString())))
+                .andExpect(status().isOk())
+                // 7월 예측은 위험 0건 → 100. 9월 예측의 CRITICAL은 반영되지 않는다
+                .andExpect(jsonPath("$.data.efficiency.dimensions[4].score").value(100))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[4].value").value(0))
+                // 7월 진단의 MEDIUM 1건 → 85
+                .andExpect(jsonPath("$.data.efficiency.dimensions[5].score").value(85))
+                .andExpect(jsonPath("$.data.efficiency.availableDimensionCount").value(5))
+                // 리포트의 진단 참조도 같은 진단이다
+                .andExpect(jsonPath("$.data.diagnosisId").value(julyDiagnosis.getDiagnosisId()))
+                .andExpect(jsonPath("$.data.overallStatus").value("CAUTION"));
+
+        // 7월 리포트(전월 점수 즉시 계산 경로 포함)는 7월 말일까지 것을 본다 — 같은 7월 실행분이 잡힌다
+        mvc.perform(get("/api/v1/reports/monthly").param("yearMonth", "2026-07").with(user(owner.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.efficiency.dimensions[4].score").value(100))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[5].score").value(85))
+                .andExpect(jsonPath("$.data.diagnosisId").value(julyDiagnosis.getDiagnosisId()));
     }
 
     @Test

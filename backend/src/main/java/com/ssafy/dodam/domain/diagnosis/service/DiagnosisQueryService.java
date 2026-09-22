@@ -27,18 +27,24 @@ public class DiagnosisQueryService {
 
     public PageResponse<DiagnosisResponse> history(Long userId, int page, int size) {
         return PageResponse.from(diagnoses.findByUserIdAndCompletedAtIsNotNullOrderByCreatedAtDescDiagnosisIdDesc(
-                userId, PageRequest.of(page, size)), DiagnosisResponse::from);
+                userId, PageRequest.of(page, size)), this::toResponse);
     }
 
     public DiagnosisResponse latest(Long userId, Long goalId) {
-        return DiagnosisResponse.from((goalId == null
+        return toResponse((goalId == null
                 ? diagnoses.findFirstByUserIdAndCompletedAtIsNotNullOrderByCompletedAtDescDiagnosisIdDesc(userId)
                 : diagnoses.findFirstByUserIdAndGoalIdAndCompletedAtIsNotNullOrderByCompletedAtDescDiagnosisIdDesc(userId, goalId))
                 .orElseThrow(DiagnosisQueryService::notFound));
     }
 
     public DiagnosisResponse detail(Long userId, Long diagnosisId) {
-        return DiagnosisResponse.from(owned(userId, diagnosisId));
+        return toResponse(owned(userId, diagnosisId));
+    }
+
+    /** 675: 발견 화면용 문제 수는 GOAL 도메인을 뺀 값이다. 소유권은 호출자가 확인한 진단만 넘어온다. */
+    private DiagnosisResponse toResponse(Diagnosis diagnosis) {
+        return DiagnosisResponse.from(diagnosis,
+                issues.countByDiagnosisIdAndDomain(diagnosis.getDiagnosisId(), DiagnosisResponse.DISCOVERY_EXCLUDED_DOMAIN));
     }
 
     public Summary summary(Long userId, Long diagnosisId) {

@@ -8,12 +8,13 @@ import java.util.List;
  * 월간 리포트 "주요 지표"·"금융 생활 패턴"(S15P21D105-697, {@code MonthlyReport.metrics}).
  *
  * <p>FE 리포트 화면(605 협의안)이 개별 API를 조합해 만들던 두 카드를 서버 값으로 내려 준다. 리포트 생성 시점에 효율 점수와 같은 입력
- * (리포트 합계·고정지출·그 달 완료 진단·그 달 마지막 완료 예측)으로 한 번 계산해 {@code monthly_report.metrics_summary}에 굳힌다.
+ * (리포트 합계·고정지출·그 달 말일까지 완료된 진단·기준일이 말일 이전인 마지막 완료 예측, 694 기준)으로 한 번 계산해 {@code monthly_report.metrics_summary}에 굳힌다.
  * 대출 잔액만 이력이 없어 생성(보강) 시점의 현재 값이다. 산식은 {@code MonthlyReportMetricsAssembler}(버전 {@code calculationVersion})이며
  * 임계값(저축률 20%)은 <b>서비스 초기값</b>이다.
  *
  * <ul>
- *   <li>계산할 수 없는 값은 {@code null} + {@code unavailableReason}이다. 0과 "모름"은 다르다.</li>
+ *   <li>계산할 수 없는 값은 {@code null} + {@code unavailableReason}이다. 0과 "모름"은 다르다. {@code value}·{@code previousValue}·
+ *       {@code difference} 키는 null이어도 항상 직렬화한다(694와 같은 이유 — FE가 {@code === null}로 판정하므로 키가 빠지면 undefined).</li>
  *   <li>전월 비교는 리포트 본문의 {@code previousMonth} 규칙과 같다 — 사용자 첫 거래 이전 달이면 전월 값·차이가 모두 null
  *       ({@code previousUnavailableReason = NO_PREVIOUS_MONTH}).</li>
  * </ul>
@@ -49,7 +50,6 @@ public record MonthlyReportMetricsResponse(
      * @param asOf                      값의 기준. MONTH(그 달 집계) / CURRENT(생성·보강 시점 현재 값 — 대출 잔액)
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record KeyMetric(
             String key,
             String label,
@@ -57,8 +57,8 @@ public record MonthlyReportMetricsResponse(
             Number value,
             Number previousValue,
             Number difference,
-            String unavailableReason,
-            String previousUnavailableReason,
+            @JsonInclude(JsonInclude.Include.NON_NULL) String unavailableReason,
+            @JsonInclude(JsonInclude.Include.NON_NULL) String previousUnavailableReason,
             String asOf
     ) {
     }
@@ -75,15 +75,14 @@ public record MonthlyReportMetricsResponse(
      * @param evidence          FE가 그대로 쓸 수 있는 근거 수치(패턴마다 다름). 없으면 null
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Pattern(
             String key,
             String status,
             String title,
             String description,
             String evidencePeriod,
-            String unavailableReason,
-            com.fasterxml.jackson.databind.JsonNode evidence
+            @JsonInclude(JsonInclude.Include.NON_NULL) String unavailableReason,
+            @JsonInclude(JsonInclude.Include.NON_NULL) com.fasterxml.jackson.databind.JsonNode evidence
     ) {
     }
 }

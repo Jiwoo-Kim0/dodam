@@ -31,13 +31,13 @@ import org.springframework.transaction.annotation.Transactional;
  * 월간 리포트 "주요 지표"·"금융 생활 패턴"을 만든다(S15P21D105-697). 계약: {@code MonthlyReportMetricsResponse},
  * discovery-report-metrics-675.md §2.
  *
- * <p>입력은 효율 점수({@link EfficiencyScoreCalculator})와 같다 — 리포트 합계(저장값), 고정지출 {@code bySpendingType.FIXED}, 그 달 안에
- * 완료된 가장 최근 진단({@code MonthlyReport.diagnosisId})의 문제, 기준일이 그 달 안인 마지막 완료 현금흐름 예측의 위험. 두 카드의 숫자가
+ * <p>입력은 효율 점수({@link EfficiencyScoreCalculator})와 같다 — 리포트 합계(저장값), 고정지출 {@code bySpendingType.FIXED}, 그 달 말일까지
+ * 완료된 가장 최근 진단({@code MonthlyReport.diagnosisId})의 문제, 기준일이 그 달 말일 이전인 마지막 완료 현금흐름 예측의 위험(694 기준). 두 카드의 숫자가
  * 육각형 점수의 근거 수치와 어긋나지 않게 하기 위해서다. 대출 잔액만 월별 이력이 없어 생성(보강) 시점 현재 값({@code asOf = CURRENT})이다.
  *
  * <p>패턴 문구는 서버 템플릿이다. FE가 조합하던 3장(저축률·소비 증가·현금흐름)을 그대로 옮겼고, 소비 증가는 API 6 소비 급증(N개월 평균 대
  * N개월 평균) 대신 <b>진단의 카테고리 소비 증가 판정</b>(지난달 vs 직전 3개월 평균, 631)을 쓴다 — 발견 화면과 같은 판정이어야 두 화면이
- * 서로 다른 말을 하지 않는다. 그 달 진단이 없으면 "자료 없음"으로 두고 "늘어난 소비가 없다"고 말하지 않는다.
+ * 서로 다른 말을 하지 않는다. 말일까지 진단이 없으면 "자료 없음"으로 두고 "늘어난 소비가 없다"고 말하지 않는다.
  */
 @Component
 @Transactional(readOnly = true)
@@ -93,7 +93,7 @@ public class MonthlyReportMetricsAssembler {
      * @param cardSpending            그 달 카드 사용액
      * @param cardSpendingPrevious    전월 카드 사용액. 비교 불가면 null
      * @param cardSpendingDifference  카드 사용액 증감. 비교 불가면 null
-     * @param diagnosisId             그 달 안에 완료된 가장 최근 진단. 없으면 null
+     * @param diagnosisId             그 달 말일까지 완료된 가장 최근 진단(694). 없으면 null
      */
     public MonthlyReportMetricsResponse assemble(Long userId, YearMonth month, MonthAmounts totals, MonthAmounts previous,
             long cardSpending, Long cardSpendingPrevious, Long cardSpendingDifference, Long diagnosisId) {
@@ -168,7 +168,7 @@ public class MonthlyReportMetricsAssembler {
     private Pattern spendingIncreasePattern(Long userId, YearMonth month, Long diagnosisId) {
         if (diagnosisId == null) {
             return new Pattern(KEY_SPENDING_INCREASE, UNAVAILABLE, "소비 변화를 진단한 기록이 없어요",
-                    "이 달에 완료한 진단이 없어 소비 증가를 판정하지 못했어요.", month.toString(), REASON_DIAGNOSIS_NOT_FOUND, null);
+                    "이 달 말일까지 완료한 진단이 없어 소비 증가를 판정하지 못했어요.", month.toString(), REASON_DIAGNOSIS_NOT_FOUND, null);
         }
         List<DiagnosisIssue> increases = issues.findAllOwned(userId, diagnosisId).stream()
                 .filter(issue -> SPENDING_INCREASE_ISSUE_TYPE.equals(issue.getType()))
@@ -200,12 +200,13 @@ public class MonthlyReportMetricsAssembler {
     }
 
     private Pattern cashflowPattern(Long userId, YearMonth month) {
+        // 694와 같은 기준: 기준일이 그 달 말일 이전인 마지막 완료 예측(효율 점수 CASHFLOW 항목과 같은 예측).
         Optional<CashflowForecast> forecast = forecasts
-                .findFirstByUserIdAndStatusAndBaseDateBetweenOrderByBaseDateDescCompletedAtDescForecastIdDesc(
-                        userId, ForecastStatus.COMPLETED, month.atDay(1), month.atEndOfMonth());
+                .findFirstByUserIdAndStatusAndBaseDateLessThanEqualOrderByBaseDateDescCompletedAtDescForecastIdDesc(
+                        userId, ForecastStatus.COMPLETED, month.atEndOfMonth());
         if (forecast.isEmpty()) {
             return new Pattern(KEY_CASHFLOW_RISK, UNAVAILABLE, "현금흐름 예측 데이터가 없어요",
-                    "이 달에 실행한 현금흐름 예측이 없어 예정 잔액 위험을 확인하지 못했어요.", month.toString(), REASON_FORECAST_NOT_FOUND, null);
+                    "이 달 말일까지 완료한 현금흐름 예측이 없어 예정 잔액 위험을 확인하지 못했어요.", month.toString(), REASON_FORECAST_NOT_FOUND, null);
         }
         CashflowForecast f = forecast.get();
         String period = f.getBaseDate() + "~" + f.getBaseDate().plusDays(f.getHorizonDays() == null ? 0 : f.getHorizonDays());

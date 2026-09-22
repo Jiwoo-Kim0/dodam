@@ -36,7 +36,7 @@ import java.time.LocalDateTime;
  *       정의는 {@link MonthlyReportMetricsResponse}. 697 이전 리포트는 첫 월간 조회 때 채워진다. 저장 형식이 깨졌으면 null</li>
  * </ul>
  *
- * @param diagnosisId    그 달 안에 완료된 가장 최근 진단. 없으면 null
+ * @param diagnosisId    그 달 말일까지 완료된 가장 최근 진단(694). 없으면 null
  * @param overallStatus  위 진단의 종합 상태(HEALTHY / CAUTION / RISK). 진단이 없으면 null
  */
 public record MonthlyReportResponse(

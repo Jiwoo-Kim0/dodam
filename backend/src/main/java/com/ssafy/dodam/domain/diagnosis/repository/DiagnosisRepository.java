@@ -30,11 +30,12 @@ public interface DiagnosisRepository extends JpaRepository<Diagnosis, Long> {
     Optional<Diagnosis> findByDiagnosisIdAndUserId(Long diagnosisId, Long userId);
 
     /**
-     * 기간 안에 완료된 최신 진단 1건. 월간 리포트가 "그 달의 종합 상태"를 붙일 때 쓴다(S15P21D105-590).
-     * 그 달에 진단이 없으면 비어 있으며, 다른 달의 진단을 끌어다 쓰지 않는다.
+     * {@code to} 이전에 완료된 최신 진단 1건. 월간 리포트가 "그 달 말일 기준 종합 상태"를 붙일 때 쓴다
+     * (S15P21D105-590, 694에서 "그 달 안"에서 "그 달 말일까지"로 완화). 그 달 이후에 완료된 진단은 보지 않으므로
+     * 과거 리포트가 현재 상태를 담지는 않는다.
      */
-    Optional<Diagnosis> findFirstByUserIdAndCompletedAtBetweenOrderByCompletedAtDescDiagnosisIdDesc(
-            Long userId, LocalDateTime from, LocalDateTime to
+    Optional<Diagnosis> findFirstByUserIdAndCompletedAtLessThanEqualOrderByCompletedAtDescDiagnosisIdDesc(
+            Long userId, LocalDateTime to
     );
 
     /** 진단 이력. 명세 14의 목록 조회는 최신순이다. */

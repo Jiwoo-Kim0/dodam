@@ -126,9 +126,12 @@ FE 발견 화면의 통합 수치(문제 수·전체 개선 시 연 절감액·�
 
 | 필드 | 계산 | 없을 때 |
 | --- | --- | --- |
-| `issueCount` | 진단의 `issueCount` | — |
-| `expectedAnnualCostSaving` | 같은 `sourceIssueId`의 대안 추천은 `annualCostSaving`이 큰 하나만 세고 문제별 값을 합산. `sourceIssueId`가 없는 추천(628 이전·여러 문제 합산)은 각각 센다 | 금액 있는 추천이 없으면 null, `ANNUAL_SAVING_UNAVAILABLE` |
-| `expectedGoalAdvanceDays` | 열린 추천 `advancedDays`의 **최댓값** | 값 있는 추천이 없으면 null, `GOAL_ADVANCE_UNAVAILABLE` |
+| `issueCount` | (675) 진단 문제 중 **GOAL 도메인을 뺀** 수 = `DiagnosisResponse.discoveryIssueCount`. 목표 위험은 발견 목록에 올리지 않으므로(607) 화면 목록 길이와 같다 | — |
+| `openRecommendationCount` | (675) 최신 진단의 PENDING·ACCEPTED 추천 중 GOAL 문제에서 나온 추천(`sourceIssueId`가 GOAL 문제)을 뺀 수 | — |
+| `expectedAnnualCostSaving` | 같은 `sourceIssueId`의 대안 추천은 `annualCostSaving`이 큰 하나만 세고 문제별 값을 합산. `sourceIssueId`가 없는 추천(628 이전·여러 문제 합산)은 각각 센다. GOAL 문제의 추천은 제외(675) | 금액 있는 추천이 없으면 null, `ANNUAL_SAVING_UNAVAILABLE` |
+| `expectedGoalAdvanceDays` | 열린 추천 `advancedDays`의 **최댓값**. 지금 값을 만드는 생성기는 저축 늘리기(GOAL 위험)뿐이라 GOAL 제외 뒤에는 대체로 null이다 — 소비 증가 추천이 값을 갖게 하는 것은 후속 696 | 값 있는 추천이 없으면 null, `GOAL_ADVANCE_UNAVAILABLE` |
+
+GOAL 문제·추천을 뺐으면 `notes`에 `GOAL_ISSUES_EXCLUDED`가 들어간다(675). 빼는 이유와 GOAL 문제 자체를 계속 만드는 이유는 [discovery-report-metrics-675.md](discovery-report-metrics-675.md) §1-1.
 
 - 목표 단축일을 더하지 않는 이유: 추천끼리 같은 목표에 효과가 겹치고, 정확한 합산은 프리셋들을 복합 시뮬레이션으로
   돌려야 하는데 그 실행은 저장 부수효과가 있어 조회 API에서 하지 않는다. 최댓값이라는 사실을 `GOAL_ADVANCE_IS_MAX_NOT_COMBINED`로
