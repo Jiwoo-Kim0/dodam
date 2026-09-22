@@ -1,6 +1,8 @@
 package com.ssafy.dodam.domain.recommendation.service;
 
 import com.ssafy.dodam.domain.diagnosis.entity.Diagnosis;
+import com.ssafy.dodam.domain.diagnosis.entity.DiagnosisIssue;
+import com.ssafy.dodam.domain.diagnosis.repository.DiagnosisIssueRepository;
 import com.ssafy.dodam.domain.diagnosis.repository.DiagnosisRepository;
 import com.ssafy.dodam.domain.goal.repository.GoalRepository;
 import com.ssafy.dodam.domain.recommendation.dto.response.RecommendationEffectResponse;
@@ -53,18 +55,21 @@ public class RecommendationQueryService {
     private final RecommendationReasonRepository reasons;
     private final RecommendationHistoryRepository histories;
     private final DiagnosisRepository diagnoses;
+    private final DiagnosisIssueRepository issues;
     private final GoalRepository goals;
     private final QueryPeriodPolicy periodPolicy;
     private final RecommendationClock clock;
     private final RecommendationSimulationPresetAssembler presets;
 
     public RecommendationQueryService(RecommendationRepository recommendations, RecommendationReasonRepository reasons,
-            RecommendationHistoryRepository histories, DiagnosisRepository diagnoses, GoalRepository goals,
-            QueryPeriodPolicy periodPolicy, RecommendationClock clock, RecommendationSimulationPresetAssembler presets) {
+            RecommendationHistoryRepository histories, DiagnosisRepository diagnoses, DiagnosisIssueRepository issues,
+            GoalRepository goals, QueryPeriodPolicy periodPolicy, RecommendationClock clock,
+            RecommendationSimulationPresetAssembler presets) {
         this.recommendations = recommendations;
         this.reasons = reasons;
         this.histories = histories;
         this.diagnoses = diagnoses;
+        this.issues = issues;
         this.goals = goals;
         this.periodPolicy = periodPolicy;
         this.clock = clock;
@@ -100,6 +105,10 @@ public class RecommendationQueryService {
      * 발견 화면 통합 수치. 사용자 전체 합계는 진단을 거듭할수록 같은 문제의 추천이 쌓여 부풀므로, 최신 완료 진단 한 건의
      * 열린 추천만 보고 같은 문제의 대안은 절감액이 큰 하나만 센다. 목표 단축일은 추천끼리 효과가 겹쳐 더할 수 없고
      * 복합 시뮬레이션은 저장 부수효과가 있어 조회에서 돌리지 않으므로, 최댓값을 주고 그 사실을 note로 남긴다.
+     *
+     * <p>(675) 목표 위험(GOAL 도메인 문제)은 발견 목록에 올리지 않으므로(607) 문제 수와 그 문제에서 나온 추천(저축 늘리기·소비 줄이기)을
+     * 여기서 뺀다. 그렇지 않으면 화면 목록에 없는 항목의 절감액·단축일이 통합 수치에 들어가 목록과 어긋난다. 뺀 사실은
+     * {@code GOAL_ISSUES_EXCLUDED}로 남긴다. {@code sourceIssueId}가 없는 추천(628 이전)은 어느 문제인지 알 수 없어 그대로 센다.
      */
     private RecommendationSummaryResponse.Discovery discovery(Long userId, List<Recommendation> all) {
         Optional<Diagnosis> latest = diagnoses.findFirstByUserIdAndCompletedAtIsNotNullOrderByCompletedAtDescDiagnosisIdDesc(userId);
@@ -107,10 +116,20 @@ public class RecommendationQueryService {
             return null;
         }
         Diagnosis diagnosis = latest.get();
+        List<DiagnosisIssue> allIssues = issues.findAllOwned(userId, diagnosis.getDiagnosisId());
+        Set<Long> excludedIssueIds = allIssues.stream()
+                .filter(i -> RecommendationSummaryResponse.Discovery.EXCLUDED_ISSUE_DOMAIN.equals(i.getDomain()))
+                .map(DiagnosisIssue::getIssueId)
+                .collect(Collectors.toSet());
+        int discoveryIssueCount = allIssues.size() - excludedIssueIds.size();
         List<Recommendation> open = all.stream()
                 .filter(r -> diagnosis.getDiagnosisId().equals(r.getDiagnosisId()) && EXPECTED_STATUSES.contains(r.getStatus()))
+                .filter(r -> r.getSourceIssueId() == null || !excludedIssueIds.contains(r.getSourceIssueId()))
                 .toList();
         List<String> notes = new ArrayList<>();
+        if (!excludedIssueIds.isEmpty()) {
+            notes.add(RecommendationSummaryResponse.Discovery.GOAL_ISSUES_EXCLUDED);
+        }
         if (open.isEmpty()) {
             notes.add(RecommendationSummaryResponse.Discovery.NO_OPEN_RECOMMENDATION);
         }
@@ -138,7 +157,7 @@ public class RecommendationQueryService {
                 ? RecommendationSummaryResponse.Discovery.GOAL_ADVANCE_UNAVAILABLE
                 : RecommendationSummaryResponse.Discovery.GOAL_ADVANCE_IS_MAX_NOT_COMBINED);
 
-        return new RecommendationSummaryResponse.Discovery(diagnosis.getDiagnosisId(), diagnosis.getIssueCount(),
+        return new RecommendationSummaryResponse.Discovery(diagnosis.getDiagnosisId(), discoveryIssueCount,
                 open.size(), annual, advance, notes);
     }
 

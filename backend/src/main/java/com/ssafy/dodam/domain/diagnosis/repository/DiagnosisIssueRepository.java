@@ -77,6 +77,12 @@ public interface DiagnosisIssueRepository extends JpaRepository<DiagnosisIssue, 
     );
 
     /**
+     * 도메인별 문제 수(675). 발견 화면이 세지 않는 GOAL 문제 수를 빼 {@code discoveryIssueCount}를 만들 때 쓴다. 호출자가 진단의
+     * 소유권을 먼저 확인한 뒤 부른다.
+     */
+    long countByDiagnosisIdAndDomain(Long diagnosisId, String domain);
+
+    /**
      * 재진단 시 이전 하위행을 지운다.
      *
      * <p>파생 삭제를 쓰면 Hibernate가 엔티티를 지연 삭제해 DELETE가 이어지는 INSERT보다 늦게 나갈 수

@@ -4,6 +4,7 @@ import com.ssafy.dodam.domain.report.dto.DailyReportResponse;
 import com.ssafy.dodam.domain.report.dto.EfficiencyScoreResponse;
 import com.ssafy.dodam.domain.report.dto.MonthlyGoalImpactResponse;
 import com.ssafy.dodam.domain.report.dto.MonthlyImprovementsResponse;
+import com.ssafy.dodam.domain.report.dto.MonthlyReportMetricsResponse;
 import com.ssafy.dodam.domain.report.dto.MonthlyReportResponse;
 import com.ssafy.dodam.domain.report.dto.MonthlyReportResponse.Financial;
 import com.ssafy.dodam.domain.report.dto.MonthlySpendingPatternResponse;
@@ -212,23 +213,23 @@ public class ReportService {
     }
 
     /**
-     * 635 이전에 굳힌 READY 리포트에 카드 사용액·효율 점수가 없으면 그 두 값만 채운다. 합계·생성 시각은 그대로다.
+     * 635·697 이전에 굳힌 READY 리포트에 카드 사용액·효율 점수·주요 지표/패턴이 없으면 그 값만 채운다. 합계·생성 시각은 그대로다.
      * 저장 형식을 읽지 못한 리포트({@code financial == null})는 건드리지 않는다 — {@code INSUFFICIENT_DATA}로 응답한다.
      */
     private void supplementIfMissing(Long userId, YearMonth month, MonthlyReport stored) {
         Financial financial = json.fromJson(stored.getFinancialSummary(), Financial.class);
-        if (financial == null || (financial.hasCardSpending() && stored.hasEfficiencySummary())) {
+        if (financial == null || (financial.hasCardSpending() && stored.hasEfficiencySummary() && stored.hasMetricsSummary())) {
             return;
         }
         MonthlyReportGenerator.Supplement supplement =
                 monthlyGenerator.supplement(userId, month, financial, stored.getDiagnosisId());
-        stored.supplement(supplement.financialSummary(), supplement.efficiencySummary());
+        stored.supplement(supplement.financialSummary(), supplement.efficiencySummary(), supplement.metricsSummary());
     }
 
     private static MonthlyReport.Content toEntityContent(MonthlyReportGenerator.Content content) {
         return new MonthlyReport.Content(content.dataStatus(), content.diagnosisId(), content.overallStatus(),
                 content.financialSummary(), content.spendingSummary(), content.goalSummary(),
-                content.improvementSummary(), content.efficiencySummary());
+                content.improvementSummary(), content.efficiencySummary(), content.metricsSummary());
     }
 
     private MonthlyReport monthlyReport(Report report) {
@@ -280,6 +281,7 @@ public class ReportService {
                 financial == null ? null : financial.cardSpendingPreviousMonth(),
                 financial == null ? null : financial.cardSpendingDifferenceFromPreviousMonth(),
                 json.fromJson(monthly.getEfficiencySummary(), EfficiencyScoreResponse.class),
+                json.fromJson(monthly.getMetricsSummary(), MonthlyReportMetricsResponse.class),
                 monthly.getDiagnosisId(), monthly.getOverallStatus(), status.unavailableReason());
     }
 }

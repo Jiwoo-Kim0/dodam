@@ -75,6 +75,9 @@ class DiagnosisApiTest {
     void emptyDataRemainsUnknownAndCacheCanBeRefreshed() throws Exception {
         String body = mvc.perform(post("/api/v1/diagnoses").with(user(owner.toString())))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.data.diagnosis.overallStatus").isEmpty())
+                .andExpect(jsonPath("$.data.diagnosis.issueCount").value(0))
+                // 675: 발견 화면용 문제 수(GOAL 제외)
+                .andExpect(jsonPath("$.data.diagnosis.discoveryIssueCount").value(0))
                 .andExpect(jsonPath("$.data.diagnosis.coverage").isArray())
                 // 641: 거래가 없으면 패턴 분석 자체가 없다 → 군집 규칙은 PATTERN_NOT_ANALYZED
                 .andExpect(jsonPath("$.data.diagnosis.coverage[?(@.ruleKey == 'CLUSTER')].reason").value("PATTERN_NOT_ANALYZED"))

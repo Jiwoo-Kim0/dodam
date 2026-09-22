@@ -1,8 +1,41 @@
 # 백엔드 남은 작업
 
-마지막 갱신: 2026-09-17
+마지막 갱신: 2026-09-22
 
-백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 629, 632, 587, 589, 611, 627, 628, 633, 635, 636, 640·641이다.
+백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 629, 632, 587, 589, 611, 627, 628, 633, 635, 636, 640·641, 675, 696이다.
+
+## S15P21D105-696 — [BE] 소비 증가 추천 목표 기여 계산 (advancedDays·후보 goalId)
+
+계약: [discovery-report-metrics-675.md](discovery-report-metrics-675.md) §3-1·§5, [recommendation-api.md](recommendation-api.md) §2. 675에서 분리한 후속 구현(607 요청 2). 브랜치는 675 위에 쌓였다.
+
+- [x] `REDUCE_CATEGORY_SPENDING` 생성기 `696.1`: 스냅샷 `goals[].forecast`로 현재·개선 달성일·`advancedDays`·`contributionAmount`, 대상 목표(요청 goalId, 없으면 가장 밀린 모으기 목표) → `Recommendation.goalId`, 근거 `GOAL_FORECAST_ADVANCE`. `RecommendationCandidate.goalId` 추가(9-arg 생성자 유지), 저장소 소유·일치 검증. 저축 늘리기·소비 줄이기 추천도 대상 목표를 싣는다.
+- [ ] **시연 서버**: 배포 뒤 U0001~U0004 `POST /diagnoses {forceRefresh:true}` → `POST /recommendations/generate`를 다시 실행해야 696.1 추천이 생긴다(기존 627.3 추천은 남고 FE 목록은 최신 진단 기준). U0003(내 집 마련 목표, 678)에서 `advancedDays`·`goal-impact` 실측.
+- [ ] FE 인계(114): `RecommendationEffectApiResponse`에 `currentForecastDate`·`improvedForecastDate`·`contributionAmount`(nullable) 추가 → 발견 상세 지연 배너를 `daysDifference`("지금 속도면")에서 추천 `advancedDays` + 근거 `goalName`(인과 문구)으로 전환 가능.
+- [ ] 서비스 초기값: 대상 목표 선택(가장 밀린 모으기 목표)과 "늘어난 금액 전부를 그 목표 저축에 돌린다" 가정. 기획이 다른 배분을 원하면 생성기 버전을 올린다.
+- [ ] 우선순위 점수에 `advancedDays`(30일당 5점)가 들어가 목표가 있는 사용자는 소비 증가 추천 순위가 올라간다. 시연 계정에서 대환·소비 추천 순서 변화 확인.
+
+## S15P21D105-675 — [BE] 발견·리포트 지표 계약 및 비효율 데이터 요건 정리
+
+계약 문서: [discovery-report-metrics-675.md](discovery-report-metrics-675.md)(비효율 항목표 §2, FE 114 공유표 §3, 후속 작업표 §5). FE 요청 원문 회신: [docs/discovery-backend-request.md](../../docs/discovery-backend-request.md) 각 절 `BE 회신`.
+
+- [x] 계약 보완 코드(추가 필드만): 진단 응답 `discoveryIssueCount`(= issueCount − GOAL 문제 수), `GET /recommendations/summary` `discovery`가 GOAL 문제·그 추천을 빼고 집계(`GOAL_ISSUES_EXCLUDED`).
+- [x] **GOAL 문제 생성은 유지** — 607 요청 1의 "만들지 말라"와 다른 결정. goal-impact·changes·코치·저축 프리셋·678 시연 seed가 입력으로 쓴다. 정현진 확인 필요(계약 문서 §2 GOAL 행).
+- [x] 비효율 항목 12종(활성 4·비노출 1·미구현 7·goal-impact 1) 대상·증상·필요 데이터·기간·기대 판정·적용/보류 판단 표. 정현진과 확정할 제안값은 표에 `제안` 표시.
+- [x] FE 114 공유표(지표별 비교군·단위·기준선·null 의미)와 발견 상세 스냅샷 키 확정.
+- [ ] 정현진 확인: §2 표의 `제안` 항목(적용/보류 판단, 임계값), GOAL 유지 결정. 확인되면 `제안` 표시를 지운다.
+- [ ] FE 114 공유: §3 표 전달. `DiagnosisApiResponse.discoveryIssueCount` 타입 추가는 선택(발견 홈 개수·요약을 서버 값으로 전환할 때).
+- [ ] 후속 구현(§5): **696** 소비 증가 추천 목표 기여(이 브랜치에 포함, 위 절), **697** 리포트 `metrics`(V43, 브랜치 `S15P21D105-697-report-metrics`).
+
+## S15P21D105-697 — [BE] 월간 리포트 주요 지표·금융 생활 패턴 서버 제공 (V44)
+
+계약: [improvement-report-contract.md](improvement-report-contract.md) §7. 675(지표 계약)에서 분리한 후속 구현.
+
+- [x] `MonthlyReport.metrics`(주요 지표 4 + 금융 생활 패턴 3) — `monthly_report.metrics_summary`(V44), `MonthlyReportMetricsAssembler`(`report-metrics-v1`). 697 이전 READY 리포트는 첫 월간 조회 때 보강(`supplementIfMissing` 확장). 효율 점수와 같은 입력이라 육각형 항목 `value`와 같은 수.
+- [ ] **시연 서버**: V44 적용(Flyway 자동. 김지우의 V43 `user_credit_score_int`가 먼저 들어와 번호를 옮겼다). 이미 생성된 8월 리포트는 다음 `GET /reports/monthly` 때 `metrics`가 채워진다. U0003 값(저축률·고정지출 비중이 효율 점수 항목 `value`와 같은지, SPENDING_INCREASE가 발견 화면 카테고리와 같은지) 확인.
+- [ ] FE 인계(114): `ReportKeyMetric`·`ReportFinancePattern`을 `metrics`로 전환하면 리포트 훅의 개별 API 9회 호출이 빠진다. `ReportPatternStatus`에 `unavailable` 추가.
+- [ ] 서비스 초기값: 저축률 양호 경계 20%(FE 임시값 이관), 소비 증가 판정을 진단 규칙(631)으로 통일(API 6 소비 급증과 다를 수 있음 — 627 절의 미해결 항목과 같은 줄기). 바꾸면 `report-metrics-v2`.
+- [ ] 대출 잔액 전월 비교는 월별 잔액 이력이 없어 `HISTORY_NOT_STORED`. 필요하면 대출 잔액 스냅샷(월말) 저장이 선행돼야 한다.
+- [ ] MySQL 검증: H2 통합 테스트(`ReportApiTest`)만 통과. JSON 컬럼 직렬화 경로는 V41과 같아 별도 실측하지 않았다. 서버 적용 후 `GET /reports/monthly` 1회로 확인.
 
 ## S15P21D105-640 — [BE, AI] 대화형 시뮬레이션 에이전트 · 군집 이탈 진단 연결
 

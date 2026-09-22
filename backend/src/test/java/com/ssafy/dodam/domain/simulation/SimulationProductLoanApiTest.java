@@ -95,7 +95,10 @@ class SimulationProductLoanApiTest {
         FinancialProfile profile = FinancialProfile.empty(owner);
         profile.update(3_000_000L, null, null, null, null);
         profiles.save(profile);
-        // 3개월 전 생성, 잔액 1,000,000 → 속도 333,333, 남은 2,000,000 → 6개월 + 1일(2026-07-02, 658 일 단위)
+        // 저축속도(694): 입출금 연결이라 2025-10~12 순현금흐름 333,333 × 3 / 3 = 333,333, 남은 2,000,000 → 6개월 + 1일(2026-07-02, 658 일 단위)
+        for (int month = 10; month <= 12; month++) {
+            income(LocalDate.of(2025, month, 25), 333_333L);
+        }
         Long accountId = insertAccount(owner, GOAL_ACCOUNT_NO, 1_000_000L);
         Goal goal = goals.save(Goal.create(owner, "비상금", GoalType.SAVING, NOW.minusMonths(3)));
         goalId = goal.getId();
@@ -457,6 +460,15 @@ class SimulationProductLoanApiTest {
                 """, userId, productId, hasher.hash(accountNo), status, maturity.minusYears(1), maturity, balance, balance,
                 new java.math.BigDecimal(rate), next, NOW);
         return jdbc.queryForObject("SELECT loan_id FROM loan WHERE user_id = ? AND account_no_hash = ?", Long.class, userId, hasher.hash(accountNo));
+    }
+
+    /** 저축속도(694 GoalSavingPaceReader)용 수입. 입출금 연결 목표의 속도는 직전 3개 완료 월의 사용자 순현금흐름이다. */
+    private void income(LocalDate date, long amount) {
+        jdbc.update("""
+                INSERT INTO `transaction` (transaction_id, user_id, transaction_date, transaction_type, amount,
+                    payment_method, spending_type, summary, hidden, source_type, created_at)
+                VALUES (?, ?, ?, 'INCOME', ?, 'ACCOUNT', 'NON_SPENDING', 'salary', FALSE, 'SEED', ?)
+                """, UUID.randomUUID().toString(), owner, date, amount, NOW);
     }
 
     private Long insertAccount(Long userId, String accountNo, long balance) {

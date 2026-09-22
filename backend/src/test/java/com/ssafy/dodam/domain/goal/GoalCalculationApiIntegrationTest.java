@@ -101,6 +101,7 @@ class GoalCalculationApiIntegrationTest {
         today = LocalDate.now(ZoneId.of("Asia/Seoul"));
 
         jdbcTemplate.update("DELETE FROM `transaction`");
+        jdbcTemplate.update("DELETE FROM savings_payment");
         jdbcTemplate.update("DELETE FROM goal_account");
         jdbcTemplate.update("DELETE FROM spending_goal");
         jdbcTemplate.update("DELETE FROM saving_goal");
@@ -195,10 +196,12 @@ class GoalCalculationApiIntegrationTest {
 
     @Test
     void requiredSavingDividesRemainingByRemainingMonthsAndComparesWithPace() throws Exception {
-        // 3개월 전 생성, 목표일은 오늘 + 6개월 + 10일 → 남은 개월 7(올림). 확보 300만 → 월평균 100만
+        // 3개월 전 생성, 목표일은 오늘 + 6개월 + 10일 → 남은 개월 7(올림). 확보 300만.
+        // 속도(694)는 확보액이 아니라 연결 적금의 직전 3개 완료 월 납입 → 월 100만
         long goalId = createSaving(10_000_000, today.plusMonths(6).plusDays(10));
         backdateCreatedAt(goalId, 3);
         link(goalId, List.of(MAIN_ID, SAVINGS_ID));
+        insertMonthlyPayments(SAVINGS_ID, 1_000_000);
         mockMvc.perform(patch("/api/v1/users/me/financial-profile").header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("monthlyIncome", 4_000_000))))
                 .andExpect(status().isOk());
@@ -218,10 +221,11 @@ class GoalCalculationApiIntegrationTest {
 
     @Test
     void requiredSavingFlagsInsufficientPaceAndPassedDeadline() throws Exception {
-        // 1개월 경과, 300만 확보(월평균 300만), 남은 700만을 2개월 안에 → 필요 350만 → INSUFFICIENT
+        // 1개월 경과, 300만 확보, 적금 납입 월 300만, 남은 700만을 2개월 안에 → 필요 350만 → INSUFFICIENT
         long goalId = createSaving(10_000_000, today.plusMonths(2));
         backdateCreatedAt(goalId, 1);
         link(goalId, List.of(MAIN_ID, SAVINGS_ID));
+        insertMonthlyPayments(SAVINGS_ID, 3_000_000);
         mockMvc.perform(get("/api/v1/goals/" + goalId + "/required-saving").header(HttpHeaders.AUTHORIZATION, bearer))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.monthsRemaining").value(2))
@@ -245,10 +249,11 @@ class GoalCalculationApiIntegrationTest {
 
     @Test
     void forecastProjectsAchievementDateFromCurrentPace() throws Exception {
-        // 3개월 경과, 300만 확보 → 월 100만. 남은 700만 → 7개월 뒤 달성. 목표일 오늘+6개월 → 1개월 늦음
+        // 3개월 경과, 300만 확보, 적금 납입 월 100만. 남은 700만 → 7개월 뒤 달성. 목표일 오늘+6개월 → 1개월 늦음
         long goalId = createSaving(10_000_000, today.plusMonths(6));
         backdateCreatedAt(goalId, 3);
         link(goalId, List.of(MAIN_ID, SAVINGS_ID));
+        insertMonthlyPayments(SAVINGS_ID, 1_000_000);
 
         LocalDate expected = today.plusMonths(7);
         mockMvc.perform(get("/api/v1/goals/" + goalId + "/forecast").param("months", "8")
@@ -280,6 +285,20 @@ class GoalCalculationApiIntegrationTest {
     @Test
     void forecastWithoutPaceHasNoExpectedDateAndValidatesParams() throws Exception {
         long goalId = createSaving(10_000_000, today.plusMonths(6));
+        mockMvc.perform(get("/api/v1/goals/" + goalId + "/forecast").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.averageMonthlySaving").value(0))
+                .andExpect(jsonPath("$.data.expectedAchievementDate").value(nullValue()));
+
+        // 694: 잔액이 있는 계좌를 방금 만든 목표에 연결해도 그 잔액이 "한 달 저축액"이 되지 않는다. 납입·순현금흐름이 없으면 속도 0
+        link(goalId, List.of(MAIN_ID, SAVINGS_ID));
+        mockMvc.perform(get("/api/v1/goals/" + goalId + "/forecast").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.currentAmount").value(3_000_000))
+                .andExpect(jsonPath("$.data.averageMonthlySaving").value(0))
+                .andExpect(jsonPath("$.data.expectedAchievementDate").value(nullValue()));
+        unlinkAll(goalId);
+
         mockMvc.perform(get("/api/v1/goals/" + goalId + "/forecast").header(HttpHeaders.AUTHORIZATION, bearer))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.averageMonthlySaving").value(0))
@@ -352,10 +371,11 @@ class GoalCalculationApiIntegrationTest {
                 .andExpect(jsonPath("$.data.metrics.requiredMonthlySaving").value(1_000_000))
                 .andExpect(jsonPath("$.data.metrics.averageMonthlySaving").value(0));
 
-        // 3개월 경과, 300만 확보(월 100만), 남은 700만/7개월 = 100만 → 속도 충분, 기대 진행률(≈33%) vs 실제 30% → LOW
+        // 3개월 경과, 300만 확보, 적금 납입 월 100만, 남은 700만/7개월 = 100만 → 속도 충분, 기대 진행률(≈33%) vs 실제 30% → LOW
         long steady = createSaving(10_000_000, today.plusMonths(6).plusDays(10));
         backdateCreatedAt(steady, 3);
         link(steady, List.of(MAIN_ID, SAVINGS_ID));
+        insertMonthlyPayments(SAVINGS_ID, 1_000_000);
         mockMvc.perform(get("/api/v1/goals/" + steady + "/risk").header(HttpHeaders.AUTHORIZATION, bearer))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.riskLevel").value("LOW"))
@@ -426,6 +446,16 @@ class GoalCalculationApiIntegrationTest {
     }
 
     /** 목표 생성일을 오늘 − months 로 되돌린다(경과 개월 계산용). */
+    /** 직전 3개 완료 월의 15일에 PAID 납입을 넣는다 → 저축속도(694) = monthly. deposit_saving 행이 없으면 창 전체를 이력으로 본다 */
+    private void insertMonthlyPayments(long accountId, long monthly) {
+        for (int back = 1; back <= 3; back++) {
+            jdbcTemplate.update(
+                    "INSERT INTO savings_payment (deposit_saving_id, account_type, payment_date, amount, installment_number, status) "
+                            + "VALUES (?, 'SAVINGS', ?, ?, ?, 'PAID')",
+                    accountId, today.minusMonths(back).withDayOfMonth(15), monthly, 4 - back);
+        }
+    }
+
     private void backdateCreatedAt(long goalId, int months) {
         LocalDateTime created = today.minusMonths(months).atTime(9, 0);
         jdbcTemplate.update("UPDATE goal SET created_at = ?, updated_at = ? WHERE goal_id = ?", created, created, goalId);

@@ -200,9 +200,11 @@ class RecommendationApiTest {
                 .andExpect(jsonPath("$.data.byDomain.SAVING").value(2))
                 .andExpect(jsonPath("$.data.expectedContributionAmount").value(2_000_000))
                 .andExpect(jsonPath("$.data.expectedMonthlyCostSaving").value(0))
-                // 발견 수치는 최신 진단 한 건만 본다
+                // 발견 수치는 최신 진단 한 건만 본다. 675: 목표 위험(GOAL) 문제와 그 추천(저축 늘리기)은 발견 목록에 없으므로 뺀다
                 .andExpect(jsonPath("$.data.discovery.diagnosisId").value(latestDiagnosis))
-                .andExpect(jsonPath("$.data.discovery.openRecommendationCount").value(1))
+                .andExpect(jsonPath("$.data.discovery.issueCount").value(0))
+                .andExpect(jsonPath("$.data.discovery.openRecommendationCount").value(0))
+                .andExpect(jsonPath("$.data.discovery.notes").value(org.hamcrest.Matchers.hasItems("GOAL_ISSUES_EXCLUDED", "NO_OPEN_RECOMMENDATION")))
                 .andExpect(jsonPath("$.data.discovery.expectedAnnualCostSaving").value(org.hamcrest.Matchers.nullValue()));
         mvc.perform(get("/api/v1/recommendations/summary").with(user(other.toString())))
                 .andExpect(jsonPath("$.data.total").value(0)).andExpect(jsonPath("$.data.byStatus.PENDING").value(0))
@@ -555,6 +557,72 @@ class RecommendationApiTest {
                 .andExpect(jsonPath("$.data.simulation.type").value("SPENDING"))
                 .andExpect(jsonPath("$.data.simulation.before.monthlySpending").value(140_000))
                 .andExpect(jsonPath("$.data.simulation.after.monthlySpending").value(100_000));
+    }
+
+    /**
+     * 696: 목표를 지정하지 않은 진단에서도 소비 증가 추천이 모으기 목표를 겨냥한다 — goalId는 스냅샷 목표, 개선 달성일은 늘어난 금액을 저축에
+     * 더한 속도로 계산되며 goal-impact가 NO_GOAL/NOT_CALCULATED가 아니다. 연결 계좌가 없어 현재 속도가 0이면 현재 달성일·단축일은 null이다.
+     * 같은 진단의 저축 늘리기 추천도 후보 goalId로 목표를 가리키고, 발견 요약은 GOAL 문제·추천을 빼고 센다.
+     */
+    @Test
+    void categorySpendingRecommendationTargetsSavingGoalWithoutDiagnosisGoal() throws Exception {
+        Long fresh = users.save(User.createLocalUser(UUID.randomUUID() + "@example.com", "unused", "675")).getId();
+        long food = category("FOOD", "식비");
+        for (int month = 3; month <= 5; month++) {
+            expense(fresh, LocalDate.of(2026, month, 5), 100_000L, food);
+        }
+        expense(fresh, LocalDate.of(2026, 6, 5), 120_000L, food);
+        expense(fresh, LocalDate.of(2026, 7, 5), 140_000L, food);
+        expense(fresh, LocalDate.of(2026, 8, 5), 160_000L, food);
+        Goal emergency = goals.save(Goal.create(fresh, "비상금", GoalType.SAVING, NOW.minusMonths(2)));
+        savingGoals.save(SavingGoal.create(emergency.getId(), 1_000_000L, NOW.toLocalDate().plusMonths(6)));
+
+        long diagnosisId = diagnose(fresh, null);
+        mvc.perform(get("/api/v1/diagnoses/latest").with(user(fresh.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.issueCount").value(2))
+                .andExpect(jsonPath("$.data.discoveryIssueCount").value(1));
+        String generated = mvc.perform(post("/api/v1/recommendations/generate").with(user(fresh.toString())).contentType(JSON)
+                        .content("{\"diagnosisId\":" + diagnosisId + "}"))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.data.goalId").isEmpty())
+                .andReturn().getResponse().getContentAsString();
+        JsonNode reduce = null;
+        JsonNode saving = null;
+        for (JsonNode item : json.readTree(generated).at("/data/items")) {
+            JsonNode recommendation = item.path("recommendation");
+            if ("REDUCE_CATEGORY_SPENDING".equals(recommendation.path("type").asText())) {
+                reduce = recommendation;
+            } else if ("INCREASE_MONTHLY_SAVING".equals(recommendation.path("type").asText())) {
+                saving = recommendation;
+            }
+        }
+        assertThat(reduce).as("REDUCE_CATEGORY_SPENDING 추천").isNotNull();
+        assertThat(saving).as("INCREASE_MONTHLY_SAVING 추천").isNotNull();
+        assertThat(reduce.path("goalId").asLong()).isEqualTo(emergency.getId());
+        assertThat(saving.path("goalId").asLong()).isEqualTo(emergency.getId());
+        assertThat(reduce.at("/effect/monthlyCostSaving").asLong()).isEqualTo(40_000L);
+        assertThat(reduce.at("/effect/contributionAmount").asLong()).isEqualTo(40_000L);
+        assertThat(reduce.at("/effect/currentForecastDate").isNull()).isTrue();
+        // 남은 1,000,000을 월 40,000으로 → 25개월 뒤(기준일 = 진단 접수일)
+        assertThat(reduce.at("/effect/improvedForecastDate").asText()).isEqualTo(NOW.toLocalDate().plusMonths(25).toString());
+        assertThat(reduce.at("/effect/advancedDays").isNull()).isTrue();
+        long reduceId = reduce.path("recommendationId").asLong();
+
+        mvc.perform(get("/api/v1/recommendations/{id}/goal-impact", reduceId).with(user(fresh.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.goalId").value(emergency.getId()))
+                .andExpect(jsonPath("$.data.unavailableReason").isEmpty())
+                .andExpect(jsonPath("$.data.improvedForecastDate").value(NOW.toLocalDate().plusMonths(25).toString()))
+                .andExpect(jsonPath("$.data.contributionAmount").value(40_000));
+        mvc.perform(get("/api/v1/recommendations/{id}/reasons", reduceId).with(user(fresh.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.code == 'GOAL_FORECAST_ADVANCE')].evidence.goalName").value("비상금"));
+        mvc.perform(get("/api/v1/recommendations/summary").with(user(fresh.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.discovery.issueCount").value(1))
+                .andExpect(jsonPath("$.data.discovery.openRecommendationCount").value(1))
+                .andExpect(jsonPath("$.data.discovery.expectedAnnualCostSaving").value(480_000))
+                .andExpect(jsonPath("$.data.discovery.notes").value(org.hamcrest.Matchers.hasItem("GOAL_ISSUES_EXCLUDED")));
     }
 
     /** 628: 생성·목록·priorities·상세·상태변경 응답 모두 같은 sourceIssueId를 싣고, 그 값은 진단 문제 id와 같다. */

@@ -30,7 +30,13 @@ import java.time.LocalDateTime;
  * </ul>
  * 635 이전에 만들어진 READY 리포트는 세 필드가 비어 있다가 {@code /reports/monthly} 조회 때 채워진다(합계는 그대로).
  *
- * @param diagnosisId    그 달 말일까지 완료된 가장 최근 진단(694). 없으면 null
+ * <h2>697 추가 필드</h2>
+ * <ul>
+ *   <li>{@code metrics} — "주요 지표"(저축률·고정지출 비중·카드 사용액·대출 잔액, 전월 비교)와 "금융 생활 패턴"(저축률·소비 증가·현금흐름 위험 3장).
+ *       정의는 {@link MonthlyReportMetricsResponse}. 697 이전 리포트는 첫 월간 조회 때 채워진다. 저장 형식이 깨졌으면 null</li>
+ * </ul>
+ *
+ * @param diagnosisId    그 달 말일까지 완료된 가장 최근 진단, 없으면 생성 시점 최신 진단(694). 진단이 하나도 없으면 null
  * @param overallStatus  위 진단의 종합 상태(HEALTHY / CAUTION / RISK). 진단이 없으면 null
  */
 public record MonthlyReportResponse(
@@ -51,6 +57,7 @@ public record MonthlyReportResponse(
         Long cardSpendingPreviousMonth,
         Long cardSpendingDifferenceFromPreviousMonth,
         EfficiencyScoreResponse efficiency,
+        MonthlyReportMetricsResponse metrics,
         Long diagnosisId,
         String overallStatus,
         String unavailableReason
