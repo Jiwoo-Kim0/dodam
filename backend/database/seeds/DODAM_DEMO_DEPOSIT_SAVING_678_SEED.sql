@@ -7,21 +7,24 @@
 --             524 (recommended: 493 links U0003's saving goal to MIN(account_id) among DEPOSIT/SAVINGS SEED accounts,
 --                  so 524's DEPOSIT must exist before this file gives U0003 SAVINGS rows), 493 (optional, independent goal),
 --             fixture table below (backend/scripts/make_demo_deposit_savings_fixture.py)
--- Dataset: 3 SAVINGS accounts + 3 deposit_saving rows + 210 PAID / 1 SCHEDULED savings_payment rows
+-- Dataset: 3 SAVINGS accounts + 3 deposit_saving rows + 192 PAID / 1 SCHEDULED savings_payment rows
 --          + 1 saving goal ('내 집 마련 준비', 150,000,000원, 2029-09-21) linked to the 3 accounts + 61 goal_history rows
 -- Snapshot: 2026-09-21 (no PAID installment after this date; next installments fall on 2026-10-15)
+-- Revision 2026-09-22 (S15P21D105-679 budget fit): U0003's salary becomes 3,012,400 (679 overrides 491), so the monthly
+--          savings had to fit a ~450,000 surplus: 청년도약 500,000 -> 300,000, 목돈적금 becomes a matured account with no
+--          ongoing transfer. Monthly transfers are now 400,000 (679 SAV rows must mirror this).
 --
 -- Why this file exists
 -- --------------------
 -- The demo story for U0003 (김싸피) needs a home-purchase saving track: a policy youth savings account, a housing
--- subscription savings account with a long payment history, and a large monthly savings account,
+-- subscription savings account with a long payment history, and a lump-sum savings account that already matured,
 -- all feeding one '내 집 마련 준비' goal. 524 gives odd users one DEPOSIT only, so nothing of this exists yet.
 -- The file adds rows for U0003 only and leaves the other 3,999 users, their accounts, products and goals untouched.
 --
 -- Account story (balance = sum of PAID installments; account.balance never includes interest — 524 convention)
 -- -----------------------------------------------------------------------------------------------------------
 --   청년도약계좌        SHINHAN_BANK, product '신한 청년도약계좌' (60-month option, base 4.50%)
---                      500,000 x 11 PAID (2025-11-15 ~ 2026-09-15) = 5,500,000 / opened 2025-11-15 / matures 2030-11-15
+--                      300,000 x 11 PAID (2025-11-15 ~ 2026-09-15) = 3,300,000 / opened 2025-11-15 / matures 2030-11-15
 --   주택청약종합저축    KB_KOOKMIN, no catalog product (financial_product_id NULL)
 --                      100,000 x 121 PAID (2016-09-15 ~ 2026-09-15) = 12,100,000 / opened 2016-09-15 / expiry 2036-09-15
 --                      + installment 122 SCHEDULED 2026-10-15. Contract rate 2.80% is a demo assumption, not a quoted rate.
@@ -30,14 +33,19 @@
 --                      forecast INCOMPLETE_SAVINGS_TERMS for an account without expiry and cannot schedule its future
 --                      installments (decision 2026-09-21, option b). Do not present 2036-09-15 as a product term.
 --   내집마련 목돈적금   WOORI_BANK, no catalog product (financial_product_id NULL)
---                      1,000,000 x 78 PAID (2020-04-15 ~ 2026-09-15) = 78,000,000 / opened 2020-04-15 / matures 2027-04-15
---                      84-month contract at 3.25% (demo assumption). Maturity forecast API: expected principal 84,000,000,
---                      gross interest 9,669,506, tax 1,489,103, net 8,180,403, expected amount 92,180,403 (as of 2026-09-21).
---   Goal '내 집 마련 준비' SAVING / ACTIVE, target 150,000,000, target date 2029-09-21, current_amount 95,600,000 (63.7333%).
+--                      500,000 x 60 PAID (2021-03-15 ~ 2026-02-15) = 30,000,000 / opened 2021-03-15 / matured 2026-03-15
+--                      60-month contract at 3.25% (demo assumption), fully paid, no SCHEDULED row. The account stays ACTIVE
+--                      with the principal still on it so the goal and the asset totals keep the money (CLOSED accounts are
+--                      excluded from account summaries). next_payment_date is the maturity date, not a real due date:
+--                      SavingsScheduleCalculator checks the NOT NULL terms before the expiry, so NULL would flag the whole
+--                      forecast INCOMPLETE_SAVINGS_TERMS; with a past expiry it schedules nothing and adds no reason.
+--                      Maturity forecast API (savings path) still answers COMPLETE with daysUntilMaturity -191 and the interest up
+--                      to maturity (expected amount 32,095,496 as of 2026-09-22); the demo '!' target is the 청년도약 account.
+--   Goal '내 집 마련 준비' SAVING / ACTIVE, target 150,000,000, target date 2029-09-21, current_amount 45,400,000 (30.2667%).
 --   The goal is dated 2021-09-21 (created_at marker), not the snapshot date: GoalCalculationService derives the saving pace as
---   current_amount / months since creation (min 1), so a goal created today with 95.6M linked would report 95.6M per month and
---   an achievement date one month away. With 60 elapsed months the pace is 1,593,333/month (close to the real 1,600,000 monthly
---   contribution), expected progress 62.5% vs actual 63.7% (ON_TRACK), required 1,511,112/month (SUFFICIENT).
+--   current_amount / months since creation (min 1), so a goal created today with 45.4M linked would report 45.4M per month and
+--   an achievement date one month away. With 60 elapsed months the pace is 756,667/month; the required pace to 2029-09-21 is
+--   about 2,905,556/month, so the goal is behind schedule (INSUFFICIENT) — intended: it feeds the SAVING_GOAL_RISK diagnosis.
 --   goal_history: GOAL_CREATED on 2021-09-21 plus month-end AMOUNT_UPDATED snapshots 2021-09-30 ~ 2026-08-31 (60 rows), each the
 --   cumulative PAID sum of the three accounts up to that date, so the history curve matches the payment rows.
 --
@@ -118,13 +126,13 @@ CREATE TABLE tmp_dodam_demo_ds_expected_accounts (
 INSERT INTO tmp_dodam_demo_ds_expected_accounts VALUES
   ('U0003_SAVINGS_YOUTH_LEAP', 'seed.kmeans.u0003@dodam.invalid',
    'SHINHAN_BANK', '신한은행', '신한 청년도약계좌', 'SHINHAN_BANK', '신한 청년도약계좌',
-   'ACTIVE', 4.5000, 500000, 15, '2025-11-15', '2030-11-15', '2026-10-15', 11, 0, 5500000),
+   'ACTIVE', 4.5000, 300000, 15, '2025-11-15', '2030-11-15', '2026-10-15', 11, 0, 3300000),
   ('U0003_SAVINGS_HOUSING_SUBSCRIPTION', 'seed.kmeans.u0003@dodam.invalid',
    'KB_KOOKMIN', 'KB국민은행', '주택청약종합저축', NULL, NULL,
    'ACTIVE', 2.8000, 100000, 15, '2016-09-15', '2036-09-15', '2026-10-15', 121, 1, 12100000),
   ('U0003_SAVINGS_HOME_FUND', 'seed.kmeans.u0003@dodam.invalid',
    'WOORI_BANK', '우리은행', '내집마련 목돈적금', NULL, NULL,
-   'ACTIVE', 3.2500, 1000000, 15, '2020-04-15', '2027-04-15', '2026-10-15', 78, 0, 78000000);
+   'ACTIVE', 3.2500, 500000, 15, '2021-03-15', '2026-03-15', '2026-03-15', 60, 0, 30000000);
 
 DROP TABLE IF EXISTS tmp_dodam_demo_ds_expected_goal;
 CREATE TABLE tmp_dodam_demo_ds_expected_goal (
@@ -203,7 +211,7 @@ SELECT
         AND m.fixture_valid_count = 3
         AND m.fixture_distinct_hash_count = 3
         AND m.product_count = 1
-        AND m.expected_payment_count = 211
+        AND m.expected_payment_count = 193
         AND m.future_paid_count = 0
         AND m.foreign_hash_conflicts = 0
         AND m.goal_name_conflicts = 0
@@ -467,7 +475,7 @@ COMMIT;
 -- ---------------------------------------------------------------------------
 -- 4. verification
 -- ---------------------------------------------------------------------------
--- Expected: 3 rows. balance = paid_sum (5,500,000 / 12,100,000 / 78,000,000), paid_count 11 / 121 / 78,
+-- Expected: 3 rows. balance = paid_sum (3,300,000 / 12,100,000 / 30,000,000), paid_count 11 / 121 / 60,
 --           scheduled_count 0 / 1 / 0, future_paid_count 0, product linked only for the youth account,
 --           withdrawal_account_id NOT NULL, financial_product_id NULL for the other two.
 SELECT
@@ -495,7 +503,7 @@ JOIN `account` a ON a.account_id = t.account_id
 LEFT JOIN deposit_saving d ON d.account_id = a.account_id
 ORDER BY t.seed_account_code;
 
--- Expected: 1 row. current_amount 95600000, target 150000000, linked_count 3, progress 63.7333, history_count 61,
+-- Expected: 1 row. current_amount 45400000, target 150000000, linked_count 3, progress 30.2667, history_count 61,
 --           created_at 2021-09-21 09:00:00.
 SELECT
   g.goal_id, g.name, g.type, g.status, g.current_amount, sg.target_amount, sg.target_date, g.created_at,

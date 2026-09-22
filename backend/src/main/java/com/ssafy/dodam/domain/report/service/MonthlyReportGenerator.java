@@ -131,9 +131,10 @@ public class MonthlyReportGenerator {
         return new CardSpending(current, previous, current - previous);
     }
 
+    /** 그 달 말일까지 완료된 가장 최근 진단(694). 리포트의 {@code diagnosisId}와 효율 점수 비효율 항목이 같은 진단을 본다. */
     private Optional<Diagnosis> latestDiagnosis(Long userId, YearMonth month) {
-        return diagnoses.findFirstByUserIdAndCompletedAtBetweenOrderByCompletedAtDescDiagnosisIdDesc(
-                userId, month.atDay(1).atStartOfDay(), month.atEndOfMonth().atTime(LocalTime.MAX));
+        return diagnoses.findFirstByUserIdAndCompletedAtLessThanEqualOrderByCompletedAtDescDiagnosisIdDesc(
+                userId, month.atEndOfMonth().atTime(LocalTime.MAX));
     }
 
     private EfficiencyScoreResponse efficiencyWithDifference(Long userId, YearMonth month, MonthAmounts totals,

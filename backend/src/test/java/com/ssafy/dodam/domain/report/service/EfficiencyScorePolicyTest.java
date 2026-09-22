@@ -55,17 +55,20 @@ class EfficiencyScorePolicyTest {
 
     @Test
     void creditUsesGradeTableAndTellsMissingApart() {
-        assertThat(EfficiencyScorePolicy.credit("A").score()).isEqualTo(100);
-        assertThat(EfficiencyScorePolicy.credit("B").score()).isEqualTo(85);
-        assertThat(EfficiencyScorePolicy.credit("c").score()).isEqualTo(70);
-        assertThat(EfficiencyScorePolicy.credit("D").score()).isEqualTo(50);
-        assertThat(EfficiencyScorePolicy.credit("E").score()).isEqualTo(30);
-        assertThat(EfficiencyScorePolicy.credit("A").grade()).isEqualTo("A");
-        assertThat(EfficiencyScorePolicy.credit("A").valueType()).isEqualTo("GRADE");
-        Dimension missing = EfficiencyScorePolicy.credit(null);
+        assertThat(EfficiencyScorePolicy.credit(768, null).score()).isEqualTo(77);
+        assertThat(EfficiencyScorePolicy.credit(768, null).value()).isEqualTo(768.0);
+        assertThat(EfficiencyScorePolicy.credit(768, null).valueType()).isEqualTo("SCORE");
+        assertThat(EfficiencyScorePolicy.credit(null, "A").score()).isEqualTo(100);
+        assertThat(EfficiencyScorePolicy.credit(null, "B").score()).isEqualTo(85);
+        assertThat(EfficiencyScorePolicy.credit(null, "c").score()).isEqualTo(70);
+        assertThat(EfficiencyScorePolicy.credit(null, "D").score()).isEqualTo(50);
+        assertThat(EfficiencyScorePolicy.credit(null, "E").score()).isEqualTo(30);
+        assertThat(EfficiencyScorePolicy.credit(null, "A").grade()).isEqualTo("A");
+        assertThat(EfficiencyScorePolicy.credit(null, "A").valueType()).isEqualTo("GRADE");
+        Dimension missing = EfficiencyScorePolicy.credit(null, null);
         assertThat(missing.score()).isNull();
-        assertThat(missing.unavailableReason()).isEqualTo("CREDIT_RATING_MISSING");
-        assertThat(EfficiencyScorePolicy.credit("Z").unavailableReason()).isEqualTo("CREDIT_RATING_MISSING");
+        assertThat(missing.unavailableReason()).isEqualTo("CREDIT_SCORE_MISSING");
+        assertThat(EfficiencyScorePolicy.credit(null, "Z").unavailableReason()).isEqualTo("CREDIT_SCORE_MISSING");
     }
 
     @Test
@@ -96,7 +99,7 @@ class EfficiencyScorePolicyTest {
                 EfficiencyScorePolicy.spending(1_450_000, 3_200_000),   // 100
                 EfficiencyScorePolicy.saving(400_000, 3_200_000),       // 42
                 EfficiencyScorePolicy.fixedExpense(900_000, 1_450_000), // 20
-                EfficiencyScorePolicy.credit(null),                     // unavailable
+                EfficiencyScorePolicy.credit(null, null),               // unavailable
                 EfficiencyScorePolicy.cashflow(false, List.of()),       // unavailable
                 EfficiencyScorePolicy.inefficiency(false, List.of()));  // unavailable
         EfficiencyScoreResponse overall = EfficiencyScorePolicy.overall(dimensions);
@@ -105,7 +108,7 @@ class EfficiencyScorePolicyTest {
         assertThat(overall.availableDimensionCount()).isEqualTo(3);
         assertThat(overall.unavailableReason()).isNull();
         assertThat(overall.previousMonthDifference()).isNull();
-        assertThat(overall.calculationVersion()).isEqualTo("efficiency-v1");
+        assertThat(overall.calculationVersion()).isEqualTo("efficiency-v2");
         assertThat(overall.dimensions()).extracting(Dimension::key)
                 .containsExactly("SPENDING", "SAVING", "FIXED_EXPENSE", "CREDIT", "CASHFLOW", "INEFFICIENCY");
         assertThat(overall.summary()).isEqualTo("지출 관리는 안정적이지만 고정지출 관리가 필요해요.");
@@ -117,7 +120,7 @@ class EfficiencyScorePolicyTest {
                 EfficiencyScorePolicy.spending(0, 0),
                 EfficiencyScorePolicy.saving(0, 0),
                 EfficiencyScorePolicy.fixedExpense(0, 0),
-                EfficiencyScorePolicy.credit("A"),
+                EfficiencyScorePolicy.credit(1000, null),
                 EfficiencyScorePolicy.cashflow(true, List.of()),
                 EfficiencyScorePolicy.inefficiency(false, List.of()));
         EfficiencyScoreResponse overall = EfficiencyScorePolicy.overall(dimensions);
@@ -131,13 +134,13 @@ class EfficiencyScorePolicyTest {
     void summaryDependsOnTheWeakestDimension() {
         List<Dimension> allGood = EfficiencyScorePolicy.ordered(
                 EfficiencyScorePolicy.spending(1_000_000, 3_200_000), EfficiencyScorePolicy.saving(1_000_000, 3_200_000),
-                EfficiencyScorePolicy.fixedExpense(200_000, 1_000_000), EfficiencyScorePolicy.credit("A"),
+                EfficiencyScorePolicy.fixedExpense(200_000, 1_000_000), EfficiencyScorePolicy.credit(1000, null),
                 EfficiencyScorePolicy.cashflow(true, List.of()), EfficiencyScorePolicy.inefficiency(true, List.of()));
         assertThat(EfficiencyScorePolicy.overall(allGood).summary()).isEqualTo("전반적으로 금융 생활이 안정적이에요.");
 
         List<Dimension> oneNormal = EfficiencyScorePolicy.ordered(
                 EfficiencyScorePolicy.spending(1_000_000, 3_200_000), EfficiencyScorePolicy.saving(1_000_000, 3_200_000),
-                EfficiencyScorePolicy.fixedExpense(200_000, 1_000_000), EfficiencyScorePolicy.credit("A"),
+                EfficiencyScorePolicy.fixedExpense(200_000, 1_000_000), EfficiencyScorePolicy.credit(1000, null),
                 EfficiencyScorePolicy.cashflow(true, List.of()), EfficiencyScorePolicy.inefficiency(true, List.of("HIGH", "MEDIUM")));
         assertThat(EfficiencyScorePolicy.overall(oneNormal).summary()).isEqualTo("지출 관리는 안정적이에요. 비효율 관리를 조금 더 챙겨 보세요.");
     }

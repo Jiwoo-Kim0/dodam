@@ -410,7 +410,7 @@ API 19에는 행동을 만들거나 상태를 바꾸는 엔드포인트가 없�
   "cardSpending": 1450000,
   "cardSpendingPreviousMonth": 1560000,
   "cardSpendingDifferenceFromPreviousMonth": -110000,
-  "efficiency": { "score": 65, "maxScore": 100, "previousMonthDifference": -15, "summary": "…", "calculationVersion": "efficiency-v1",
+  "efficiency": { "score": 65, "maxScore": 100, "previousMonthDifference": -15, "summary": "…", "calculationVersion": "efficiency-v2",
                   "availableDimensionCount": 6, "dimensions": [ "…§6-1" ] },
   "diagnosisId": 77,
   "overallStatus": "CAUTION",
@@ -424,7 +424,7 @@ API 19에는 행동을 만들거나 상태를 바꾸는 엔드포인트가 없�
 | `totalSpending` | 506 소비 정의(EXPENSE에서 `NON_SPENDING` 제외). 소비 화면·패턴 API와 같은 숫자 |
 | `totalSaving` | 저축성 지출(`NON_SPENDING`). `totalExpense`에 **포함**되며 이중 차감하지 않는다 |
 | `netCashflow` | `totalIncome − totalExpense` |
-| `diagnosisId`·`overallStatus` | 그 달 안에 **완료된 가장 최근 진단**. 없으면 둘 다 `null`(다른 달 진단을 끌어다 쓰지 않는다) |
+| `diagnosisId`·`overallStatus` | 그 달 **말일까지 완료된 가장 최근 진단**(694, 이전엔 "그 달 안"). 없으면 둘 다 `null`. 그 달 이후에 완료된 진단은 보지 않는다. §6-4 |
 | `cardSpending`·`cardSpendingPreviousMonth`·`cardSpendingDifferenceFromPreviousMonth` (635) | 카드 사용액과 전월 대비 증감. 정의는 §6-2 |
 | `efficiency` (635) | 금융 효율 점수(전체 + 6개 항목). 정의는 §6-1. 635 이전 리포트는 첫 월간 조회 때 채워진다 |
 
@@ -599,7 +599,7 @@ FE 요청 "[FE→BE] 리포트 금융 효율 점수 및 K-Means 또래 비교 �
   "maxScore": 100,
   "previousMonthDifference": -15,
   "summary": "지출 관리는 안정적이지만 고정지출 관리가 필요해요.",
-  "calculationVersion": "efficiency-v1",
+  "calculationVersion": "efficiency-v2",
   "availableDimensionCount": 6,
   "dimensions": [
     { "key": "SPENDING", "label": "지출 관리", "score": 100, "maxScore": 100, "status": "GOOD",
@@ -608,12 +608,12 @@ FE 요청 "[FE→BE] 리포트 금융 효율 점수 및 K-Means 또래 비교 �
       "description": "소득의 13%를 저축했어요.", "value": 0.125, "valueType": "RATIO" },
     { "key": "FIXED_EXPENSE", "label": "고정지출", "score": 20, "maxScore": 100, "status": "CHECK",
       "description": "전체 소비 중 고정지출이 62%예요.", "value": 0.6207, "valueType": "RATIO" },
-    { "key": "CREDIT", "label": "신용 관리", "score": 85, "maxScore": 100, "status": "GOOD",
-      "description": "신용 상태가 안정적이에요(B등급).", "valueType": "GRADE", "grade": "B" },
+    { "key": "CREDIT", "label": "신용 관리", "score": 77, "maxScore": 100, "status": "GOOD",
+      "description": "예상 신용점수가 768점으로 안정적이에요.", "value": 768, "valueType": "SCORE" },
     { "key": "CASHFLOW", "label": "현금흐름", "score": 70, "maxScore": 100, "status": "GOOD",
       "description": "예정 잔액 위험 1건이 있어요.", "value": 1, "valueType": "COUNT" },
     { "key": "INEFFICIENCY", "label": "비효율 관리", "score": null, "maxScore": 100, "status": "UNAVAILABLE",
-      "description": "이 달에 완료한 진단이 없어 계산하지 못했어요.", "unavailableReason": "DIAGNOSIS_NOT_FOUND" }
+      "description": "이 달까지 완료한 진단이 없어 계산하지 못했어요.", "unavailableReason": "DIAGNOSIS_NOT_FOUND" }
   ]
 }
 ```
@@ -622,9 +622,9 @@ FE 확인 요청에 대한 답:
 
 | 확인 요청 | 회신 |
 | --- | --- |
-| 6개 항목 구성 가능한지 | **가능.** 키·순서는 SPENDING, SAVING, FIXED_EXPENSE, CREDIT, CASHFLOW, INEFFICIENCY로 고정(육각형 꼭짓점 순서). 모두 0~100 정수 |
-| 신용점수 없을 때 | 금융망은 **등급(A~E)만** 준다(신용점수 없음). `user.credit_rating`이 비어 있으면 `score = null`, `status = UNAVAILABLE`, `unavailableReason = CREDIT_RATING_MISSING`. 등급은 `grade`로 내려간다. 등급은 금융망 조회(`GET /finance-data/credit-rating`·`POST /finance-data/sync`) 시점의 **현재** 값이라 과거 달 리포트에도 조회 시점 등급이 들어간다 |
-| 비효율 탐지 기준 기간·포함 상태 | 리포트 달 안에 **완료된 가장 최근 진단**(`MonthlyReport.diagnosisId`와 같은 진단) 하나의 문제 전부. **GOAL 도메인은 제외**(607에서 목표 위험을 발견 대상에서 뺐다). 추천의 수락·완료 상태는 보지 않는다(진단 시점의 문제 수가 기준). 진단이 없으면 `DIAGNOSIS_NOT_FOUND` |
+| 6개 항목 구성 가능한지 | **가능.** 키·순서는 SPENDING, SAVING, FIXED_EXPENSE, CREDIT, CASHFLOW, INEFFICIENCY로 고정(육각형 꼭짓점 순서). 모두 0~100 정수. 계산 불가 항목의 `score`는 **키를 빼지 않고 `null`로** 내려간다(694 수정 — 이전엔 키가 빠져 FE의 `=== null` 판정이 `undefined`로 깨졌다). `value`·`valueType`·`grade`·`unavailableReason`만 없을 때 생략된다 |
+| 신용점수 없을 때 | 680부터 `user.credit_score / 10`을 반올림해 사용한다. 점수가 없고 금융망 A~E 등급만 있으면 종전 등급표를 호환 입력으로 쓴다. 둘 다 없으면 `CREDIT_SCORE_MISSING`. 현재 값이라 과거 달 리포트에도 조회 시점 값이 들어간다 |
+| 비효율 탐지 기준 기간·포함 상태 | 리포트 달 **말일까지 완료된 가장 최근 진단**(694, `MonthlyReport.diagnosisId`와 같은 진단) 하나의 문제 전부. **GOAL 도메인은 제외**(607에서 목표 위험을 발견 대상에서 뺐다). 추천의 수락·완료 상태는 보지 않는다(진단 시점의 문제 수가 기준). 진단이 없으면 `DIAGNOSIS_NOT_FOUND` |
 | 항목별 산식 | 아래 표. **모두 서비스 초기값**이며 임계값을 바꾸면 `calculationVersion`을 올린다 |
 | 계산 불가 항목이 있을 때 전체 점수 | 계산된 항목의 **단순 평균**(반올림). 불가 항목은 0으로 넣지 않는다. 계산된 항목이 **3개 미만**이면 전체 `score = null`, `unavailableReason = INSUFFICIENT_DIMENSIONS`. `availableDimensionCount`로 몇 개가 들어갔는지 알 수 있다 |
 | 월별 저장·전월 비교 | 리포트 생성 시점에 `monthly_report.efficiency_summary`에 굳힌다(READY 리포트는 고정, 산식이 바뀌어도 과거 점수 유지). `previousMonthDifference` = 이번 달 점수 − 전월 점수. 전월 점수는 **전월 리포트 저장본**(같은 산식 버전)이 있으면 그 값, 없으면 같은 산식으로 즉시 계산(저장 안 함). 전월이 사용자 첫 거래 이전이거나 어느 한쪽 전체 점수가 null이면 `null` |
@@ -634,12 +634,16 @@ FE 확인 요청에 대한 답:
 | SPENDING 지출 관리 | 소비(`totalSpending`) / 소득 | ≤ 0.5 | ≥ 1.0 (선형) | 소득 0 → `INCOME_MISSING` |
 | SAVING 저축 | 저축성 지출(`totalSaving`) / 소득 | ≥ 0.3 | 0 (선형) | 소득 0 → `INCOME_MISSING` |
 | FIXED_EXPENSE 고정지출 | 고정지출(`bySpendingType.FIXED`) / 소비 | ≤ 0.3 | ≥ 0.7 (선형) | 소비 0 → `NO_SPENDING` |
-| CREDIT 신용 관리 | 신용등급 | A 100 · B 85 · C 70 · D 50 · E 30 | | 등급 없음 → `CREDIT_RATING_MISSING` |
-| CASHFLOW 현금흐름 | 기준일이 그 달 안인 **마지막 완료 예측**의 위험 수 | 100 − Σ(CRITICAL 40, HIGH 30, MEDIUM 15, LOW 5), 하한 0 | | 그 달 예측 없음 → `FORECAST_NOT_FOUND` |
-| INEFFICIENCY 비효율 관리 | 그 달 완료 진단의 문제 수(GOAL 제외) | 100 − Σ(CRITICAL 30, HIGH 25, MEDIUM 15, LOW 10), 하한 0 | | 그 달 진단 없음 → `DIAGNOSIS_NOT_FOUND` |
+| CREDIT 신용 관리 | 예상 신용점수(1~1,000) | 1,000점 → 100점(10으로 나눠 반올림) | 1점 → 0점 | 점수 없음 → 금융망 등급 호환, 둘 다 없음 → `CREDIT_SCORE_MISSING` |
+| CASHFLOW 현금흐름 | 기준일이 그 달 **말일 이전**인 **마지막 완료 예측**의 위험 수(694) | 100 − Σ(CRITICAL 40, HIGH 30, MEDIUM 15, LOW 5), 하한 0 | | 그 달 말일까지 예측 없음 → `FORECAST_NOT_FOUND` |
+| INEFFICIENCY 비효율 관리 | 그 달 **말일까지** 완료된 최신 진단의 문제 수(GOAL 제외)(694) | 100 − Σ(CRITICAL 30, HIGH 25, MEDIUM 15, LOW 10), 하한 0 | | 그 달 말일까지 진단 없음 → `DIAGNOSIS_NOT_FOUND` |
 
 `status`: GOOD ≥ 70, NORMAL 40~69, CHECK < 40, 계산 불가 UNAVAILABLE. `summary`는 서버 템플릿(최고·최저 항목으로 만든 한 줄).
 비율 `value`는 0~1 소수 4자리(리포트 소비패턴과 같은 규칙), `description`의 퍼센트는 반올림 정수다.
+
+> **680 변경:** CREDIT 입력을 A~E 등급에서 예상 신용점수 우선으로 바꾸며 산식 버전을 `efficiency-v2`로 올렸다.
+> `efficiency-v1`로 저장된 과거 리포트는 그대로 유지한다. 합성 점수의 산식과 한계는
+> [credit-score-model.md](credit-score-model.md)를 따른다.
 
 > **635 이전에 만들어진 READY 리포트**는 `efficiency`·카드 사용액이 비어 있다가 다음 `GET /reports/monthly` 조회 때 채워진다
 > (`ReportService.supplementIfMissing`). 저장된 합계·`generatedAt`은 바뀌지 않고, 점수의 소비·저축·소득은 저장된 합계를 쓴다.
@@ -659,4 +663,24 @@ FE가 지금 쓰는 `/spending/payment-methods`의 `CARD` 묶음과 같은 기�
 금액이 아니라 **사용일 기준 거래 합**이므로 청구 금액과는 다를 수 있다.
 
 ### 6-3. 또래 비교 (요청 2) — [pattern.md](pattern.md) §GET /patterns/me/peer-comparison "635 FE 회신"에 정리했다.
+
+### 6-4. 694 — 계산 불가 항목 `undefined`·현금흐름/비효율 계산 불가 (2026-09-22)
+
+리포트 화면에서 신용·현금흐름·비효율 점수가 `undefined`로 그려지던 문제의 원인과 조치.
+
+| 원인 | 조치 |
+| --- | --- |
+| `Dimension`에 클래스 수준 `@JsonInclude(NON_NULL)`이 있어 계산 불가 항목의 `score: null`이 **키째 빠졌다.** FE는 `score === null`로 계산 불가를 판정하므로 `undefined점`이 됐다 | `score`는 항상 직렬화한다. 생략되는 건 `value`·`valueType`·`grade`·`unavailableReason`뿐. 저장본(`efficiency_summary`)에 키가 없어도 읽을 때 null로 복원되므로 과거 리포트 재생성은 필요 없다 |
+| CASHFLOW·INEFFICIENCY가 "**그 달 안**에 실행한" 예측·진단만 봤다. 예측 기준일·진단 완료 시각은 항상 실행 시점이라 지난 달 것을 나중에 만들 수 없고, 한 달이라도 건너뛰면 그 달 리포트의 두 항목은 영원히 계산 불가였다 | "그 달 **말일까지** 완료된 가장 최근" 예측·진단으로 완화. `MonthlyReport.diagnosisId`·`overallStatus`도 같은 기준이라 리포트와 비효율 항목이 같은 진단을 본다. 그 달 **이후** 실행분은 여전히 보지 않는다(과거 리포트가 현재 상태를 담지 않는다). 산식은 그대로다. 같은 날 배포되는 680의 `efficiency-v2`에 포함하며 별도 버전을 만들지 않는다 |
+| CREDIT은 `user.credit_rating`이 금융망 동기화 때만 채워져 seed 사용자는 항상 계산 불가였다 | 680이 먼저 해결했다 — `user.credit_score`(V42)를 우선 보고, 680 seed(`DODAM_USER_CREDIT_SCORE_SEED.sql`)가 seed 사용자 전원의 점수를 채운다. 이 seed가 적재되지 않은 DB에서는 여전히 `CREDIT_SCORE_MISSING`이다 |
+
+`previousMonthDifference`의 전월 점수는 전월 저장본이 **같은 버전**일 때만 재사용하므로, v1로 굳힌 전월 리포트 옆에 v2 리포트가 생기면 전월 점수는 v2 산식으로 즉시 계산한다(저장하지 않음). 694 이전의 v2(680만 반영)로 굳힌 리포트가 있다면 그 점수는 그대로 재사용된다.
+
+> **이미 굳힌 리포트는 바뀌지 않는다.** READY 리포트는 최초 조회 때 저장되고 재생성 API가 없다. 시연 계정에 seed·진단·예측을 새로 넣은 뒤
+> 리포트에 반영하려면 그 사용자의 `monthly_report` → `report` 행(`type = MONTHLY`, 해당 `period`)을 지우고 다시 조회해야 한다.
+> 시연 준비 순서: seed 적재(680 신용점수 seed 포함) → (필요하면) 진단·예측 실행 → 기존 월간 리포트 행 삭제 → `GET /reports/monthly` 최초 조회.
+> 단, 진단·예측을 지금(9월) 실행해도 8월 리포트에는 들어가지 않는다 — 8월 말일 이전에 완료된 것만 본다.
+
+고정지출 항목이 0점인 경우는 별개다. `고정지출 / 소비 ≥ 0.7`이면 산식대로 0점이며 `description`에 실제 비중이 적혀 있다.
+임계값(0.3/0.7)은 서비스 초기값이라 조정할 수 있지만 이번 범위에서는 손대지 않았다.
 
