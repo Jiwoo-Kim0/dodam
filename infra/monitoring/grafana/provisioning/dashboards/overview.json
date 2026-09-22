@@ -72,7 +72,7 @@
       },
       "targets": [
         {
-          "expr": "min(up{job!=\"backend\"})",
+          "expr": "min(up)",
           "refId": "A",
           "instant": true
         }
