@@ -21,7 +21,7 @@ ENV_FILE="$APP_DIR/infra/.env"
 # 모니터링 서비스도 반드시 포함한다. 목록에서 빠지면 설정 파일이나 이미지 태그를
 # 고쳐 머지해도 배포가 반영하지 않아, 수동으로 올린 변경이 다음 배포의
 # git reset --hard에 밀려 조용히 원복된다. (Day 3에서 같은 방식으로 사고가 났었다)
-DEPLOY_SERVICES="${DEPLOY_SERVICES:-mysql redis backend nginx certbot prometheus node-exporter loki promtail grafana}"
+DEPLOY_SERVICES="${DEPLOY_SERVICES:-mysql redis backend nginx certbot prometheus node-exporter mysqld-exporter redis-exporter loki promtail grafana}"
 # 배포 검증은 두 단계로 한다.
 #
 #  1) readiness — 앱이 의존성(DB/Redis)에 실제로 붙었는가
