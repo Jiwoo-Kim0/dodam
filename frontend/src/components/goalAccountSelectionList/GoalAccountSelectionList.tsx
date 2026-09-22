@@ -1,7 +1,5 @@
-import { SymbolView } from 'expo-symbols';
 import { Image, Pressable, ScrollView, Text, View } from 'react-native';
 
-import { colors } from '@/styles';
 import type { AccountApiResponse } from '@/types/assetApi.types';
 import { formatAccountBalance } from '@/utils/currency';
 import { findInstitutionByBankName } from '@/utils/institution';
@@ -90,25 +88,10 @@ export function GoalAccountSelectionList({
                   </Text>
                 </View>
 
-                {/* 계좌를 고르는 기준이라 체크 옆에 세로 가운데로 세운다. */}
+                {/* 계좌를 고르는 기준이라 카드 오른쪽에 세로 가운데로 세운다. */}
                 <Text numberOfLines={1} style={styles.balance}>
                   {balanceText}
                 </Text>
-
-                {/* 고르기 전에는 테두리만 둔다. 채운 원을 두면 이미 고른 것처럼 보인다. */}
-                <View
-                  style={[
-                    styles.checkCircle,
-                    isSelected && styles.selectedCheckCircle,
-                  ]}>
-                  {isSelected ? (
-                    <SymbolView
-                      name={{ android: 'check', ios: 'checkmark', web: 'check' }}
-                      size={11}
-                      tintColor={colors.white}
-                    />
-                  ) : null}
-                </View>
               </Pressable>
             );
           })}

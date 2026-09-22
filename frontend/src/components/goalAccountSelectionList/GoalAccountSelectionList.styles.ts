@@ -11,7 +11,6 @@ import {
 
 /** 로고가 있든 없든 글자 시작점이 같아야 해서 자리 크기를 한 곳에서 잡는다. */
 const LOGO_SIZE = 32;
-const CHECK_SIZE = 18;
 
 export const styles = StyleSheet.create({
   container: {
@@ -104,18 +103,5 @@ export const styles = StyleSheet.create({
   accountNumber: {
     ...typography.caption,
     color: colors.textTertiary,
-  },
-  checkCircle: {
-    width: CHECK_SIZE,
-    height: CHECK_SIZE,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.round,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  selectedCheckCircle: {
-    borderColor: colors.primary.green,
-    backgroundColor: colors.primary.green,
   },
 });
