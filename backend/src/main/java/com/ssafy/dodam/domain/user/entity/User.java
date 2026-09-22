@@ -59,6 +59,16 @@ public class User {
     @Column(name = "credit_rating_updated_at")
     private LocalDateTime creditRatingUpdatedAt;
 
+    /**
+     * 예상 신용점수 1~1000(S15P21D105-680).
+     *
+     * <p><b>컬럼 타입을 바꿀 때는 이 필드와 함께 바꾼다.</b> 점수 범위만 보면 SMALLINT가 맞고 V42도
+     * SMALLINT로 만들었지만, 이 필드가 {@code Integer}라 Hibernate의 {@code ddl-auto: validate}가
+     * 타입 불일치로 기동을 거부했다(2026-09-22 배포 실패). V43에서 컬럼을 INT로 맞췄다.
+     *
+     * <p>컬럼을 SMALLINT로 되돌리고 싶다면 마이그레이션만 고치면 같은 실패가 반복된다. 이 필드에
+     * {@code @JdbcTypeCode(SqlTypes.SMALLINT)}를 붙여야 한다(이 레포는 JSON 컬럼에서 같은 방식을 쓴다).
+     */
     @Column(name = "credit_score")
     private Integer creditScore;
 
