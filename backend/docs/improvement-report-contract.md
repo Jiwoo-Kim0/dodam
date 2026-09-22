@@ -599,7 +599,7 @@ FE 요청 "[FE→BE] 리포트 금융 효율 점수 및 K-Means 또래 비교 �
   "maxScore": 100,
   "previousMonthDifference": -15,
   "summary": "지출 관리는 안정적이지만 고정지출 관리가 필요해요.",
-  "calculationVersion": "efficiency-v1",
+  "calculationVersion": "efficiency-v2",
   "availableDimensionCount": 6,
   "dimensions": [
     { "key": "SPENDING", "label": "지출 관리", "score": 100, "maxScore": 100, "status": "GOOD",
@@ -608,8 +608,8 @@ FE 요청 "[FE→BE] 리포트 금융 효율 점수 및 K-Means 또래 비교 �
       "description": "소득의 13%를 저축했어요.", "value": 0.125, "valueType": "RATIO" },
     { "key": "FIXED_EXPENSE", "label": "고정지출", "score": 20, "maxScore": 100, "status": "CHECK",
       "description": "전체 소비 중 고정지출이 62%예요.", "value": 0.6207, "valueType": "RATIO" },
-    { "key": "CREDIT", "label": "신용 관리", "score": 85, "maxScore": 100, "status": "GOOD",
-      "description": "신용 상태가 안정적이에요(B등급).", "valueType": "GRADE", "grade": "B" },
+    { "key": "CREDIT", "label": "신용 관리", "score": 77, "maxScore": 100, "status": "GOOD",
+      "description": "예상 신용점수가 768점으로 안정적이에요.", "value": 768, "valueType": "SCORE" },
     { "key": "CASHFLOW", "label": "현금흐름", "score": 70, "maxScore": 100, "status": "GOOD",
       "description": "예정 잔액 위험 1건이 있어요.", "value": 1, "valueType": "COUNT" },
     { "key": "INEFFICIENCY", "label": "비효율 관리", "score": null, "maxScore": 100, "status": "UNAVAILABLE",
@@ -623,7 +623,7 @@ FE 확인 요청에 대한 답:
 | 확인 요청 | 회신 |
 | --- | --- |
 | 6개 항목 구성 가능한지 | **가능.** 키·순서는 SPENDING, SAVING, FIXED_EXPENSE, CREDIT, CASHFLOW, INEFFICIENCY로 고정(육각형 꼭짓점 순서). 모두 0~100 정수 |
-| 신용점수 없을 때 | 금융망은 **등급(A~E)만** 준다(신용점수 없음). `user.credit_rating`이 비어 있으면 `score = null`, `status = UNAVAILABLE`, `unavailableReason = CREDIT_RATING_MISSING`. 등급은 `grade`로 내려간다. 등급은 금융망 조회(`GET /finance-data/credit-rating`·`POST /finance-data/sync`) 시점의 **현재** 값이라 과거 달 리포트에도 조회 시점 등급이 들어간다 |
+| 신용점수 없을 때 | 680부터 `user.credit_score / 10`을 반올림해 사용한다. 점수가 없고 금융망 A~E 등급만 있으면 종전 등급표를 호환 입력으로 쓴다. 둘 다 없으면 `CREDIT_SCORE_MISSING`. 현재 값이라 과거 달 리포트에도 조회 시점 값이 들어간다 |
 | 비효율 탐지 기준 기간·포함 상태 | 리포트 달 안에 **완료된 가장 최근 진단**(`MonthlyReport.diagnosisId`와 같은 진단) 하나의 문제 전부. **GOAL 도메인은 제외**(607에서 목표 위험을 발견 대상에서 뺐다). 추천의 수락·완료 상태는 보지 않는다(진단 시점의 문제 수가 기준). 진단이 없으면 `DIAGNOSIS_NOT_FOUND` |
 | 항목별 산식 | 아래 표. **모두 서비스 초기값**이며 임계값을 바꾸면 `calculationVersion`을 올린다 |
 | 계산 불가 항목이 있을 때 전체 점수 | 계산된 항목의 **단순 평균**(반올림). 불가 항목은 0으로 넣지 않는다. 계산된 항목이 **3개 미만**이면 전체 `score = null`, `unavailableReason = INSUFFICIENT_DIMENSIONS`. `availableDimensionCount`로 몇 개가 들어갔는지 알 수 있다 |
@@ -634,12 +634,16 @@ FE 확인 요청에 대한 답:
 | SPENDING 지출 관리 | 소비(`totalSpending`) / 소득 | ≤ 0.5 | ≥ 1.0 (선형) | 소득 0 → `INCOME_MISSING` |
 | SAVING 저축 | 저축성 지출(`totalSaving`) / 소득 | ≥ 0.3 | 0 (선형) | 소득 0 → `INCOME_MISSING` |
 | FIXED_EXPENSE 고정지출 | 고정지출(`bySpendingType.FIXED`) / 소비 | ≤ 0.3 | ≥ 0.7 (선형) | 소비 0 → `NO_SPENDING` |
-| CREDIT 신용 관리 | 신용등급 | A 100 · B 85 · C 70 · D 50 · E 30 | | 등급 없음 → `CREDIT_RATING_MISSING` |
+| CREDIT 신용 관리 | 예상 신용점수(1~1,000) | 1,000점 → 100점(10으로 나눠 반올림) | 1점 → 0점 | 점수 없음 → 금융망 등급 호환, 둘 다 없음 → `CREDIT_SCORE_MISSING` |
 | CASHFLOW 현금흐름 | 기준일이 그 달 안인 **마지막 완료 예측**의 위험 수 | 100 − Σ(CRITICAL 40, HIGH 30, MEDIUM 15, LOW 5), 하한 0 | | 그 달 예측 없음 → `FORECAST_NOT_FOUND` |
 | INEFFICIENCY 비효율 관리 | 그 달 완료 진단의 문제 수(GOAL 제외) | 100 − Σ(CRITICAL 30, HIGH 25, MEDIUM 15, LOW 10), 하한 0 | | 그 달 진단 없음 → `DIAGNOSIS_NOT_FOUND` |
 
 `status`: GOOD ≥ 70, NORMAL 40~69, CHECK < 40, 계산 불가 UNAVAILABLE. `summary`는 서버 템플릿(최고·최저 항목으로 만든 한 줄).
 비율 `value`는 0~1 소수 4자리(리포트 소비패턴과 같은 규칙), `description`의 퍼센트는 반올림 정수다.
+
+> **680 변경:** CREDIT 입력을 A~E 등급에서 예상 신용점수 우선으로 바꾸며 산식 버전을 `efficiency-v2`로 올렸다.
+> `efficiency-v1`로 저장된 과거 리포트는 그대로 유지한다. 합성 점수의 산식과 한계는
+> [credit-score-model.md](credit-score-model.md)를 따른다.
 
 > **635 이전에 만들어진 READY 리포트**는 `efficiency`·카드 사용액이 비어 있다가 다음 `GET /reports/monthly` 조회 때 채워진다
 > (`ReportService.supplementIfMissing`). 저장된 합계·`generatedAt`은 바뀌지 않고, 점수의 소비·저축·소득은 저장된 합계를 쓴다.

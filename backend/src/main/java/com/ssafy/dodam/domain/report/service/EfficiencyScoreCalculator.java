@@ -26,8 +26,8 @@ import org.springframework.transaction.annotation.Transactional;
  * 금융 효율 점수 입력을 모아 {@link EfficiencyScorePolicy}로 점수를 만든다(S15P21D105-635).
  *
  * <p>입력 출처는 전부 리포트가 이미 쓰는 저장값이다. 소비·저축·소득은 {@code ReportAmountReader}의 합계(리포트 합계와 같은
- * 숫자), 고정지출은 소비패턴의 {@code bySpendingType.FIXED}, 신용등급은 {@code user.credit_rating}(629 — 금융망 조회 시
- * 기록되는 <b>현재</b> 등급이라 과거 달 리포트에도 조회 시점 등급이 들어간다), 현금흐름은 기준일이 그 달 안인 마지막 완료
+ * 숫자), 고정지출은 소비패턴의 {@code bySpendingType.FIXED}, 신용은 {@code user.credit_score}(680)를 우선하고 없으면
+ * {@code user.credit_rating}(629)을 호환 입력으로 쓴다. 둘 다 현재 값이라 과거 달 리포트에도 조회 시점 값이 들어간다. 현금흐름은 기준일이 그 달 안인 마지막 완료
  * 예측의 위험, 비효율은 그 달 완료된 가장 최근 진단의 문제(GOAL 도메인 제외)다. 다시 예측하거나 진단하지 않는다.
  */
 @Component
@@ -62,7 +62,9 @@ public class EfficiencyScoreCalculator {
 
         long fixed = spendingTypes.readMonthlyBySpendingType(userId, SpendingType.FIXED.name(), start, end).stream()
                 .mapToLong(JdbcSpendingReader.MonthlySpendingRow::total).sum();
-        String creditRating = users.findById(userId).map(User::getCreditRating).orElse(null);
+        User user = users.findById(userId).orElse(null);
+        Integer creditScore = user == null ? null : user.getCreditScore();
+        String creditRating = user == null ? null : user.getCreditRating();
 
         Optional<CashflowForecast> forecast = forecasts
                 .findFirstByUserIdAndStatusAndBaseDateBetweenOrderByBaseDateDescCompletedAtDescForecastIdDesc(
@@ -81,7 +83,7 @@ public class EfficiencyScoreCalculator {
                 EfficiencyScorePolicy.spending(totals.totalSpending(), totals.totalIncome()),
                 EfficiencyScorePolicy.saving(totals.totalSaving(), totals.totalIncome()),
                 EfficiencyScorePolicy.fixedExpense(fixed, totals.totalSpending()),
-                EfficiencyScorePolicy.credit(creditRating),
+                EfficiencyScorePolicy.credit(creditScore, creditRating),
                 EfficiencyScorePolicy.cashflow(forecast.isPresent(), riskSeverities),
                 EfficiencyScorePolicy.inefficiency(diagnosisId != null, issueSeverities));
         return EfficiencyScorePolicy.overall(dimensions);
