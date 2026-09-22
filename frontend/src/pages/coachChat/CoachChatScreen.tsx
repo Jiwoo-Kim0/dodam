@@ -1,8 +1,9 @@
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import { Fragment, useCallback, useRef } from 'react';
+import { Fragment, useCallback, useEffect, useRef } from 'react';
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -42,6 +43,20 @@ export function CoachChatScreen({ context }: CoachChatScreenProps) {
   const bubbleMaxWidth = Math.round(windowWidth * 0.72);
   const { turns, isSending, error, sendChip, sendMessage, retry, startNewConversation } =
     useCoachChat(context);
+
+  const scrollToEnd = useCallback(() => {
+    scrollRef.current?.scrollToEnd({ animated: true });
+  }, []);
+
+  /*
+   * 키보드가 열리면 보이는 영역만 줄고 내용 길이는 그대로라 `onContentSizeChange`가 안 돈다.
+   * 마지막 답변이 키보드 뒤로 숨는 걸 막으려고 열릴 때 한 번 끝으로 내린다.
+   */
+  useEffect(() => {
+    const subscription = Keyboard.addListener('keyboardDidShow', scrollToEnd);
+
+    return () => subscription.remove();
+  }, [scrollToEnd]);
 
   const handleBackPress = useCallback(() => {
     if (router.canGoBack()) {
@@ -84,9 +99,13 @@ export function CoachChatScreen({ context }: CoachChatScreenProps) {
         title="토리에게 묻기"
       />
 
-      {/* 입력창이 키보드에 가리지 않게 대화 영역과 입력 바를 함께 밀어 올린다. */}
+      {/*
+        입력창이 키보드에 가리지 않게 대화 영역과 입력 바를 함께 밀어 올린다.
+        안드로이드는 edge-to-edge가 켜져 있어 네이티브 `adjustResize`만으로는 창이 줄지 않는다.
+        `height`로 직접 높이를 줄여야 하며, 이 값은 앱의 다른 입력 화면과 같다.
+      */}
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.chatArea}>
         {/*
           공통 BouncyScrollView는 transform으로 스크롤을 흉내 내서, 내용이 계속 늘어나는
@@ -94,8 +113,9 @@ export function CoachChatScreen({ context }: CoachChatScreenProps) {
         */}
         <ScrollView
           contentContainerStyle={styles.scrollContent}
+          keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
-          onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+          onContentSizeChange={scrollToEnd}
           ref={scrollRef}>
           <View style={styles.coachRow}>
             <Image
