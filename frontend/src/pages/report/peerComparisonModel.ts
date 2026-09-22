@@ -6,7 +6,11 @@ import type {
   PeerGroupApiResponse,
   PeerUnavailableReason,
 } from '@/types/patternApi.types';
-import type { ReportPeerComparison, ReportPeerFeature } from '@/types/report.types';
+import type {
+  ReportPeerBadge,
+  ReportPeerComparison,
+  ReportPeerFeature,
+} from '@/types/report.types';
 
 /**
  * 오각형 축 라벨. 서버 `displayName`은 `소득 대비 소비율`처럼 길어 축 라벨로 쓰면 잘리므로
@@ -68,10 +72,45 @@ function toPercentText(ratio: number | null) {
   return `${Math.round(ratio * 100)}%`;
 }
 
+/**
+ * 또래 절반이 들어가는 구간. 이 안이면 또래와 비슷하다고 본다.
+ * 밖으로 나간 정도는 상·하위 10%를 경계로 '조금'과 그냥으로 나눈다.
+ */
+const MIDDLE_BAND = { low: 25, high: 75 };
+const EXTREME_BAND = { low: 10, high: 90 };
+
+/**
+ * 또래와 견준 한 줄 판정.
+ *
+ * <p>좋고 나쁨은 서버 `direction`이 정한다. FE는 백분위가 또래 절반 구간 밖으로 나갔는지,
+ * 나갔다면 좋은 쪽인지 아닌지만 읽는다. 여기서 새로운 기준을 만들지 않는다.
+ */
+function toBadge(
+  percentile: number,
+  direction: PeerFeatureDirection,
+): ReportPeerBadge | null {
+  if (percentile >= MIDDLE_BAND.low && percentile <= MIDDLE_BAND.high) {
+    return { label: '비슷해요', tone: 'neutral' };
+  }
+
+  const isHigh = percentile > MIDDLE_BAND.high;
+  const isBetter = isHigh === (direction === 'HIGHER_IS_BETTER');
+  if (isBetter) return { label: '좋아요', tone: 'good' };
+
+  // 좋지 않은 쪽이다. 어느 방향으로 벗어났는지까지 말해 줘야 다음 행동이 보인다.
+  const isExtreme = percentile >= EXTREME_BAND.high || percentile <= EXTREME_BAND.low;
+  const directionLabel = isHigh ? '높아요' : '낮아요';
+  return {
+    label: isExtreme ? directionLabel : `조금 ${directionLabel}`,
+    tone: 'watch',
+  };
+}
+
 function toFeature(feature: PeerFeatureApiResponse): ReportPeerFeature {
   const direction = feature.direction ?? FALLBACK_DIRECTIONS[feature.feature] ?? 'HIGHER_IS_BETTER';
 
   return {
+    badge: toBadge(feature.percentileInPeer, direction),
     key: feature.feature,
     label: FEATURE_AXIS_LABELS[feature.feature] ?? feature.displayName,
     axisValue:

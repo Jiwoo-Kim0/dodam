@@ -92,6 +92,14 @@ export interface ReportPastSpending {
   topCategories: readonly ReportSpendingCategory[];
 }
 
+/** 뱃지 색을 정하는 기준. `neutral`은 또래와 비슷해 좋고 나쁨을 말하지 않는 상태다. */
+export type ReportPeerBadgeTone = 'good' | 'watch' | 'neutral';
+
+export interface ReportPeerBadge {
+  label: string;
+  tone: ReportPeerBadgeTone;
+}
+
 export interface ReportPeerFeature {
   key: string;
   /** 오각형 축에 들어갈 짧은 라벨이다. */
@@ -101,6 +109,11 @@ export interface ReportPeerFeature {
    * **바깥쪽일수록 좋은 상태**가 되게 맞춘다. 또래 중앙값은 뒤집어도 50이라 기준선은 그대로다.
    */
   axisValue: number;
+  /**
+   * 또래와 견준 한 줄 판정. 서버가 준 `direction`과 백분위로만 만들며, FE가 좋고 나쁨을
+   * 새로 정하지 않는다. 방향을 모르는 항목은 판정하지 않고 `null`이다.
+   */
+  badge: ReportPeerBadge | null;
   /** 서버가 준 원래 백분위(0~100)다. 값이 클수록 큰 쪽이며 좋고 나쁨과는 무관하다. */
   percentile: number;
   /** 원본 비율 값이다. 또래 분포와 내 위치를 같은 축에 놓는 데 쓴다. */
