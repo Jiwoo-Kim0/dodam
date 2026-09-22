@@ -16,7 +16,7 @@ export function PeerComparisonCard({ onPress, peerComparison }: PeerComparisonCa
     return (
       <View style={[screenStyles.card, styles.peerCard]}>
         <View style={styles.header}>
-          <Text style={screenStyles.cardTitle}>나의 소비 유형</Text>
+          <Text style={screenStyles.cardTitle}>또래 대비 소비 건강도</Text>
           <View style={styles.badge}>
             <Text style={styles.badgeText}>소비 유형 분석</Text>
           </View>
@@ -37,7 +37,7 @@ export function PeerComparisonCard({ onPress, peerComparison }: PeerComparisonCa
         pressed && styles.peerCardPressed,
       ]}>
       <View style={styles.header}>
-        <Text style={screenStyles.cardTitle}>나의 소비 유형</Text>
+        <Text style={screenStyles.cardTitle}>또래 대비 소비 건강도</Text>
         <View style={styles.badge}>
           <Text style={styles.badgeText}>소비 유형 분석</Text>
         </View>
@@ -62,7 +62,7 @@ export function PeerComparisonCard({ onPress, peerComparison }: PeerComparisonCa
       <View style={styles.legend}>
         <View style={styles.legendItem}>
           <View style={styles.legendUserMark} />
-          <Text style={styles.legendText}>나</Text>
+          <Text style={styles.legendText}>나의 또래 대비 위치</Text>
         </View>
         <View style={styles.legendItem}>
           <View style={styles.legendPeerMark} />
@@ -74,7 +74,7 @@ export function PeerComparisonCard({ onPress, peerComparison }: PeerComparisonCa
         축마다 좋은 방향이 달라 값을 맞춰 뒤집었으므로 읽는 법을 함께 알려 준다.
         점선은 또래를 줄 세웠을 때 딱 가운데 사람의 자리다.
       */}
-      <Text style={styles.chartGuide}>또래 안에서 내 위치예요 · 바깥쪽일수록 좋아요</Text>
+      <Text style={styles.chartGuide}>실제 비율이 아닌 또래 내 상대 위치예요 · 바깥쪽일수록 양호해요</Text>
 
       {/* 비교 집단과 표본 수는 상세 화면에서 보여 준다. */}
       <View style={styles.moreRow}>

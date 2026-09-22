@@ -35,7 +35,7 @@ export function useEfficiencyScore() {
     try {
       const report = await reportApi.getMonthly(monthAt(-1));
       if (requestId === requestIdRef.current) {
-        setEfficiencyScore(toEfficiencyScore(report.efficiency));
+        setEfficiencyScore(toEfficiencyScore(report.efficiency, report.period));
       }
     } catch (loadError) {
       if (requestId !== requestIdRef.current) return;

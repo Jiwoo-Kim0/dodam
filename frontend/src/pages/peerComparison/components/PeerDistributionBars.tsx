@@ -39,25 +39,25 @@ type BarRow = {
 
 function toRow(feature: ReportPeerFeature): BarRow {
   // 축마다 값의 크기가 달라(소비율은 1을 넘고 저축률은 0.2대) 행마다 자기 도메인을 쓴다.
-  const candidates = [feature.userValue, feature.peerP75 ?? 0, feature.peerMedian ?? 0];
+  const candidates = [feature.rawRatio, feature.peerP75Ratio ?? 0, feature.peerMedianRatio ?? 0];
   const domain = Math.max(...candidates) * DOMAIN_HEADROOM;
   const toPosition = (value: number) =>
     domain === 0 ? 0 : Math.min(100, Math.max(0, (value / domain) * 100));
 
-  const p25 = feature.peerP25;
-  const p75 = feature.peerP75;
+  const p25 = feature.peerP25Ratio;
+  const p75 = feature.peerP75Ratio;
 
   return {
     key: feature.key,
-    label: feature.label,
+    label: feature.detailLabel,
     badge: feature.badge,
-    userValueText: feature.userValueText,
-    userPosition: toPosition(feature.userValue),
+    userValueText: feature.rawRatioText,
+    userPosition: toPosition(feature.rawRatio),
     peerBand:
       p25 === null || p75 === null
         ? null
         : { left: toPosition(p25), width: Math.max(2, toPosition(p75) - toPosition(p25)) },
-    medianPosition: feature.peerMedian === null ? null : toPosition(feature.peerMedian),
+    medianPosition: feature.peerMedianRatio === null ? null : toPosition(feature.peerMedianRatio),
   };
 }
 
