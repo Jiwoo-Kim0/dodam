@@ -1,8 +1,8 @@
-# User 프로필 확장 — 생년월일·성별·신용등급 (S15P21D105-629, V39)
+# User 프로필 확장 — 생년월일·성별·신용정보 (S15P21D105-629·680, V39·V42)
 
-API 명세 2. User(`/api/v1/users/me`)와 1. Auth 회원가입에 사용자 기본정보 세 가지를 더한다. 나이는 생년월일로 저장해 응답에서 계산하고,
-성별은 사용자 입력, 신용등급은 SSAFY 금융망 조회 결과를 서버가 기록한다. 셋 모두 선택(NULL 허용)이라 기존 회원·seed 사용자·소셜 가입자는
-값이 비어 있다.
+API 명세 2. User(`/api/v1/users/me`)와 1. Auth 회원가입에 생년월일·성별을 더하고, 금융망 A~E 등급과 도담 예상
+신용점수를 구분해 제공한다. 나이는 생년월일로 저장해 응답에서 계산하며 성별은 사용자 입력이다. 금융망 등급과 신용점수는
+사용자가 수정할 수 없고, 산정·조회 전에는 NULL이다.
 
 ## 스키마 (V39)
 
@@ -12,6 +12,10 @@ API 명세 2. User(`/api/v1/users/me`)와 1. Auth 회원가입에 사용자 기�
 | `user.gender` | `VARCHAR(10) NULL`, `CHECK IN ('MALE','FEMALE')` | 사용자 입력 | enum `Gender`. 미입력은 NULL |
 | `user.credit_rating` | `VARCHAR(5) NULL` | 금융망 2.7.4 내 신용등급 조회 `ratingName` | `A`~`E` 원문. 금융망은 숫자 점수를 주지 않는다 |
 | `user.credit_rating_updated_at` | `DATETIME NULL` | 서버 | 마지막 기록 시각 |
+| `user.credit_score` | `SMALLINT NULL`, 1~1,000 | 합성 모델 또는 CB 조회 | 현재 개인신용점수 |
+| `user.credit_score_source` | `VARCHAR(30) NULL` | 서버 | `SYNTHETIC`, `KCB`, `NICE` |
+| `user.credit_score_model_version` | `VARCHAR(30) NULL` | 서버 | 합성 점수일 때 필수. 현재 `DODAM_CREDIT_V1` |
+| `user.credit_score_updated_at` | `DATETIME NULL` | 서버 | 마지막 산정·조회 시각 |
 
 ## API 변경
 
@@ -42,12 +46,17 @@ API 명세 2. User(`/api/v1/users/me`)와 1. Auth 회원가입에 사용자 기�
     "userId": 1, "email": "dodam@example.com", "name": "도담",
     "birthDate": "1996-03-15", "age": 30, "gender": "FEMALE",
     "creditRating": "B", "creditRatingUpdatedAt": "2026-09-17T14:31:02",
+    "creditScore": 768, "creditScoreType": "ESTIMATED",
+    "creditScoreSource": "SYNTHETIC", "creditScoreModelVersion": "DODAM_CREDIT_V1",
+    "creditScoreUpdatedAt": "2026-09-27T23:59:59",
     "role": "USER", "financeConnectionStatus": "CONNECTED",
     "createdAt": "2026-09-17T14:20:00", "updatedAt": "2026-09-17T14:31:02" } }
 ```
 
 - `age`: 서비스 시간대(Asia/Seoul) 오늘 기준 만 나이. `birthDate`가 없으면 `null`.
 - `creditRating`·`creditRatingUpdatedAt`: 신용등급 조회 또는 금융 데이터 동기화가 한 번도 성공하지 않았으면 `null`.
+- `creditScore*`: 점수 산정·조회 전에는 모두 `null`. `SYNTHETIC`은 `ESTIMATED`, KCB/NICE는 `VERIFIED`다.
+- SSAFY 금융망 등급은 점수로 환산하지 않는다. 4,000명 합성 점수 산식은 [credit-score-model.md](credit-score-model.md)를 따른다.
 
 ## 신용등급 갱신 규칙
 

@@ -19,7 +19,7 @@ import java.time.Period;
  * (Hibernate가 백틱을 Dialect별 인용문자로 변환한다.)
  *
  * <p>V39(629): 생년월일·성별은 사용자가 입력하고, 신용등급은 SSAFY 금융망 조회 결과를 서버가 기록한다.
- * 셋 모두 NULL 허용 — 기존 회원·seed·소셜 가입자는 값이 없다.
+ * V42(680): 실제 CB 조회값과 구분되는 도담 예상 신용점수와 산정 메타데이터를 추가한다.
  */
 @Entity
 @Table(name = "`user`")
@@ -58,6 +58,19 @@ public class User {
 
     @Column(name = "credit_rating_updated_at")
     private LocalDateTime creditRatingUpdatedAt;
+
+    @Column(name = "credit_score")
+    private Integer creditScore;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "credit_score_source", length = 30)
+    private CreditScoreSource creditScoreSource;
+
+    @Column(name = "credit_score_model_version", length = 30)
+    private String creditScoreModelVersion;
+
+    @Column(name = "credit_score_updated_at")
+    private LocalDateTime creditScoreUpdatedAt;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 20)
@@ -148,6 +161,25 @@ public class User {
     }
 
     /**
+     * 신용점수와 출처를 함께 기록한다. 합성 점수를 KCB/NICE 조회값처럼 보이지 않게 메타데이터를 필수로 묶는다.
+     */
+    public void updateCreditScore(int score, CreditScoreSource source, String modelVersion, LocalDateTime at) {
+        if (score < 1 || score > 1000) {
+            throw new IllegalArgumentException("credit score must be between 1 and 1000");
+        }
+        if (source == null || at == null) {
+            throw new IllegalArgumentException("credit score source and updated time are required");
+        }
+        if (source == CreditScoreSource.SYNTHETIC && (modelVersion == null || modelVersion.isBlank())) {
+            throw new IllegalArgumentException("synthetic credit score model version is required");
+        }
+        this.creditScore = score;
+        this.creditScoreSource = source;
+        this.creditScoreModelVersion = modelVersion == null ? null : modelVersion.trim();
+        this.creditScoreUpdatedAt = at;
+    }
+
+    /**
      * 기준일 현재 만 나이. 생년월일이 없으면 null.
      */
     public Integer ageAt(LocalDate today) {
@@ -204,6 +236,22 @@ public class User {
 
     public LocalDateTime getCreditRatingUpdatedAt() {
         return creditRatingUpdatedAt;
+    }
+
+    public Integer getCreditScore() {
+        return creditScore;
+    }
+
+    public CreditScoreSource getCreditScoreSource() {
+        return creditScoreSource;
+    }
+
+    public String getCreditScoreModelVersion() {
+        return creditScoreModelVersion;
+    }
+
+    public LocalDateTime getCreditScoreUpdatedAt() {
+        return creditScoreUpdatedAt;
     }
 
     public UserRole getRole() {

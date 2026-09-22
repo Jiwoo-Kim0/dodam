@@ -21,7 +21,7 @@ import java.util.Map;
  *   <tr><td>SPENDING 지출 관리</td><td>소비 / 소득</td><td>≤ 0.5</td><td>≥ 1.0</td></tr>
  *   <tr><td>SAVING 저축</td><td>저축성 지출 / 소득</td><td>≥ 0.3</td><td>0</td></tr>
  *   <tr><td>FIXED_EXPENSE 고정지출</td><td>고정지출 / 소비</td><td>≤ 0.3</td><td>≥ 0.7</td></tr>
- *   <tr><td>CREDIT 신용 관리</td><td>신용등급</td><td colspan="2">A 100 · B 85 · C 70 · D 50 · E 30</td></tr>
+ *   <tr><td>CREDIT 신용 관리</td><td>개인신용점수</td><td>1,000점</td><td>1점</td></tr>
  *   <tr><td>CASHFLOW 현금흐름</td><td>그 달 마지막 예측의 위험</td><td colspan="2">100 − Σ(CRITICAL 40, HIGH 30, MEDIUM 15, LOW 5), 하한 0</td></tr>
  *   <tr><td>INEFFICIENCY 비효율 관리</td><td>그 달 완료 진단의 문제(GOAL 제외)</td><td colspan="2">100 − Σ(CRITICAL 30, HIGH 25, MEDIUM 15, LOW 10), 하한 0</td></tr>
  * </table>
@@ -31,7 +31,7 @@ import java.util.Map;
  */
 public final class EfficiencyScorePolicy {
 
-    public static final String VERSION = "efficiency-v1";
+    public static final String VERSION = "efficiency-v2";
     public static final int MINIMUM_DIMENSIONS = 3;
 
     public static final String KEY_SPENDING = "SPENDING";
@@ -48,13 +48,14 @@ public final class EfficiencyScorePolicy {
 
     public static final String REASON_INCOME_MISSING = "INCOME_MISSING";
     public static final String REASON_NO_SPENDING = "NO_SPENDING";
-    public static final String REASON_CREDIT_RATING_MISSING = "CREDIT_RATING_MISSING";
+    public static final String REASON_CREDIT_SCORE_MISSING = "CREDIT_SCORE_MISSING";
     public static final String REASON_FORECAST_NOT_FOUND = "FORECAST_NOT_FOUND";
     public static final String REASON_DIAGNOSIS_NOT_FOUND = "DIAGNOSIS_NOT_FOUND";
 
     static final String VALUE_RATIO = "RATIO";
     static final String VALUE_COUNT = "COUNT";
     static final String VALUE_GRADE = "GRADE";
+    static final String VALUE_SCORE = "SCORE";
 
     static final int GOOD_THRESHOLD = 70;
     static final int NORMAL_THRESHOLD = 40;
@@ -102,15 +103,24 @@ public final class EfficiencyScorePolicy {
         return available(KEY_FIXED_EXPENSE, score, "전체 소비 중 고정지출이 " + percent(share) + "%예요.", share, VALUE_RATIO, null);
     }
 
-    /** 신용등급 A~E(금융망 등급명). 없으면 CREDIT_RATING_MISSING. 등급표에 없는 문자면 첫 글자로 판정한다. */
-    public static Dimension credit(String creditRating) {
+    /**
+     * 1~1,000 개인신용점수를 0~100으로 환산한다. 점수가 아직 없으면 기존 금융망 A~E 등급을 호환 입력으로 쓴다.
+     */
+    public static Dimension credit(Integer creditScore, String creditRating) {
+        if (creditScore != null && creditScore >= 1 && creditScore <= 1000) {
+            int score = (int) Math.round(creditScore / 10.0);
+            String description = score >= GOOD_THRESHOLD
+                    ? "예상 신용점수가 " + creditScore + "점으로 안정적이에요."
+                    : "예상 신용점수가 " + creditScore + "점이에요. 관리가 필요해요.";
+            return available(KEY_CREDIT, score, description, creditScore.doubleValue(), VALUE_SCORE, null);
+        }
         String grade = normalizeGrade(creditRating);
         if (grade == null) {
-            return unavailable(KEY_CREDIT, REASON_CREDIT_RATING_MISSING, "신용등급 정보가 없어 계산하지 못했어요. 금융 데이터를 동기화하면 채워져요.");
+            return unavailable(KEY_CREDIT, REASON_CREDIT_SCORE_MISSING, "신용점수 정보가 없어 계산하지 못했어요.");
         }
         int score = CREDIT_GRADE_SCORES.get(grade);
-        String description = score >= GOOD_THRESHOLD ? "신용 상태가 안정적이에요(" + grade + "등급)."
-                : "신용등급이 " + grade + "등급이에요. 관리가 필요해요.";
+        String description = score >= GOOD_THRESHOLD ? "기존 금융망 기준 신용 상태가 안정적이에요(" + grade + "등급)."
+                : "기존 금융망 신용등급이 " + grade + "등급이에요. 관리가 필요해요.";
         return available(KEY_CREDIT, score, description, null, VALUE_GRADE, grade);
     }
 

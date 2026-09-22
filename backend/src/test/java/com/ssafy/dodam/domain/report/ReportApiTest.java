@@ -157,7 +157,7 @@ class ReportApiTest {
                 .andExpect(jsonPath("$.data.cardSpending").value(1_450_000))
                 .andExpect(jsonPath("$.data.cardSpendingPreviousMonth").value(1_560_000))
                 .andExpect(jsonPath("$.data.cardSpendingDifferenceFromPreviousMonth").value(-110_000))
-                .andExpect(jsonPath("$.data.efficiency.calculationVersion").value("efficiency-v1"))
+                .andExpect(jsonPath("$.data.efficiency.calculationVersion").value("efficiency-v2"))
                 .andExpect(jsonPath("$.data.efficiency.maxScore").value(100))
                 .andExpect(jsonPath("$.data.efficiency.availableDimensionCount").value(6))
                 .andExpect(jsonPath("$.data.efficiency.dimensions.length()").value(6))
@@ -203,7 +203,7 @@ class ReportApiTest {
                 .andExpect(jsonPath("$.data.efficiency.unavailableReason").doesNotExist())
                 .andExpect(jsonPath("$.data.efficiency.dimensions[3].score").doesNotExist())
                 .andExpect(jsonPath("$.data.efficiency.dimensions[3].status").value("UNAVAILABLE"))
-                .andExpect(jsonPath("$.data.efficiency.dimensions[3].unavailableReason").value("CREDIT_RATING_MISSING"))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[3].unavailableReason").value("CREDIT_SCORE_MISSING"))
                 .andExpect(jsonPath("$.data.efficiency.dimensions[4].unavailableReason").value("FORECAST_NOT_FOUND"))
                 .andExpect(jsonPath("$.data.efficiency.dimensions[5].unavailableReason").value("DIAGNOSIS_NOT_FOUND"))
                 // 7월은 3개 계산(100·36·100) → 79 → 54 − 79

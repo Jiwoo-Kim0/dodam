@@ -12,7 +12,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.ssafy.dodam.domain.user.entity.Gender;
+import com.ssafy.dodam.domain.user.entity.CreditScoreSource;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -115,7 +117,28 @@ class UserApiIntegrationTest {
                 .andExpect(jsonPath("$.data.age").value(nullValue()))
                 .andExpect(jsonPath("$.data.gender").value(nullValue()))
                 .andExpect(jsonPath("$.data.creditRating").value(nullValue()))
-                .andExpect(jsonPath("$.data.creditRatingUpdatedAt").value(nullValue()));
+                .andExpect(jsonPath("$.data.creditRatingUpdatedAt").value(nullValue()))
+                .andExpect(jsonPath("$.data.creditScore").value(nullValue()))
+                .andExpect(jsonPath("$.data.creditScoreType").value(nullValue()))
+                .andExpect(jsonPath("$.data.creditScoreSource").value(nullValue()))
+                .andExpect(jsonPath("$.data.creditScoreModelVersion").value(nullValue()))
+                .andExpect(jsonPath("$.data.creditScoreUpdatedAt").value(nullValue()));
+    }
+
+    @Test
+    void getMeReturnsEstimatedCreditScoreWithSourceMetadata() throws Exception {
+        User user = userRepository.findByEmailAndDeletedAtIsNull(EMAIL).orElseThrow();
+        LocalDateTime evaluatedAt = LocalDateTime.of(2026, 9, 27, 23, 59, 59);
+        user.updateCreditScore(768, CreditScoreSource.SYNTHETIC, "DODAM_CREDIT_V1", evaluatedAt);
+        userRepository.saveAndFlush(user);
+
+        mockMvc.perform(get("/api/v1/users/me").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.creditScore").value(768))
+                .andExpect(jsonPath("$.data.creditScoreType").value("ESTIMATED"))
+                .andExpect(jsonPath("$.data.creditScoreSource").value("SYNTHETIC"))
+                .andExpect(jsonPath("$.data.creditScoreModelVersion").value("DODAM_CREDIT_V1"))
+                .andExpect(jsonPath("$.data.creditScoreUpdatedAt").value("2026-09-27T23:59:59"));
     }
 
     // ---------- S15P21D105-629 생년월일·성별·신용등급 ----------
