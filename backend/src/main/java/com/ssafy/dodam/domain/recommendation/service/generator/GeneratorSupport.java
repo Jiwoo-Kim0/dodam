@@ -72,4 +72,60 @@ final class GeneratorSupport {
     static String won(long amount) {
         return String.format("%,d원", amount);
     }
+
+    /**
+     * 진단 스냅샷 {@code goals[]}에서 날짜 효과를 계산할 모으기 목표 하나(696).
+     *
+     * <p>546이 저장한 {@code forecast}(남은 금액·현재 저축속도)가 있는 SAVING 목표만 대상이다. 생성 요청에 goalId가 있으면 그 목표만
+     * 보고, 없으면 FE 발견 상세가 고르는 규칙과 같이 <b>가장 많이 밀린 목표</b>({@code daysDifference} 최대, 없으면 뒤로, 같으면 goalId
+     * 작은 것)를 고른다. 남은 금액이 0이거나 forecast가 없는 목표(v3 이전 스냅샷)는 건너뛴다. 조건에 맞는 목표가 없으면 empty.
+     *
+     * @param goalId       목표 id
+     * @param name         목표 이름(없으면 null)
+     * @param remaining    남은 금액(> 0)
+     * @param monthlyPace  현재 저축속도(0이면 현재 속도로는 달성 불가)
+     */
+    record SnapshotSavingGoal(long goalId, String name, long remaining, long monthlyPace) {
+    }
+
+    static java.util.Optional<SnapshotSavingGoal> savingGoalForForecast(RecommendationInput input) {
+        JsonNode snapshot = input.inputSnapshot();
+        if (snapshot == null || !snapshot.path("goals").isArray()) {
+            return java.util.Optional.empty();
+        }
+        SnapshotSavingGoal chosen = null;
+        Long chosenDelay = null;
+        for (JsonNode goal : snapshot.get("goals")) {
+            Long goalId = longOf(goal, "goalId");
+            if (goalId == null || !"SAVING".equals(textOf(goal, "type"))) {
+                continue;
+            }
+            if (input.goalId() != null && !input.goalId().equals(goalId)) {
+                continue;
+            }
+            JsonNode forecast = goal.get("forecast");
+            Long remaining = longOf(forecast, "remainingAmount");
+            Long pace = longOf(forecast, "averageMonthlySaving");
+            if (remaining == null || pace == null || remaining <= 0) {
+                continue;
+            }
+            Long delay = longOf(forecast, "daysDifference");
+            SnapshotSavingGoal candidate = new SnapshotSavingGoal(goalId, textOf(goal.get("goalSnapshot"), "name"),
+                    remaining, Math.max(0L, pace));
+            if (chosen == null || moreDelayed(delay, chosenDelay) || (java.util.Objects.equals(delay, chosenDelay)
+                    && goalId < chosen.goalId())) {
+                chosen = candidate;
+                chosenDelay = delay;
+            }
+        }
+        return java.util.Optional.ofNullable(chosen);
+    }
+
+    /** 지연 일수가 있는 목표가 없는 목표보다 앞, 둘 다 있으면 큰 쪽이 앞. */
+    private static boolean moreDelayed(Long delay, Long current) {
+        if (delay == null) {
+            return false;
+        }
+        return current == null || delay > current;
+    }
 }

@@ -102,9 +102,10 @@ public class SavingGoalRiskGenerator implements RecommendationCandidateGenerator
         String label = goalName == null ? "목표" : "'" + goalName + "'";
         Recommendation.Effect effect = new Recommendation.Effect(null, null, null, null, currentDate, improvedDate,
                 GeneratorSupport.advancedDays(currentDate, improvedDate), shortfall);
+        // 696: 목표를 지정하지 않은 진단에서도 goal-impact·저축 프리셋(619)이 이 목표를 가리키도록 후보에 goalId를 싣는다.
         return Outcome.of(new RecommendationCandidate(VERSION, TYPE + ":" + goalId, issue.issueId(), DOMAIN, TYPE,
                 "저축 조금씩 늘려보기",
                 "월 " + GeneratorSupport.won(shortfall) + "을 더 저축하면 " + label + " 달성에 다가갈 수 있어요.",
-                reasons, effect));
+                reasons, effect, goalId));
     }
 }

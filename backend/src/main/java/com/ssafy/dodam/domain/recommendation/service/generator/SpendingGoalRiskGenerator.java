@@ -67,6 +67,6 @@ public class SpendingGoalRiskGenerator implements RecommendationCandidateGenerat
                 "월 " + GeneratorSupport.won(over) + "을 줄이면 " + label + " 예산을 지킬 수 있어요.",
                 List.of(new RecommendationCandidate.Reason(REASON_OVER_BUDGET,
                         "예산 " + GeneratorSupport.won(budget) + " 대비 " + GeneratorSupport.won(over) + " 초과가 예상돼요.", evidence)),
-                effect));
+                effect, goalId));
     }
 }

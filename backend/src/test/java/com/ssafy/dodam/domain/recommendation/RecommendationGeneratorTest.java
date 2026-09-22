@@ -197,7 +197,11 @@ class RecommendationGeneratorTest {
         Outcome outcome = categorySpending.generate(input(), issue(21L, "SPENDING", "CATEGORY_SPENDING_INCREASE", IssueSeverity.MEDIUM,
                 current, benchmark, evidence));
         RecommendationCandidate candidate = outcome.candidates().get(0);
-        assertThat(candidate.generatorVersion()).isEqualTo("627.3");
+        assertThat(candidate.generatorVersion()).isEqualTo("696.1");
+        // 스냅샷에 목표가 없으면 날짜 효과·목표 근거가 없다(627.3과 같다)
+        assertThat(candidate.goalId()).isNull();
+        assertThat(candidate.effect().improvedForecastDate()).isNull();
+        assertThat(candidate.effect().contributionAmount()).isNull();
         assertThat(candidate.candidateKey()).isEqualTo("REDUCE_CATEGORY_SPENDING:3");
         assertThat(candidate.domain()).isEqualTo("SPENDING");
         assertThat(candidate.sourceIssueId()).isEqualTo(21L);
@@ -232,6 +236,67 @@ class RecommendationGeneratorTest {
         assertThat(categorySpending.generate(input(), issue(23L, "SPENDING", "CATEGORY_SPENDING_INCREASE", IssueSeverity.LOW, current, null, evidence))
                 .skipReason()).isEqualTo(SkipReason.INSUFFICIENT_DATA);
         assertThat(categorySpending.supports(issue(1L, "GOAL", "SPENDING_GOAL_RISK", IssueSeverity.LOW, null, null))).isFalse();
+    }
+
+    /**
+     * 696: 늘어난 금액을 저축에 돌렸을 때의 모으기 목표 예상 달성일 변화. 스냅샷 forecast(남은 금액·현재 속도)만 쓰고
+     * SavingGoalRiskGenerator와 같은 식(GoalForecastFormula, 일 단위)·같은 기준일(asOf)이다.
+     */
+    @Test
+    void categorySpendingGeneratorAdvancesMostDelayedSavingGoalFromSnapshotForecast() {
+        ObjectNode current = json.createObjectNode().put("categoryId", 3L).put("categoryCode", "FOOD").put("categoryName", "식비")
+                .put("monthlyAverage", 160_000L).put("increaseAmount", 40_000L);
+        current.putObject("recentPeriod").put("months", 1);
+        ObjectNode benchmark = json.createObjectNode().put("previousMonthlyAverage", 120_000L);
+        benchmark.putObject("baselinePeriod").put("months", 3);
+        ObjectNode evidence = json.createObjectNode().put("targetId", 3L);
+        RecommendationInput.Issue increase = issue(21L, "SPENDING", "CATEGORY_SPENDING_INCREASE", IssueSeverity.MEDIUM, current, benchmark, evidence);
+
+        ObjectNode snapshot = json.createObjectNode().put("asOf", AS_OF.toString());
+        var goals = snapshot.putArray("goals");
+        // 7: 남은 1,200,000 · 속도 100,000/월 · 30일 지연 → 대상. 8: 더 밀렸지만 SPENDING. 9: forecast 없음(v3 이전). 10: 덜 밀림
+        ObjectNode emergency = goals.addObject().put("goalId", 7L).put("type", "SAVING");
+        emergency.putObject("goalSnapshot").put("name", "비상금");
+        emergency.putObject("forecast").put("remainingAmount", 1_200_000L).put("averageMonthlySaving", 100_000L).put("daysDifference", 30L);
+        goals.addObject().put("goalId", 8L).put("type", "SPENDING").putObject("forecast").put("daysDifference", 90L);
+        goals.addObject().put("goalId", 9L).put("type", "SAVING").putObject("goalSnapshot").put("name", "여행");
+        ObjectNode house = goals.addObject().put("goalId", 10L).put("type", "SAVING");
+        house.putObject("forecast").put("remainingAmount", 5_000_000L).put("averageMonthlySaving", 300_000L).put("daysDifference", 3L);
+        RecommendationInput noGoalRequested = new RecommendationInput(1L, 1L, "v7", null, AS_OF.plusHours(5), snapshot, List.of(increase));
+
+        RecommendationCandidate candidate = categorySpending.generate(noGoalRequested, increase).candidates().get(0);
+        assertThat(candidate.goalId()).isEqualTo(7L);
+        // 현재: 1,200,000 / 100,000 = 12개월 → 2027-09-13. 개선: 140,000/월 → 8개월 + 80,000/140,000을 31일 구간에 비례 올림(18일) → 2027-05-31
+        assertThat(candidate.effect().currentForecastDate()).isEqualTo(LocalDate.of(2027, 9, 13));
+        assertThat(candidate.effect().improvedForecastDate()).isEqualTo(LocalDate.of(2027, 5, 31));
+        assertThat(candidate.effect().advancedDays()).isEqualTo(105);
+        assertThat(candidate.effect().contributionAmount()).isEqualTo(40_000L);
+        assertThat(candidate.effect().monthlyCostSaving()).isEqualTo(40_000L);
+        assertThat(candidate.reasons()).extracting(RecommendationCandidate.Reason::code)
+                .containsExactly("CATEGORY_SPENDING_INCREASE", "GOAL_FORECAST_ADVANCE");
+        JsonNode forecast = candidate.reasons().get(1).evidence();
+        assertThat(forecast.path("goalId").asLong()).isEqualTo(7L);
+        assertThat(forecast.path("goalName").asText()).isEqualTo("비상금");
+        assertThat(forecast.path("baseDate").asText()).isEqualTo("2026-09-13");
+        assertThat(forecast.path("improvedMonthlySaving").asLong()).isEqualTo(140_000L);
+        assertThat(forecast.path("advancedDays").asInt()).isEqualTo(105);
+        assertThat(candidate.reasons().get(1).description())
+                .isEqualTo("이 금액을 '비상금' 저축에 더하면 예상 달성일이 2027-09-13에서 2027-05-31로 105일 앞당겨져요.");
+
+        // 요청 goalId가 있으면 그 목표만 본다. forecast가 없는 목표면 날짜 효과 없음
+        RecommendationInput travel = new RecommendationInput(1L, 1L, "v7", 9L, AS_OF.plusHours(5), snapshot, List.of(increase));
+        RecommendationCandidate noForecast = categorySpending.generate(travel, increase).candidates().get(0);
+        assertThat(noForecast.goalId()).isNull();
+        assertThat(noForecast.effect().advancedDays()).isNull();
+        assertThat(noForecast.reasons()).hasSize(1);
+
+        // 현재 속도 0(연결 계좌 없음)이면 현재 달성일이 없어 단축일은 null, 개선 달성일만 있다
+        emergency.putObject("forecast").put("remainingAmount", 1_200_000L).put("averageMonthlySaving", 0L).put("daysDifference", 30L);
+        RecommendationCandidate zeroPace = categorySpending.generate(noGoalRequested, increase).candidates().get(0);
+        assertThat(zeroPace.effect().currentForecastDate()).isNull();
+        assertThat(zeroPace.effect().improvedForecastDate()).isEqualTo(LocalDate.of(2029, 3, 13));
+        assertThat(zeroPace.effect().advancedDays()).isNull();
+        assertThat(zeroPace.reasons().get(1).description()).startsWith("지금 저축 속도로는 '비상금' 달성일을 계산할 수 없어요.");
     }
 
     private ObjectNode loanCurrent(boolean withEstimate) {
