@@ -27,13 +27,19 @@ export interface ReportEfficiencyScore {
   unavailableMessage: string | null;
 }
 
-export type ReportPatternStatus = 'good' | 'check';
+/**
+ * 금융 생활 패턴 판정. `unavailable`은 '위험 없음'이 아니라 '판단할 자료가 없음'이다.
+ * 둘을 같은 모양으로 그리면 데이터가 없는 것을 안전하다고 읽게 된다(BE 697).
+ */
+export type ReportPatternStatus = 'good' | 'check' | 'unavailable';
 
 export interface ReportFinancePattern {
   id: string;
   status: ReportPatternStatus;
   title: string;
   description: string;
+  /** 판정이 본 기간. 서버가 주지 않으면 null이다. */
+  evidencePeriod: string | null;
   icon: ImageSourcePropType;
 }
 
@@ -110,8 +116,8 @@ export interface ReportPeerFeature {
    */
   axisValue: number;
   /**
-   * 또래와 견준 한 줄 판정. 서버가 준 `direction`과 백분위로만 만들며, FE가 좋고 나쁨을
-   * 새로 정하지 않는다. 방향을 모르는 항목은 판정하지 않고 `null`이다.
+   * 또래와 견준 한 줄 판정. 경계는 서버 `rankBand`, 좋고 나쁨은 서버 `direction`이 정하며
+   * FE가 기준을 새로 만들지 않는다. 서버가 모르는 구간을 보내면 `null`이다.
    */
   badge: ReportPeerBadge | null;
   /** 서버가 준 원래 백분위(0~100)다. 값이 클수록 큰 쪽이며 좋고 나쁨과는 무관하다. */

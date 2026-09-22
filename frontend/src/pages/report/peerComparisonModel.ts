@@ -4,6 +4,7 @@ import type {
   PeerFeatureApiResponse,
   PeerFeatureDirection,
   PeerGroupApiResponse,
+  PeerRankBand,
   PeerUnavailableReason,
 } from '@/types/patternApi.types';
 import type {
@@ -11,6 +12,7 @@ import type {
   ReportPeerComparison,
   ReportPeerFeature,
 } from '@/types/report.types';
+import { formatFeatureValue } from '@/utils/patternFeature';
 
 /**
  * 오각형 축 라벨. 서버 `displayName`은 `소득 대비 소비율`처럼 길어 축 라벨로 쓰면 잘리므로
@@ -67,50 +69,50 @@ export const PEER_COMPARISON_NOT_ANALYZED: ReportPeerComparison = {
   message: '거래 데이터가 쌓이면 소비 유형과 또래 비교를 확인할 수 있어요',
 };
 
-function toPercentText(ratio: number | null) {
-  if (ratio === null) return null;
-  return `${Math.round(ratio * 100)}%`;
-}
-
 /**
- * 또래 절반이 들어가는 구간. 이 안이면 또래와 비슷하다고 본다.
- * 밖으로 나간 정도는 상·하위 10%를 경계로 '조금'과 그냥으로 나눈다.
+ * 좋고 나쁨을 말하지 않는 특징(BE 670 회신).
+ *
+ * <p>서버 `direction`은 시뮬레이션·진단 규칙이 쓰므로 그대로 두고, 뱃지 색만 중립으로 둔다.
+ * 고정지출·재량소비는 많다고 낭비라 볼 수 없어 방향만 알려 준다(641 군집 비교 원칙).
  */
-const MIDDLE_BAND = { low: 25, high: 75 };
-const EXTREME_BAND = { low: 10, high: 90 };
+const NEUTRAL_TONE_FEATURES = new Set(['fixedExpenseShare', 'discretionaryShare']);
+
+/** 판정할 수 있는 구간. 서버가 구간을 늘리면 그 값은 판정 없이 지나간다. */
+const KNOWN_RANK_BANDS = new Set<string>(['TOP_10', 'UPPER', 'MIDDLE', 'LOWER', 'BOTTOM_10']);
 
 /**
  * 또래와 견준 한 줄 판정.
  *
- * <p>좋고 나쁨은 서버 `direction`이 정한다. FE는 백분위가 또래 절반 구간 밖으로 나갔는지,
- * 나갔다면 좋은 쪽인지 아닌지만 읽는다. 여기서 새로운 기준을 만들지 않는다.
+ * <p>경계는 서버 `rankBand`를 그대로 쓴다(TOP_10 ≥ 90 / UPPER ≥ 75 / MIDDLE / LOWER < 25 /
+ * BOTTOM_10 < 10). FE가 임계값을 따로 들면 서버가 기준을 바꿔도 따라가지 못한다.
+ * 좋고 나쁨은 서버 `direction`이 정하며, 여기서 새 기준을 만들지 않는다.
  */
 function toBadge(
-  percentile: number,
+  feature: string,
+  rankBand: PeerRankBand,
   direction: PeerFeatureDirection,
 ): ReportPeerBadge | null {
-  if (percentile >= MIDDLE_BAND.low && percentile <= MIDDLE_BAND.high) {
-    return { label: '비슷해요', tone: 'neutral' };
-  }
+  if (rankBand === 'MIDDLE') return { label: '비슷해요', tone: 'neutral' };
+  // 서버가 모르는 구간을 보내면 판정하지 않는다. 기본값으로 떨어뜨리면 없는 판정을 지어내게 된다.
+  if (!KNOWN_RANK_BANDS.has(rankBand)) return null;
 
-  const isHigh = percentile > MIDDLE_BAND.high;
-  const isBetter = isHigh === (direction === 'HIGHER_IS_BETTER');
-  if (isBetter) return { label: '좋아요', tone: 'good' };
-
-  // 좋지 않은 쪽이다. 어느 방향으로 벗어났는지까지 말해 줘야 다음 행동이 보인다.
-  const isExtreme = percentile >= EXTREME_BAND.high || percentile <= EXTREME_BAND.low;
+  const isHigh = rankBand === 'TOP_10' || rankBand === 'UPPER';
+  // 상·하위 10%까지 간 경우만 단정해 말하고, 그 안쪽은 '조금'을 붙인다.
+  const isExtreme = rankBand === 'TOP_10' || rankBand === 'BOTTOM_10';
   const directionLabel = isHigh ? '높아요' : '낮아요';
-  return {
-    label: isExtreme ? directionLabel : `조금 ${directionLabel}`,
-    tone: 'watch',
-  };
+  const label = isExtreme ? directionLabel : `조금 ${directionLabel}`;
+
+  if (NEUTRAL_TONE_FEATURES.has(feature)) return { label, tone: 'neutral' };
+
+  const isBetter = isHigh === (direction === 'HIGHER_IS_BETTER');
+  return isBetter ? { label: '좋아요', tone: 'good' } : { label, tone: 'watch' };
 }
 
 function toFeature(feature: PeerFeatureApiResponse): ReportPeerFeature {
   const direction = feature.direction ?? FALLBACK_DIRECTIONS[feature.feature] ?? 'HIGHER_IS_BETTER';
 
   return {
-    badge: toBadge(feature.percentileInPeer, direction),
+    badge: toBadge(feature.feature, feature.rankBand, direction),
     key: feature.feature,
     label: FEATURE_AXIS_LABELS[feature.feature] ?? feature.displayName,
     axisValue:
@@ -122,8 +124,11 @@ function toFeature(feature: PeerFeatureApiResponse): ReportPeerFeature {
     peerP25: feature.peerP25,
     peerMedian: feature.peerMedian,
     peerP75: feature.peerP75,
-    userValueText: `${Math.round(feature.userValue * 100)}%`,
-    peerMedianText: toPercentText(feature.peerMedian),
+    userValueText: formatFeatureValue(feature.feature, feature.userValue),
+    peerMedianText:
+      feature.peerMedian === null
+        ? null
+        : formatFeatureValue(feature.feature, feature.peerMedian),
   };
 }
 
