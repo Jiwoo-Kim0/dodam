@@ -6,6 +6,9 @@ FE는 이미 우회 구현을 넣어 배포 가능한 상태이므로, 아래는
 
 우선순위는 시연 영향도 순이다.
 
+> **BE 회신(S15P21D105-675, 2026-09-22)** — 항목별 회신을 각 절 끝에 `BE 회신` 블록으로 붙였다. 계약 상세는
+> [backend/docs/discovery-report-metrics-675.md](../backend/docs/discovery-report-metrics-675.md) §1. 서버 변경은 전부 추가 필드라 지금 FE 코드는 그대로 동작한다.
+
 ---
 
 ## 1. (P1) 목표 위험을 발견 대상에서 제외
@@ -46,6 +49,11 @@ FE는 이미 우회 구현을 넣어 배포 가능한 상태이므로, 아래는
 `expectedGoalAdvanceDays`)를 쓰지 않고 화면에 뜬 발견만으로 다시 센다. **BE 대응은 필요 없고**,
 목표가 제외되면 FE에서 되돌릴지 그대로 둘지 판단하면 된다.
 
+> **BE 회신(675)**: GOAL 문제 **생성은 유지**한다 — 546 goal-impact·changes, 코치 요약, 저축 늘리기 추천 → 저축 프리셋(619 goalId), 그리고 678 시연 seed가 U0003 목표를 `SAVING_GOAL_RISK`로 만들어 둔 것이 이 문제를 입력으로 쓴다.
+> 대신 **발견 화면이 세는 숫자에서 GOAL을 뺐다**: 진단 응답에 `discoveryIssueCount`(= issueCount − GOAL 문제 수) 추가, `GET /recommendations/summary`의 `discovery.issueCount`는 같은 정의로 바뀌었고
+> `openRecommendationCount`·`expectedAnnualCostSaving`·`expectedGoalAdvanceDays`는 GOAL 문제에서 나온 추천을 빼고 계산한다(`notes`에 `GOAL_ISSUES_EXCLUDED`). FE는 목록 길이·재집계 대신 이 두 서버 값을 쓸 수 있다.
+> `isHiddenFromDiscovery`는 계속 필요하다(문제 목록 API는 GOAL을 돌려준다). coverage `GOAL`은 실제로 검사하므로 `EVALUATED` 그대로. 목표 위험 추천 2종도 유지(발견 목록에는 안 붙는다).
+
 ---
 
 ## 2. (P1) 카테고리 소비 증가 추천에 `advancedDays`가 비어 있다
@@ -75,6 +83,12 @@ Recommendation.Effect effect = new Recommendation.Effect(
 `daysDifference`는 목표 전체의 현재 지연이지 이 카테고리 때문에 생긴 지연이 아니므로, 인과 표현("이 소비가 계속되면")은
 의도적으로 쓰지 않았다. 관련 코드는 `frontend/src/pages/discovery/goalDelay.ts`.
 
+> **BE 회신(675 → 후속 696)**: 675에서는 계약만 정했다 — `REDUCE_CATEGORY_SPENDING` 추천이 진단 스냅샷 `goals[].forecast`(남은 금액·현재 저축속도)로 "늘어난 금액을 이 목표 저축에 돌리면"의
+> `currentForecastDate`·`improvedForecastDate`·`advancedDays`(양수 = 앞당김)·`contributionAmount`(= 증가액)를 계산하고 대상 목표(요청 goalId, 없으면 **가장 많이 밀린 모으기 목표** = `goalDelay.ts`와 같은 규칙)를
+> `Recommendation.goalId`에 싣는다. 근거 `GOAL_FORECAST_ADVANCE`에 `goalName`·계산 입력. 현재 저축속도 0이면 `currentForecastDate`·`advancedDays`는 null, `improvedForecastDate`만 있다.
+> 원안 문구의 N("계속되면 N일 늦어짐")은 이 `advancedDays`와 같은 크기. 식은 510·시뮬레이션과 같은 `GoalForecastFormula`(일 단위), 현재 데이터로 재계산하지 않는다.
+> **구현은 S15P21D105-696**(코드·테스트 준비 완료). 배포 뒤 `POST /diagnoses {forceRefresh:true}` → `POST /recommendations/generate`를 다시 해야 새 버전 추천이 생긴다.
+
 ---
 
 ## 3. (P2) 발견 상세의 도메인별 고유 수치가 화면에 안 붙는다
@@ -94,6 +108,10 @@ FE가 `currentValue`/`benchmarkValue` JSON을 직접 파싱해 만들 수는 있
 
 지금 당장 막히는 건 아니므로 시연 이후 논의해도 된다.
 
+> **BE 회신(675)**: 도메인별로 읽어도 되는 키를 [discovery-report-metrics-675.md](../backend/docs/discovery-report-metrics-675.md) §1-3 표로 확정했다(진단 `ruleVersion` 안에서 고정, 추가만 허용).
+> LOAN: `interestRate`(내 금리) vs `referenceRate`(공시 최저금리 중앙값), `rateDifference`(%p), `refinance.available`일 때 `interestSaving`·`monthlySaving`, `feesIncluded=false`.
+> CASHFLOW: `riskDate`(예정 출금일), `expectedBalance`(출금 직전 예상잔액, 음수 = 부족액), `message`. **필요 금액·부족 비율은 저장 위험에 없다** — §3 데이터 요건으로 넘겼다.
+
 ---
 
 ## 4. (P3) 참고 — FE가 서버 계산을 대신하고 있는 곳
@@ -105,6 +123,8 @@ FE가 `currentValue`/`benchmarkValue` JSON을 직접 파싱해 만들 수는 있
   (`frontend/src/pages/discovery/categoryMonthlySpending.ts`)
   진단 스냅샷에는 카테고리 월 합계만 있고 가맹점 분해가 없어서다. 지출처별 분해를 진단이 함께 저장하면
   FE 집계를 걷어낼 수 있다.
+
+> **BE 회신(675)**: 이번에는 FE 집계를 그대로 둔다. 가맹점명 정규화(같은 가맹점의 표기 편차)가 선행돼야 진단 저장값으로 굳힐 수 있다 — §3 데이터 요건(`topMerchants[]`)에 기록.
 
 ---
 

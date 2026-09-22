@@ -149,7 +149,8 @@ GoalCalculationService의 실제 판정 상수는 benchmarkValue에 보존한다
 
 ## 응답·데이터 부족
 
-진단 응답: diagnosisId, goalId, createdAt, completedAt, ruleVersion, overallStatus, issueCount, highSeverityCount, coverage, assumptions.
+진단 응답: diagnosisId, goalId, createdAt, completedAt, ruleVersion, overallStatus, issueCount, highSeverityCount, discoveryIssueCount, coverage, assumptions.
+`discoveryIssueCount`(675) = `issueCount` − GOAL 도메인 문제 수. 발견(비효율) 화면이 세는 값이며, 목표 위험은 목표 화면이 보여 주므로 발견 목록·개수에서 뺀다(607). `issueCount`·`highSeverityCount`·`overallStatus`는 GOAL을 포함한 전체 기준 그대로다. 발견 상세가 읽어도 되는 스냅샷 키는 [discovery-report-metrics-675.md](discovery-report-metrics-675.md) §1-3.
 문제 응답: issueId, diagnosisId, domain, type, severity, title, description, currentValue, benchmarkValue, evidence,
 detectionSource, modelVersion, clusterContext, detectedAt. RULE의 군집 필드는 null이다.
 raw inputSnapshot은 외부 응답에 포함하지 않는다. 조회는 현재 데이터로 재계산하지 않는다.

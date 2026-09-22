@@ -1,6 +1,8 @@
 package com.ssafy.dodam.domain.diagnosis.service;
 
 import com.ssafy.dodam.domain.diagnosis.dto.DiagnosisResponse;
+import com.ssafy.dodam.domain.diagnosis.entity.Diagnosis;
+import com.ssafy.dodam.domain.diagnosis.repository.DiagnosisIssueRepository;
 import com.ssafy.dodam.domain.pattern.dto.request.AnalyzePatternRequest;
 import com.ssafy.dodam.domain.pattern.service.PatternAnalysisRunner;
 import com.ssafy.dodam.global.exception.BusinessException;
@@ -22,23 +24,26 @@ public class DiagnosisRunner {
     private final DiagnosisExecutionStore store;
     private final DiagnosisEvaluator evaluator;
     private final PatternAnalysisRunner patterns;
+    private final DiagnosisIssueRepository issues;
 
-    public DiagnosisRunner(DiagnosisExecutionStore store, DiagnosisEvaluator evaluator, PatternAnalysisRunner patterns) {
+    public DiagnosisRunner(DiagnosisExecutionStore store, DiagnosisEvaluator evaluator, PatternAnalysisRunner patterns,
+            DiagnosisIssueRepository issues) {
         this.store = store;
         this.evaluator = evaluator;
         this.patterns = patterns;
+        this.issues = issues;
     }
 
     public Result run(Long userId, Long goalId, boolean forceRefresh) {
         var admission = store.admit(userId, goalId, forceRefresh);
         if (admission.cached()) {
-            return new Result(DiagnosisResponse.from(admission.diagnosis()), true);
+            return new Result(toResponse(admission.diagnosis()), true);
         }
         Long id = admission.diagnosis().getDiagnosisId();
         ensurePatternAnalysis(userId);
         try {
             var result = evaluator.evaluate(admission.diagnosis());
-            return new Result(DiagnosisResponse.from(store.complete(userId, id, result)), false);
+            return new Result(toResponse(store.complete(userId, id, result)), false);
         } catch (RuntimeException failure) {
             try {
                 store.abandon(userId, id);
@@ -58,6 +63,12 @@ public class DiagnosisRunner {
         } catch (RuntimeException failure) {
             log.warn("Pattern analysis failed before diagnosis (userId={}): {}", userId, failure.getMessage());
         }
+    }
+
+    /** 675: 발견 화면용 문제 수(GOAL 제외)를 함께 싣는다. 캐시 응답도 저장된 문제로 같은 값을 만든다. */
+    private DiagnosisResponse toResponse(Diagnosis diagnosis) {
+        return DiagnosisResponse.from(diagnosis,
+                issues.countByDiagnosisIdAndDomain(diagnosis.getDiagnosisId(), DiagnosisResponse.DISCOVERY_EXCLUDED_DOMAIN));
     }
 
     public record Result(DiagnosisResponse diagnosis, boolean cached) { }
