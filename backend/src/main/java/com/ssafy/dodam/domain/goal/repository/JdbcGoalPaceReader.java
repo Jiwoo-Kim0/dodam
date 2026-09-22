@@ -46,13 +46,24 @@ public class JdbcGoalPaceReader {
             """;
 
     // 순현금흐름: 수입 − (지출 + 이체). 숨긴 거래는 다른 집계와 같이 제외한다. 금액은 항상 양수고 방향은 transaction_type이 정한다.
+    //
+    // (703) 한 계좌를 여러 목표에 담으면 목표 몫만큼만 세야 하므로 합계가 아니라 계좌별로 돌려준다. 귀속은 계좌 거래면 그 계좌,
+    // 카드 승인이면 대금이 빠지는 출금 계좌다. 귀속 식을 파생 테이블에서 한 번만 계산하고 바깥에서 묶는 이유는, 같은 식을
+    // SELECT와 GROUP BY에 두 번 쓰면 `:accountIds`가 서로 다른 파라미터로 펼쳐져 H2가 같은 식으로 보지 않기 때문이다.
     private static final String NET_CASHFLOW_SQL = """
-            SELECT COALESCE(SUM(CASE WHEN entry.transaction_type = 'INCOME' THEN entry.amount ELSE -entry.amount END), 0)
-            FROM `transaction` entry
-            WHERE entry.user_id = :userId
+            SELECT attributed.attributed_account_id, COALESCE(SUM(attributed.signed_amount), 0) AS total
+            FROM (
+              SELECT CASE WHEN entry.account_id IN (:accountIds) THEN entry.account_id
+                          ELSE (SELECT drawn.withdrawal_account_id FROM card drawn
+                                WHERE drawn.card_id = entry.card_id AND drawn.user_id = :userId) END AS attributed_account_id,
+                     CASE WHEN entry.transaction_type = 'INCOME' THEN entry.amount ELSE -entry.amount END AS signed_amount
+              FROM `transaction` entry
+              WHERE entry.user_id = :userId
             """ + LINKED_ACCOUNT_CONDITION + """
-              AND entry.hidden = FALSE
-              AND entry.transaction_date BETWEEN :from AND :to
+                AND entry.hidden = FALSE
+                AND entry.transaction_date BETWEEN :from AND :to
+            ) attributed
+            GROUP BY attributed.attributed_account_id
             """;
 
     private static final String FIRST_TRANSACTION_SQL = """
@@ -98,15 +109,19 @@ public class JdbcGoalPaceReader {
         return terms;
     }
 
-    public long readNetCashflow(Long userId, Collection<Long> accountIds, LocalDate from, LocalDate to) {
+    /** 계좌별 기간 내 순현금흐름. 거래가 없는 계좌는 키가 없다. */
+    public Map<Long, Long> readNetCashflowByAccount(Long userId, Collection<Long> accountIds, LocalDate from, LocalDate to) {
         if (accountIds.isEmpty()) {
-            return 0L;
+            return Map.of();
         }
-        Long value = jdbc.queryForObject(NET_CASHFLOW_SQL,
+        Map<Long, Long> totals = new HashMap<>();
+        jdbc.query(NET_CASHFLOW_SQL,
                 new MapSqlParameterSource("userId", userId).addValue("accountIds", accountIds)
                         .addValue("from", from).addValue("to", to),
-                Long.class);
-        return value == null ? 0L : value;
+                rs -> {
+                    totals.put(rs.getLong("attributed_account_id"), rs.getLong("total"));
+                });
+        return totals;
     }
 
     public Optional<LocalDate> readFirstTransactionDate(Long userId, Collection<Long> accountIds) {

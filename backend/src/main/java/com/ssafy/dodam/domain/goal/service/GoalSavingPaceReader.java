@@ -3,6 +3,7 @@ package com.ssafy.dodam.domain.goal.service;
 import com.ssafy.dodam.domain.account.entity.AccountType;
 import com.ssafy.dodam.domain.goal.repository.JdbcGoalPaceReader;
 import com.ssafy.dodam.domain.goal.repository.JdbcGoalPaceReader.DepositSavingTerms;
+import java.math.BigInteger;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
@@ -22,7 +23,8 @@ import org.springframework.stereotype.Component;
  * <ul>
  *   <li>예·적금(전액 연결): 창 안의 PAID 납입 합 / 납입 이력이 있는 개월 수. 창 안에 납입이 없고 창 이후에 가입한 계좌는
  *       약정 월 납입액(만기 전)으로 본다. 예금·만기 적금은 0.</li>
- *   <li>입출금(전액이든 담기든): 목표에 연결된 입출금 계좌의 순현금흐름(수입 − 지출·이체) / 거래 이력이 있는 개월 수.
+ *   <li>입출금(전액이든 담기든): 목표에 연결된 입출금 계좌의 순현금흐름(수입 − 지출·이체) 중 <b>이 목표 몫</b>(703, {@code shareOf})
+ *       / 거래 이력이 있는 개월 수.
  *       그 계좌에서 대금이 빠지는 카드의 승인 거래도 포함한다({@link JdbcGoalPaceReader}). 연결하지 않은 계좌·카드의 거래는
  *       포함하지 않는다. 연결된 입출금 계좌에서 연결된 예·적금으로 이체하면 입출금 출금과 PAID 납입이 상쇄되므로 같은 저축을
  *       중복 계산하지 않는다. 음수면 예·적금 납입을 상쇄한다.</li>
@@ -74,10 +76,45 @@ public class GoalSavingPaceReader {
         if (!demandDeposits.isEmpty()) {
             int months = monthsCovered(first, last, reader.readFirstTransactionDate(userId, demandDeposits).orElse(null));
             if (months > 0) {
-                pace += reader.readNetCashflow(userId, demandDeposits, from, to) / months;
+                Map<Long, Long> netByAccount = reader.readNetCashflowByAccount(userId, demandDeposits, from, to);
+                long attributed = 0L;
+                for (GoalAllocationReader.LinkedAccount item : allocation.accounts()) {
+                    if (item.account().getAccountType() != AccountType.DEMAND_DEPOSIT) {
+                        continue;
+                    }
+                    Long net = netByAccount.get(item.account().getId());
+                    if (net != null) {
+                        attributed += shareOf(net, item);
+                    }
+                }
+                // 계좌별로 나누지 않고 합한 뒤 한 번만 나눈다. 몫이 모두 1이면 702까지와 같은 값이 된다.
+                pace += attributed / months;
             }
         }
         return Math.max(0L, pace);
+    }
+
+    /**
+     * 한 입출금 계좌를 여러 목표에 담았을 때 그 계좌의 순현금흐름 중 이 목표 몫(703).
+     *
+     * <p>626은 확보액에서 같은 돈이 두 목표에 중복 합산되지 않게 막았지만, 694에서 따로 생긴 저축속도에는 그 장치가 없어
+     * 두 목표가 같은 증가분을 각자 전액 세고 있었다. 몫은 확보액과 같은 기준인 {@code 이 목표의 기여액 / 그 계좌의 총 할당액}이다.
+     *
+     * <p>담은 금액이 아직 없으면({@code contribution_amount} NULL) 각 목표의 기여액이 잔액 전체라 몫이 {@code 1/연결 목표 수},
+     * 즉 균등 분할이 된다. 총 할당액이 0이거나(잔액 0) 이 목표가 전부를 차지하면 나눌 것이 없어 전액으로 본다.
+     *
+     * <p>{@code 순현금흐름 × 기여액}이 long 범위를 넘을 수 있어 중간 곱만 {@link BigInteger}로 계산한다. 몫이 1 이하라 결과는
+     * 다시 long에 들어간다.
+     */
+    private static long shareOf(long netCashflow, GoalAllocationReader.LinkedAccount item) {
+        long allocatedTotal = item.allocation().allocatedTotal();
+        if (allocatedTotal <= 0 || item.contribution() >= allocatedTotal) {
+            return netCashflow;
+        }
+        return BigInteger.valueOf(netCashflow)
+                .multiply(BigInteger.valueOf(item.contribution()))
+                .divide(BigInteger.valueOf(allocatedTotal))
+                .longValue();
     }
 
     private static long depositPace(Long paidInWindow, DepositSavingTerms terms, YearMonth first, YearMonth last, LocalDate today) {

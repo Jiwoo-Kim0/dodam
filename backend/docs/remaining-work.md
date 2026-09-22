@@ -2,7 +2,18 @@
 
 마지막 갱신: 2026-09-22
 
-백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 629, 632, 587, 589, 611, 627, 628, 633, 635, 636, 640·641, 675, 696, 701, 702이다.
+백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 629, 632, 587, 589, 611, 627, 628, 633, 635, 636, 640·641, 675, 696, 701, 702, 703이다.
+
+## S15P21D105-703 — [BE] 저축속도 목표별 안분 (세이프박스 1단계)
+
+계약: [goal.md](goal.md) §저축속도 정의, 계획은 [safebox-allocation-plan.md](safebox-allocation-plan.md) §3-1(MR-A).
+
+- [x] 같은 입출금 계좌를 여러 목표에 담았을 때 그 계좌 순현금흐름에 `이 목표 기여액 / 계좌 총 할당액`을 곱한다(`GoalSavingPaceReader.shareOf`). 626이 확보액에서 막은 중복이 저축속도에는 없어 두 목표가 같은 증가분을 각자 전액 세고 있었다. 담은 금액이 없으면 몫이 `1/연결 목표 수`(균등 분할), 총 할당액 0이거나 단독이면 전액(702까지와 같은 값).
+- [x] `JdbcGoalPaceReader.readNetCashflow` → `readNetCashflowByAccount`(계좌별 Map). 귀속 식을 파생 테이블에서 한 번만 계산한다 — SELECT와 GROUP BY에 같은 식을 두 번 쓰면 `:accountIds`가 다른 파라미터로 펼쳐져 H2가 같은 식으로 보지 않는다.
+- [x] 문서 부채 3건 정정: goal.md의 694 이전 속도 정의 문장, 마이그레이션 README의 "한 Account는 하나의 Goal에만" 규칙(V35가 뒤집음), 구간표 "다음은 V44"(V44는 697 사용 → V45).
+- [ ] **시연 서버**: 현재 U0001~U0004 모두 SAVING 목표 1개이고 공유 입출금 0건이라 속도·예상일이 바뀌지 않아야 한다. 배포 뒤 `GET /goals/{id}/forecast`의 `averageMonthlySaving`으로 확인한다.
+- [x] MySQL 검증: `JdbcGoalPaceReaderMySqlIntegrationTest`(환경변수 `GOAL_PACE_MYSQL_TEST_URL` 게이트)로 MySQL 8.0에서 같은 값을 확인했다. 준비는 빈 `dodam_703_test`에 마이그레이션을 **V6을 V11 뒤로 옮겨** 올리고(그대로면 `Failed to open the referenced table 'card'`) Flyway는 끈 채 실행한다. JDBC URL에 `characterEncoding=UTF-8`이 없으면 한글 리터럴이 깨진다.
+- [ ] 후속: 담기·꺼내기 API(MR-B), 이동 이력·속도 정의 교체(MR-C, 별도 이슈). [safebox-allocation-plan.md](safebox-allocation-plan.md) §6.
 
 ## S15P21D105-702 — [BE] 저축속도 연결 계좌 한정·소비 증가 추천 단축 일수 목표일 검사
 
