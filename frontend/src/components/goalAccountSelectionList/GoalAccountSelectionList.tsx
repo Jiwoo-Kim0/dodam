@@ -1,10 +1,10 @@
 import { SymbolView } from 'expo-symbols';
 import { Image, Pressable, ScrollView, Text, View } from 'react-native';
 
-import { FINANCIAL_INSTITUTIONS } from '@/mocks/financeConnection';
 import { colors } from '@/styles';
 import type { AccountApiResponse } from '@/types/assetApi.types';
 import { formatAccountBalance } from '@/utils/currency';
+import { findInstitutionByBankName } from '@/utils/institution';
 
 import { styles } from './GoalAccountSelectionList.styles';
 
@@ -39,11 +39,7 @@ export function GoalAccountSelectionList({
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.accountList}>
           {accounts.map((account) => {
-            const institution = FINANCIAL_INSTITUTIONS.find(
-              ({ name }) =>
-                account.bankName.includes(name.replace('은행', '')) ||
-                name.includes(account.bankName.replace('은행', '')),
-            );
+            const institution = findInstitutionByBankName(account.bankName);
             const accountId = String(account.accountId);
             const isSelected = selectedAccountIds.includes(accountId);
             const balanceText = formatAccountBalance(
