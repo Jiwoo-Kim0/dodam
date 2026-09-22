@@ -1,6 +1,7 @@
 package com.ssafy.dodam.domain.pattern.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.ssafy.dodam.domain.pattern.dto.response.PatternFeatureSummary.SourceFingerprint;
 import com.ssafy.dodam.domain.pattern.entity.AnalysisMode;
 import com.ssafy.dodam.domain.pattern.entity.PatternAnalysis;
 import com.ssafy.dodam.domain.pattern.entity.PatternAnalysisStatus;
@@ -21,8 +22,10 @@ import org.springframework.transaction.annotation.Transactional;
  * <p><b>중복 요청 방지</b>: 임대 기간(`app.pattern.lease-duration`) 안의 RUNNING 행이 있으면 409. 임대가 지난 RUNNING 행은 죽은
  * 접수로 보고 새 요청을 받는다(그 행은 완료 시점에 만료 처리된다).
  *
- * <p><b>재사용</b>: `forceRefresh=false`이고 오늘(서비스 시간대) 완료된 결과가 같은 기간·같은 요청 모드로 있으면 새로 계산하지 않고
- * 그 결과를 돌려준다. 요청 모드가 다르면(RULE_ONLY ↔ HYBRID) 재사용하지 않는다.
+ * <p><b>재사용</b>: `forceRefresh=false`이고 오늘(서비스 시간대) 완료된 결과가 같은 기간·같은 요청 모드로 있고, 그 결과에 저장된
+ * 원천 거래 지문이 지금 지문과 같으면 새로 계산하지 않고 그 결과를 돌려준다. 요청 모드가 다르거나(RULE_ONLY ↔ HYBRID) 분석 기간
+ * 안 거래가 추가·삭제·숨김·분류 변경으로 달라졌으면(700) 재사용하지 않는다. 지문이 없는 700 이전 결과도 재사용하지 않는다 —
+ * 오래된 결과를 돌려줄 가능성보다 하루 한 번의 재계산 비용이 싸다.
  */
 @Service
 public class PatternAnalysisExecutionStore {
@@ -43,7 +46,8 @@ public class PatternAnalysisExecutionStore {
     }
 
     @Transactional
-    public Admission admit(Long userId, AnalysisMode requestedMode, boolean forceRefresh, int lookbackMonths) {
+    public Admission admit(Long userId, AnalysisMode requestedMode, boolean forceRefresh, int lookbackMonths,
+            SourceFingerprint fingerprint) {
         lock(userId);
         LocalDateTime now = clock.now();
         if (analyses.findFirstByUserIdAndStatusAndAnalyzedAtAfterOrderByIdDesc(
@@ -56,7 +60,8 @@ public class PatternAnalysisExecutionStore {
                     .filter(latest -> latest.getAnalyzedAt().toLocalDate().equals(now.toLocalDate()))
                     .filter(latest -> latest.getLookbackMonths() == lookbackMonths)
                     .filter(latest -> assembler.featureSummary(latest)
-                            .map(summary -> requestedMode.name().equals(summary.requestedMode()))
+                            .map(summary -> requestedMode.name().equals(summary.requestedMode())
+                                    && fingerprint.equals(summary.sourceFingerprint()))
                             .orElse(false));
             if (reusable.isPresent()) {
                 return new Admission(reusable.get(), true);

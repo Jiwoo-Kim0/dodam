@@ -37,7 +37,8 @@ public class PatternResponseAssembler {
 
     // ---------- 계산 결과 → 저장 형식 ----------
 
-    public PatternFeatureSummary summarize(AnalysisMode requestedMode, PatternFeatures features, ClusterAssigner.Outcome outcome) {
+    public PatternFeatureSummary summarize(AnalysisMode requestedMode, PatternFeatures features, ClusterAssigner.Outcome outcome,
+            PatternFeatureSummary.SourceFingerprint sourceFingerprint) {
         AnalysisMode effective = outcome.assigned() ? AnalysisMode.HYBRID : AnalysisMode.RULE_ONLY;
         Map<String, Double> clusterFeatures = new LinkedHashMap<>();
         features.clusterFeatureValues().forEach((feature, value) -> clusterFeatures.put(feature.key(), value));
@@ -54,7 +55,7 @@ public class PatternResponseAssembler {
                 new PatternFeatureSummary.Averages(a.income(), a.spending(), a.fixedSpending(), a.variableSpending(),
                         a.discretionary(), a.savingTransfer(), a.loanRepayment()),
                 features.spendingVolatility(), features.liquidBalance(), features.runwayMonths(), outcome.populationSize(),
-                clusterFeatures, months);
+                clusterFeatures, months, sourceFingerprint);
     }
 
     /**
