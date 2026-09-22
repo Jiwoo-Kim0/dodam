@@ -15,7 +15,7 @@
 - [x] MySQL 검증: `JdbcGoalPaceReaderMySqlIntegrationTest`(환경변수 `GOAL_PACE_MYSQL_TEST_URL` 게이트)로 MySQL 8.0에서 같은 값을 확인했다. 준비는 빈 `dodam_703_test`에 마이그레이션을 **V6을 V11 뒤로 옮겨** 올리고(그대로면 `Failed to open the referenced table 'card'`) Flyway는 끈 채 실행한다. JDBC URL에 `characterEncoding=UTF-8`이 없으면 한글 리터럴이 깨진다.
 - [x] 예상 달성일 상한(`GoalCalculationService.beyondForecastHorizon`): 예상일이 목표일을 목표 기간(`totalDays`)만큼 더 넘어서면 `expectedAchievementDate`·`monthsToAchieve`·`daysDifference`를 null로 둔다. 속도가 분모라 작아질수록 결과가 폭발하는데(남은 1,790만 ÷ 월 10만 = 179개월) 3개월 표본으로 잰 속도를 하루 단위 날짜로 단정할 근거가 없다. 공유 식 `GoalForecastFormula`가 아니라 파생값 조립 단계에 둔다 — 식에 넣으면 시뮬레이션 before/after 일치 보장이 흔들린다.
 - [ ] FE 인계(114): `daysDifference`/`expectedAchievementDate`가 null인 경우가 늘어난다. 목표 상세의 `getSavingAccent(null)` 문구가 '달성일을 계산 중이에요'인데 실제 의미는 "현재 속도로는 목표일까지 어려워요"다. 발견 상세 지연 배너(`goalDelay.ts`)는 null이면 뜨지 않는다.
-- [ ] 후속: 담기·꺼내기 API(MR-B), 이동 이력·속도 정의 교체(MR-C, 별도 이슈). [safebox-allocation-plan.md](safebox-allocation-plan.md) §6.
+- [ ] 후속(같은 703, MR만 분리): MR 2 담기·꺼내기 API, MR 3 이동 이력(V45)·속도 정의 교체, MR 4 꺼내기 영향. 병합 시점이 달라 나눌 뿐 이슈는 하나다. [safebox-allocation-plan.md](safebox-allocation-plan.md) §6.
 
 ## S15P21D105-702 — [BE] 저축속도 연결 계좌 한정·소비 증가 추천 단축 일수 목표일 검사
 
