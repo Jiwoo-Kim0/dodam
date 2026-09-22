@@ -93,6 +93,13 @@ export function PeerComparisonScreen() {
             <View style={styles.card}>
               <Text style={styles.cardTitle}>항목별 또래 비교</Text>
               <Text style={styles.cardDescription}>초록 점을 누르면 내 수치를 볼 수 있어요</Text>
+              {/*
+                여기는 분석 기간 전체를 평균한 실제 비율이다. 금융 효율 점수 화면은 한 달치
+                점수라 숫자가 서로 달라, 같은 값으로 읽고 어긋난다고 느끼지 않도록 밝혀 둔다(698).
+              */}
+              <Text style={styles.cardDescription}>
+                기간 평균 비율이라 금융 효율 점수 화면의 한 달 값과는 달라요
+              </Text>
 
               <View style={styles.bars}>
                 <PeerDistributionBars features={peerComparison.features} />

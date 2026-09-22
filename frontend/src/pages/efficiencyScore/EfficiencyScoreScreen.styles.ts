@@ -30,6 +30,12 @@ export const styles = StyleSheet.create({
   heroCard: {
     paddingVertical: spacing[4],
   },
+  /** 점수 위에 작게 붙는 기준 달. 주인공인 점수보다 물러나 있어야 한다. */
+  periodLabel: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginBottom: spacing[1],
+  },
   scoreRow: {
     alignItems: 'baseline',
     flexDirection: 'row',

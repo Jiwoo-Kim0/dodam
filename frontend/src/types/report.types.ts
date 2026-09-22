@@ -5,9 +5,9 @@ export type ReportScoreDimensionStatus = 'good' | 'normal' | 'check' | 'unavaila
 
 export interface ReportScoreDimension {
   key: string;
-  /** 육각형 축 라벨이다. */
+  /** `지출 관리 점수`처럼 이 값이 비율이 아니라 점수라는 것이 드러나는 라벨이다. */
   label: string;
-  /** 0~100. 계산할 수 없으면 null이며 0점과 구분한다. */
+  /** 0~100 관리 점수다. **실제 비율이 아니다.** 계산할 수 없으면 null이며 0점과 구분한다. */
   score: number | null;
   status: ReportScoreDimensionStatus;
   /** 숫자 근거가 담긴 서버 문장이다. */
@@ -21,7 +21,12 @@ export interface ReportEfficiencyScore {
   /** 전월 대비 점수 차. 비교할 수 없으면 null이다. */
   previousMonthDifference: number | null;
   summary: string;
-  /** 항목별 점수. 비어 있으면 육각형을 그리지 않는다. */
+  /**
+   * `2026년 8월`처럼 점수를 낸 기준 달이다. 서버 `period`에서 만든다.
+   * 또래 비교(최근 N개월 평균)와 기간이 달라, 두 화면 값을 직접 비교할 수 없다는 것을 알리는 데 쓴다.
+   */
+  periodLabel: string | null;
+  /** 항목별 점수. */
   dimensions: readonly ReportScoreDimension[];
   /** 점수를 계산할 수 없을 때 보여 줄 안내다. 점수가 있으면 null이다. */
   unavailableMessage: string | null;
@@ -106,31 +111,39 @@ export interface ReportPeerBadge {
   tone: ReportPeerBadgeTone;
 }
 
+/**
+ * 또래 비교 한 축. **비율과 백분위는 서로 다른 값이라 이름으로 구분한다(698).**
+ * 오각형은 백분위(`healthPercentile`)로 그리고, 상세 화면 막대는 비율(`rawRatio`)로 그린다.
+ * 둘을 바꿔 쓰면 "실제 비율"과 "또래 안에서의 위치"가 뒤섞여 값이 안 맞는다고 느끼게 된다.
+ */
 export interface ReportPeerFeature {
   key: string;
-  /** 오각형 축에 들어갈 짧은 라벨이다. */
-  label: string;
+  /** 오각형 축에 들어갈 짧은 라벨이다. 길면 축에서 잘린다. */
+  axisLabel: string;
+  /** 상세 화면 목록에 쓰는 라벨이다. `6개월 평균 소비율`처럼 분석 기간을 함께 밝힌다. */
+  detailLabel: string;
   /**
-   * 오각형에 그릴 값(0~100)이다. 낮을수록 좋은 특징은 백분위를 뒤집어 담아, 어느 축이든
-   * **바깥쪽일수록 좋은 상태**가 되게 맞춘다. 또래 중앙값은 뒤집어도 50이라 기준선은 그대로다.
+   * 오각형에 그릴 값(0~100)이다. 비율이 아니라 **또래 안에서의 상대 위치**다.
+   * 낮을수록 좋은 특징은 백분위를 뒤집어 담아, 어느 축이든 **바깥쪽일수록 좋은 상태**가
+   * 되게 맞춘다. 또래 중앙값은 뒤집어도 50이라 기준선은 그대로다.
    */
-  axisValue: number;
+  healthPercentile: number;
   /**
    * 또래와 견준 한 줄 판정. 경계는 서버 `rankBand`, 좋고 나쁨은 서버 `direction`이 정하며
    * FE가 기준을 새로 만들지 않는다. 서버가 모르는 구간을 보내면 `null`이다.
    */
   badge: ReportPeerBadge | null;
   /** 서버가 준 원래 백분위(0~100)다. 값이 클수록 큰 쪽이며 좋고 나쁨과는 무관하다. */
-  percentile: number;
-  /** 원본 비율 값이다. 또래 분포와 내 위치를 같은 축에 놓는 데 쓴다. */
-  userValue: number;
-  peerP25: number | null;
-  peerMedian: number | null;
-  peerP75: number | null;
-  /** 사용자 값을 퍼센트로 표기한 문자열이다. */
-  userValueText: string;
-  /** 또래 중앙값을 퍼센트로 표기한 문자열이다. 서버가 주지 않으면 null이다. */
-  peerMedianText: string | null;
+  peerPercentile: number;
+  /** 실제 비율 값이다(소비율 0.83 = 83%). 또래 분포와 내 위치를 같은 축에 놓는 데 쓴다. */
+  rawRatio: number;
+  peerP25Ratio: number | null;
+  peerMedianRatio: number | null;
+  peerP75Ratio: number | null;
+  /** 실제 비율을 표기한 문자열이다. */
+  rawRatioText: string;
+  /** 또래 중앙값 비율을 표기한 문자열이다. 서버가 주지 않으면 null이다. */
+  peerMedianRatioText: string | null;
 }
 
 /**

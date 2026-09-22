@@ -59,6 +59,11 @@ export function EfficiencyScoreScreen() {
         ) : (
           <>
             <View style={[styles.card, styles.heroCard]}>
+              {/* 어느 달 점수인지 먼저 밝힌다. 또래 비교는 기간이 달라 값이 어긋나 보인다(698). */}
+              {efficiencyScore.periodLabel === null ? null : (
+                <Text style={styles.periodLabel}>{`${efficiencyScore.periodLabel} 기준`}</Text>
+              )}
+
               <View style={styles.scoreRow}>
                 <Text style={styles.score}>{efficiencyScore.score}</Text>
                 <Text style={styles.scoreDivider}>/</Text>
@@ -77,6 +82,13 @@ export function EfficiencyScoreScreen() {
             {efficiencyScore.dimensions.length === 0 ? null : (
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>항목별 점수</Text>
+                {/*
+                  오른쪽 숫자가 실제 비율이 아니라 0~100점의 관리 점수다. 아래 설명에 적힌
+                  비율과 다른 값이라, 사용자가 둘을 같은 값으로 읽지 않게 먼저 밝힌다(698).
+                */}
+                <Text style={styles.cardDescription}>
+                  0~100점으로 환산한 관리 점수예요. 아래 설명의 실제 비율과는 다른 값이에요
+                </Text>
                 <Text style={styles.cardDescription}>
                   계산할 수 없는 항목은 전체 점수에 넣지 않아요
                 </Text>
