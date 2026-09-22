@@ -55,7 +55,9 @@ public class SecurityConfig {
                 )
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(CorsUtils::isPreFlightRequest).permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/health", "/actuator/health")
+                        // /actuator/prometheus는 Prometheus 컨테이너가 backend:8080으로 직접 긁는다.
+                        // 외부 노출은 nginx가 `location ^~ /actuator/ { return 404; }`로 막는다(확인: 2026-09-22).
+                        .requestMatchers(HttpMethod.GET, "/api/health", "/actuator/health", "/actuator/prometheus")
                         .permitAll()
                         .requestMatchers(
                                 HttpMethod.POST,

@@ -24,6 +24,9 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    // 부하 테스트(693) 지표 수집. Prometheus가 /actuator/prometheus를 긁어간다.
+    // 이 의존성이 없으면 엔드포인트 자체가 생기지 않아 up{job="backend"}가 계속 0이다.
+    implementation 'io.micrometer:micrometer-registry-prometheus'
     implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
     implementation 'org.flywaydb:flyway-core'
     implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
