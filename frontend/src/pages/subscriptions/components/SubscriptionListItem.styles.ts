@@ -35,17 +35,19 @@ export const styles = StyleSheet.create({
     opacity: componentSize.bottomSheet.pressedOpacity,
   },
   serviceIcon: {
-    height: 44,
-    width: 44,
+    height: 38,
+    width: 38,
   },
   nameGroup: {
     flex: 1,
     flexShrink: 1,
   },
+  /** 굵기는 그대로 두고 크기만 한 단계 줄인다(18 → 15). 금액과 같은 크기를 유지한다. */
   name: {
-    ...typography.subtitle,
     color: colors.textPrimary,
-    lineHeight: 24,
+    fontFamily: fontFamily.medium,
+    fontSize: fontSize.buttonSmall,
+    lineHeight: 20,
   },
   cycleNote: {
     ...typography.caption,
@@ -56,8 +58,8 @@ export const styles = StyleSheet.create({
   amount: {
     color: colors.textPrimary,
     fontFamily: fontFamily.semiBold,
-    fontSize: fontSize.subtitle,
-    lineHeight: 24,
+    fontSize: fontSize.buttonSmall,
+    lineHeight: 20,
   },
   /** 금액이 주인공이라 단위는 한 단계 작고 연하게 둔다. */
   amountUnit: {
