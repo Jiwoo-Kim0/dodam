@@ -4,6 +4,15 @@ spring:
   jpa:
     open-in-view: false
 
+server:
+  tomcat:
+    mbeanregistry:
+      # 부하 테스트(693)에서 요청 스레드 고갈을 보려면 켜야 한다.
+      # 끄면(기본값) micrometer가 tomcat_sessions_* 만 내보내고
+      # tomcat_threads_busy_threads · tomcat_threads_config_max_threads 가 아예 생기지 않는다.
+      # "스레드가 다 찼나"와 "스레드는 여유 있는데 DB를 기다리나"를 구분할 수 없게 된다.
+      enabled: true
+
 management:
   endpoints:
     web:

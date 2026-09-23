@@ -19,6 +19,10 @@ QUERIES = [
     ("DB풀 대기(pending)", "",   'sum(hikaricp_connections_pending)'),
     ("DB풀 active", "",          'sum(hikaricp_connections_active)'),
     ("DB풀 max", "",             'max(hikaricp_connections_max)'),
+    # 톰캣 스레드는 server.tomcat.mbeanregistry.enabled=true 가 있어야 수집된다.
+    # 없으면 "데이터 없음"으로 찍히는데, 부하가 0이라서가 아니라 지표가 아예 없는 것이다.
+    ("톰캣 busy 스레드", "",     'sum(tomcat_threads_busy_threads)'),
+    ("톰캣 스레드 max", "",      'max(tomcat_threads_config_max_threads)'),
     ("MySQL 슬로우쿼리", "/초",   'rate(mysql_global_status_slow_queries[5m])'),
     ("MySQL threads_connected", "", 'mysql_global_status_threads_connected'),
     ("MySQL max_connections", "", 'mysql_global_variables_max_connections'),

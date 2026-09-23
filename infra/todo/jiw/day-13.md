@@ -701,3 +701,106 @@ docker run --rm -i --network infra_app-net \
 ```
 
 **3번에서는 응답시간 임계(p95<800 등)가 실패하는 것이 정상이다.** 그 실패 지점이 찾으려던 한계다.
+
+---
+
+### 2026-09-23 · 상용 수준 부하 지표 재점검 — 톰캣 스레드 누락 발견
+
+#### 무엇을 했나
+
+부하 테스트를 돌리기 전에 "상용 앱이 보는 지표가 내 쪽에 다 준비됐는지" 데모 서버에서
+직접 쿼리해 확인했다. Prometheus 수집 대상 6개(backend·cadvisor·mysql·node·prometheus·redis)는
+전부 `up=1`. 상용 기준 10개 지표 중 **9개는 나오고 1개가 비어 있었다.**
+
+```
+처리량(RPS)              0.3777777777
+지연 p95                 0.0207851062
+DB풀 대기                0
+톰캣 사용 스레드          없음          ← 여기
+MySQL 실행중 쿼리         2
+InnoDB 락 대기            0
+Redis 캐시 적중           845
+컨테이너별 메모리(개수)    14
+컨테이너별 디스크I/O(개수) 14
+백엔드 CPU 몫             0.0011752854
+```
+
+백엔드가 실제로 내보내는 tomcat 지표를 전부 뽑아 보니 **세션 계열뿐**이었다.
+
+```
+tomcat_sessions_active_current_sessions   tomcat_sessions_active_max_sessions
+tomcat_sessions_alive_max_seconds         tomcat_sessions_created_sessions_total
+tomcat_sessions_expired_sessions_total    tomcat_sessions_rejected_sessions_total
+```
+
+`tomcat_threads_busy_threads` · `tomcat_threads_config_max_threads`가 **아예 없다.**
+Micrometer의 `TomcatMetrics`는 스레드 풀 값을 JMX MBean에서 읽는데,
+Spring Boot는 `server.tomcat.mbeanregistry.enabled`가 기본 `false`라 MBean을 등록하지 않는다.
+세션 지표는 MBean 없이도 읽히기 때문에 **"tomcat 지표가 나오긴 하네"로 착각하기 쉬웠다.**
+
+왜 이게 빠지면 안 되는가 — 부하 테스트의 결론이 갈리는 지점이기 때문이다.
+지금 구조는 **톰캣 스레드 200 대 DB 풀 10**이다. 지연이 올랐을 때
+
+- `busy` 높음 + `pending` 높음 → 스레드가 **DB를 기다리는 중**. 병목은 DB 풀
+- `busy` 높음 + `pending` 0 → 병목은 **애플리케이션 처리 자체**
+
+`busy`가 없으면 이 둘을 구분할 수 없고, `pending`만 보고 무조건 DB 풀을 키우는
+잘못된 개선으로 이어진다. 병목 원인을 PPT 315에 넘겨야 하므로 추측이 아니라 근거가 필요했다.
+
+**변경 4건**
+
+| 파일 | 변경 |
+| --- | --- |
+| `backend/src/main/resources/application.yml` | `server.tomcat.mbeanregistry.enabled: true` (신규 `server:` 블록) |
+| `infra/monitoring/grafana/provisioning/dashboards/loadtest.json` | `톰캣 요청 스레드 (포화도)` 패널. 3행(DB) 바로 아래 전폭 배치, 아래 패널들은 y+8 |
+| `infra/scripts/metrics-snapshot.py` | `톰캣 busy 스레드` · `톰캣 스레드 max` 2행 추가 |
+| `infra/docs/dashboard-guide.md` | `## 5. 4행 — 요청 스레드가 찼는가` 신설, 진단 순서에 `[3-1]` 분기 추가, 이후 섹션 번호 +1 |
+
+#### 다른 방안
+
+| 방안 | 검토 내용 | 채택/기각 |
+| --- | --- | --- |
+| **`server.tomcat.mbeanregistry.enabled: true`** | 설정 한 줄. Micrometer가 이미 붙여 둔 `TomcatMetrics`가 그대로 동작한다. MBean 등록 비용은 기동 시 1회 | **채택** |
+| 스레드 지표를 포기하고 `pending`만으로 판단 | 추가 작업 0. 그러나 위 표의 두 경우를 구분 못 해 **잘못된 개선을 유도**한다 | 기각 |
+| k6의 VU 수·요청 동시성으로 대신 추정 | 클라이언트 관점 숫자라 **서버가 실제로 몇 개를 붙잡고 있는지**는 모른다. nginx 429로 걸러진 요청도 안 보인다 | 기각 |
+| JMX exporter 컨테이너를 따로 띄워 수집 | 톰캣뿐 아니라 JVM MBean 전반을 볼 수 있다. 대신 컨테이너·포트·설정 파일이 늘고, 지금 필요한 건 지표 2개뿐 | 기각(과함) |
+| 톰캣 `max-threads`를 DB 풀에 맞춰 10~20으로 줄이기 | 스레드가 차는 모습을 눈으로 보기는 쉬워진다. 그러나 **부하 특성 자체를 바꾸는 것**이라 측정이 아니라 조작이 된다 | 기각 |
+
+#### 선택 이유
+
+설정 한 줄로 **없던 지표가 생기는** 경우다. 비용은 기동 시 MBean 등록뿐이고 요청 경로에
+오버헤드가 없다. 반대로 이걸 빼면 부하 테스트의 핵심 질문("스레드가 찼나, DB를 기다리나")에
+답할 수 없어 결과물의 신뢰도가 떨어진다. 감수한 것은 **재배포가 필요하다는 점** —
+인프라 쪽 파일만 고치면 Prometheus reload로 끝나지만, 이건 애플리케이션 설정이라
+배포 전까지 패널이 "데이터 없음"으로 뜬다. 그래서 패널 설명과 가이드 양쪽에
+"설정이 있어야 수집된다"는 문구를 박아 뒀다 — 배포 전에 패널을 보고
+"부하가 없어서 비었나 보다"로 오해하는 것을 막기 위해서다.
+
+#### 곁다리로 알게 된 것
+
+- **Micrometer의 tomcat 지표는 두 종류의 출처를 섞어 쓴다.** 세션은 `Manager` 객체에서 직접,
+  스레드·커넥션은 JMX MBean에서 읽는다. 그래서 MBean이 꺼져 있으면 **일부만 나온다.**
+  "지표 이름에 tomcat이 있으니 수집되고 있다"는 판단이 틀릴 수 있다.
+- 지표 존재 여부는 값 쿼리가 아니라 **이름 목록**으로 확인해야 한다. 값 쿼리는
+  "0이라서 비었는지" "시리즈가 없어서 비었는지" 구분이 안 된다.
+
+#### 내가 틀린 것
+
+처음 점검에서 `톰캣 사용 스레드: 없음`을 보고 **"트래픽이 없어서 0"**으로 넘어갈 뻔했다.
+데모 서버는 실제로 거의 유휴 상태라 그 해석이 그럴듯했다. 지표 이름 목록을 따로 뽑고 나서야
+**시리즈 자체가 없다**는 걸 알았다. 스냅샷·가이드에 경고 문구를 넣은 이유가 이것이다.
+
+#### 남은 것
+
+- [ ] **재배포 후 `tomcat_threads_busy_threads` 수집 확인** — 애플리케이션 설정이라 배포 필요
+- [ ] 배포 후 기준선 스냅샷 재측정(스레드 2행이 포함된 판으로)
+- [ ] k6 결과를 Prometheus로 내보내기(`--out experimental-prometheus-rw`) — 클라이언트 지표와 서버 지표를 한 화면에서 비교
+- [ ] nginx exporter — 429로 걸러진 요청이 서버 쪽 지표에 안 잡힌다
+- [ ] 215·317과 DB 적재/실행 시간대 분리 합의
+
+#### 산출물
+
+- `backend/src/main/resources/application.yml`
+- `infra/monitoring/grafana/provisioning/dashboards/loadtest.json`
+- `infra/scripts/metrics-snapshot.py`
+- `infra/docs/dashboard-guide.md`
