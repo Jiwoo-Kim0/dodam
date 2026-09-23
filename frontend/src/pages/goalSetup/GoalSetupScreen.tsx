@@ -14,6 +14,7 @@ import {
   GoalTypeStep,
   type GoalType,
 } from './components/GoalTypeStep';
+import { ExistingSpendingGoalBottomSheet } from './components/ExistingSpendingGoalBottomSheet';
 import { GoalStepProgress } from './components/GoalStepProgress';
 import { ReductionAmountStep } from './components/ReductionAmountStep';
 import { ReductionCompleteStep } from './components/ReductionCompleteStep';
@@ -83,6 +84,7 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   const [reductionAmount, setReductionAmount] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [existingSpendingGoalId, setExistingSpendingGoalId] = useState<number | null>(null);
   const [createdSavingGoalId, setCreatedSavingGoalId] = useState<number | null>(null);
   const [isLoadingGoal, setIsLoadingGoal] = useState(isEditing);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -234,17 +236,7 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
       });
       const existingGoal = existingGoals.content[0];
       if (existingGoal) {
-        Alert.alert(
-          '이미 진행 중인 목표가 있어요',
-          '지출 줄이기 목표는 한 번에 하나만 진행할 수 있어요.',
-          [
-            { text: '계속 작성', style: 'cancel' },
-            {
-              text: '기존 목표 보기',
-              onPress: () => router.replace(routes.goalDetail(String(existingGoal.goalId))),
-            },
-          ],
-        );
+        setExistingSpendingGoalId(existingGoal.goalId);
         return;
       }
 
@@ -558,25 +550,36 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
 
   if (step === 'reductionAmount') {
     return (
-      <AuthScreenLayout
-        title="이번달은 얼마를 써볼까요?"
-        description="목표 소비금액을 설정해요."
-        showBackButton
-        onBackPress={() =>
-          isEditing ? router.back() : setStep('goalType')
-        }
-        footer={
-          <BottomActionButton
-            label={isSubmitting ? '저장 중...' : isEditing ? '수정 완료' : '다음'}
-            disabled={!isValidAmount(reductionAmount) || isSubmitting}
-            onPress={() => void createSpendingGoal()}
+      <>
+        <AuthScreenLayout
+          title="이번달은 얼마를 써볼까요?"
+          description="목표 소비금액을 설정해요."
+          showBackButton
+          onBackPress={() =>
+            isEditing ? router.back() : setStep('goalType')
+          }
+          footer={
+            <BottomActionButton
+              label={isSubmitting ? '저장 중...' : isEditing ? '수정 완료' : '다음'}
+              disabled={!isValidAmount(reductionAmount) || isSubmitting}
+              onPress={() => void createSpendingGoal()}
+            />
+          }>
+          <ReductionAmountStep
+            value={reductionAmount}
+            onChange={setReductionAmount}
           />
-        }>
-        <ReductionAmountStep
-          value={reductionAmount}
-          onChange={setReductionAmount}
+        </AuthScreenLayout>
+
+        <ExistingSpendingGoalBottomSheet
+          onClose={() => setExistingSpendingGoalId(null)}
+          onViewGoal={() => {
+            if (existingSpendingGoalId === null) return;
+            router.replace(routes.goalDetail(String(existingSpendingGoalId)));
+          }}
+          visible={existingSpendingGoalId !== null}
         />
-      </AuthScreenLayout>
+      </>
     );
   }
 
