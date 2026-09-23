@@ -64,6 +64,19 @@ export function GoalAccountManagementBottomSheet({
             </Pressable>
           </View>
 
+          {/*
+            급여통장을 고르면 생활비가 드나들어 목표에 모인 금액이 오르내린다.
+            고르기 전에 알려 주는 편이 나중에 진행률이 튀는 것을 보고 당황하는 것보다 낫다
+            (docs/goal-transfer-plan.md §5).
+          */}
+          <View style={styles.accountTip}>
+            <Text style={styles.accountTipTitle}>목표용 통장을 따로 두면 더 정확해요</Text>
+            <Text style={styles.accountTipText}>
+              급여통장은 생활비가 드나들어 모은 금액이 오르내려요.
+              목표 통장은 넣은 만큼 그대로 쌓여요.
+            </Text>
+          </View>
+
           <View style={styles.accountSelection}>
             <GoalAccountSelectionList
               accounts={accounts}

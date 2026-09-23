@@ -78,4 +78,23 @@ export const styles = StyleSheet.create({
   pressedButton: {
     opacity: componentSize.bottomSheet.pressedOpacity,
   },
+  /** 통장을 고르기 전에 읽히도록 목록 바로 위에 둔다. */
+  accountTip: {
+    backgroundColor: colors.primary.lightGreen,
+    borderRadius: radius.default,
+    gap: spacing[1],
+    marginTop: spacing[2],
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[3],
+  },
+  accountTipTitle: {
+    ...typography.body2,
+    color: colors.textPrimary,
+    fontFamily: fontFamily.semiBold,
+  },
+  accountTipText: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    lineHeight: 17,
+  },
 });
