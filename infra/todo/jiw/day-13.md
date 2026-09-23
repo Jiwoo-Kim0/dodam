@@ -958,3 +958,107 @@ iteration_duration  avg=9.77s   ← THINK_TIME=1 기준 한 사이클
 
 - `backend/scripts/loadtest/data/users.json` (gitignore, 커밋 안 됨)
 - `backend/scripts/loadtest/user-journey.js` — 헤더에 `--user` 함정과 계정 선택 이유 추가
+
+---
+
+### 2026-09-23 · 짧은 한계 탐색 프로필(`probe`) 추가
+
+#### 무엇을 했나
+
+프로필이 `verify`(1 VU 고정, 30초)와 `load`(22분) 둘뿐이라 **중간이 비어 있었다.**
+DB 커넥션 풀이 10이라 포화는 수십 초면 드러나는데, 한 번 확인하려고 매번 22분을
+쓰는 것은 개선-재측정 사이클(1시간 10분)을 통째로 늘리는 비용이다.
+
+`probe` 프로필을 추가했다. **총 4분 20초.**
+
+```
+20s→5   40s 유지     ← 풀(10)보다 작다. 여기서 pending이 오르면 풀 문제가 아니다
+20s→10  40s 유지     ← 풀 크기와 같다
+20s→20  40s 유지     ← 풀의 2배
+20s→40  40s 유지     ← 풀의 4배. PROBE_VUS로 조절
+20s→0
+```
+
+계단을 두 배씩 올리고 **풀 크기(10)를 가운데** 두어 그 앞뒤에서 pending이 언제
+생기는지 끼워 볼 수 있게 했다. 한 계단을 1분으로 잡은 것은 Prometheus scrape이
+15초 간격이라 유지 구간에서 표본이 2~3개는 나와야 하기 때문이다.
+
+함께 바꾼 것 두 가지.
+
+- **`THINK_TIME` 기본값을 프로필별로** — probe는 0, 나머지는 1.
+  한계를 재는데 대기가 있으면 VU를 올려도 동시 요청이 늘지 않아 풀에 닿지 못한다.
+  매번 `-e THINK_TIME=0`을 붙이는 것은 빠뜨리기 쉽고, 빠뜨리면 **조용히 잘못된 결과**가 나온다.
+- **임계를 프로필별로 분리(`buildThresholds()`)** — 기존에는 `options.thresholds`가 고정이라
+  probe에서도 `p(95)<800` 같은 판정 기준이 적용됐다. probe는 임계를 넘기는 것이 목적이므로
+  그대로 두면 **정상 동작이 실패(종료 코드 1)로 보고**된다.
+
+```
+probe   http_req_failed  rate<0.05  abortOnFail, delayAbortEval 30s
+        http_req_duration p(95)<3000 abortOnFail, delayAbortEval 30s
+verify  지연 임계 없음 (경로·형식 확인용)
+load    기존 12개 그대로 (엔드포인트별 8개 포함)
+```
+
+probe의 임계는 **판정이 아니라 중단 조건**이다. 한계를 넘은 뒤로는 더 돌려도 얻을 것이
+없으므로 `abortOnFail`로 즉시 끊는다. 실제로는 4분 20초보다 더 일찍 끝날 수 있다.
+
+#### 다른 방안
+
+| 방안 | 검토 내용 | 채택/기각 |
+| --- | --- | --- |
+| **`ramping-vus` 짧은 계단(5·10·20·40)** | 기존 `load`와 같은 executor라 결과를 나란히 읽을 수 있다. 계단이 있어 "몇 VU부터 꺾이는지"를 말할 수 있다 | **채택** |
+| `ramping-arrival-rate`(open model) | 상용 한계 탐색의 정석이다. VU 방식은 서버가 느려지면 부하도 같이 줄어(closed model) 포화를 과소평가한다. 그러나 이 스크립트는 iteration이 **요청 9건 + sleep** 묶음이라 목표 RPS를 직관적으로 정하기 어렵고, `preAllocatedVUs`를 잘못 잡으면 VU 부족 경고가 결과를 오염시킨다. 지금 병목(풀 10)은 closed model로도 충분히 드러난다 | 기각(추후 재검토) |
+| `load`의 stage 시간을 환경변수 배율로 축소 | 프로필을 안 늘려도 된다. 그러나 `load`는 **오래 버티는지**(커넥션 누수·GC 누적)를 보는 구성인데 배율로 줄이면 그 의미가 사라진다. 하나의 이름이 두 목적을 겸하면 **기록에서 어느 쪽이었는지 구분되지 않는다** | 기각 |
+| 계단 없이 고정 VU로 한 판 | 가장 짧다. 그러나 꺾이는 지점을 모른다. "40 VU에서 느렸다"까지만 알 뿐 "12 VU부터 pending이 올랐다"를 말할 수 없다 | 기각 |
+| 마지막 계단을 100 VU로 | 여유 있게 한계를 본다. 그러나 풀이 10인데 100은 과하고 계단이 하나 더 늘어 시간만 길어진다. 40에서 안 나오면 `PROBE_VUS`로 올린다 | 기각 |
+
+#### 선택 이유
+
+**시행착오 비용을 줄이는 것이 목적**이므로, 정확도를 조금 내주더라도 짧은 쪽을 택했다.
+`arrival-rate`가 이론적으로 더 맞지만 지금 찾는 답("풀 10이 병목인가")은
+closed model로도 나온다. 감수한 것은 **한계치의 절대값이 과소평가될 수 있다는 점** —
+probe로 병목 위치를 찾고, 숫자로 보고할 값은 `load`에서 얻는다는 역할 분담으로 정리했다.
+
+`abortOnFail`을 넣은 이유는 probe가 "무너지는 지점"을 찾는 도구이기 때문이다.
+무너진 뒤에 계속 던지면 **서버 복구만 늦어지고 얻는 정보는 없다.**
+`delayAbortEval: 30s`로 초기 워밍업 구간에서 성급히 끊기는 것은 막았다.
+
+#### 곁다리로 알게 된 것 — 짧은 계단이 대시보드에서 보이느냐
+
+처음에는 1분짜리 계단이 Grafana에서 안 보일까 걱정했다. 대시보드가 `rate(...[5m])`를
+쓰기 때문에 1분 변화는 평활화된다. 그런데 **핵심 지표 두 개는 gauge라 무관하다.**
+
+| 지표 | 종류 | 1분 계단에서 |
+| --- | --- | --- |
+| `hikaricp_connections_pending` · `active` | **gauge** | 그대로 보인다 |
+| `tomcat_threads_busy_threads` | **gauge** | 그대로 보인다 |
+| 처리량 · 5xx율 · 지연 p95 | rate/histogram | 흐려진다 → **k6 출력 숫자**를 쓴다 |
+
+즉 probe는 **서버 측 포화는 Grafana로, 클라이언트 측 지연은 k6 요약으로** 읽는다.
+이 역할 분담을 스크립트 헤더에 적었다. 대시보드의 rate 창을 `$__rate_interval`로
+바꾸는 방법도 있지만, `load` 판독에도 영향을 주므로 지금은 건드리지 않았다.
+
+#### 검증
+
+`k6 inspect`로 세 프로필의 시나리오와 임계를 확인했다(실행은 아직 안 했다).
+
+```
+verify  per-vu-iterations  vus=1 iterations=3   thresholds: checks·http_req_failed·journey_failed
+probe   ramping-vus        4분 20초             thresholds: http_req_duration·http_req_failed
+        20s->5 40s->5 20s->10 40s->10 20s->20 40s->20 20s->40 40s->40 20s->0
+load    ramping-vus        21분(기존 그대로)    thresholds 12개(엔드포인트별 8개 유지)
+```
+
+`load`의 계단과 임계가 **바뀌지 않은 것**을 특히 확인했다 — 임계를 함수로 옮기면서
+기존 판정 기준이 틀어지면 이전 측정과 비교가 불가능해진다.
+
+#### 남은 것
+
+- [ ] probe 실행 (시연 시간대와 분리해서)
+- [ ] `ramping-arrival-rate` 재검토 — probe로 병목을 찾은 뒤, 한계치 숫자가 필요하면
+- [ ] 대시보드 rate 창 `$__rate_interval` 전환 검토
+
+#### 산출물
+
+- `backend/scripts/loadtest/user-journey.js` — `probe` 시나리오, `buildThresholds()`,
+  `PROBE_VUS`, 프로필별 `THINK_TIME` 기본값, 헤더 사용법 4종
