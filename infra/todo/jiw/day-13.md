@@ -633,3 +633,71 @@ if docker exec prometheus wget -S --post-data="" -O- .../-/reload 2>&1 | grep -q
 - `prometheus.yml` job cadvisor + `metric_relabel_configs`(container_id 추출, systemd 시리즈 제외)
 - `deploy.sh` DEPLOY_SERVICES에 cadvisor, 리로드 응답코드 검사
 - `loadtest.json` 컨테이너별 CPU·메모리 패널 2개(총 14패널)
+
+### 26. k6 스크립트에 `THINK_TIME` 옵션 추가 — 한계 탐색이 가능해졌다
+
+#### 문제 — 기존 설정으로는 병목이 드러나지 않는다
+
+`backend/scripts/loadtest/user-journey.js`는 잘 만들어져 있었다. 로그인을 `setup()`에서만 해
+`api_auth`(분당 20건)를 피하고, 429를 `rate_limited`로 분리하며, GET만 호출해 운영 DB를 건드리지 않는다.
+
+문제는 **부하의 세기**였다.
+
+```
+1회 journey = 요청 7건 + 대기 약 10초  →  VU 1명당 0.7 req/s
+VU 50명 = 약 35 req/s  →  동시 요청 약 1.4개
+DB 커넥션 풀 = 10  →  1.4개만 쓰니 대기가 생길 수 없다
+```
+
+실사용을 흉내 낸 `randomSleep`이 원인이다. 의도는 맞지만, **이 설정으로는 아무리 오래 돌려도
+커넥션 풀에 닿지 못해** 완료 기준인 "병목 원인 규명"을 할 수 없다.
+
+#### 방안 비교
+
+| 방안 | 검토 | 채택 |
+| --- | --- | --- |
+| **대기 시간을 환경변수 배율로** | 기본값은 현재 동작 그대로. `THINK_TIME=0`이면 한계 탐색. 스크립트 구조를 안 건드린다 | **채택** |
+| VU를 대폭 늘림(500+) | 대기가 그대로라 k6 실행 머신의 부담만 커진다. VU 700쯤 필요 | 기각 |
+| `randomSleep` 호출을 삭제 | 실사용 프로필을 잃는다. 둘 다 필요하다 | 기각 |
+| 별도 `break` 프로필 신설 | `PROFILE`과 `THINK_TIME`이 직교하는 개념인데 섞이면 조합이 막힌다 | 기각 |
+
+#### 구현
+
+```js
+const THINK_TIME = Math.max(0, parseFloat(__ENV.THINK_TIME ?? '1') || 0);
+
+function randomSleep(min, max) {
+    if (THINK_TIME === 0) return;   // sleep(0)도 이터레이션을 양보시키므로 호출 자체를 건너뛴다
+    sleep((min + Math.random() * (max - min)) * THINK_TIME);
+}
+```
+
+`setup()` 로그에 `LOAD_VUS`·`THINK_TIME`을 함께 찍게 했다.
+**어떤 조건에서 잰 수치인지가 결과와 같이 남아야** 비교가 성립한다.
+
+#### 실측 — 1 VU로 검증했다
+
+| | `THINK_TIME=1`(기본) | `THINK_TIME=0` |
+| --- | --- | --- |
+| 이터레이션 | 약 11,000ms | **98.8ms** |
+| VU 1명당 | 0.7 req/s | **62 req/s** |
+| 체크 | 통과 | 통과(26건 실패 0) |
+
+**VU 1명이 62 req/s**를 만든다. 50 VU면 동시 요청이 40개대가 되어 **풀 10개는 확실히 포화된다.**
+
+백엔드 직결 시 엔드포인트별 지연(참고): `loans` 7ms · `card_summary` 9ms · `simulations` 11ms ·
+`recommendation_summary` 16ms · **`diagnoses` 22ms**(가장 느림).
+
+#### 실행 방법 세 가지를 헤더에 적었다
+
+1. **`verify`** — 경로·계정 확인. 1 VU × 3회
+2. **실사용 부하** — Nginx 경유, `LOAD_VUS=25`(20r/s 제한을 넘지 않는 선)
+3. **한계 탐색** — k6를 컨테이너로 `app-net`에 붙여 `backend:8080` 직결 + `THINK_TIME=0`
+
+```bash
+docker run --rm -i --network infra_app-net \
+  -e BASE_URL=http://backend:8080/api -e PROFILE=load -e LOAD_VUS=50 -e THINK_TIME=0 \
+  -v "$PWD/backend/scripts/loadtest:/work" -w /work grafana/k6:latest run user-journey.js
+```
+
+**3번에서는 응답시간 임계(p95<800 등)가 실패하는 것이 정상이다.** 그 실패 지점이 찾으려던 한계다.

@@ -12,8 +12,24 @@ import { Counter, Rate, Trend } from 'k6/metrics';
  * teardown의 로그아웃뿐이다. 서버 DB를 직접 읽거나 쓰지 않는다.
  *
  * 사용법:
+ *   # 1) 경로·계정 확인
  *   BASE_URL=https://j15D105.p.ssafy.io/api PROFILE=verify k6 run backend/scripts/loadtest/user-journey.js
- *   BASE_URL=https://j15D105.p.ssafy.io/api PROFILE=load LOAD_VUS=50 k6 run backend/scripts/loadtest/user-journey.js
+ *
+ *   # 2) 실사용 부하 — 화면을 읽는 시간까지 흉내낸다. Nginx를 거치므로 20r/s를 넘기지 않는 선에서.
+ *   BASE_URL=https://j15D105.p.ssafy.io/api PROFILE=load LOAD_VUS=25 k6 run backend/scripts/loadtest/user-journey.js
+ *
+ *   # 3) 한계 탐색 — 대기를 없애고 Nginx를 우회해 백엔드가 어디서 막히는지 본다.
+ *   #    k6를 컨테이너로 app-net에 붙여 backend:8080으로 직접 쏜다.
+ *   docker run --rm -i --network infra_app-net \
+ *     -e BASE_URL=http://backend:8080/api -e PROFILE=load -e LOAD_VUS=50 -e THINK_TIME=0 \
+ *     -v "$PWD/backend/scripts/loadtest:/work" -w /work grafana/k6:latest run user-journey.js
+ *
+ * THINK_TIME:
+ *   화면을 읽는 대기 시간의 배율이다. 기본 1(실사용 흉내), 0이면 대기 없이 계속 던진다.
+ *   기본값에서는 VU 1명이 약 0.7 req/s만 만든다(요청 7건 + 대기 약 10초). VU 50명이어도
+ *   동시 요청은 2개 남짓이라 **DB 커넥션 풀(기본 10)에 닿지 못해 병목이 드러나지 않는다.**
+ *   한계를 재려면 THINK_TIME=0으로 둔다. 이때 응답시간 임계(p95<800 등)는 실패하는 것이 정상이며,
+ *   그 실패 지점이 곧 찾으려던 한계다.
  *
  * 계정:
  *   backend/scripts/loadtest/data/users.json (gitignore, users.example.json 참고) 또는
@@ -44,6 +60,10 @@ if (!BASE_URL) {
 }
 
 const HTTP_TIMEOUT = __ENV.HTTP_TIMEOUT || '10s';
+
+// 화면을 읽는 대기 시간의 배율. 1 = 실사용 흉내(기본), 0 = 대기 없음(한계 탐색).
+// 0.5처럼 중간값도 쓸 수 있다. 음수는 0으로 본다.
+const THINK_TIME = Math.max(0, parseFloat(__ENV.THINK_TIME ?? '1') || 0);
 const VERBOSE = (__ENV.VERBOSE || 'false').toLowerCase() === 'true';
 
 // load 프로필의 최대 VU. Nginx를 거치는 실행에서는 20r/s 제한 때문에 50 전후가 의미 있는 상한이다.
@@ -232,7 +252,11 @@ function abortJourney(stepName, response, reason) {
 }
 
 function randomSleep(minSeconds, maxSeconds) {
-    sleep(minSeconds + Math.random() * (maxSeconds - minSeconds));
+    // THINK_TIME=0이면 아예 쉬지 않는다. sleep(0)도 이터레이션을 양보시키므로 호출 자체를 건너뛴다.
+    if (THINK_TIME === 0) {
+        return;
+    }
+    sleep((minSeconds + Math.random() * (maxSeconds - minSeconds)) * THINK_TIME);
 }
 
 /*
@@ -285,7 +309,12 @@ export function setup() {
         }
     }
 
-    console.log(`setup: 계정 ${tokens.length}개 로그인 완료, BASE_URL=${BASE_URL}, PROFILE=${PROFILE}`);
+    // 측정 결과를 기록할 때 "어떤 조건이었는지"가 함께 남아야 비교가 성립한다.
+    console.log(
+        `setup: 계정 ${tokens.length}개 로그인 완료, BASE_URL=${BASE_URL}, PROFILE=${PROFILE}, ` +
+            `LOAD_VUS=${LOAD_VUS}, THINK_TIME=${THINK_TIME}` +
+            (THINK_TIME === 0 ? ' (대기 없음 — 한계 탐색 모드)' : ''),
+    );
     return { tokens };
 }
 
