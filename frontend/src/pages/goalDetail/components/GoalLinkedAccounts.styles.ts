@@ -70,4 +70,63 @@ export const styles = StyleSheet.create({
     marginLeft: spacing[3],
     color: colors.textPrimary,
   },
+  /** 목표 통장이 없을 때 무엇을 해야 하는지 알려 주는 자리. */
+  transferNotice: {
+    alignItems: 'center',
+    backgroundColor: colors.primary.lightGreen,
+    borderRadius: radius.card,
+    gap: spacing[2],
+    marginTop: spacing[2],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[4],
+  },
+  transferNoticeText: {
+    ...typography.body2,
+    color: colors.textPrimary,
+    textAlign: 'center',
+  },
+  transferNoticeButton: {
+    backgroundColor: colors.white,
+    borderRadius: radius.round,
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[2],
+  },
+  transferNoticeButtonLabel: {
+    ...typography.body2,
+    color: colors.primary.green,
+    fontFamily: fontFamily.semiBold,
+  },
+  /** 보내기·되가져오기. 실제 돈이 움직이는 입구라 카드 아래에 크게 둔다. */
+  transferActions: {
+    flexDirection: 'row',
+    gap: spacing[2],
+    marginTop: spacing[2],
+  },
+  transferButton: {
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderColor: colors.primary.green,
+    borderRadius: radius.default,
+    borderWidth: 1,
+    flex: 1,
+    paddingVertical: spacing[3],
+  },
+  transferButtonPrimary: {
+    backgroundColor: colors.primary.green,
+  },
+  transferButtonDisabled: {
+    backgroundColor: colors.ledger.softSurface,
+    borderColor: colors.divider,
+  },
+  transferButtonLabel: {
+    ...typography.body1,
+    color: colors.primary.green,
+    fontFamily: fontFamily.semiBold,
+  },
+  transferButtonLabelPrimary: {
+    color: colors.white,
+  },
+  transferButtonLabelDisabled: {
+    color: colors.textTertiary,
+  },
 });

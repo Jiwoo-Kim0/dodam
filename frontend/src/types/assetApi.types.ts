@@ -212,3 +212,26 @@ export interface InstallmentScheduleApiResponse {
   }[];
   months: readonly InstallmentMonthApiResponse[];
 }
+
+/**
+ * 계좌 간 이체 요청. 목표 통장에 보내기와 되가져오기가 **같은 API를 방향만 바꿔** 쓴다
+ * (docs/goal-transfer-plan.md §3-2).
+ *
+ * <p>실제 금융망 이체라 같은 요청을 두 번 보내면 두 번 빠져나간다. 호출부에서 전송 중
+ * 재요청을 막아야 한다(§3-4).
+ */
+export interface AccountTransferRequest {
+  withdrawalAccountId: number;
+  depositAccountId: number;
+  amount: number;
+}
+
+/**
+ * 이체 결과. 갱신된 **두 계좌 잔액만** 담긴다.
+ * 목표 진행률은 들어오지 않으므로 목표 상세는 따로 다시 조회해야 한다(§3-5).
+ */
+export interface AccountTransferApiResponse {
+  withdrawalBalance: number;
+  depositBalance: number;
+  transferredAmount: number;
+}
