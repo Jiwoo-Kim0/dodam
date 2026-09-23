@@ -56,7 +56,9 @@ class GoalHistoryApiIntegrationTest {
     private static final String OTHER_EMAIL = "other-goal-history@example.com";
     private static final String PASSWORD = "password123";
     private static final String MAIN_NO = "1234567890123456";
+    private static final String DEPOSIT_NO = "1234567890123457";
     private static final long MAIN_ID = 11L;
+    private static final long DEPOSIT_ID = 12L;
     private static final LocalDateTime SEEDED_AT = LocalDateTime.of(2026, 9, 1, 9, 0);
 
     @Autowired
@@ -131,6 +133,18 @@ class GoalHistoryApiIntegrationTest {
                 """,
                 userId, sensitiveNumberHasher.hash(MAIN_NO), SEEDED_AT, SEEDED_AT
         );
+        // 입출금 담기는 절대값이라 잔액이 변해도 확보액이 그대로다. AMOUNT_UPDATED를 만들려면 전액 연결되는 예·적금이 필요하다(703)
+        jdbcTemplate.update(
+                """
+                INSERT INTO account (
+                    account_id, user_id, bank_code, bank_name, account_no_encrypted, account_no_hash,
+                    account_no_masked, account_name, account_type, status, balance, last_transaction_date,
+                    currency, source_type, created_at, updated_at
+                ) VALUES (12, ?, '004', 'KB국민은행', X'00', ?, '123456-**-**3457', '예금', 'DEPOSIT', 'ACTIVE',
+                          0, NULL, 'KRW', 'SEED', ?, ?)
+                """,
+                userId, sensitiveNumberHasher.hash(DEPOSIT_NO), SEEDED_AT, SEEDED_AT
+        );
     }
 
     @Test
@@ -141,16 +155,18 @@ class GoalHistoryApiIntegrationTest {
         }
         long goalId = createSaving(10_000_000, today.plusMonths(10));
         // 1) 생성 → GOAL_CREATED (0원, 0%, 예상일 없음)
-        // 2) 계좌 연결 → ACCOUNTS_UPDATED (200만, 20%, 남은 800만 / 50만 → 16개월 뒤)
-        link(goalId, List.of(MAIN_ID));
-        // 3) 잔액 변화 후 진행률 조회 → AMOUNT_UPDATED (300만, 30%)
-        jdbcTemplate.update("UPDATE account SET balance = 3000000 WHERE account_id = 11");
+        // 2) 예금 연결 → ACCOUNTS_UPDATED (0원, 0%. 입출금이 없어 저축속도가 0이라 예상일도 없다)
+        link(goalId, List.of(DEPOSIT_ID));
+        // 3) 주거래 통장에서 200만 담기 → ACCOUNTS_UPDATED (200만, 20%, 남은 800만 / 50만 → 16개월 뒤)
+        allocate(goalId, MAIN_ID, 2_000_000);
+        // 4) 예금 잔액 변화 후 진행률 조회 → AMOUNT_UPDATED (300만, 30%). 예금은 납입 이력이 없어 저축속도는 월 50만 그대로다
+        jdbcTemplate.update("UPDATE account SET balance = 1000000 WHERE account_id = 12");
         mockMvc.perform(get("/api/v1/goals/" + goalId + "/progress").header(HttpHeaders.AUTHORIZATION, bearer))
                 .andExpect(status().isOk());
         // 같은 잔액으로 다시 조회하면 이력이 늘지 않는다
         mockMvc.perform(get("/api/v1/goals/" + goalId + "/progress").header(HttpHeaders.AUTHORIZATION, bearer))
                 .andExpect(status().isOk());
-        // 4) 목표 금액 수정 → GOAL_UPDATED (진행률 300/1500 = 20%)
+        // 5) 목표 금액 수정 → GOAL_UPDATED (진행률 300/1500 = 20%)
         mockMvc.perform(patch("/api/v1/goals/" + goalId).header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("targetAmount", 15_000_000))))
                 .andExpect(status().isOk());
@@ -158,15 +174,15 @@ class GoalHistoryApiIntegrationTest {
         mockMvc.perform(patch("/api/v1/goals/" + goalId).header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("targetAmount", 15_000_000))))
                 .andExpect(status().isOk());
-        // 5) 상태 변경 → STATUS_CHANGED
+        // 6) 상태 변경 → STATUS_CHANGED
         mockMvc.perform(patch("/api/v1/goals/" + goalId).header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("status", "PAUSED"))))
                 .andExpect(status().isOk());
 
         mockMvc.perform(get("/api/v1/goals/" + goalId + "/history").header(HttpHeaders.AUTHORIZATION, bearer))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.totalElements").value(5))
-                .andExpect(jsonPath("$.data.content", hasSize(5)))
+                .andExpect(jsonPath("$.data.totalElements").value(6))
+                .andExpect(jsonPath("$.data.content", hasSize(6)))
                 .andExpect(jsonPath("$.data.content[0].event").value("STATUS_CHANGED"))
                 .andExpect(jsonPath("$.data.content[0].currentAmount").value(3_000_000))
                 .andExpect(jsonPath("$.data.content[0].progressRatePercent").value(20.0))
@@ -178,16 +194,21 @@ class GoalHistoryApiIntegrationTest {
                 // 남은 700만 / 50만 = 14개월. 510 forecast와 같은 식(GoalForecastFormula)
                 .andExpect(jsonPath("$.data.content[2].forecastDate").value(GoalForecastFormula.expectedDate(7_000_000, 500_000, today).toString()))
                 .andExpect(jsonPath("$.data.content[2].forecastDate").value(today.plusMonths(14).toString()))
+                // 담기 한 번이 이력 한 건이다(703). 그 앞은 예금만 연결된 상태라 0원·속도 0이다
                 .andExpect(jsonPath("$.data.content[3].event").value("ACCOUNTS_UPDATED"))
                 .andExpect(jsonPath("$.data.content[3].currentAmount").value(2_000_000))
                 .andExpect(jsonPath("$.data.content[3].progressRatePercent").value(20.0))
                 .andExpect(jsonPath("$.data.content[3].forecastDate").value(today.plusMonths(16).toString()))
-                .andExpect(jsonPath("$.data.content[4].event").value("GOAL_CREATED"))
+                .andExpect(jsonPath("$.data.content[4].event").value("ACCOUNTS_UPDATED"))
                 .andExpect(jsonPath("$.data.content[4].currentAmount").value(0))
                 .andExpect(jsonPath("$.data.content[4].progressRatePercent").value(0.0))
                 .andExpect(jsonPath("$.data.content[4].forecastDate").value(nullValue()))
-                .andExpect(jsonPath("$.data.content[4].recordedDate").value(today.toString()))
-                .andExpect(jsonPath("$.data.content[4].createdAt").isNotEmpty());
+                .andExpect(jsonPath("$.data.content[5].event").value("GOAL_CREATED"))
+                .andExpect(jsonPath("$.data.content[5].currentAmount").value(0))
+                .andExpect(jsonPath("$.data.content[5].progressRatePercent").value(0.0))
+                .andExpect(jsonPath("$.data.content[5].forecastDate").value(nullValue()))
+                .andExpect(jsonPath("$.data.content[5].recordedDate").value(today.toString()))
+                .andExpect(jsonPath("$.data.content[5].createdAt").isNotEmpty());
     }
 
     @Test
@@ -289,11 +310,21 @@ class GoalHistoryApiIntegrationTest {
         return objectMapper.readTree(result.getResponse().getContentAsString()).path("data").path("goalId").asLong();
     }
 
+    /** 예·적금 연결. 입출금은 {@link #allocate}로 담는다(703). */
     private void link(long goalId, List<Long> accountIds) throws Exception {
         mockMvc.perform(put("/api/v1/goals/" + goalId + "/accounts")
                         .header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("accountIds", accountIds))))
+                .andExpect(status().isOk());
+    }
+
+    /** 자유입출금 담기·꺼내기(703). 금액은 증감이 아니라 절대값이다. */
+    private void allocate(long goalId, long accountId, long amount) throws Exception {
+        mockMvc.perform(put("/api/v1/goals/" + goalId + "/allocations/" + accountId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("amount", amount))))
                 .andExpect(status().isOk());
     }
 

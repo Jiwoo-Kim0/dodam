@@ -24,7 +24,7 @@
 | 626 단계 | 상태 | 근거 |
 | --- | --- | --- |
 | MR-A 확보액 통합 · V35 · 제약 한정 | **병합됨** | `7012d52`, `V35__goal_account_allocation.sql`, [GoalAllocationReader](../src/main/java/com/ssafy/dodam/domain/goal/service/GoalAllocationReader.java) |
-| MR-B 담기·꺼내기 API · PUT 예·적금 한정 | **미구현** | `/allocations` 엔드포인트 없음, [goal.md](goal.md) line 148·182 |
+| MR-B 담기·꺼내기 API · PUT 예·적금 한정 | **구현 완료** | `/allocations` 절대값 PUT, 사용자 행 잠금, [goal.md](goal.md) |
 | MR-C 시뮬레이션 연동 · 문서 | **미구현** | 위와 같음 |
 
 그래서 `goal_account.contribution_amount`는 전 행 NULL이고, **입출금 "잔액 전체" 폴백이 예외가 아니라 상시 경로**다.
@@ -182,7 +182,7 @@ V45 기록과 함께 고친다. **착수 전 BE-A에게 V45 선점을 알린다.
 | MR | 범위 | 병합 시점 | 상태 |
 | --- | --- | --- | --- |
 | **1** | §3-1 속도 안분 + 예상 달성일 상한 + 문서 부채 3건 + 계획·FE 인계 문서 | **시연 전 가능** — 시연 숫자 불변(§7 실측) | 구현 완료(`303ba71`·`47ac756`·`d26f3ff`) |
-| **2** | §4-1 담기·꺼내기 API + §4-2 PUT 예·적금 한정 + `ErrorCode` + `goal_history` | FE 담기 화면 확정 후 | 미착수 |
+| **2** | §4-1 담기·꺼내기 API + §4-2 PUT 예·적금 한정 + `ErrorCode` + `goal_history` | FE 담기 화면 확정 후 | 구현 완료 |
 | **3** | §5-2 이동 이력(V45) + §3-2 속도 정의 교체 | **시연 후** | 미착수 |
 | **4** | §4-3 꺼내기 영향 미리보기 + 시뮬레이션 재사용 지문(626 §5) | 후순위 | 미착수 |
 

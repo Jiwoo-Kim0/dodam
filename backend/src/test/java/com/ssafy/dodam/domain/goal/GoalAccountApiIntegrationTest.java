@@ -2,7 +2,6 @@ package com.ssafy.dodam.domain.goal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
-import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -27,6 +26,11 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,6 +44,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.jdbc.Sql;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.ResultActions;
 
 /**
  * S15P21D105-509 목표 연결계좌 조회·변경.
@@ -143,11 +148,12 @@ class GoalAccountApiIntegrationTest {
     @Test
     void linksAccountsAndUpdatesGoalCurrentAmount() throws Exception {
         long goalId = createSaving("유럽 여행", 3_000_000);
+        allocate(goalId, MAIN_ID, 1_850_000).andExpect(status().isOk());
 
         mockMvc.perform(put("/api/v1/goals/" + goalId + "/accounts")
                         .header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("accountIds", List.of(SAVINGS_ID, MAIN_ID, MAIN_ID)))))
+                        .content(json(Map.of("accountIds", List.of(SAVINGS_ID, SAVINGS_ID)))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.goalId").value(goalId))
                 .andExpect(jsonPath("$.data.linkedCount").value(2))
@@ -157,8 +163,7 @@ class GoalAccountApiIntegrationTest {
                 .andExpect(jsonPath("$.data.accounts[0].accountNoMasked").value("123456-**-**3456"))
                 .andExpect(jsonPath("$.data.accounts[0].accountType").value("DEMAND_DEPOSIT"))
                 .andExpect(jsonPath("$.data.accounts[0].balance").value(1_850_000))
-                .andExpect(jsonPath("$.data.accounts[0].contributionAmount").value(nullValue()))
-                // 626: 기여액이 null인 링크는 잔액 전체가 이 목표에 담긴 것으로 읽는다(구 방식 호환)
+                .andExpect(jsonPath("$.data.accounts[0].contributionAmount").value(1_850_000))
                 .andExpect(jsonPath("$.data.accounts[0].allocatedToThisGoal").value(1_850_000))
                 .andExpect(jsonPath("$.data.accounts[0].allocatedElsewhere").value(0))
                 .andExpect(jsonPath("$.data.accounts[0].availableToAllocate").value(0))
@@ -187,18 +192,15 @@ class GoalAccountApiIntegrationTest {
     /**
      * 626 확보액 정의: 입출금 링크의 `contribution_amount`가 있으면 그 금액만, 없으면 잔액 전체. 같은 입출금 계좌가 다른 목표에도
      * 담겨 있으면 그만큼 `allocatedElsewhere`·가용액이 줄고, 실제 잔액이 총 할당 아래로 내려가면 계좌 단위 부족을 표시한다.
-     * 담기 API는 MR-B에서 추가되므로 여기서는 할당 행을 직접 넣어 읽기 경로만 검증한다.
+     * 담기 API로 두 목표에 금액을 나눠 넣어 읽기 경로까지 검증한다.
      */
     @Test
     void demandDepositContributionIsReadAsAllocatedAmountAndSharedAcrossGoals() throws Exception {
         long goalA = createSaving("A 목표", 3_000_000);
         long goalB = createSaving("B 목표", 1_000_000);
-        link(goalA, List.of(MAIN_ID, SAVINGS_ID));
-        jdbcTemplate.update("UPDATE goal_account SET contribution_amount = 500000 WHERE goal_id = ? AND account_id = ?",
-                goalA, MAIN_ID);
-        jdbcTemplate.update(
-                "INSERT INTO goal_account (user_id, goal_id, account_id, account_type, contribution_amount) VALUES (?, ?, ?, 'DEMAND_DEPOSIT', 300000)",
-                userId, goalB, MAIN_ID);
+        allocate(goalA, MAIN_ID, 500_000).andExpect(status().isOk());
+        link(goalA, List.of(SAVINGS_ID));
+        allocate(goalB, MAIN_ID, 300_000).andExpect(status().isOk());
 
         // A 확보액 = 입출금 담은 500,000 + 적금 전액 600,000. 잔액 1,850,000 중 다른 목표(B)에 300,000이 담겨 있다
         mockMvc.perform(get("/api/v1/goals/" + goalA + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer))
@@ -249,7 +251,8 @@ class GoalAccountApiIntegrationTest {
     @Test
     void listsLinkedAccountsWithPaging() throws Exception {
         long goalId = createSaving("목표", 20_000_000);
-        link(goalId, List.of(MAIN_ID, SAVINGS_ID, DEPOSIT_ID));
+        allocate(goalId, MAIN_ID, 1_850_000).andExpect(status().isOk());
+        link(goalId, List.of(SAVINGS_ID, DEPOSIT_ID));
 
         mockMvc.perform(get("/api/v1/goals/" + goalId + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer))
                 .andExpect(status().isOk())
@@ -290,13 +293,14 @@ class GoalAccountApiIntegrationTest {
     @Test
     void replacesLinkSetAndUnlinksAllWithEmptyArray() throws Exception {
         long goalId = createSaving("목표", 20_000_000);
-        link(goalId, List.of(MAIN_ID, SAVINGS_ID));
+        allocate(goalId, MAIN_ID, 1_850_000).andExpect(status().isOk());
+        link(goalId, List.of(SAVINGS_ID));
 
-        // 하나 빼고 하나 추가
+        // 예·적금 하나를 교체해도 입출금 할당은 유지한다
         mockMvc.perform(put("/api/v1/goals/" + goalId + "/accounts")
                         .header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("accountIds", List.of(MAIN_ID, DEPOSIT_ID)))))
+                        .content(json(Map.of("accountIds", List.of(DEPOSIT_ID)))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.linkedCount").value(2))
                 .andExpect(jsonPath("$.data.totalBalance").value(11_850_000))
@@ -305,34 +309,36 @@ class GoalAccountApiIntegrationTest {
         assertThat(jdbcTemplate.queryForList("SELECT account_id FROM goal_account WHERE goal_id = ? ORDER BY account_id",
                 Long.class, goalId)).containsExactly(11L, 13L);
 
-        // 빈 배열 → 모두 해제, 모인 금액 0
+        // 빈 배열 → 예·적금만 해제하고 입출금 할당은 보존
         mockMvc.perform(put("/api/v1/goals/" + goalId + "/accounts")
                         .header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("accountIds", List.of()))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.linkedCount").value(0))
-                .andExpect(jsonPath("$.data.totalBalance").value(0));
-        assertThat(jdbcTemplate.queryForObject("SELECT current_amount FROM goal WHERE goal_id = ?", Long.class, goalId)).isZero();
+                .andExpect(jsonPath("$.data.linkedCount").value(1))
+                .andExpect(jsonPath("$.data.totalBalance").value(1_850_000))
+                .andExpect(jsonPath("$.data.accounts[0].accountId").value(MAIN_ID));
+        assertThat(jdbcTemplate.queryForObject("SELECT current_amount FROM goal WHERE goal_id = ?", Long.class, goalId))
+                .isEqualTo(1_850_000L);
     }
 
     @Test
     void sameSetIsIdempotentAndRefreshesBalance() throws Exception {
         long goalId = createSaving("목표", 5_000_000);
-        link(goalId, List.of(MAIN_ID));
+        link(goalId, List.of(SAVINGS_ID));
         String updatedAt = jdbcTemplate.queryForObject("SELECT updated_at FROM goal WHERE goal_id = ?", String.class, goalId);
 
         // 같은 집합이면 연결 행은 그대로, 잔액이 안 바뀌면 updated_at도 그대로
-        link(goalId, List.of(MAIN_ID));
+        link(goalId, List.of(SAVINGS_ID));
         assertThat(jdbcTemplate.queryForObject("SELECT updated_at FROM goal WHERE goal_id = ?", String.class, goalId))
                 .isEqualTo(updatedAt);
 
         // 잔액이 바뀐 뒤 같은 집합으로 다시 PUT하면 모인 금액만 갱신된다
-        jdbcTemplate.update("UPDATE account SET balance = 2000000 WHERE account_id = 11");
+        jdbcTemplate.update("UPDATE account SET balance = 2000000 WHERE account_id = ?", SAVINGS_ID);
         mockMvc.perform(put("/api/v1/goals/" + goalId + "/accounts")
                         .header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("accountIds", List.of(MAIN_ID)))))
+                        .content(json(Map.of("accountIds", List.of(SAVINGS_ID)))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.totalBalance").value(2_000_000));
         assertThat(jdbcTemplate.queryForObject("SELECT current_amount FROM goal WHERE goal_id = ?", Long.class, goalId))
@@ -342,18 +348,27 @@ class GoalAccountApiIntegrationTest {
     @Test
     void rejectsUnlinkableAccountsWithoutPartialChange() throws Exception {
         long goalId = createSaving("목표", 5_000_000);
-        link(goalId, List.of(MAIN_ID));
+        allocate(goalId, MAIN_ID, 300_000).andExpect(status().isOk());
+
+        mockMvc.perform(put("/api/v1/goals/" + goalId + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("accountIds", List.of(MAIN_ID)))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value("예금·적금 계좌만 연결할 수 있습니다. 입출금 계좌는 담기·꺼내기를 이용해 주세요."));
 
         mockMvc.perform(put("/api/v1/goals/" + goalId + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("accountIds", List.of(SAVINGS_ID, MINUS_ID)))))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("입출금·예금·적금 계좌만 목표에 연결할 수 있습니다."));
+                .andExpect(jsonPath("$.message")
+                        .value("예금·적금 계좌만 연결할 수 있습니다. 입출금 계좌는 담기·꺼내기를 이용해 주세요."));
         mockMvc.perform(put("/api/v1/goals/" + goalId + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("accountIds", List.of(CLOSED_ID)))))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("해지된 계좌는 목표에 연결할 수 없습니다."));
+                .andExpect(jsonPath("$.message")
+                        .value("예금·적금 계좌만 연결할 수 있습니다. 입출금 계좌는 담기·꺼내기를 이용해 주세요."));
         mockMvc.perform(put("/api/v1/goals/" + goalId + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("accountIds", List.of(OTHER_USER_ID)))))
@@ -384,20 +399,153 @@ class GoalAccountApiIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
 
-        // 기존 연결은 그대로
+        // 기존 입출금 할당은 그대로
         assertThat(jdbcTemplate.queryForList("SELECT account_id FROM goal_account WHERE goal_id = ?", Long.class, goalId))
                 .containsExactly(11L);
+    }
+
+    @Test
+    void allocationPutsAbsoluteAmountAndIsIdempotent() throws Exception {
+        // 703 담기·꺼내기: 절대값 하나로 담기·꺼내기·해제를 모두 처리한다. MAIN 잔액 1,850,000
+        long goalId = createSaving("세이프박스", 5_000_000);
+
+        // 담기 — 연결이 없던 계좌도 담으면 생긴다
+        allocate(goalId, MAIN_ID, 500_000)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalBalance").value(500_000))
+                .andExpect(jsonPath("$.data.accounts[0].allocatedToThisGoal").value(500_000))
+                .andExpect(jsonPath("$.data.accounts[0].availableToAllocate").value(1_350_000))
+                .andExpect(jsonPath("$.data.accounts[0].allocationStatus").value("OK"));
+
+        // 같은 요청을 다시 보내도 결과가 같다(멱등)
+        allocate(goalId, MAIN_ID, 500_000)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalBalance").value(500_000));
+
+        // 꺼내기 — 더 작은 값
+        allocate(goalId, MAIN_ID, 200_000)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalBalance").value(200_000))
+                .andExpect(jsonPath("$.data.accounts[0].availableToAllocate").value(1_650_000));
+
+        // 0은 할당 해제
+        allocate(goalId, MAIN_ID, 0)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.linkedCount").value(0))
+                .andExpect(jsonPath("$.data.totalBalance").value(0));
+        assertThat(jdbcTemplate.queryForList("SELECT account_id FROM goal_account WHERE goal_id = ?", Long.class, goalId))
+                .isEmpty();
+    }
+
+    @Test
+    void allocationSplitsOneAccountAcrossGoalsAndCapsAtAvailable() throws Exception {
+        // 703: 같은 통장을 두 목표가 나눠 담는다. 잔액 1,850,000
+        long goalA = createSaving("A 목표", 5_000_000);
+        long goalB = createSaving("B 목표", 5_000_000);
+        allocate(goalA, MAIN_ID, 1_000_000).andExpect(status().isOk());
+
+        allocate(goalB, MAIN_ID, 800_000)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.accounts[0].allocatedToThisGoal").value(800_000))
+                .andExpect(jsonPath("$.data.accounts[0].allocatedElsewhere").value(1_000_000))
+                .andExpect(jsonPath("$.data.accounts[0].availableToAllocate").value(50_000));
+
+        // 남은 50,000을 넘으면 거절한다. 다른 목표 할당은 그대로다
+        allocate(goalB, MAIN_ID, 900_000)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("GOAL_ALLOCATION_EXCEEDS_AVAILABLE"));
+        mockMvc.perform(get("/api/v1/goals/" + goalA + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(jsonPath("$.data.totalBalance").value(1_000_000));
+    }
+
+    @Test
+    void concurrentAllocationsCannotExceedAccountBalance() throws Exception {
+        long goalA = createSaving("동시 담기 A", 5_000_000);
+        long goalB = createSaving("동시 담기 B", 5_000_000);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try {
+            Future<Integer> first = executor.submit(() -> concurrentAllocate(goalA, ready, start));
+            Future<Integer> second = executor.submit(() -> concurrentAllocate(goalB, ready, start));
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+
+            assertThat(List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(200, 409);
+            assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COALESCE(SUM(contribution_amount), 0) FROM goal_account WHERE account_id = ?",
+                    Long.class, MAIN_ID)).isEqualTo(1_000_000L);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void allocationRejectsSavingsAccountAndAllowsWithdrawFromTerminalGoal() throws Exception {
+        long goalId = createSaving("세이프박스 검증", 5_000_000);
+
+        // 예·적금은 계좌 하나가 목표 하나에 전액 연결되므로 나눠 담을 금액이라는 개념이 없다
+        allocate(goalId, SAVINGS_ID, 100_000)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("자유입출금 계좌만 목표에 담을 수 있습니다."));
+
+        allocate(goalId, MAIN_ID, 400_000).andExpect(status().isOk());
+        mockMvc.perform(patch("/api/v1/goals/" + goalId).header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("status", "CANCELED"))))
+                .andExpect(status().isOk());
+
+        // 종료된 목표는 늘리기만 막는다 — 담아 둔 돈을 되찾을 길은 열어 둔다
+        allocate(goalId, MAIN_ID, 500_000)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("GOAL_NOT_EDITABLE"));
+        allocate(goalId, MAIN_ID, 100_000)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalBalance").value(100_000));
+        allocate(goalId, MAIN_ID, 0).andExpect(status().isOk());
+    }
+
+    @Test
+    void allocationValidatesInputOwnershipStatusAndAuthentication() throws Exception {
+        long goalId = createSaving("담기 검증", 5_000_000);
+
+        mockMvc.perform(put("/api/v1/goals/" + goalId + "/allocations/" + MAIN_ID)
+                        .header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"amount\":-1}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        mockMvc.perform(put("/api/v1/goals/" + goalId + "/allocations/" + MAIN_ID)
+                        .header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"amount\":null}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        allocate(goalId, CLOSED_ID, 1)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("해지된 계좌는 목표에 연결할 수 없습니다."));
+        allocate(goalId, OTHER_USER_ID, 1).andExpect(status().isNotFound());
+        mockMvc.perform(put("/api/v1/goals/" + goalId + "/allocations/" + OTHER_USER_ID)
+                        .header(HttpHeaders.AUTHORIZATION, otherBearer)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"amount\":1}"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(put("/api/v1/goals/" + goalId + "/allocations/" + MAIN_ID)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"amount\":1}"))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(delete("/api/v1/goals/" + goalId).header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk());
+        allocate(goalId, MAIN_ID, 1).andExpect(status().isNotFound());
     }
 
     @Test
     void rejectsAccountLinkedToAnotherLiveGoalButTakesOverFromDeletedGoal() throws Exception {
         long first = createSaving("첫 목표", 5_000_000);
         long second = createSaving("둘째 목표", 5_000_000);
-        link(first, List.of(MAIN_ID));
+        link(first, List.of(SAVINGS_ID));
 
         mockMvc.perform(put("/api/v1/goals/" + second + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("accountIds", List.of(MAIN_ID)))))
+                        .content(json(Map.of("accountIds", List.of(SAVINGS_ID)))))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("ACCOUNT_ALREADY_LINKED_TO_GOAL"));
 
@@ -405,10 +553,10 @@ class GoalAccountApiIntegrationTest {
         mockMvc.perform(delete("/api/v1/goals/" + first).header(HttpHeaders.AUTHORIZATION, bearer)).andExpect(status().isOk());
         mockMvc.perform(put("/api/v1/goals/" + second + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("accountIds", List.of(MAIN_ID)))))
+                        .content(json(Map.of("accountIds", List.of(SAVINGS_ID)))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.linkedCount").value(1));
-        assertThat(jdbcTemplate.queryForList("SELECT goal_id FROM goal_account WHERE account_id = 11", Long.class))
+        assertThat(jdbcTemplate.queryForList("SELECT goal_id FROM goal_account WHERE account_id = ?", Long.class, SAVINGS_ID))
                 .containsExactly(second);
     }
 
@@ -417,7 +565,7 @@ class GoalAccountApiIntegrationTest {
         long spending = createSpending("줄이기", 300_000);
         mockMvc.perform(put("/api/v1/goals/" + spending + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("accountIds", List.of(MAIN_ID)))))
+                        .content(json(Map.of("accountIds", List.of(SAVINGS_ID)))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("줄이기 목표에는 계좌를 연결할 수 없습니다."));
 
@@ -427,7 +575,7 @@ class GoalAccountApiIntegrationTest {
                 .andExpect(status().isOk());
         mockMvc.perform(put("/api/v1/goals/" + canceled + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("accountIds", List.of(MAIN_ID)))))
+                        .content(json(Map.of("accountIds", List.of(SAVINGS_ID)))))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("GOAL_NOT_EDITABLE"));
 
@@ -464,6 +612,22 @@ class GoalAccountApiIntegrationTest {
                 .andExpect(status().isCreated())
                 .andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsString()).path("data").path("goalId").asLong();
+    }
+
+    /** 703 담기·꺼내기. 절대값이라 담기·꺼내기·해제가 모두 같은 호출이다. */
+    private ResultActions allocate(long goalId, long accountId, long amount) throws Exception {
+        return mockMvc.perform(put("/api/v1/goals/" + goalId + "/allocations/" + accountId)
+                .header(HttpHeaders.AUTHORIZATION, bearer)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json(Map.of("amount", amount))));
+    }
+
+    private int concurrentAllocate(long goalId, CountDownLatch ready, CountDownLatch start) throws Exception {
+        ready.countDown();
+        if (!start.await(5, TimeUnit.SECONDS)) {
+            throw new IllegalStateException("동시 담기 시작 신호를 기다리지 못했습니다.");
+        }
+        return allocate(goalId, MAIN_ID, 1_000_000).andReturn().getResponse().getStatus();
     }
 
     private void link(long goalId, List<Long> accountIds) throws Exception {

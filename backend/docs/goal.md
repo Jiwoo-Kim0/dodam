@@ -145,8 +145,13 @@ ACHIEVED·CANCELED는 종료 상태다. 어디로도 옮길 수 없고 다른 �
 | `allocationStatus` | `shortfallAmount > 0`이면 `NEEDS_ADJUSTMENT`, 아니면 `OK` |
 
 부족 상태에서도 확보액은 설정액 그대로 계산한다(진행률이 실제보다 높게 보일 수 있으므로 FE가 부족을 함께 표시). 총자산은 원본 계좌 기준으로
-한 번만 합산하므로 자산이 부풀지 않는다. 담기/꺼내기 API(`PUT /goals/{goalId}/allocations/{accountId}`)는 626 MR-B에서 추가한다
-([goal-allocation-626-plan.md](goal-allocation-626-plan.md)).
+한 번만 합산하므로 자산이 부풀지 않는다. 입출금의 담기·꺼내기는
+`PUT /goals/{goalId}/allocations/{accountId}`로 변경한다([goal-allocation-626-plan.md](goal-allocation-626-plan.md)).
+
+**담은 뒤에는 잔액 변화가 확보액에 자동으로 반영되지 않는다.** 담은 금액이 절대값이기 때문이다. 잔액이 늘어도 더 담기지 않고,
+줄면 확보액은 그대로인 채 `NEEDS_ADJUSTMENT`로만 드러난다. 잔액을 따라 확보액이 움직이는 것은 `contribution_amount`가 null인
+예·적금 연결과 아직 담기를 한 번도 하지 않은 입출금 행뿐이다. 이것이 "주거래 통장 잔액 전액이 모은 돈"으로 보이던 문제
+([safebox-allocation-plan.md](safebox-allocation-plan.md) §1)를 없앤 지점이다.
 
 ### 조회 `GET /goals/{goalId}/accounts?page&size`
 
@@ -158,7 +163,8 @@ ACHIEVED·CANCELED는 종료 상태다. 어디로도 옮길 수 없고 다른 �
 
 ### 변경 `PUT /goals/{goalId}/accounts` Body `{ "accountIds": [11, 13, …] }`
 
-연결 계좌를 요청 목록으로 **통째로 교체**한다. 빈 배열은 모두 해제다. 중복은 한 번으로 본다. 최대 50개.
+예·적금 연결을 요청 목록으로 **통째로 교체**한다. 빈 배열은 예·적금만 해제하며 입출금 할당은 유지한다. 중복은 한 번으로
+본다. 최대 50개. 입출금은 아래 담기·꺼내기 API를 사용한다.
 
 계좌는 **ID**(계좌 목록(5)·연결계좌 조회 응답의 `accountId`)로 지정한다. 2026-09-16까지는 계좌번호 원문 `accountNos[]`를 받아
 서버가 HMAC 해시로 찾았는데, 계좌 응답이 `accountId`와 마스킹 번호만 주고 원문은 응답에 돌려주지 않아 FE가 Body를 만들 수 없었다
@@ -171,16 +177,30 @@ ACHIEVED·CANCELED는 종료 상태다. 어디로도 옮길 수 없고 다른 �
 | 줄이기(SPENDING) 목표 | 400 "줄이기 목표에는 계좌를 연결할 수 없습니다." |
 | 종료 상태(ACHIEVED·CANCELED) 목표 | 409 `GOAL_NOT_EDITABLE` |
 | 본인 계좌가 아니거나 없는 계좌 ID | 404 "계좌를 찾을 수 없습니다." (타인 계좌의 존재 여부를 드러내지 않도록 같은 응답) |
-| 마이너스통장(MINUS) | 400 "입출금·예금·적금 계좌만 목표에 연결할 수 있습니다." (ERD `chk_goal_account_type`) |
+| 입출금·마이너스통장 | 400 "예금·적금 계좌만 연결할 수 있습니다. 입출금 계좌는 담기·꺼내기를 이용해 주세요." |
 | 해지(CLOSED) 계좌 | 400. INACTIVE는 허용(잔액은 유효) |
 | 다른 살아 있는 목표에 연결된 계좌 | 409 `ACCOUNT_ALREADY_LINKED_TO_GOAL`. 삭제(soft delete)된 목표의 연결은 해제하고 이어받는다 |
 
 - 검증을 모두 끝낸 뒤 반영하므로 부분 반영은 없다.
 - 반영 후 `goal.current_amount`를 확보액으로 다시 놓는다(`updated_at` 갱신). 집합이 같고 확보액도 같으면 아무것도 바꾸지 않는다.
   집합은 같아도 잔액이 바뀌었으면 모인 금액만 갱신되므로, FE가 "새로고침" 용도로 같은 목록을 다시 PUT해도 된다.
-- 새로 연결한 링크의 `contribution_amount`는 null(전액)이다. 이미 담은 금액이 있는 입출금 링크를 같은 목록으로 다시 PUT해도 할당액은 유지된다.
-- MR-A 시점: PUT은 아직 입출금도 받는다(626 이전과 같음). MR-B에서 예·적금 한정으로 바뀐다.
+- 새로 연결한 예·적금 링크의 `contribution_amount`는 null(전액)이다. 이미 담은 금액이 있는 입출금 링크는 요청 목록에 없어도 유지된다.
 - 응답은 조회와 같은 형태(연결 계좌 전체, 1페이지).
+
+### 담기·꺼내기 `PUT /goals/{goalId}/allocations/{accountId}` Body `{ "amount": 300000 }`
+
+자유입출금 계좌 잔액 중 이 목표에 담아 둘 금액을 **절대값**으로 지정한다. 현재 값보다 크면 담기, 작으면 꺼내기이며 0은
+할당 행을 삭제한다. 같은 값을 다시 보내도 결과가 같아 재시도에 별도 요청 ID가 필요 없다. 예·적금은 이 API의 대상이 아니다.
+
+- 검증식은 `amount ≤ max(0, balance) − 다른 살아 있는 목표의 할당 합`이다.
+- 종료 목표(`ACHIEVED`, `CANCELED`)는 할당 증가만 409 `GOAL_NOT_EDITABLE`로 막고 감소·0은 허용한다.
+- 한도 초과는 409 `GOAL_ALLOCATION_EXCEEDS_AVAILABLE`이다.
+- 줄이기 목표, 예·적금·마이너스통장, 해지 계좌, 음수·null 금액은 400이다.
+- 타인·없는·삭제 목표 또는 타인·없는 계좌는 소유권을 노출하지 않고 404로 처리한다.
+- 같은 사용자의 연결·할당 변경은 사용자 행 비관적 잠금으로 직렬화한다. 동시에 여러 목표에 담아도 검증과 저장 사이에
+  총 할당액이 잔액을 넘지 않는다.
+- 변경 후 목표의 `currentAmount`를 확보액으로 다시 계산하고 `ACCOUNTS_UPDATED` 이력을 남긴다.
+- 응답은 조회와 같은 형태(연결 계좌 전체, 1페이지)다.
 
 ## 계산 (510)
 
@@ -279,8 +299,8 @@ ACHIEVED·CANCELED는 종료 상태다. 어디로도 옮길 수 없고 다른 �
 | `GOAL_CREATED` | 생성 (확보 금액 0) | `GoalService.create` |
 | `GOAL_UPDATED` | 이름·목표 금액·목표일·월 예산 수정 | `GoalService.update` |
 | `STATUS_CHANGED` | 상태 전이(다른 필드 수정과 함께 오면 이 값) | `GoalService.update` |
-| `ACCOUNTS_UPDATED` | 연결 계좌 집합 변경 | `GoalAccountService.replaceAccounts` |
-| `AMOUNT_UPDATED` | 연결 계좌 잔액 변화로 확보 금액이 달라짐(같은 집합 PUT, 510 계산 API 호출 시) | `GoalAccountService`, `GoalCalculationService` |
+| `ACCOUNTS_UPDATED` | 연결 계좌 집합 또는 입출금 할당 변경 | `GoalAccountService.replaceAccounts`, `updateAllocation` |
+| `AMOUNT_UPDATED` | 연결 계좌 잔액 변화로 확보 금액이 달라짐(같은 집합 PUT, 510 계산 API 호출 시). 담은 금액이 정해진 입출금은 잔액이 변해도 확보액이 그대로라 이 이력이 생기지 않는다 | `GoalAccountService`, `GoalCalculationService` |
 | `GOAL_DELETED` | soft delete | `GoalService.delete` |
 
 각 행에는 그 시점의 `currentAmount`, `progressRatePercent`(모으기만, 4자리), `forecastDate`(모으기만, 510과 같은 규칙으로 계산한

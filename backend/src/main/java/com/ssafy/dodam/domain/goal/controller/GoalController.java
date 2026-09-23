@@ -2,6 +2,7 @@ package com.ssafy.dodam.domain.goal.controller;
 
 import com.ssafy.dodam.domain.goal.dto.request.CreateGoalRequest;
 import com.ssafy.dodam.domain.goal.dto.request.UpdateGoalAccountsRequest;
+import com.ssafy.dodam.domain.goal.dto.request.UpdateGoalAllocationRequest;
 import com.ssafy.dodam.domain.goal.dto.request.UpdateGoalRequest;
 import com.ssafy.dodam.domain.goal.dto.response.GoalAccountsResponse;
 import com.ssafy.dodam.domain.goal.dto.response.GoalForecastResponse;
@@ -142,6 +143,21 @@ public class GoalController {
             @Valid @RequestBody UpdateGoalAccountsRequest request
     ) {
         return ApiResponse.success(goalAccountService.replaceAccounts(principal.userId(), goalId, request.accountIds()));
+    }
+
+    /**
+     * 자유입출금 담기·꺼내기(703). 절대값 하나로 둘 다 처리하므로 재시도·중복 탭이 자연히 멱등이다.
+     * `amount = 0`이면 할당을 해제한다. 예·적금은 계좌 하나가 목표 하나에 전액 연결되므로 대상이 아니다(400).
+     */
+    @PutMapping("/{goalId}/allocations/{accountId}")
+    public ApiResponse<GoalAccountsResponse> updateAllocation(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable @Positive Long goalId,
+            @PathVariable @Positive Long accountId,
+            @Valid @RequestBody UpdateGoalAllocationRequest request
+    ) {
+        return ApiResponse.success(
+                goalAccountService.updateAllocation(principal.userId(), goalId, accountId, request.amount()));
     }
 
     // ---------- S15P21D105-510 목표 진행률·필요 저축액·예상 달성일·소비목표 진행률·위험상태 ----------
