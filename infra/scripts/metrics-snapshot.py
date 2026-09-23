@@ -8,8 +8,13 @@ COMPOSE = ["docker", "compose", "-f", "/home/ubuntu/app/infra/docker-compose.yml
 QUERIES = [
     ("호스트 CPU 사용률", "%",   '100 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m]))*100'),
     ("호스트 메모리 여유", "%",  'node_memory_MemAvailable_bytes/node_memory_MemTotal_bytes*100'),
-    ("JVM heap 사용률", "%",     'sum(jvm_memory_used_bytes{area="heap"})/sum(jvm_memory_max_bytes{area="heap"})*100'),
+    # heap 사용률(%)을 쓰지 않는다. 분모인 sum(jvm_memory_max_bytes)는 GC가 Eden/Survivor/
+    # Tenured 크기를 런타임에 조정하면서 측정마다 달라진다(-XX:MaxHeapSize=1g 고정인데도).
+    # 분모가 움직이면 실제 사용량이 늘어도 %가 내려갈 수 있어 오히려 오해를 만든다.
+    # 절대값(used)과 JVM이 확보한 양(committed)을 따로 본다.
     ("JVM heap 사용", "MB",      'sum(jvm_memory_used_bytes{area="heap"})/1024/1024'),
+    ("JVM heap 확보", "MB",      'sum(jvm_memory_committed_bytes{area="heap"})/1024/1024'),
+    ("JVM heap 상한(설정)", "MB", 'sum(jvm_memory_max_bytes{area="heap"})/1024/1024'),
     ("GC 정지", "초/초",         'sum(rate(jvm_gc_pause_seconds_sum[5m]))'),
     ("DB풀 대기(pending)", "",   'sum(hikaricp_connections_pending)'),
     ("DB풀 active", "",          'sum(hikaricp_connections_active)'),

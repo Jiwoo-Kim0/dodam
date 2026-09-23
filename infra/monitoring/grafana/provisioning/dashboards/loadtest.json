@@ -508,21 +508,26 @@
       "targets": [
         {
           "expr": "sum(jvm_memory_used_bytes{area=\"heap\"})",
-          "legendFormat": "heap 사용",
+          "legendFormat": "used(사용)",
           "refId": "A"
         },
         {
-          "expr": "sum(jvm_memory_max_bytes{area=\"heap\"})",
-          "legendFormat": "heap 최대",
+          "expr": "sum(jvm_memory_committed_bytes{area=\"heap\"})",
+          "legendFormat": "committed(확보)",
           "refId": "B"
+        },
+        {
+          "expr": "sum(jvm_memory_max_bytes{area=\"heap\"})",
+          "legendFormat": "max(상한)",
+          "refId": "C"
         },
         {
           "expr": "sum(rate(jvm_gc_pause_seconds_sum[1m]))",
           "legendFormat": "GC 정지(초/초)",
-          "refId": "C"
+          "refId": "D"
         }
       ],
-      "description": "heap이 최대에 붙고 GC 정지가 함께 오르면 힙 부족이다. 이때는 응답 지연이 GC 때문일 수 있다."
+      "description": "used가 committed에 붙으면 JVM이 힙을 늘린다. committed가 max에 닿은 뒤에도 used가 높고 GC 정지가 오르면 힙 부족이다. 비율(%)은 쓰지 않는다 — max는 GC가 세대 크기를 조정하면서 값이 변해 분모로 쓸 수 없다. 설정은 -XX:MaxHeapSize=1g, InitialHeapSize=256m."
     },
     {
       "type": "timeseries",
