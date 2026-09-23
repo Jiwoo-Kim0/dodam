@@ -52,7 +52,7 @@ class GoalSavingPaceReaderTest {
         given(jdbc.readPaidPaymentTotals(eq(List.of(21L)), eq(FROM), eq(TO))).willReturn(Map.of(21L, 1_200_000L));
 
         assertThat(reader.monthlyPace(USER, allocation(savings(21L, 17_460_000L)), TODAY)).isEqualTo(400_000L);
-        verify(jdbc, never()).readNetCashflow(any(), anyCollection(), any(), any());
+        verify(jdbc, never()).readNetCashflowByAccount(any(), anyCollection(), any(), any());
     }
 
     @Test
@@ -85,15 +85,15 @@ class GoalSavingPaceReaderTest {
     void demandDepositPaceIsLinkedAccountNetCashflowAndNegativeOffsetsSavings() {
         // 입출금 연결: 3개월 순현금흐름 159,537 → 월 53,179. 계좌 잔액·담은 금액은 속도에 들어가지 않는다
         given(jdbc.readFirstTransactionDate(USER, List.of(3L))).willReturn(Optional.of(LocalDate.of(2026, 3, 1)));
-        given(jdbc.readNetCashflow(USER, List.of(3L), FROM, TO)).willReturn(159_537L);
+        given(jdbc.readNetCashflowByAccount(USER, List.of(3L), FROM, TO)).willReturn(Map.of(3L, 159_537L));
         assertThat(reader.monthlyPace(USER, allocation(demand(3L, 17_460_000L)), TODAY)).isEqualTo(53_179L);
 
         // 적금 40만을 붓지만 입출금은 월 10만씩 줄고 있다 → 30만. 합이 음수면 0
         given(jdbc.readPaidPaymentTotals(eq(List.of(21L)), eq(FROM), eq(TO))).willReturn(Map.of(21L, 1_200_000L));
-        given(jdbc.readNetCashflow(USER, List.of(3L), FROM, TO)).willReturn(-300_000L);
+        given(jdbc.readNetCashflowByAccount(USER, List.of(3L), FROM, TO)).willReturn(Map.of(3L, -300_000L));
         assertThat(reader.monthlyPace(USER, allocation(demand(3L, 1_000_000L), savings(21L, 5_000_000L)), TODAY))
                 .isEqualTo(300_000L);
-        given(jdbc.readNetCashflow(USER, List.of(3L), FROM, TO)).willReturn(-1_800_000L);
+        given(jdbc.readNetCashflowByAccount(USER, List.of(3L), FROM, TO)).willReturn(Map.of(3L, -1_800_000L));
         assertThat(reader.monthlyPace(USER, allocation(demand(3L, 1_000_000L), savings(21L, 5_000_000L)), TODAY)).isZero();
     }
 
@@ -101,11 +101,11 @@ class GoalSavingPaceReaderTest {
     void demandDepositWithHistoryOnlyThisMonthHasNoPaceYet() {
         // 이번 달에 첫 거래 → 완료 월 이력이 없어 0. 8월에 시작했으면 8월 한 달로 나눈다
         given(jdbc.readFirstTransactionDate(USER, List.of(3L))).willReturn(Optional.of(LocalDate.of(2026, 9, 2)));
-        given(jdbc.readNetCashflow(USER, List.of(3L), FROM, TO)).willReturn(0L);
+        given(jdbc.readNetCashflowByAccount(USER, List.of(3L), FROM, TO)).willReturn(Map.of());
         assertThat(reader.monthlyPace(USER, allocation(demand(3L, 500_000L)), TODAY)).isZero();
 
         given(jdbc.readFirstTransactionDate(USER, List.of(3L))).willReturn(Optional.of(LocalDate.of(2026, 8, 20)));
-        given(jdbc.readNetCashflow(USER, List.of(3L), FROM, TO)).willReturn(250_000L);
+        given(jdbc.readNetCashflowByAccount(USER, List.of(3L), FROM, TO)).willReturn(Map.of(3L, 250_000L));
         assertThat(reader.monthlyPace(USER, allocation(demand(3L, 500_000L)), TODAY)).isEqualTo(250_000L);
     }
 
@@ -113,12 +113,43 @@ class GoalSavingPaceReaderTest {
     void demandDepositQueryReceivesOnlyLinkedDemandAccountIds() {
         List<Long> linkedDemandIds = List.of(3L, 5L);
         given(jdbc.readFirstTransactionDate(USER, linkedDemandIds)).willReturn(Optional.of(LocalDate.of(2026, 6, 1)));
-        given(jdbc.readNetCashflow(USER, linkedDemandIds, FROM, TO)).willReturn(600_000L);
+        given(jdbc.readNetCashflowByAccount(USER, linkedDemandIds, FROM, TO)).willReturn(Map.of(3L, 400_000L, 5L, 200_000L));
 
         assertThat(reader.monthlyPace(USER,
                 allocation(demand(3L, 500_000L), savings(4L, 300_000L), demand(5L, 200_000L)), TODAY))
                 .isEqualTo(200_000L);
-        verify(jdbc).readNetCashflow(USER, linkedDemandIds, FROM, TO);
+        verify(jdbc).readNetCashflowByAccount(USER, linkedDemandIds, FROM, TO);
+    }
+
+    @Test
+    void sharedDemandDepositCountsOnlyThisGoalsShare() {
+        // 703: 같은 통장을 두 목표가 담으면 순현금흐름도 몫만큼만 센다. 담은 금액이 없으면 기여액이 잔액 전체라 목표 수로 균등 분할된다
+        given(jdbc.readFirstTransactionDate(USER, List.of(3L))).willReturn(Optional.of(LocalDate.of(2026, 6, 1)));
+        given(jdbc.readNetCashflowByAccount(USER, List.of(3L), FROM, TO)).willReturn(Map.of(3L, 600_000L));
+
+        // 600,000 × (1,000,000 / 2,000,000) ÷ 3개월
+        assertThat(reader.monthlyPace(USER, allocation(sharedDemand(3L, 1_000_000L, 1_000_000L, 2_000_000L)), TODAY))
+                .isEqualTo(100_000L);
+        // 담은 금액이 3 : 1이면 몫도 3 : 1 — 600,000 × (300,000 / 400,000) ÷ 3개월
+        assertThat(reader.monthlyPace(USER, allocation(sharedDemand(3L, 1_000_000L, 300_000L, 400_000L)), TODAY))
+                .isEqualTo(150_000L);
+
+        // 음수도 몫만큼만 상쇄한다 — 적금 월 40만에서 절반인 10만만 깎인다
+        given(jdbc.readPaidPaymentTotals(eq(List.of(21L)), eq(FROM), eq(TO))).willReturn(Map.of(21L, 1_200_000L));
+        given(jdbc.readNetCashflowByAccount(USER, List.of(3L), FROM, TO)).willReturn(Map.of(3L, -600_000L));
+        assertThat(reader.monthlyPace(USER,
+                allocation(sharedDemand(3L, 1_000_000L, 1_000_000L, 2_000_000L), savings(21L, 5_000_000L)), TODAY))
+                .isEqualTo(300_000L);
+    }
+
+    @Test
+    void unsharedDemandDepositKeepsTheWholeNetCashflow() {
+        // 몫이 1이면 702까지와 같은 값이다. 총 할당액이 0인 계좌(잔액 0)는 나눌 기준이 없어 전액으로 본다
+        given(jdbc.readFirstTransactionDate(USER, List.of(3L))).willReturn(Optional.of(LocalDate.of(2026, 6, 1)));
+        given(jdbc.readNetCashflowByAccount(USER, List.of(3L), FROM, TO)).willReturn(Map.of(3L, 600_000L));
+
+        assertThat(reader.monthlyPace(USER, allocation(demand(3L, 1_000_000L)), TODAY)).isEqualTo(200_000L);
+        assertThat(reader.monthlyPace(USER, allocation(sharedDemand(3L, 0L, 0L, 0L)), TODAY)).isEqualTo(200_000L);
     }
 
     @Test
@@ -157,10 +188,19 @@ class GoalSavingPaceReaderTest {
     }
 
     private static LinkedAccount linked(long accountId, AccountType type, long balance) {
+        return link(accountId, type, balance, balance, balance);
+    }
+
+    /** 다른 목표도 같은 계좌를 담은 상태(703). {@code allocatedTotal}이 이 목표 기여액보다 크면 몫이 1보다 작아진다. */
+    private static LinkedAccount sharedDemand(long accountId, long balance, long contribution, long allocatedTotal) {
+        return link(accountId, AccountType.DEMAND_DEPOSIT, balance, contribution, allocatedTotal);
+    }
+
+    private static LinkedAccount link(long accountId, AccountType type, long balance, long contribution, long allocatedTotal) {
         Account account = mock(Account.class);
         given(account.getId()).willReturn(accountId);
         given(account.getAccountType()).willReturn(type);
         given(account.getBalance()).willReturn(balance);
-        return new LinkedAccount(null, account, balance, new AccountAllocation(accountId, balance, balance));
+        return new LinkedAccount(null, account, contribution, new AccountAllocation(accountId, balance, allocatedTotal));
     }
 }

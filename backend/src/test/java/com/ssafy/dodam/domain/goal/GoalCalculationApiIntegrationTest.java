@@ -322,6 +322,40 @@ class GoalCalculationApiIntegrationTest {
     // ---------- 소비목표 진행률 ----------
 
     @Test
+    void forecastHidesDatesThatOverrunTheGoalPeriod() throws Exception {
+        // 703: 지연이 목표 기간(생성일 → 목표일)보다 크면 속도 0과 같이 미확정으로 둔다.
+        // 생성 3개월 전 · 목표일 오늘+6개월 → 목표 기간 9개월. 적금 납입 월 100만, 연결 계좌 확보액 300만
+        long within = createSaving(14_000_000, today.plusMonths(6));
+        backdateCreatedAt(within, 3);
+        link(within, List.of(MAIN_ID, SAVINGS_ID));
+        insertMonthlyPayments(SAVINGS_ID, 1_000_000);
+
+        // 남은 1,100만 → 11개월 뒤. 목표일보다 5개월 늦지만 목표 기간 안이라 그대로 낸다
+        mockMvc.perform(get("/api/v1/goals/" + within + "/forecast").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.monthsToAchieve").value(11))
+                .andExpect(jsonPath("$.data.expectedAchievementDate").value(today.plusMonths(11).toString()))
+                .andExpect(jsonPath("$.data.onSchedule").value(false));
+
+        // 적금은 목표 하나에만 연결되므로 먼저 푼다
+        unlinkAll(within);
+
+        long beyond = createSaving(100_000_000, today.plusMonths(6));
+        backdateCreatedAt(beyond, 3);
+        link(beyond, List.of(MAIN_ID, SAVINGS_ID));
+
+        // 남은 9,700만 → 97개월 뒤. 목표 기간 9개월의 몇 배라 날짜를 단정하지 않는다
+        mockMvc.perform(get("/api/v1/goals/" + beyond + "/forecast").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.averageMonthlySaving").value(1_000_000))
+                .andExpect(jsonPath("$.data.remainingAmount").value(97_000_000))
+                .andExpect(jsonPath("$.data.monthsToAchieve").value(nullValue()))
+                .andExpect(jsonPath("$.data.expectedAchievementDate").value(nullValue()))
+                .andExpect(jsonPath("$.data.daysDifference").value(nullValue()))
+                .andExpect(jsonPath("$.data.onSchedule").value(false));
+    }
+
+    @Test
     void spendingProgressComparesThisMonthSpendingWithBudget() throws Exception {
         long goalId = createSpending(500_000);
         YearMonth month = YearMonth.from(today);

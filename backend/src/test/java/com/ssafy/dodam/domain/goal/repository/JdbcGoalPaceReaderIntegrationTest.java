@@ -1,6 +1,7 @@
 package com.ssafy.dodam.domain.goal.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.entry;
 
 import com.ssafy.dodam.domain.user.entity.User;
 import com.ssafy.dodam.domain.user.repository.UserRepository;
@@ -18,7 +19,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 /**
- * S15P21D105-702 저축속도 입출금 부분의 귀속 범위: 연결 계좌의 거래와 그 계좌에서 대금이 빠지는 카드의 승인만 센다.
+ * 저축속도 입출금 부분의 귀속 범위(702)와 계좌별 분리(703): 연결 계좌의 거래와 그 계좌에서 대금이 빠지는 카드의 승인만 센다.
  * 연결하지 않은 계좌·카드, 다른 사용자, 숨긴 거래는 제외한다. 실제 SQL을 H2(MySQL 모드)로 실행한다.
  */
 @ActiveProfiles("test")
@@ -70,8 +71,26 @@ class JdbcGoalPaceReaderIntegrationTest {
         transaction(owner, linkedAccount, null, LocalDate.of(2026, 7, 15), "EXPENSE", 90_000L, true);
         transaction(owner, null, linkedCard, LocalDate.of(2026, 9, 2), "EXPENSE", 999_999L, false);
 
-        assertThat(reader.readNetCashflow(owner, List.of(linkedAccount), FROM, TO)).isEqualTo(500_000L);
-        assertThat(reader.readNetCashflow(other, List.of(linkedAccount), FROM, TO)).isZero();
+        assertThat(reader.readNetCashflowByAccount(owner, List.of(linkedAccount), FROM, TO))
+                .containsOnly(entry(linkedAccount, 500_000L));
+        assertThat(reader.readNetCashflowByAccount(other, List.of(linkedAccount), FROM, TO)).isEmpty();
+    }
+
+    @Test
+    void splitsNetCashflowByAttributedAccount() {
+        // 703: 목표 몫을 계좌마다 따로 곱해야 하므로 합계가 아니라 계좌별로 돌려준다.
+        // 카드 승인은 계좌 열이 비어 있어도 대금이 빠지는 출금 계좌 몫으로 돌아간다.
+        transaction(owner, linkedAccount, null, LocalDate.of(2026, 6, 25), "INCOME", 1_000_000L, false);
+        transaction(owner, null, linkedCard, LocalDate.of(2026, 7, 10), "EXPENSE", 300_000L, false);
+        transaction(owner, unlinkedAccount, null, LocalDate.of(2026, 7, 12), "INCOME", 400_000L, false);
+        transaction(owner, null, unlinkedCard, LocalDate.of(2026, 7, 13), "EXPENSE", 50_000L, false);
+
+        // 두 계좌를 모두 넘기면 둘 다 나온다(여기서는 이름과 달리 둘 다 조회 대상이다)
+        assertThat(reader.readNetCashflowByAccount(owner, List.of(linkedAccount, unlinkedAccount), FROM, TO))
+                .containsOnly(entry(linkedAccount, 700_000L), entry(unlinkedAccount, 350_000L));
+        // 하나만 넘기면 나머지 계좌·카드의 거래는 아예 들어오지 않는다
+        assertThat(reader.readNetCashflowByAccount(owner, List.of(linkedAccount), FROM, TO))
+                .containsOnly(entry(linkedAccount, 700_000L));
     }
 
     @Test
