@@ -11,6 +11,8 @@ import { financeErrorCodes, isApiError } from '@/api';
 export const transferErrorCodes = {
   insufficientBalance: 'TRANSFER_INSUFFICIENT_BALANCE',
   limitExceeded: 'TRANSFER_LIMIT_EXCEEDED',
+  /** 서버가 짧은 시간 내 같은 이체를 거절한 것. FE 중복 차단을 빠져나간 경우다. */
+  duplicateRequest: 'TRANSFER_DUPLICATE_REQUEST',
 } as const;
 
 const DEFAULT_MESSAGE = '이체하지 못했어요. 잠시 후 다시 시도해주세요.';
@@ -37,6 +39,12 @@ export function getAccountTransferErrorMessage(error: unknown): string {
      */
     case transferErrorCodes.limitExceeded:
       return '이 계좌의 이체 한도를 넘었어요. 금액을 줄여서 다시 시도해주세요.';
+    /*
+     * 서버 2차 방어에 걸린 것이라 이미 한 번 이체됐을 수 있다. 다시 보내라고 하면
+     * 두 번 나갈 수 있어, 확인부터 하게 안내한다.
+     */
+    case transferErrorCodes.duplicateRequest:
+      return '방금 같은 이체가 처리됐어요. 잔액을 확인한 뒤 다시 시도해주세요.';
     case financeErrorCodes.notConnected:
       return '금융 정보 연결이 필요해요. 연결을 먼저 진행해주세요.';
     case financeErrorCodes.apiError:

@@ -231,7 +231,9 @@ export interface AccountTransferRequest {
  * 목표 진행률은 들어오지 않으므로 목표 상세는 따로 다시 조회해야 한다(§3-5).
  */
 export interface AccountTransferApiResponse {
+  withdrawalAccountId: number;
   withdrawalBalance: number;
+  depositAccountId: number;
   depositBalance: number;
   transferredAmount: number;
 }
