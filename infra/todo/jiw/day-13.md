@@ -532,7 +532,7 @@ system_cpu_usage  = 0.0270     (호스트 전체)
 **읽는 법**: 호스트 CPU는 높은데 백엔드 몫이 낮으면 → 범인은 MySQL·Jenkins 등 **다른 컨테이너**다
 (앱을 고쳐도 소용없다). 둘이 같이 오르면 → **백엔드가 원인**이다.
 
-#### 남는 한계
+#### 남는 한계 (→ 25절에서 해소됨)
 
 컨테이너별 **메모리·디스크 I/O**는 여전히 볼 수 없다. CPU만 백엔드 몫이 분리된다.
 MySQL이 메모리를 얼마나 쓰는지는 `mysql_global_status_*`로 간접 추정해야 한다.
@@ -542,3 +542,94 @@ MySQL이 메모리를 얼마나 쓰는지는 `mysql_global_status_*`로 간접 �
 
 cAdvisor 잡을 추가할 때 **`prometheus.yml`을 고치고 리로드만으로 새 잡이 잡혔다**(재생성 불필요).
 23절에서 임시 파일로 검증했던 것이 실제 작업에서 확인된 셈이다.
+
+### 25. cAdvisor 재도입 성공 — 실패 원인은 `docker.sock`이었다
+
+24절에서 철회했으나, **자원 영향이 작다면 넣자**는 판단으로 한 번 더 시도해 성공했다.
+
+#### 결정적 단서
+
+cAdvisor는 `docker.sock`이 보이면 **Docker 핸들러**로 컨테이너를 처리한다. 그런데 이 호스트는
+containerd 이미지 스토어라 RW 레이어를 못 찾아 **컨테이너를 통째로 포기**했다(24절).
+
+**소켓을 마운트하지 않으면** Docker 핸들러가 등록되지 않고 **raw cgroup 핸들러**로 떨어진다.
+그러면 `/system.slice/docker-<id>.scope` cgroup을 그대로 읽어 정상 수집된다.
+
+```
+docker.sock 있음 → 컨테이너 0개 (RW 레이어 오류 반복)
+docker.sock 없음 → 컨테이너 14개, 오류 0건
+```
+
+| 방안 | 검토 | 채택 |
+| --- | --- | --- |
+| **docker.sock 없이 raw cgroup 수집** | 컨테이너별 CPU·메모리를 얻는다. **소켓을 안 쓰니 보안도 더 낫다**(docker.sock은 사실상 호스트 root 권한) | **채택** |
+| docker.sock 마운트 | 컨테이너 **이름**을 얻지만 이 호스트에서는 수집 자체가 안 된다 | 불가 |
+| 포기하고 `process_cpu_usage`만 | 백엔드 몫만 알 수 있고 MySQL·Jenkins는 여전히 깜깜 | 24절의 임시안 |
+
+**대가**: 컨테이너 이름을 모른다. cgroup 경로에서 12자리 짧은 ID를 뽑아 `container_id` 라벨로 넣었고,
+`docker ps`의 CONTAINER ID와 같은 값이라 대조할 수 있다.
+
+#### 자원 영향 — 실측했다
+
+"다른 컨테이너에 영향이 없어야 넣는다"가 조건이었으므로 먼저 쟀다.
+
+| 컨테이너 | CPU | 메모리 |
+| --- | --- | --- |
+| **cadvisor** | **0.25~0.9%** | **15MB** (한도 256MB) |
+| redis-exporter | 1.46% | 10.9MB |
+| prometheus | 1.28% | 78MB |
+
+`--housekeeping_interval=10s`와 불필요 지표 비활성(`percpu`, `sched`, `tcp`, `process` 등)을 걸어
+기본 설정보다 크게 낮췄다. **측정기가 측정 대상을 방해하면 안 된다**는 원칙은 mysqld-exporter의
+`MAX_USER_CONNECTIONS 3`과 같다.
+
+#### 첫 수집에서 바로 보인 것
+
+```
+jenkins   1,588 MB   ← 놀면서 가장 많이 쥐고 있다
+mysql     1,054 MB
+backend     551 MB
+prometheus/grafana/loki  88 / 80 / 64 MB
+```
+
+부하 중 메모리가 빠듯해지면 **Jenkins가 1순위 후보**다. 지금은 호스트 메모리 여유가 72%라 문제없다.
+
+#### 이 작업에서 내가 낸 실수 — `prometheus.yml` 구조를 깼다
+
+cadvisor 잡을 redis 잡 뒤에 붙인다는 게, redis 잡의 `labels:` 블록 **앞에** 끼워 넣어
+YAML이 깨졌다. 앵커 문자열이 `- targets: [...]` 줄까지만 매칭해서 그 아래 딸린 두 줄과 분리된 것이다.
+
+```
+line 77: field labels not found in type relabel.plain
+```
+
+**여러 줄 블록에 텍스트를 삽입할 때는 블록의 끝까지 앵커로 잡아야 한다.**
+커밋된 원본을 `git show`로 꺼내 다시 만들고 파일 끝에 append하는 방식으로 고쳤다.
+
+#### 그 덕분에 배포 스크립트 버그를 찾았다
+
+깨진 설정으로 리로드했는데 **"리로드 OK"로 보였다.** 확인해보니 **busybox wget은 HTTP 500에도
+종료코드 0을 반환**한다. 23절에서 내가 `deploy.sh`에 넣은 리로드 단계가
+
+```sh
+docker exec prometheus wget -q ... /-/reload >/dev/null 2>&1 || log "리로드 생략"
+```
+
+이 형태라 **설정 오류를 전혀 잡지 못하고 있었다.** 배포는 성공으로 끝나고 prometheus는
+옛 설정으로 계속 도는, 조용히 틀리는 종류의 실패다.
+
+→ 응답 코드를 직접 검사하도록 바꾸고, 실패 시 확인 명령까지 로그에 남기게 했다.
+
+```sh
+if docker exec prometheus wget -S --post-data="" -O- .../-/reload 2>&1 | grep -q "HTTP/1.1 200"; then
+```
+
+**23절에서 만든 장치를 오늘 내 실수로 검증한 셈이다.** 내가 깨뜨리지 않았으면
+부하 테스트 중에 설정을 바꿨을 때 처음 드러났을 것이다.
+
+#### 산출물
+
+- `docker-compose.yml` cadvisor(v0.52.1, docker.sock 없음, mem 256m)
+- `prometheus.yml` job cadvisor + `metric_relabel_configs`(container_id 추출, systemd 시리즈 제외)
+- `deploy.sh` DEPLOY_SERVICES에 cadvisor, 리로드 응답코드 검사
+- `loadtest.json` 컨테이너별 CPU·메모리 패널 2개(총 14패널)
