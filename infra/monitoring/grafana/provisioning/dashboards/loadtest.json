@@ -531,7 +531,7 @@
     },
     {
       "type": "timeseries",
-      "title": "호스트 CPU·메모리",
+      "title": "호스트 CPU·메모리 (백엔드 몫 포함)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -565,16 +565,21 @@
       "targets": [
         {
           "expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\"}[1m])) * 100)",
-          "legendFormat": "CPU 사용률(%)",
+          "legendFormat": "호스트 CPU 사용률(%)",
           "refId": "A"
+        },
+        {
+          "expr": "process_cpu_usage * 100",
+          "legendFormat": "백엔드 프로세스 CPU(%)",
+          "refId": "B"
         },
         {
           "expr": "node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100",
           "legendFormat": "메모리 여유(%)",
-          "refId": "B"
+          "refId": "C"
         }
       ],
-      "description": "호스트가 포화면 앱을 고쳐도 소용이 없다. CPU 80% 지속 또는 메모리 여유 15% 미만이면 자원 한계다."
+      "description": "호스트 전체 CPU와 그중 백엔드가 쓰는 몫을 함께 본다. 호스트 CPU는 높은데 백엔드 몫이 낮으면 범인은 MySQL·Jenkins 등 다른 컨테이너다(앱을 고쳐도 소용없다). 둘이 같이 오르면 백엔드가 원인이다. 컨테이너별 세부 내역은 없다 — cAdvisor가 이 호스트의 Docker 29 containerd 스토어를 지원하지 않는다(day-13 24절)."
     },
     {
       "type": "timeseries",
@@ -626,6 +631,90 @@
         }
       ],
       "description": "eviction이 0을 넘으면 캐시가 밀려나는 중이다. 코치 응답 캐시 적중률이 떨어져 외부 API 호출이 는다."
+    },
+    {
+      "type": "timeseries",
+      "title": "컨테이너별 CPU (상위 6)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "fillOpacity": 8,
+            "lineWidth": 2
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "topk(6, rate(container_cpu_usage_seconds_total{container_id!=\"\"}[1m]) * 100)",
+          "legendFormat": "{{container_id}}",
+          "refId": "A"
+        }
+      ],
+      "description": "누가 CPU를 먹는지. 이름 대신 12자리 컨테이너 ID로 나오므로 `docker ps`로 대조한다. 호스트 CPU가 높은데 백엔드가 아니면 여기서 범인을 찾는다."
+    },
+    {
+      "type": "timeseries",
+      "title": "컨테이너별 메모리 (상위 6)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "fillOpacity": 8,
+            "lineWidth": 2
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "topk(6, container_memory_working_set_bytes{container_id!=\"\"})",
+          "legendFormat": "{{container_id}}",
+          "refId": "A"
+        }
+      ],
+      "description": "working set 기준. MySQL 버퍼풀이 커지는지, 백엔드 힙 외 메모리가 느는지 본다. ID는 `docker ps`의 CONTAINER ID와 같다."
     }
   ]
 }

@@ -58,3 +58,20 @@ scrape_configs:
       - targets: ["redis-exporter:9121"]
         labels:
           service: dodam-backend
+
+  # 컨테이너별 CPU·메모리. 단일 EC2에서 누가 자원을 먹는지 구분하려면 호스트 전체 수치로는 부족하다.
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["cadvisor:8080"]
+    metric_relabel_configs:
+      # docker.sock 없이 돌아 컨테이너 이름을 모른다(compose 주석 참고).
+      # cgroup 경로에서 12자리 짧은 ID를 뽑는다 — `docker ps`의 CONTAINER ID와 같은 값이다.
+      - source_labels: [id]
+        regex: '/system\.slice/docker-(.{12}).*\.scope'
+        target_label: container_id
+        replacement: '${1}'
+      # systemd 서비스(ModemManager, chrony 등)까지 저장하면 시리즈만 늘고 쓸 일이 없다.
+      # 루트 cgroup(/)과 docker 컨테이너만 남긴다.
+      - source_labels: [id]
+        regex: '(/|/system\.slice/docker-.*\.scope)'
+        action: keep

@@ -477,3 +477,227 @@ API 조회로 `uid=dodam-loadtest` 로드를 확인했다.
 
 **호스트 파일과 컨테이너 파일을 둘 다 찍어 보고서야** 구분됐다. 원격에서 파일을 고칠 때는
 고쳐졌는지부터 확인해야 한다 — 09-17의 `LIKE '[1-4]'`, 09-22의 컬럼명 추측과 같은 계열의 실수다.
+
+### 24. cAdvisor 도입 시도 — 실패, 대안으로 전환
+
+"컨테이너별로 누가 CPU를 먹는지" 보려고 cAdvisor를 넣었다가 **되돌렸다.**
+
+#### 왜 필요했나
+
+node-exporter는 **호스트 전체**만 본다. EC2 한 대에 MySQL·Redis·백엔드·Jenkins·Grafana가
+모두 사는 구조라, 부하 중 CPU가 치솟아도 **누구 때문인지 구분할 수 없었다.**
+"CPU 한계"라는 결론이 나와도 원인을 못 밝히면 개선 방향이 안 나온다.
+
+#### 왜 실패했나
+
+```
+E manager.go:1116] Failed to create existing container: /system.slice/docker-<id>.scope:
+  failed to identify the read-write layer ID ...
+  open /rootfs/var/lib/docker/image/overlayfs/layerdb/mounts/<id>/mount-id: no such file
+```
+
+원인: 이 호스트의 **Docker 29.8.0이 containerd 이미지 스토어**를 쓴다(`Storage Driver: overlayfs`).
+그러면 `/var/lib/docker/image/<driver>/layerdb/`가 아예 없고(실제로 `identity-cache.db` 하나뿐),
+cAdvisor의 Docker 핸들러가 RW 레이어를 못 찾아 **컨테이너를 통째로 건너뛴다.**
+
+| 시도 | 결과 |
+| --- | --- |
+| v0.49.1 기본 설정 | `id="/"` 루트 cgroup 1개만 |
+| v0.52.1로 올림 | 동일 |
+| `--containerd=/run/containerd/containerd.sock` 추가 | 동일 |
+| `--docker_only=true` 제거 | systemd 서비스 47개는 잡히지만 **docker 컨테이너는 여전히 실패** |
+
+cAdvisor 쪽 미지원 문제라 우리가 설정으로 풀 수 없다고 판단하고 중단했다.
+**오늘이 부하 테스트 날이라 더 파지 않았다.**
+
+#### 대안 — 이미 있던 지표로 대부분 해결됐다
+
+micrometer가 **백엔드 프로세스의 CPU를 이미 내보내고 있었다.**
+
+```
+process_cpu_usage = 0.0027     (백엔드 JVM)
+system_cpu_usage  = 0.0270     (호스트 전체)
+→ 백엔드가 호스트 CPU 사용량의 약 10%
+```
+
+| 방안 | 검토 | 채택 |
+| --- | --- | --- |
+| **`process_cpu_usage`로 백엔드 몫만 분리** | 컨테이너별 세부는 없지만 **"백엔드냐 아니냐"**는 답할 수 있다. 추가 컨테이너·권한 없음 | **채택** |
+| cAdvisor 계속 파기 | 상류 미지원이라 시간 대비 성공 확률이 낮다. 오늘 테스트를 못 돌린다 | 기각 |
+| cgroup을 직접 읽는 수집기 자작 | 시간이 없고 유지보수 부담 | 기각 |
+| Docker 스토리지 드라이버를 overlay2로 되돌림 | **위험하다.** 이미지 재빌드·재다운로드가 필요하고 시연 5일 전이다 | 기각 |
+
+→ 대시보드 `호스트 CPU·메모리` 패널에 **백엔드 프로세스 CPU** 선을 추가했다.
+
+**읽는 법**: 호스트 CPU는 높은데 백엔드 몫이 낮으면 → 범인은 MySQL·Jenkins 등 **다른 컨테이너**다
+(앱을 고쳐도 소용없다). 둘이 같이 오르면 → **백엔드가 원인**이다.
+
+#### 남는 한계 (→ 25절에서 해소됨)
+
+컨테이너별 **메모리·디스크 I/O**는 여전히 볼 수 없다. CPU만 백엔드 몫이 분리된다.
+MySQL이 메모리를 얼마나 쓰는지는 `mysql_global_status_*`로 간접 추정해야 한다.
+이 점을 잔여 한계로 기록해 둔다.
+
+#### 부수 확인 — 어제 고친 디렉터리 마운트가 실제로 동작했다
+
+cAdvisor 잡을 추가할 때 **`prometheus.yml`을 고치고 리로드만으로 새 잡이 잡혔다**(재생성 불필요).
+23절에서 임시 파일로 검증했던 것이 실제 작업에서 확인된 셈이다.
+
+### 25. cAdvisor 재도입 성공 — 실패 원인은 `docker.sock`이었다
+
+24절에서 철회했으나, **자원 영향이 작다면 넣자**는 판단으로 한 번 더 시도해 성공했다.
+
+#### 결정적 단서
+
+cAdvisor는 `docker.sock`이 보이면 **Docker 핸들러**로 컨테이너를 처리한다. 그런데 이 호스트는
+containerd 이미지 스토어라 RW 레이어를 못 찾아 **컨테이너를 통째로 포기**했다(24절).
+
+**소켓을 마운트하지 않으면** Docker 핸들러가 등록되지 않고 **raw cgroup 핸들러**로 떨어진다.
+그러면 `/system.slice/docker-<id>.scope` cgroup을 그대로 읽어 정상 수집된다.
+
+```
+docker.sock 있음 → 컨테이너 0개 (RW 레이어 오류 반복)
+docker.sock 없음 → 컨테이너 14개, 오류 0건
+```
+
+| 방안 | 검토 | 채택 |
+| --- | --- | --- |
+| **docker.sock 없이 raw cgroup 수집** | 컨테이너별 CPU·메모리를 얻는다. **소켓을 안 쓰니 보안도 더 낫다**(docker.sock은 사실상 호스트 root 권한) | **채택** |
+| docker.sock 마운트 | 컨테이너 **이름**을 얻지만 이 호스트에서는 수집 자체가 안 된다 | 불가 |
+| 포기하고 `process_cpu_usage`만 | 백엔드 몫만 알 수 있고 MySQL·Jenkins는 여전히 깜깜 | 24절의 임시안 |
+
+**대가**: 컨테이너 이름을 모른다. cgroup 경로에서 12자리 짧은 ID를 뽑아 `container_id` 라벨로 넣었고,
+`docker ps`의 CONTAINER ID와 같은 값이라 대조할 수 있다.
+
+#### 자원 영향 — 실측했다
+
+"다른 컨테이너에 영향이 없어야 넣는다"가 조건이었으므로 먼저 쟀다.
+
+| 컨테이너 | CPU | 메모리 |
+| --- | --- | --- |
+| **cadvisor** | **0.25~0.9%** | **15MB** (한도 256MB) |
+| redis-exporter | 1.46% | 10.9MB |
+| prometheus | 1.28% | 78MB |
+
+`--housekeeping_interval=10s`와 불필요 지표 비활성(`percpu`, `sched`, `tcp`, `process` 등)을 걸어
+기본 설정보다 크게 낮췄다. **측정기가 측정 대상을 방해하면 안 된다**는 원칙은 mysqld-exporter의
+`MAX_USER_CONNECTIONS 3`과 같다.
+
+#### 첫 수집에서 바로 보인 것
+
+```
+jenkins   1,588 MB   ← 놀면서 가장 많이 쥐고 있다
+mysql     1,054 MB
+backend     551 MB
+prometheus/grafana/loki  88 / 80 / 64 MB
+```
+
+부하 중 메모리가 빠듯해지면 **Jenkins가 1순위 후보**다. 지금은 호스트 메모리 여유가 72%라 문제없다.
+
+#### 이 작업에서 내가 낸 실수 — `prometheus.yml` 구조를 깼다
+
+cadvisor 잡을 redis 잡 뒤에 붙인다는 게, redis 잡의 `labels:` 블록 **앞에** 끼워 넣어
+YAML이 깨졌다. 앵커 문자열이 `- targets: [...]` 줄까지만 매칭해서 그 아래 딸린 두 줄과 분리된 것이다.
+
+```
+line 77: field labels not found in type relabel.plain
+```
+
+**여러 줄 블록에 텍스트를 삽입할 때는 블록의 끝까지 앵커로 잡아야 한다.**
+커밋된 원본을 `git show`로 꺼내 다시 만들고 파일 끝에 append하는 방식으로 고쳤다.
+
+#### 그 덕분에 배포 스크립트 버그를 찾았다
+
+깨진 설정으로 리로드했는데 **"리로드 OK"로 보였다.** 확인해보니 **busybox wget은 HTTP 500에도
+종료코드 0을 반환**한다. 23절에서 내가 `deploy.sh`에 넣은 리로드 단계가
+
+```sh
+docker exec prometheus wget -q ... /-/reload >/dev/null 2>&1 || log "리로드 생략"
+```
+
+이 형태라 **설정 오류를 전혀 잡지 못하고 있었다.** 배포는 성공으로 끝나고 prometheus는
+옛 설정으로 계속 도는, 조용히 틀리는 종류의 실패다.
+
+→ 응답 코드를 직접 검사하도록 바꾸고, 실패 시 확인 명령까지 로그에 남기게 했다.
+
+```sh
+if docker exec prometheus wget -S --post-data="" -O- .../-/reload 2>&1 | grep -q "HTTP/1.1 200"; then
+```
+
+**23절에서 만든 장치를 오늘 내 실수로 검증한 셈이다.** 내가 깨뜨리지 않았으면
+부하 테스트 중에 설정을 바꿨을 때 처음 드러났을 것이다.
+
+#### 산출물
+
+- `docker-compose.yml` cadvisor(v0.52.1, docker.sock 없음, mem 256m)
+- `prometheus.yml` job cadvisor + `metric_relabel_configs`(container_id 추출, systemd 시리즈 제외)
+- `deploy.sh` DEPLOY_SERVICES에 cadvisor, 리로드 응답코드 검사
+- `loadtest.json` 컨테이너별 CPU·메모리 패널 2개(총 14패널)
+
+### 26. k6 스크립트에 `THINK_TIME` 옵션 추가 — 한계 탐색이 가능해졌다
+
+#### 문제 — 기존 설정으로는 병목이 드러나지 않는다
+
+`backend/scripts/loadtest/user-journey.js`는 잘 만들어져 있었다. 로그인을 `setup()`에서만 해
+`api_auth`(분당 20건)를 피하고, 429를 `rate_limited`로 분리하며, GET만 호출해 운영 DB를 건드리지 않는다.
+
+문제는 **부하의 세기**였다.
+
+```
+1회 journey = 요청 7건 + 대기 약 10초  →  VU 1명당 0.7 req/s
+VU 50명 = 약 35 req/s  →  동시 요청 약 1.4개
+DB 커넥션 풀 = 10  →  1.4개만 쓰니 대기가 생길 수 없다
+```
+
+실사용을 흉내 낸 `randomSleep`이 원인이다. 의도는 맞지만, **이 설정으로는 아무리 오래 돌려도
+커넥션 풀에 닿지 못해** 완료 기준인 "병목 원인 규명"을 할 수 없다.
+
+#### 방안 비교
+
+| 방안 | 검토 | 채택 |
+| --- | --- | --- |
+| **대기 시간을 환경변수 배율로** | 기본값은 현재 동작 그대로. `THINK_TIME=0`이면 한계 탐색. 스크립트 구조를 안 건드린다 | **채택** |
+| VU를 대폭 늘림(500+) | 대기가 그대로라 k6 실행 머신의 부담만 커진다. VU 700쯤 필요 | 기각 |
+| `randomSleep` 호출을 삭제 | 실사용 프로필을 잃는다. 둘 다 필요하다 | 기각 |
+| 별도 `break` 프로필 신설 | `PROFILE`과 `THINK_TIME`이 직교하는 개념인데 섞이면 조합이 막힌다 | 기각 |
+
+#### 구현
+
+```js
+const THINK_TIME = Math.max(0, parseFloat(__ENV.THINK_TIME ?? '1') || 0);
+
+function randomSleep(min, max) {
+    if (THINK_TIME === 0) return;   // sleep(0)도 이터레이션을 양보시키므로 호출 자체를 건너뛴다
+    sleep((min + Math.random() * (max - min)) * THINK_TIME);
+}
+```
+
+`setup()` 로그에 `LOAD_VUS`·`THINK_TIME`을 함께 찍게 했다.
+**어떤 조건에서 잰 수치인지가 결과와 같이 남아야** 비교가 성립한다.
+
+#### 실측 — 1 VU로 검증했다
+
+| | `THINK_TIME=1`(기본) | `THINK_TIME=0` |
+| --- | --- | --- |
+| 이터레이션 | 약 11,000ms | **98.8ms** |
+| VU 1명당 | 0.7 req/s | **62 req/s** |
+| 체크 | 통과 | 통과(26건 실패 0) |
+
+**VU 1명이 62 req/s**를 만든다. 50 VU면 동시 요청이 40개대가 되어 **풀 10개는 확실히 포화된다.**
+
+백엔드 직결 시 엔드포인트별 지연(참고): `loans` 7ms · `card_summary` 9ms · `simulations` 11ms ·
+`recommendation_summary` 16ms · **`diagnoses` 22ms**(가장 느림).
+
+#### 실행 방법 세 가지를 헤더에 적었다
+
+1. **`verify`** — 경로·계정 확인. 1 VU × 3회
+2. **실사용 부하** — Nginx 경유, `LOAD_VUS=25`(20r/s 제한을 넘지 않는 선)
+3. **한계 탐색** — k6를 컨테이너로 `app-net`에 붙여 `backend:8080` 직결 + `THINK_TIME=0`
+
+```bash
+docker run --rm -i --network infra_app-net \
+  -e BASE_URL=http://backend:8080/api -e PROFILE=load -e LOAD_VUS=50 -e THINK_TIME=0 \
+  -v "$PWD/backend/scripts/loadtest:/work" -w /work grafana/k6:latest run user-journey.js
+```
+
+**3번에서는 응답시간 임계(p95<800 등)가 실패하는 것이 정상이다.** 그 실패 지점이 찾으려던 한계다.
