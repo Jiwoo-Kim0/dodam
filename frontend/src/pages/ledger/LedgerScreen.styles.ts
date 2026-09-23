@@ -238,8 +238,9 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.ledger.categoryTrack,
     borderRadius: radius.round,
     flexDirection: 'row',
-    height: 5,
+    height: 8,
     overflow: 'hidden',
+    padding: 1,
   },
   categoryProgressFill: {
     borderRadius: radius.round,
