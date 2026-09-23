@@ -13,22 +13,25 @@ interface AssetSectionProps {
 
 export function AssetSection({ section }: AssetSectionProps) {
   const totalAmount = getAssetSectionTotal(section);
+  const shouldShowTotal = section.items.length > 1 || Boolean(section.summaryPrefix);
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>{section.title}</Text>
 
-        <Text
-          adjustsFontSizeToFit
-          minimumFontScale={0.8}
-          numberOfLines={1}
-          style={styles.total}
-        >
-          {section.summaryPrefix
-            ? `${section.summaryPrefix} ${formatCurrency(totalAmount)}`
-            : formatCurrency(totalAmount)}
-        </Text>
+        {shouldShowTotal ? (
+          <Text
+            adjustsFontSizeToFit
+            minimumFontScale={0.8}
+            numberOfLines={1}
+            style={styles.total}
+          >
+            {section.summaryPrefix
+              ? `${section.summaryPrefix} ${formatCurrency(totalAmount)}`
+              : `${section.id === 'loan' ? '총 대출액' : '총 보유액'} ${formatCurrency(totalAmount)}`}
+          </Text>
+        ) : null}
       </View>
 
       <View style={styles.list}>

@@ -80,6 +80,9 @@ export const styles = StyleSheet.create({
     marginTop: 2,
     textAlign: 'center',
   },
+  summaryNumber: {
+    fontFamily: fontFamily.bold,
+  },
   summaryAmountHighlight: {
     backgroundColor: colors.primary.lightGreen,
     color: colors.primary.green,
@@ -89,8 +92,13 @@ export const styles = StyleSheet.create({
   summarySubtext: {
     ...typography.body2,
     color: colors.textSecondary,
-    marginTop: spacing[2],
+    marginTop: spacing[3],
     textAlign: 'center',
+  },
+  summarySubtextNumber: {
+    backgroundColor: colors.primary.lightGreen,
+    color: colors.textSecondary,
+    fontFamily: fontFamily.bold,
   },
   summaryDaysHighlight: {
     color: colors.primary.green,
@@ -182,9 +190,7 @@ export const styles = StyleSheet.create({
     marginTop: spacing[6],
   },
   insightListCard: {
-    backgroundColor: colors.white,
-    borderRadius: radius.card,
-    overflow: 'hidden',
+    gap: spacing[2],
   },
   /** 아래 안내 문구(`cooldownLabel`)와 같은 축에 두려고 가운데 정렬한다. */
   footnote: {

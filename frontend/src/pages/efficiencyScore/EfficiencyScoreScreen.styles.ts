@@ -78,14 +78,14 @@ export const styles = StyleSheet.create({
     fontSize: fontSize.body2,
     lineHeight: 18,
   },
-  cardDescription: {
+  scoreGuideText: {
     color: colors.textSecondary,
     fontFamily: fontFamily.regular,
     fontSize: fontSize.caption,
     lineHeight: 17,
-    marginTop: semanticSpacing.cardTitleContentGap,
+    marginTop: spacing[1],
   },
   dimensions: {
-    marginTop: semanticSpacing.cardTitleContentGap,
+    marginTop: spacing[1],
   },
 });

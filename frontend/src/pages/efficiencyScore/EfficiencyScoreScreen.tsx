@@ -82,15 +82,8 @@ export function EfficiencyScoreScreen() {
             {efficiencyScore.dimensions.length === 0 ? null : (
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>항목별 점수</Text>
-                {/*
-                  오른쪽 숫자가 실제 비율이 아니라 0~100점의 관리 점수다. 아래 설명에 적힌
-                  비율과 다른 값이라, 사용자가 둘을 같은 값으로 읽지 않게 먼저 밝힌다(698).
-                */}
-                <Text style={styles.cardDescription}>
-                  0~100점으로 환산한 관리 점수예요. 아래 설명의 실제 비율과는 다른 값이에요
-                </Text>
-                <Text style={styles.cardDescription}>
-                  계산할 수 없는 항목은 전체 점수에 넣지 않아요
+                <Text style={styles.scoreGuideText}>
+                  실제 비율을 100점으로 환산했어요. 계산이 어려운 항목은 제외돼요.
                 </Text>
 
                 <View style={styles.dimensions}>
