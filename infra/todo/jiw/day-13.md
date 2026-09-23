@@ -804,3 +804,51 @@ Spring Boot는 `server.tomcat.mbeanregistry.enabled`가 기본 `false`라 MBean�
 - `infra/monitoring/grafana/provisioning/dashboards/loadtest.json`
 - `infra/scripts/metrics-snapshot.py`
 - `infra/docs/dashboard-guide.md`
+
+#### 배포 후 검증 (2026-09-23 13:41 KST · 서버 커밋 `8f52cd0`)
+
+`server.tomcat.mbeanregistry.enabled: true` 반영 후 데모 서버에서 확인했다.
+**목표 지표 3개가 모두 수집된다.**
+
+```
+sum(tomcat_threads_busy_threads)        1     ← Prometheus 스크레이프 요청 자체
+sum(tomcat_threads_current_threads)     10    ← 만들어 둔 스레드
+max(tomcat_threads_config_max_threads)  200   ← 상한(톰캣 기본값 확인)
+max(hikaricp_connections_max)           10    ← 비교용. 스레드 200 대 풀 10 구조 확정
+```
+
+스냅샷·Grafana 패널 반영도 확인했다.
+
+- `metrics-snapshot.py` 실행 시 `톰캣 busy 스레드 1` · `톰캣 스레드 max 200` 정상 출력
+- Grafana 컨테이너 안 `/etc/grafana/provisioning/dashboards/loadtest.json`에
+  `톰캣 요청 스레드 (포화도)` 패널 존재
+
+#### 예상보다 많이 얻었다 — MBean 하나로 지표 3계열이 함께 열렸다
+
+설정 한 줄로 **스레드 3개만** 생길 줄 알았는데, MBean 기반 지표가 통째로 열렸다.
+
+| 계열 | 지표 | 쓸모 |
+| --- | --- | --- |
+| threads | `busy` · `current` · `config_max` | 목표였던 것. 스레드 포화 판정 |
+| connections | `current_connections` · `keepalive_current_connections` · `config_max_connections`(**8192**) | 연결은 맺었지만 처리 대기 중인 요청 수. 스레드와 구분된다 |
+| global/servlet | `request_seconds_*` · `error_total` · `received/sent_bytes_total` | **Spring 필터 바깥**까지 포함한 서버 관점 지연·에러·전송량 |
+
+특히 `tomcat_global_request_seconds_*`는 기존 `http_server_requests_seconds_*`(Spring MVC 계층)보다
+**바깥쪽**을 잰다. 둘의 차이가 벌어지면 지연이 컨트롤러가 아니라
+**필터·인증·요청 파싱 단계**에서 생긴다는 뜻이라 원인 구간을 한 번 더 좁힐 수 있다.
+
+`config_max_connections=8192`를 확인하면서 **요청이 통과하는 문이 4단계**라는 게 명확해졌다.
+
+```
+nginx 20 req/s → 톰캣 커넥션 8192 → 톰캣 스레드 200 → DB 풀 10
+```
+
+뒤로 갈수록 좁아지고, **병목은 항상 가장 좁은 문**이다. 이 그림을 `dashboard-guide.md`
+4행 절에 추가했다 — 커넥션이 높은데 busy가 낮은 상황을 문제로 오해하지 않게 하기 위해서다.
+
+#### 남은 것 갱신
+
+- [x] ~~재배포 후 `tomcat_threads_busy_threads` 수집 확인~~ → 완료
+- [ ] 부하 테스트 직전 기준선 스냅샷 재측정(유휴 상태 기준선은 위 13:41 판으로 확보)
+- [ ] `tomcat_global_request_seconds`와 `http_server_requests_seconds` 차이를 볼 패널 추가 검토
+- [ ] k6 → Prometheus 내보내기 / nginx exporter / 215·317 시간대 분리 (기존 유지)
