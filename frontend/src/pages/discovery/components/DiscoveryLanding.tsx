@@ -70,10 +70,23 @@ const financeLogoGroupWidth = 56 * 4;
 export function DiscoveryLanding({ onBack, onComplete }: DiscoveryLandingProps) {
   const { height } = useWindowDimensions();
   const [viewportHeight, setViewportHeight] = useState(height - 64);
+  const [activePage, setActivePage] = useState(0);
+  const activePageRef = useRef(0);
   const scrollRef = useRef<BouncyScrollViewHandle>(null);
 
   const handleLayout = (event: LayoutChangeEvent) => {
     setViewportHeight(event.nativeEvent.layout.height);
+  };
+
+  const handleScrollOffsetChange = (offsetY: number) => {
+    const nextPage = Math.max(
+      0,
+      Math.min(4, Math.round(offsetY / Math.max(viewportHeight, 1))),
+    );
+    if (nextPage === activePageRef.current) return;
+
+    activePageRef.current = nextPage;
+    setActivePage(nextPage);
   };
 
   return (
@@ -81,6 +94,7 @@ export function DiscoveryLanding({ onBack, onComplete }: DiscoveryLandingProps) 
       <View onLayout={handleLayout} style={styles.scrollArea}>
         <RefreshableBouncyScrollView
           contentContainerStyle={styles.scrollContent}
+          onScrollOffsetChange={handleScrollOffsetChange}
           pageSize={viewportHeight}
           pagingEnabled
           refreshBackgroundColor={colors.white}
@@ -251,8 +265,17 @@ export function DiscoveryLanding({ onBack, onComplete }: DiscoveryLandingProps) 
                 </View>
               </View>
               <View style={styles.comparisonCards}>
-                <ComparisonCard amount="320,000원" label="지금 그대로라면" />
-                <ComparisonCard amount="258,000원" highlighted label="이렇게 바꾸면" />
+                <ComparisonCard
+                  amount="320,000원"
+                  isActive={activePage === 4}
+                  label="지금 그대로라면"
+                />
+                <ComparisonCard
+                  amount="258,000원"
+                  highlighted
+                  isActive={activePage === 4}
+                  label="이렇게 바꾸면"
+                />
               </View>
             </View>
             <View style={styles.resultList}>
@@ -369,11 +392,70 @@ type ComparisonCardProps = {
   label: string;
   amount: string;
   highlighted?: boolean;
+  isActive: boolean;
 };
 
-function ComparisonCard({ label, amount, highlighted = false }: ComparisonCardProps) {
+function ComparisonCard({
+  label,
+  amount,
+  highlighted = false,
+  isActive,
+}: ComparisonCardProps) {
+  const [scale] = useState(() => new Animated.Value(1));
+  const [translateY] = useState(() => new Animated.Value(0));
+  const [opacity] = useState(() => new Animated.Value(1));
+
+  useEffect(() => {
+    scale.stopAnimation();
+    translateY.stopAnimation();
+    opacity.stopAnimation();
+
+    if (!isActive) {
+      scale.setValue(1);
+      translateY.setValue(0);
+      opacity.setValue(1);
+      return;
+    }
+
+    if (highlighted) scale.setValue(0.96);
+
+    const animation = Animated.parallel([
+      Animated.sequence([
+        Animated.delay(highlighted ? 120 : 0),
+        Animated.spring(scale, {
+          friction: 6,
+          tension: 60,
+          toValue: highlighted ? 1.12 : 0.88,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.sequence([
+        Animated.delay(highlighted ? 120 : 0),
+        Animated.spring(translateY, {
+          friction: 7,
+          tension: 55,
+          toValue: highlighted ? -6 : 6,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.timing(opacity, {
+        duration: 280,
+        toValue: highlighted ? 1 : 0.72,
+        useNativeDriver: true,
+      }),
+    ]);
+
+    animation.start();
+    return () => animation.stop();
+  }, [highlighted, isActive, opacity, scale, translateY]);
+
   return (
-    <View style={[styles.comparisonCard, highlighted && styles.highlightedComparisonCard]}>
+    <Animated.View
+      style={[
+        styles.comparisonCard,
+        highlighted && styles.highlightedComparisonCard,
+        { opacity, transform: [{ translateY }, { scale }] },
+      ]}>
       <Text style={styles.comparisonCardTitle}>{label}</Text>
       <View style={styles.barChart}>
         <View style={[styles.chartBar, styles.shortBar, highlighted && styles.highlightedBar]} />
@@ -382,7 +464,7 @@ function ComparisonCard({ label, amount, highlighted = false }: ComparisonCardPr
       </View>
       <Text style={styles.comparisonCardLabel}>예상 이자(연)</Text>
       <Text style={styles.comparisonCardAmount}>{amount}</Text>
-    </View>
+    </Animated.View>
   );
 }
 
