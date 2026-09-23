@@ -15,7 +15,7 @@
 - [x] MySQL 검증: `JdbcGoalPaceReaderMySqlIntegrationTest`(환경변수 `GOAL_PACE_MYSQL_TEST_URL` 게이트)로 MySQL 8.0에서 같은 값을 확인했다. 준비는 빈 `dodam_703_test`에 마이그레이션을 **V6을 V11 뒤로 옮겨** 올리고(그대로면 `Failed to open the referenced table 'card'`) Flyway는 끈 채 실행한다. JDBC URL에 `characterEncoding=UTF-8`이 없으면 한글 리터럴이 깨진다.
 - [x] 예상 달성일 상한(`GoalCalculationService.beyondForecastHorizon`): 예상일이 목표일을 목표 기간(`totalDays`)만큼 더 넘어서면 `expectedAchievementDate`·`monthsToAchieve`·`daysDifference`를 null로 둔다. 속도가 분모라 작아질수록 결과가 폭발하는데(남은 1,790만 ÷ 월 10만 = 179개월) 3개월 표본으로 잰 속도를 하루 단위 날짜로 단정할 근거가 없다. 공유 식 `GoalForecastFormula`가 아니라 파생값 조립 단계에 둔다 — 식에 넣으면 시뮬레이션 before/after 일치 보장이 흔들린다.
 - [ ] FE 인계(114): `daysDifference`/`expectedAchievementDate`가 null인 경우가 늘어난다. 목표 상세의 `getSavingAccent(null)` 문구가 '달성일을 계산 중이에요'인데 실제 의미는 "현재 속도로는 목표일까지 어려워요"다. 발견 상세 지연 배너(`goalDelay.ts`)는 null이면 뜨지 않는다.
-- [ ] 후속(같은 703, MR만 분리): MR 3 이동 이력(V45)·속도 정의 교체, MR 4 꺼내기 영향. 병합 시점이 달라 나눌 뿐 이슈는 하나다. [safebox-allocation-plan.md](safebox-allocation-plan.md) §6.
+- [x] 후속 MR 3·4 **착수하지 않는다**(2026-09-23 세이프박스 중단 결정). 가상 세이프박스가 "담아둔 돈은 빠져나가지 않는다"를 보장할 수 없어 제품에서 뺐다. 근거는 [safebox-allocation-plan.md](safebox-allocation-plan.md) 상단 중단 기록. V45 선점도 불필요하다.
 
 ### MR 2 — 담기·꺼내기 API (§4-1·§4-2)
 
@@ -23,8 +23,10 @@
 - [x] `PUT /goals/{goalId}/accounts`를 예·적금 한정으로 좁혔다. 빈 배열은 예·적금만 해제하고 입출금 할당은 건드리지 않는다.
 - [x] 같은 사용자의 연결·할당 변경을 사용자 행 비관적 잠금(`GoalAllocationUserLock`)으로 직렬화한다. 계좌·목표 수와 무관하게 잠금 순서가 일정해 교착이 없다.
 - [x] **담은 뒤에는 잔액 변화가 확보액에 반영되지 않는다**(담은 금액이 절대값이라). 이 때문에 `GoalCalculationApiIntegrationTest`·`GoalHistoryApiIntegrationTest`의 "연결 후 잔액 동기화" 시나리오가 입출금 기준으로는 성립하지 않아 예·적금 계좌로 옮겼다. `AMOUNT_UPDATED`는 이제 예·적금과 담기 이력이 없는 입출금 행에서만 난다([goal.md](goal.md) §확보액 정의).
-- [ ] MySQL 미검증: 동시 담기 409는 H2로만 확인했다. 사용자 행 잠금과 V35 조건부 UNIQUE의 실제 동작은 MySQL 8.0에서 다시 본다(H2에 조건부 UNIQUE가 없다).
-- [ ] 병합 시점: 시연 계정의 확보액·진행률이 움직이므로 **리허설 후**에 병합한다(§6). 명세 12 변경 보고와 FE 담기 화면 인계가 선행 조건이다.
+- [x] 병합 완료(`389f544`, 2026-09-23). Jenkins 자동 배포.
+- [ ] MySQL 미검증: 동시 담기 409는 H2로만 확인했다. 사용자 행 잠금과 V35 조건부 UNIQUE의 실제 동작은 MySQL 8.0에서 다시 본다(H2에 조건부 UNIQUE가 없다). **담기 화면을 만들지 않기로 해 우선순위는 낮다.**
+- [ ] **FE 회귀 수정(필수)**: `PUT /accounts`가 예·적금 한정이 됐는데 목표 만들기·목표 상세의 계좌 선택이 입출금을 그대로 보낸다. 목표 만들기는 연결 실패 시 롤백이 `deleteGoal`을 호출해 **목표 생성 자체가 실패**한다. 요청 문서는 [../../docs/safebox-frontend-request.md](../../docs/safebox-frontend-request.md).
+- [ ] 명세 12 변경 보고: `PUT /accounts` 예·적금 한정, `PUT /allocations` 신설. 루트 `docs/` 수정은 명시 요청 시에만.
 
 ## S15P21D105-702 — [BE] 저축속도 연결 계좌 한정·소비 증가 추천 단축 일수 목표일 검사
 
