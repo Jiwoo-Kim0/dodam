@@ -168,6 +168,92 @@ class RestSsafyFinanceClientTest {
     }
 
     @Test
+    void demandDepositProductAndAccountMethodsUseExpectedHeadersAndRecShapes() {
+        String base = BASE_URL + "/ssafy/api/v1/edu/demandDeposit/";
+        server.expect(requestTo(base + "inquireDemandDepositList"))
+                .andExpect(jsonPath("$.Header.userKey").doesNotExist())
+                .andRespond(withSuccess("""
+                        {"Header":{"responseCode":"H0000"},"REC":[{"accountTypeUniqueNo":"TYPE-1","bankCode":"004"}]}
+                        """, MediaType.APPLICATION_JSON));
+        assertThat(client.inquireDemandDepositList()).singleElement()
+                .extracting(SsafyDemandDepositProduct::accountTypeUniqueNo).isEqualTo("TYPE-1");
+
+        server.verify();
+        server.reset();
+
+        server.expect(requestTo(base + "createDemandDeposit"))
+                .andExpect(jsonPath("$.bankCode").value("004"))
+                .andExpect(jsonPath("$.accountTypeName").value("목표통장"))
+                .andExpect(jsonPath("$.Header.userKey").doesNotExist())
+                .andRespond(withSuccess("""
+                        {"Header":{"responseCode":"H0000"},"REC":{"accountTypeUniqueNo":"TYPE-2"}}
+                        """, MediaType.APPLICATION_JSON));
+        assertThat(client.createDemandDeposit("004", "목표통장", "설명").accountTypeUniqueNo()).isEqualTo("TYPE-2");
+
+        server.verify();
+        server.reset();
+
+        server.expect(requestTo(base + "createDemandDepositAccount"))
+                .andExpect(jsonPath("$.Header.userKey").value("user-key-1"))
+                .andExpect(jsonPath("$.accountTypeUniqueNo").value("TYPE-2"))
+                .andRespond(withSuccess("""
+                        {"Header":{"responseCode":"H0000"},"REC":{"accountNo":"1234567890123456","accountBalance":"0"}}
+                        """, MediaType.APPLICATION_JSON));
+        assertThat(client.createDemandDepositAccount("user-key-1", "TYPE-2").accountNo())
+                .isEqualTo("1234567890123456");
+        server.verify();
+    }
+
+    @Test
+    void depositTransferAndBalanceMethodsParseRecAndKeepAccountNumbersOutOfErrors() {
+        String base = BASE_URL + "/ssafy/api/v1/edu/demandDeposit/";
+        server.expect(requestTo(base + "updateDemandDepositAccountDeposit"))
+                .andExpect(jsonPath("$.transactionBalance").value(1000))
+                .andRespond(withSuccess("""
+                        {"Header":{"responseCode":"H0000"},"REC":{"transactionUniqueNo":"D-1","transactionBalance":"1000"}}
+                        """, MediaType.APPLICATION_JSON));
+        assertThat(client.depositToAccount("user-key-1", "1234567890123456", 1000, "준비")
+                .transactionUniqueNo()).isEqualTo("D-1");
+
+        server.verify();
+        server.reset();
+
+        server.expect(requestTo(base + "updateDemandDepositAccountTransfer"))
+                .andExpect(jsonPath("$.withdrawalAccountNo").value("1234567890123456"))
+                .andExpect(jsonPath("$.depositAccountNo").value("1111222233334444"))
+                .andRespond(withSuccess("""
+                        {"Header":{"responseCode":"H0000"},"REC":[
+                          {"transactionUniqueNo":"OUT-1","transactionType":"2","transactionBalance":"1000"},
+                          {"transactionUniqueNo":"IN-1","transactionType":"1","transactionBalance":"1000"}]}
+                        """, MediaType.APPLICATION_JSON));
+        assertThat(client.transfer("user-key-1", "1234567890123456", "1111222233334444",
+                1000, "출금", "입금")).extracting(SsafyTransferEntry::transactionUniqueNo)
+                .containsExactly("OUT-1", "IN-1");
+
+        server.verify();
+        server.reset();
+
+        server.expect(requestTo(base + "inquireDemandDepositAccountBalance"))
+                .andRespond(withSuccess("""
+                        {"Header":{"responseCode":"H0000"},"REC":{"accountNo":"1234567890123456","accountBalance":"2000"}}
+                        """, MediaType.APPLICATION_JSON));
+        assertThat(client.inquireAccountBalance("user-key-1", "1234567890123456").accountBalance()).isEqualTo(2000);
+        server.verify();
+    }
+
+    @Test
+    void financeErrorMessageDoesNotRetainAccountNumber() {
+        server.expect(requestTo(BASE_URL + "/ssafy/api/v1/edu/demandDeposit/updateDemandDepositAccountTransfer"))
+                .andRespond(withBadRequest().contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"responseCode\":\"A1014\",\"responseMessage\":\"1234567890123456 잔액 부족\"}"));
+        assertThatThrownBy(() -> client.transfer("user-key-1", "1234567890123456", "1111222233334444",
+                1000, "출금", "입금"))
+                .isInstanceOf(SsafyApiException.class)
+                .hasMessageNotContaining("1234567890123456");
+        server.verify();
+    }
+
+    @Test
     void demandDepositAccountListWithoutRecIsEmpty() {
         server.expect(requestTo(BASE_URL + "/ssafy/api/v1/edu/demandDeposit/inquireDemandDepositAccountList"))
                 .andRespond(withSuccess("""

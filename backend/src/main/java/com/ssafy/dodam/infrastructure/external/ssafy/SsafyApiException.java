@@ -8,7 +8,8 @@ public class SsafyApiException extends RuntimeException {
     private final String responseCode;
 
     public SsafyApiException(String responseCode, String responseMessage) {
-        super("SSAFY finance API error " + responseCode + ": " + responseMessage);
+        // 금융망 메시지에는 계좌번호 등 요청 데이터가 섞일 수 있어 예외 체인에도 보관하지 않는다.
+        super("SSAFY finance API error " + responseCode);
         this.responseCode = responseCode;
     }
 

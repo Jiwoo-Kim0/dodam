@@ -11,6 +11,8 @@ import jakarta.persistence.Table;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Objects;
+import com.ssafy.dodam.global.exception.BusinessException;
+import com.ssafy.dodam.global.exception.ErrorCode;
 
 /**
  * ERD `account`(V3). 계좌 도메인이 소유하는 정식 매핑이다.
@@ -209,6 +211,33 @@ public class Account {
         return this.sourceType == AccountSourceType.SSAFY;
     }
 
+    public void withdraw(long amount, LocalDateTime now) {
+        if (amount <= 0 || balance < amount) {
+            throw new BusinessException(ErrorCode.TRANSFER_INSUFFICIENT_BALANCE);
+        }
+        balance -= amount;
+        lastTransactionDate = now.toLocalDate();
+        updatedAt = now;
+    }
+
+    public void deposit(long amount, LocalDateTime now) {
+        if (amount <= 0 || balance > Long.MAX_VALUE - amount) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST);
+        }
+        balance += amount;
+        lastTransactionDate = now.toLocalDate();
+        updatedAt = now;
+    }
+
+    public void reconcileBalance(long financeBalance, LocalDateTime now) {
+        if (financeBalance < 0) {
+            throw new BusinessException(ErrorCode.FINANCE_API_UNAVAILABLE);
+        }
+        balance = financeBalance;
+        lastTransactionDate = now.toLocalDate();
+        updatedAt = now;
+    }
+
     /**
      * 금융망 응답에서 계좌번호를 뺀 값. 엔티티가 원문 문자열을 다루지 않게 하기 위한 경계다.
      */
@@ -241,6 +270,10 @@ public class Account {
 
     public String getAccountNoHash() {
         return accountNoHash;
+    }
+
+    public byte[] getAccountNoEncrypted() {
+        return accountNoEncrypted;
     }
 
     public String getAccountNoMasked() {

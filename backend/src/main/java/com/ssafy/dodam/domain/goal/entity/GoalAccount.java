@@ -12,8 +12,7 @@ import jakarta.persistence.Table;
  * <p>`account`는 ID·유형 컬럼만 들고 연관관계를 걸지 않는다(계좌 도메인 소유 테이블). 복합 외래키는 V8 DDL이 보장한다.
  *
  * <p>`contribution_amount`(계좌 잔액 중 목표에 기여하는 금액)는 명세 12 Body(`accountIds[]`)에 대응 필드가 없어 연결만으로는
- * null이고, 그때는 잔액 전체를 기여로 본다(626 이전 방식). 자유입출금은 담기·꺼내기 API(703)가 이 값을 숫자로 바꾼다.
- * 예·적금은 항상 null이다 — 계좌 하나가 목표 하나에 전액 연결된다.
+ * null이고, 그때는 잔액 전체를 기여로 본다. 기존 숫자 할당 행은 읽기 호환을 위해 보존한다.
  */
 @Entity
 @IdClass(GoalAccountId.class)
@@ -71,8 +70,4 @@ public class GoalAccount {
         return contributionAmount;
     }
 
-    /** 자유입출금 담기·꺼내기(703). 담은 금액을 절대값으로 놓는다. */
-    public void allocate(long amount) {
-        this.contributionAmount = amount;
-    }
 }

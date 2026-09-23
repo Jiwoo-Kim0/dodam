@@ -76,4 +76,5 @@ CREATE TABLE `transaction` (
 INSERT INTO transaction_category (category_id, code, name, default_spending_type, active) VALUES
     (1, 'FOOD', '식비', 'VARIABLE', TRUE),
     (18, 'TRANSFER', '이체', 'NON_SPENDING', TRUE),
-    (19, 'INCOME', '수입', 'NON_SPENDING', TRUE);
+    (19, 'INCOME', '수입', 'NON_SPENDING', TRUE),
+    (20, 'SAVING', '저축·투자', 'NON_SPENDING', TRUE);

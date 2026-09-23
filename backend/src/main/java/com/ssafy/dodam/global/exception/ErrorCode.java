@@ -57,6 +57,9 @@ public enum ErrorCode {
      * 금융망에 도달하지 못한 경우(타임아웃·연결 실패·응답 해석 불가).
      */
     FINANCE_API_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "금융망에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요."),
+    TRANSFER_INSUFFICIENT_BALANCE(HttpStatus.CONFLICT, "출금계좌 잔액이 부족합니다."),
+    TRANSFER_LIMIT_EXCEEDED(HttpStatus.CONFLICT, "계좌 이체 한도를 초과했습니다."),
+    TRANSFER_DUPLICATE_REQUEST(HttpStatus.CONFLICT, "같은 이체 요청이 최근 처리되었습니다."),
 
     /**
      * 마이너스통장 상환·이자납부(S15P21D105-534)의 상태 전이 검증.
@@ -97,12 +100,6 @@ public enum ErrorCode {
      * 계좌는 한 목표에만 연결할 수 있다(`uk_goal_account_account`). 다른 목표에 이미 연결된 계좌를 지정한 경우(S15P21D105-509).
      */
     ACCOUNT_ALREADY_LINKED_TO_GOAL(HttpStatus.CONFLICT, "이미 다른 목표에 연결된 계좌입니다."),
-    /**
-     * 자유입출금 담기(703)에서 요청 금액이 `잔액 − 다른 목표에 담긴 금액`을 넘은 경우. 실제 출금으로 잔액이 줄어 부족
-     * (`allocationStatus = NEEDS_ADJUSTMENT`) 상태가 된 계좌에 더 담으려는 경우도 같다.
-     */
-    GOAL_ALLOCATION_EXCEEDS_AVAILABLE(HttpStatus.CONFLICT, "담을 수 있는 금액을 넘었습니다."),
-
     // ---------- Subscription (S15P21D105-514) ----------
     /**
      * 종료 상태(CANCELED·EXPIRED) 정기결제를 수정·정지·재개·취소하려는 경우.
