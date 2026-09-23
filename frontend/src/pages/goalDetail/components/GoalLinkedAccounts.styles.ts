@@ -96,35 +96,29 @@ export const styles = StyleSheet.create({
     color: colors.primary.green,
     fontFamily: fontFamily.semiBold,
   },
-  /** 보내기·되가져오기. 실제 돈이 움직이는 입구라 카드 아래에 크게 둔다. */
+  /**
+   * 보내기·되가져오기. 카드 안쪽 푸터. 버튼 모양을 주면 화면 아래의 목표 수정·다른 목표 보기와 같은 층위로
+   * 읽히므로, 글자만 두고 가운데 선으로만 둘을 가른다.
+   */
   transferActions: {
+    borderTopColor: colors.divider,
+    borderTopWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
-    gap: spacing[2],
-    marginTop: spacing[2],
   },
   transferButton: {
     alignItems: 'center',
-    backgroundColor: colors.white,
-    borderColor: colors.primary.green,
-    borderRadius: radius.default,
-    borderWidth: 1,
     flex: 1,
     paddingVertical: spacing[3],
   },
-  transferButtonPrimary: {
-    backgroundColor: colors.primary.green,
-  },
-  transferButtonDisabled: {
-    backgroundColor: colors.ledger.softSurface,
-    borderColor: colors.divider,
+  /** 두 동작을 가르는 세로선. 왼쪽 칸 오른편에만 둔다. */
+  transferDivider: {
+    borderRightColor: colors.divider,
+    borderRightWidth: StyleSheet.hairlineWidth,
   },
   transferButtonLabel: {
-    ...typography.body1,
+    ...typography.body2,
     color: colors.primary.green,
     fontFamily: fontFamily.semiBold,
-  },
-  transferButtonLabelPrimary: {
-    color: colors.white,
   },
   transferButtonLabelDisabled: {
     color: colors.textTertiary,
