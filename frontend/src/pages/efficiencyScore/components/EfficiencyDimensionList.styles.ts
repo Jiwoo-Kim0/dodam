@@ -1,18 +1,45 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, fontFamily, fontSize, radius, spacing, typography } from '@/styles';
-
-const TRACK_HEIGHT = 6;
+import { colors, fontFamily, fontSize, spacing, typography } from '@/styles';
 
 export const styles = StyleSheet.create({
   list: {
-    gap: spacing[4],
+    marginTop: spacing[1],
   },
   row: {
-    gap: spacing[2],
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing[3],
+    paddingVertical: spacing[3],
+  },
+  rowDivider: {
+    borderBottomColor: colors.divider,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  gauge: {
+    alignItems: 'center',
+    height: 52,
+    justifyContent: 'center',
+    position: 'relative',
+    width: 52,
+  },
+  gaugeScore: {
+    color: colors.textPrimary,
+    fontFamily: fontFamily.bold,
+    fontSize: fontSize.body2,
+    lineHeight: 18,
+    position: 'absolute',
+  },
+  gaugeScoreUnavailable: {
+    color: colors.textTertiary,
+    fontFamily: fontFamily.regular,
+  },
+  rowContent: {
+    flex: 1,
+    gap: spacing[1],
   },
   rowHeader: {
-    alignItems: 'baseline',
+    alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
@@ -22,13 +49,8 @@ export const styles = StyleSheet.create({
     fontSize: fontSize.body2,
     lineHeight: 18,
   },
-  rowValueGroup: {
-    alignItems: 'baseline',
-    flexDirection: 'row',
-    gap: spacing[2],
-  },
   rowStatus: {
-    fontFamily: fontFamily.regular,
+    fontFamily: fontFamily.medium,
     fontSize: fontSize.micro,
     lineHeight: 16,
   },
@@ -43,38 +65,6 @@ export const styles = StyleSheet.create({
   },
   statusUnavailable: {
     color: colors.textTertiary,
-  },
-  rowScore: {
-    color: colors.textPrimary,
-    fontFamily: fontFamily.semiBold,
-    fontSize: fontSize.body2,
-    lineHeight: 18,
-  },
-  rowScoreUnavailable: {
-    color: colors.textTertiary,
-    fontFamily: fontFamily.regular,
-  },
-  track: {
-    backgroundColor: colors.background,
-    borderRadius: radius.round,
-    height: TRACK_HEIGHT,
-    overflow: 'hidden',
-  },
-  fill: {
-    borderRadius: radius.round,
-    height: TRACK_HEIGHT,
-  },
-  fillGood: {
-    backgroundColor: colors.primary.green,
-  },
-  fillNormal: {
-    backgroundColor: colors.report.scoreLight,
-  },
-  fillCheck: {
-    backgroundColor: colors.primary.orange,
-  },
-  fillUnavailable: {
-    backgroundColor: colors.divider,
   },
   rowDescription: {
     ...typography.caption,
