@@ -22,8 +22,11 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#FFFFFF",
-          "image": "./assets/logos/dodam_logo_image.png",
-          "imageWidth": 200
+          "android": {
+            "drawable": {
+              "icon": "./assets/splash/transparent_splash.xml"
+            }
+          }
         }
       ]
     ],
