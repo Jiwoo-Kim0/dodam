@@ -69,6 +69,14 @@ final class GeneratorSupport {
         return Math.toIntExact(ChronoUnit.DAYS.between(improved, current));
     }
 
+    /** 개선 예상일이 목표일 안에 들어온 경우에만 사용자에게 약속할 수 있는 단축 일수를 반환한다. */
+    static Integer achievableAdvancedDays(LocalDate current, LocalDate improved, LocalDate target) {
+        if (target != null && (improved == null || improved.isAfter(target))) {
+            return null;
+        }
+        return advancedDays(current, improved);
+    }
+
     static String won(long amount) {
         return String.format("%,d원", amount);
     }
@@ -84,8 +92,9 @@ final class GeneratorSupport {
      * @param name         목표 이름(없으면 null)
      * @param remaining    남은 금액(> 0)
      * @param monthlyPace  현재 저축속도(0이면 현재 속도로는 달성 불가)
+     * @param targetDate   목표일. 이전 스냅샷에 없으면 null
      */
-    record SnapshotSavingGoal(long goalId, String name, long remaining, long monthlyPace) {
+    record SnapshotSavingGoal(long goalId, String name, long remaining, long monthlyPace, LocalDate targetDate) {
     }
 
     static java.util.Optional<SnapshotSavingGoal> savingGoalForForecast(RecommendationInput input) {
@@ -111,7 +120,7 @@ final class GeneratorSupport {
             }
             Long delay = longOf(forecast, "daysDifference");
             SnapshotSavingGoal candidate = new SnapshotSavingGoal(goalId, textOf(goal.get("goalSnapshot"), "name"),
-                    remaining, Math.max(0L, pace));
+                    remaining, Math.max(0L, pace), dateOf(forecast, "targetDate"));
             if (chosen == null || moreDelayed(delay, chosenDelay) || (java.util.Objects.equals(delay, chosenDelay)
                     && goalId < chosen.goalId())) {
                 chosen = candidate;

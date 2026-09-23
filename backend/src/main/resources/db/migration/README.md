@@ -46,7 +46,7 @@
 | V1~V9 | BE-A (Auth/User, Account, Transaction/Spending, Goal 등) — V9로 소진 |
 | V10~V17 | BE-B (금융상품, Card, Installment, Loan, 예적금, Cashflow, Diagnosis) — V17까지 사용 |
 | V18~V29 | **BE-B·Infra 예비 구간** (Recommendation, Simulation, ProductSync, Dashboard, Improvement, Report 등). 2026-09-13 V18(recommendation, S15P21D105-547 브랜치)·V19(simulation) 사용, 다음은 V20 |
-| V30~V49 | **BE-A 2차 구간** (Subscription, Notification, Preference 등). V30~V41 사용. 2026-09-22 V42(user 예상 신용점수, 680)·V43(credit_score SMALLINT→INT 정합, 475) 사용. 다음은 **V44** |
+| V30~V49 | **BE-A 2차 구간** (Subscription, Notification, Preference 등). V30~V41 사용. 2026-09-22 V42(user 예상 신용점수, 680)·V43(credit_score SMALLINT→INT 정합, 475)·V44(monthly_report.metrics_summary, 697) 사용. 다음은 **V45** |
 
 2026-09-11 BE-A는 팀원 부재 중에 Subscription 마이그레이션이 필요해 V18을 건너뛰고 **V30**을 잡았다. 돌아온 팀원이 "마지막 다음 번호" V18을
 자연스럽게 잡아도 충돌하지 않게 하기 위한 것이다. `out-of-order: true`라 V17 → V30 다음에 V18이 들어와도 적용에 문제가 없다.
@@ -110,7 +110,7 @@ Seed와 실제 Migration은 다음 무결성 규칙을 지켜야 합니다.
 - 마이너스통장도 먼저 `account`에 `MINUS`로 생성한 뒤 같은 `account_id`로 `minus_account` 상세행을 생성합니다.
 - `goal_account`에는 연결할 Account의 `account_type`을 함께 넣으며 `DEMAND_DEPOSIT`, `DEPOSIT`, `SAVINGS`만 허용합니다.
 - `goal_account`는 `saving_goal`에만 연결할 수 있으며 소비 목표에는 연결하지 않습니다.
-- 한 Account는 하나의 Goal에만 연결하며 목표 삭제·연결 변경 시 GoalAccount 행을 같은 트랜잭션에서 제거·교체합니다.
+- 예·적금 Account는 하나의 Goal에만 연결합니다(V35 `uk_goal_account_exclusive_account`). 자유입출금은 여러 Goal에 금액을 나눠 담을 수 있습니다(626). 목표 삭제·연결 변경 시 GoalAccount 행을 같은 트랜잭션에서 제거·교체합니다.
 - `subscription.card_id`가 있으면 반드시 같은 `user_id`의 Card를 참조해야 합니다.
 - Card·Loan의 출금계좌는 `withdrawal_account_type=DEMAND_DEPOSIT`로 저장합니다.
 - DepositSaving은 예금이면 출금계좌가 NULL일 수 있고, 적금이면 `DEMAND_DEPOSIT` 출금계좌가 필수입니다.

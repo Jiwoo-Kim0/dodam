@@ -36,7 +36,8 @@ import org.springframework.stereotype.Component;
  * 저축속도만 쓰고 현재 잔액으로 재계산하지 않는다({@link SavingGoalRiskGenerator}와 같은 식·같은 기준일). 대상 목표는
  * {@link GeneratorSupport#savingGoalForForecast}가 고른 하나이며 {@code Recommendation.goalId}에 저장돼 {@code goal-impact}가
  * {@code NO_GOAL}/{@code NOT_CALCULATED} 대신 날짜를 돌려준다. {@code currentForecastDate}는 현재 속도, {@code improvedForecastDate}는
- * 현재 속도 + 증가액, {@code advancedDays = current − improved}(현재 속도가 0이면 현재 날짜가 없어 null), {@code contributionAmount = 증가액}.
+ * 현재 속도 + 증가액, {@code advancedDays = current − improved}(개선일이 목표일 이내일 때만, 현재 속도가 0이면 null),
+ * {@code contributionAmount = 증가액}.
  * 근거 {@code GOAL_FORECAST_ADVANCE}에 계산 입력을 남긴다. 스냅샷에 조건을 만족하는 목표가 없으면 날짜 효과는 비고 근거도 없다(627.3과 같음).
  */
 @Component
@@ -45,8 +46,9 @@ public class CategorySpendingIncreaseGenerator implements RecommendationCandidat
     /**
      * 627.2 → 627.3: 진단 기준이 지난달 vs 직전 3개월 평균(631)으로 바뀌어 문구·evidence가 달라졌다.
      * 627.3 → 696.1: 모으기 목표 예상 달성일 변화(advancedDays)·대상 goalId·근거 GOAL_FORECAST_ADVANCE 추가.
+     * 696.1 → 702.1: 개선 후에도 목표일을 넘으면 과도한 단축 일수를 노출하지 않는다.
      */
-    public static final String VERSION = "696.1";
+    public static final String VERSION = "702.1";
     public static final String DOMAIN = "SPENDING";
     public static final String TYPE = "REDUCE_CATEGORY_SPENDING";
     public static final String REASON_INCREASE = "CATEGORY_SPENDING_INCREASE";
@@ -55,6 +57,9 @@ public class CategorySpendingIncreaseGenerator implements RecommendationCandidat
     public static final String ANNUALIZATION_BASIS_FIELD = "annualizationBasis";
     public static final String SINGLE_MONTH_INCREASE_X12 = "SINGLE_MONTH_INCREASE_X12";
     public static final String RECENT_AVERAGE_INCREASE_X12 = "RECENT_AVERAGE_INCREASE_X12";
+    public static final String GOAL_IMPACT_STATUS_FIELD = "goalImpactStatus";
+    public static final String TARGET_DATE_MET = "TARGET_DATE_MET";
+    public static final String TARGET_DATE_NOT_MET = "TARGET_DATE_NOT_MET";
     static final int MONTHS_PER_YEAR = 12;
     private final ObjectMapper json;
 
@@ -122,7 +127,8 @@ public class CategorySpendingIncreaseGenerator implements RecommendationCandidat
             LocalDate base = GeneratorSupport.baseDate(input);
             LocalDate currentDate = GeneratorSupport.expectedDate(target.remaining(), target.monthlyPace(), base);
             LocalDate improvedDate = GeneratorSupport.expectedDate(target.remaining(), target.monthlyPace() + increase, base);
-            Integer advanced = GeneratorSupport.advancedDays(currentDate, improvedDate);
+            Integer advanced = GeneratorSupport.achievableAdvancedDays(currentDate, improvedDate, target.targetDate());
+            boolean targetDateNotMet = target.targetDate() != null && improvedDate.isAfter(target.targetDate());
             String goalLabel = target.name() == null ? "목표" : "'" + target.name() + "'";
             ObjectNode forecastEvidence = json.createObjectNode();
             forecastEvidence.put("goalId", target.goalId()).put("goalName", target.name()).put("baseDate", base.toString())
@@ -130,11 +136,18 @@ public class CategorySpendingIncreaseGenerator implements RecommendationCandidat
                     .put("improvedMonthlySaving", target.monthlyPace() + increase)
                     .put("currentForecastDate", currentDate == null ? null : currentDate.toString())
                     .put("improvedForecastDate", improvedDate.toString());
+            if (target.targetDate() != null) {
+                forecastEvidence.put("targetDate", target.targetDate().toString())
+                        .put(GOAL_IMPACT_STATUS_FIELD, targetDateNotMet ? TARGET_DATE_NOT_MET : TARGET_DATE_MET);
+            }
             if (advanced != null) {
                 forecastEvidence.put("advancedDays", advanced);
             }
             reasons.add(new RecommendationCandidate.Reason(REASON_GOAL_FORECAST_ADVANCE,
-                    currentDate == null
+                    targetDateNotMet
+                            ? "이 금액을 " + goalLabel + " 저축에 더하면 예상 달성일은 " + improvedDate + "이지만 목표일 "
+                                    + target.targetDate() + "보다 늦어요."
+                            : currentDate == null
                             ? "지금 저축 속도로는 " + goalLabel + " 달성일을 계산할 수 없어요. 이 금액을 저축에 더하면 " + improvedDate
                                     + "에 달성할 수 있어요."
                             : "이 금액을 " + goalLabel + " 저축에 더하면 예상 달성일이 " + currentDate + "에서 " + improvedDate + "로 "

@@ -10,11 +10,13 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 /**
- * 모으기 목표 저축속도의 원천 집계(S15P21D105-694). 예·적금은 납입 이력, 입출금은 사용자 순현금흐름을 읽는다.
+ * 모으기 목표 저축속도의 원천 집계(S15P21D105-694, 702). 예·적금은 납입 이력, 입출금은 연결 계좌 순현금흐름을 읽는다.
  *
- * <p>`transaction.balance_after`가 비어 있어(동기화·seed 모두 채우지 않는다) 입출금 계좌의 잔액 변화를 계좌 단위로 재구성할 수
- * 없다. 카드 결제는 계좌 행 없이 카드 승인만 원장에 있어 계좌별 출금 합도 실제 잔액 변화와 다르다. 그래서 입출금 쪽은 사용자
- * 전체의 수입 − 지출을 쓴다.
+ * <p>거래의 {@code account_id}가 목표에 연결된 입출금 계좌이거나, {@code card_id}가 그 계좌에서 대금이 빠지는 카드
+ * ({@code card.withdrawal_account_id})인 경우만 합산한다. 카드 승인 행은 계좌 없이 원장에 남지만 대금은 결국 출금 계좌에서 나가므로
+ * 연결 계좌의 현금흐름으로 본다. 카드 대금 결제 자체는 {@code card_billing_statement}에만 있고 원장 행이 없어 승인과 이중으로
+ * 세지 않는다. 해지된 카드도 과거 승인은 그 계좌에서 빠졌으므로 상태로 걸러내지 않는다. 연결하지 않은 계좌·카드의 거래는 특정
+ * 목표에 귀속할 근거가 없어 제외하고, 사용자 소유 조건도 함께 두어 다른 사용자의 거래를 격리한다.
  */
 @Repository
 public class JdbcGoalPaceReader {
@@ -34,19 +36,41 @@ public class JdbcGoalPaceReader {
             WHERE account_id IN (:accountIds)
             """;
 
+    // 연결 계좌 귀속: 계좌 거래이거나 그 계좌에서 대금이 빠지는 카드의 승인 거래. 두 조회가 같은 범위를 봐야 개월 수와 합이 맞는다.
+    private static final String LINKED_ACCOUNT_CONDITION = """
+              AND (entry.account_id IN (:accountIds)
+                   OR entry.card_id IN (SELECT linked_card.card_id
+                                        FROM card linked_card
+                                        WHERE linked_card.user_id = :userId
+                                          AND linked_card.withdrawal_account_id IN (:accountIds)))
+            """;
+
     // 순현금흐름: 수입 − (지출 + 이체). 숨긴 거래는 다른 집계와 같이 제외한다. 금액은 항상 양수고 방향은 transaction_type이 정한다.
+    //
+    // (703) 한 계좌를 여러 목표에 담으면 목표 몫만큼만 세야 하므로 합계가 아니라 계좌별로 돌려준다. 귀속은 계좌 거래면 그 계좌,
+    // 카드 승인이면 대금이 빠지는 출금 계좌다. 귀속 식을 파생 테이블에서 한 번만 계산하고 바깥에서 묶는 이유는, 같은 식을
+    // SELECT와 GROUP BY에 두 번 쓰면 `:accountIds`가 서로 다른 파라미터로 펼쳐져 H2가 같은 식으로 보지 않기 때문이다.
     private static final String NET_CASHFLOW_SQL = """
-            SELECT COALESCE(SUM(CASE WHEN entry.transaction_type = 'INCOME' THEN entry.amount ELSE -entry.amount END), 0)
-            FROM `transaction` entry
-            WHERE entry.user_id = :userId
-              AND entry.hidden = FALSE
-              AND entry.transaction_date BETWEEN :from AND :to
+            SELECT attributed.attributed_account_id, COALESCE(SUM(attributed.signed_amount), 0) AS total
+            FROM (
+              SELECT CASE WHEN entry.account_id IN (:accountIds) THEN entry.account_id
+                          ELSE (SELECT drawn.withdrawal_account_id FROM card drawn
+                                WHERE drawn.card_id = entry.card_id AND drawn.user_id = :userId) END AS attributed_account_id,
+                     CASE WHEN entry.transaction_type = 'INCOME' THEN entry.amount ELSE -entry.amount END AS signed_amount
+              FROM `transaction` entry
+              WHERE entry.user_id = :userId
+            """ + LINKED_ACCOUNT_CONDITION + """
+                AND entry.hidden = FALSE
+                AND entry.transaction_date BETWEEN :from AND :to
+            ) attributed
+            GROUP BY attributed.attributed_account_id
             """;
 
     private static final String FIRST_TRANSACTION_SQL = """
             SELECT MIN(entry.transaction_date)
             FROM `transaction` entry
             WHERE entry.user_id = :userId
+            """ + LINKED_ACCOUNT_CONDITION + """
               AND entry.hidden = FALSE
             """;
 
@@ -85,15 +109,27 @@ public class JdbcGoalPaceReader {
         return terms;
     }
 
-    public long readNetCashflow(Long userId, LocalDate from, LocalDate to) {
-        Long value = jdbc.queryForObject(NET_CASHFLOW_SQL,
-                new MapSqlParameterSource("userId", userId).addValue("from", from).addValue("to", to), Long.class);
-        return value == null ? 0L : value;
+    /** 계좌별 기간 내 순현금흐름. 거래가 없는 계좌는 키가 없다. */
+    public Map<Long, Long> readNetCashflowByAccount(Long userId, Collection<Long> accountIds, LocalDate from, LocalDate to) {
+        if (accountIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, Long> totals = new HashMap<>();
+        jdbc.query(NET_CASHFLOW_SQL,
+                new MapSqlParameterSource("userId", userId).addValue("accountIds", accountIds)
+                        .addValue("from", from).addValue("to", to),
+                rs -> {
+                    totals.put(rs.getLong("attributed_account_id"), rs.getLong("total"));
+                });
+        return totals;
     }
 
-    public Optional<LocalDate> readFirstTransactionDate(Long userId) {
+    public Optional<LocalDate> readFirstTransactionDate(Long userId, Collection<Long> accountIds) {
+        if (accountIds.isEmpty()) {
+            return Optional.empty();
+        }
         return Optional.ofNullable(jdbc.queryForObject(FIRST_TRANSACTION_SQL,
-                new MapSqlParameterSource("userId", userId), LocalDate.class));
+                new MapSqlParameterSource("userId", userId).addValue("accountIds", accountIds), LocalDate.class));
     }
 
     /**

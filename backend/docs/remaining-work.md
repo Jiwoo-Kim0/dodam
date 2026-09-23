@@ -2,7 +2,33 @@
 
 마지막 갱신: 2026-09-22
 
-백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 629, 632, 587, 589, 611, 627, 628, 633, 635, 636, 640·641, 675, 696이다.
+백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 629, 632, 587, 589, 611, 627, 628, 633, 635, 636, 640·641, 675, 696, 701, 702, 703이다.
+
+## S15P21D105-703 — [BE] 저축속도 목표별 안분·예상 달성일 상한 (세이프박스 1단계)
+
+계약: [goal.md](goal.md) §저축속도 정의, 계획은 [safebox-allocation-plan.md](safebox-allocation-plan.md) §3-1(MR-A).
+
+- [x] 같은 입출금 계좌를 여러 목표에 담았을 때 그 계좌 순현금흐름에 `이 목표 기여액 / 계좌 총 할당액`을 곱한다(`GoalSavingPaceReader.shareOf`). 626이 확보액에서 막은 중복이 저축속도에는 없어 두 목표가 같은 증가분을 각자 전액 세고 있었다. 담은 금액이 없으면 몫이 `1/연결 목표 수`(균등 분할), 총 할당액 0이거나 단독이면 전액(702까지와 같은 값).
+- [x] `JdbcGoalPaceReader.readNetCashflow` → `readNetCashflowByAccount`(계좌별 Map). 귀속 식을 파생 테이블에서 한 번만 계산한다 — SELECT와 GROUP BY에 같은 식을 두 번 쓰면 `:accountIds`가 다른 파라미터로 펼쳐져 H2가 같은 식으로 보지 않는다.
+- [x] 문서 부채 3건 정정: goal.md의 694 이전 속도 정의 문장, 마이그레이션 README의 "한 Account는 하나의 Goal에만" 규칙(V35가 뒤집음), 구간표 "다음은 V44"(V44는 697 사용 → V45).
+- [ ] **시연 서버**: 현재 U0001~U0004 모두 SAVING 목표 1개이고 공유 입출금 0건이라 속도·예상일이 바뀌지 않아야 한다. 배포 뒤 `GET /goals/{id}/forecast`의 `averageMonthlySaving`으로 확인한다.
+- [x] MySQL 검증: `JdbcGoalPaceReaderMySqlIntegrationTest`(환경변수 `GOAL_PACE_MYSQL_TEST_URL` 게이트)로 MySQL 8.0에서 같은 값을 확인했다. 준비는 빈 `dodam_703_test`에 마이그레이션을 **V6을 V11 뒤로 옮겨** 올리고(그대로면 `Failed to open the referenced table 'card'`) Flyway는 끈 채 실행한다. JDBC URL에 `characterEncoding=UTF-8`이 없으면 한글 리터럴이 깨진다.
+- [x] 예상 달성일 상한(`GoalCalculationService.beyondForecastHorizon`): 예상일이 목표일을 목표 기간(`totalDays`)만큼 더 넘어서면 `expectedAchievementDate`·`monthsToAchieve`·`daysDifference`를 null로 둔다. 속도가 분모라 작아질수록 결과가 폭발하는데(남은 1,790만 ÷ 월 10만 = 179개월) 3개월 표본으로 잰 속도를 하루 단위 날짜로 단정할 근거가 없다. 공유 식 `GoalForecastFormula`가 아니라 파생값 조립 단계에 둔다 — 식에 넣으면 시뮬레이션 before/after 일치 보장이 흔들린다.
+- [ ] FE 인계(114): `daysDifference`/`expectedAchievementDate`가 null인 경우가 늘어난다. 목표 상세의 `getSavingAccent(null)` 문구가 '달성일을 계산 중이에요'인데 실제 의미는 "현재 속도로는 목표일까지 어려워요"다. 발견 상세 지연 배너(`goalDelay.ts`)는 null이면 뜨지 않는다.
+- [ ] 후속(같은 703, MR만 분리): MR 2 담기·꺼내기 API, MR 3 이동 이력(V45)·속도 정의 교체, MR 4 꺼내기 영향. 병합 시점이 달라 나눌 뿐 이슈는 하나다. [safebox-allocation-plan.md](safebox-allocation-plan.md) §6.
+
+## S15P21D105-702 — [BE] 저축속도 연결 계좌 한정·소비 증가 추천 단축 일수 목표일 검사
+
+계약: [goal.md](goal.md) §저축속도, [recommendation-api.md](recommendation-api.md) §2 `CATEGORY_SPENDING_INCREASE`(버전 `702.1`), [discovery-report-metrics-675.md](discovery-report-metrics-675.md) §3.
+
+- [x] 모으기 목표 저축속도의 입출금 부분을 사용자 전체 순현금흐름에서 **목표에 연결된 입출금 계좌의 순현금흐름**으로 한정(`JdbcGoalPaceReader`). 연결 계좌의 거래(`account_id`)와 그 계좌에서 대금이 빠지는 카드의 승인(`card.withdrawal_account_id`)을 센다 — 시연 seed는 변동 지출의 70%가 카드(`account_id NULL`)라 카드를 빼면 속도가 부풀려진다(09-22 정현진 결정). 카드 대금 결제는 `card_billing_statement`에만 있어 이중 계산 없음. 연결 입출금이 없으면 조회하지 않는다. 511 이력·546 goal-impact·시뮬레이션 기준선이 같은 정의를 쓴다. H2 SQL 검증 `JdbcGoalPaceReaderIntegrationTest`.
+- [x] `REDUCE_CATEGORY_SPENDING` 생성기 `702.1`: 개선 예상일이 스냅샷 `forecast.targetDate` 이내일 때만 `advancedDays`를 낸다. 목표일을 넘으면 날짜는 유지하고 `advancedDays = null`, 근거 evidence `goalImpactStatus = TARGET_DATE_NOT_MET`, 문구 "…이지만 목표일 …보다 늦어요." 요약 `expectedGoalAdvanceDays`도 그만큼 줄어든다.
+- [x] 통합 테스트 fixture(`Simulation*ApiTest` 3개, `GoalHistoryApiIntegrationTest`)의 수입 행에 연결 계좌 `account_id`를 넣도록 갱신. fixture의 지출 행은 계좌도 카드도 없어 속도에 들어가지 않으므로 `SimulationApiTest`의 수입을 933,333 → 333,333으로 바꿔 예상일(2027-03-14)을 유지했다.
+- [ ] 서비스 초기값 — 카드 귀속은 카드의 `withdrawal_account_id`만 본다. `card_id`도 `account_id`도 없는 거래(수동 입력 등)는 어느 목표에도 들어가지 않는다. 해지 카드의 과거 승인은 상태로 걸러내지 않는다.
+- [ ] 702 이전과의 차이: 연결하지 않은 계좌·카드의 거래가 빠지므로 입출금 계좌를 여러 개 가진 사용자는 속도가 달라진다. 시연 seed는 주거래 계좌 하나에 카드도 그 계좌라 BALANCED 코호트(U0001)의 속도는 702 이전과 같아야 한다 — 배포 뒤 실측으로 확인.
+- [ ] **시연 서버**: U0003은 678 seed가 적금 3개만 연결(입출금 미연결)해 속도가 바뀌지 않는다. U0001(입출금 연결)의 `GET /goals/{id}/forecast` 속도·예상일이 유지되는지 배포 뒤 실측하고, 진단 `forceRefresh` → 추천 재생성으로 `702.1` 추천을 만든다(696.1 추천은 남는다).
+- [ ] FE 인계(114): 발견 요약 "목표 N일 단축"이 `GOAL_ADVANCE_UNAVAILABLE`로 비는 경우가 늘 수 있다. 근거 `GOAL_FORECAST_ADVANCE.evidence.goalImpactStatus`로 "개선해도 목표일을 넘어요" 문구를 붙일 수 있다.
+- [ ] MySQL 검증: H2 통합 테스트만 통과. `account_id IN (:accountIds)`는 표준 SQL이라 별도 실측하지 않았다.
 
 ## S15P21D105-701 — [BE] 코치 칩 제안 개선 (맞춤 질문에 항목 카테고리·증가액)
 
