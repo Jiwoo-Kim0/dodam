@@ -243,14 +243,35 @@ function buildScenarios() {
  *           더 돌려도 얻을 것이 없으므로 abortOnFail로 즉시 끊어 시간을 아낀다.
  * - verify: 경로·응답 형식 확인용이라 지연 임계를 걸지 않는다.
  */
+// 부하 중 호출하는 엔드포인트. probe 요약에 엔드포인트별 줄을 띄우는 데 쓴다.
+const MEASURED_ENDPOINTS = [
+    'account_summary', 'cards', 'card_summary', 'loans',
+    'loan_summary', 'diagnoses', 'recommendation_summary', 'simulations',
+];
+
 function buildThresholds() {
     if (PROFILE === 'probe') {
-        return {
+        const thresholds = {
             // 서버가 5xx를 5% 넘게 뱉기 시작하면 그 지점이 한계다. 더 밀 이유가 없다.
             http_req_failed: [{ threshold: 'rate<0.05', abortOnFail: true, delayAbortEval: '30s' }],
             // p95 3초는 "사실상 사용 불가" 선이다. 여기까지 왔으면 병목이 이미 드러났다.
             http_req_duration: [{ threshold: 'p(95)<3000', abortOnFail: true, delayAbortEval: '30s' }],
         };
+
+        // k6는 **임계가 걸린 sub-metric만** 요약에 출력한다. probe에는 엔드포인트별 판정 기준이
+        // 없으므로 그냥 두면 어느 API가 느린지 전혀 보이지 않는다 — 실제로 첫 실행(#4)에서
+        // 전체 p95 84ms만 얻고 개선 대상을 고를 근거가 없었다.
+        //
+        // 그래서 **절대 실패하지 않는 임계**(min>=0)를 걸어 출력만 끌어낸다.
+        // 응답 시간은 언제나 0 이상이므로 이 조건은 깨지지 않는다.
+        // 숫자 임계(p(95)<60000 같은 것)를 쓰지 않는 이유는 그 값이 판정 기준처럼 읽히기 때문이다.
+        //
+        // count>=0이 더 직관적이지만 k6가 거부한다 — Trend 메트릭이 지원하는 집계는
+        // avg·min·max·med·p 뿐이고 count는 없다(2026-09-23에 실행해 보고 확인).
+        for (const name of MEASURED_ENDPOINTS) {
+            thresholds[`http_req_duration{name:${name}}`] = ['min>=0'];
+        }
+        return thresholds;
     }
 
     if (PROFILE === 'verify') {
