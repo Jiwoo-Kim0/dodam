@@ -26,10 +26,10 @@ export const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   total: {
-    ...typography.body1,
+    ...typography.caption,
     flexShrink: 1,
     fontFamily: fontFamily.medium,
-    color: colors.textPrimary,
+    color: colors.textSecondary,
     textAlign: 'right',
   },
   list: {

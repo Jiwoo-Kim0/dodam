@@ -117,14 +117,34 @@ export function DiscoveryHome({
                 */}
                 {isLoading && diagnosis === null
                   ? '진단 결과를 확인하고 있어요'
-                  : `진단에서 ${insights.length}건 발견했어요`}
+                  : (
+                    <>
+                      진단에서 <Text style={styles.summaryNumber}>{insights.length}</Text>건 발견했어요
+                    </>
+                  )}
               </Text>
               <Text style={styles.summarySubtext}>
                 {shownSummary.annualSavingAmount !== null
-                  ? `연 ${formatRoundedAmount(shownSummary.annualSavingAmount)}원 절약 예상`
+                  ? (
+                    <>
+                      연{' '}
+                      <Text style={styles.summarySubtextNumber}>
+                        {formatRoundedAmount(shownSummary.annualSavingAmount)}원
+                      </Text>
+                      {' 절약 예상'}
+                    </>
+                  )
                   : '연 절감액 산정 전'}
                 {shownSummary.goalAdvanceDays !== null
-                  ? ` · 최대 ${shownSummary.goalAdvanceDays}일 단축`
+                  ? (
+                    <>
+                      {' · 최대 '}
+                      <Text style={styles.summarySubtextNumber}>
+                        {shownSummary.goalAdvanceDays}일
+                      </Text>
+                      {' 단축'}
+                    </>
+                  )
                   : ''}
               </Text>
             </View>
@@ -159,10 +179,9 @@ export function DiscoveryHome({
             </View>
             {error ? <Text style={styles.footnote}>{error}</Text> : null}
             <View style={styles.insightListCard}>
-              {insights.slice(0, 4).map((insight, index, items) => (
+              {insights.slice(0, 4).map((insight) => (
                 <DiscoveryInsightRow
                   insight={insight}
-                  isLast={index === items.length - 1}
                   key={insight.id}
                   onPress={() => onInsightPress(insight.id)}
                 />
