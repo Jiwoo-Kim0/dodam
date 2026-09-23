@@ -1,0 +1,6 @@
+[
+  { "email": "seed.kmeans.u0001@dodam.invalid", "password": "<DODAM_DEMO_PASSWORD_SEED.sql 비밀번호>" },
+  { "email": "seed.kmeans.u0002@dodam.invalid", "password": "<DODAM_DEMO_PASSWORD_SEED.sql 비밀번호>" },
+  { "email": "seed.kmeans.u0003@dodam.invalid", "password": "<DODAM_DEMO_PASSWORD_SEED.sql 비밀번호>" },
+  { "email": "seed.kmeans.u0004@dodam.invalid", "password": "<DODAM_DEMO_PASSWORD_SEED.sql 비밀번호>" }
+]
