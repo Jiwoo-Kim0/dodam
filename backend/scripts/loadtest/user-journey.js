@@ -20,9 +20,14 @@ import { Counter, Rate, Trend } from 'k6/metrics';
  *
  *   # 3) 한계 탐색 — 대기를 없애고 Nginx를 우회해 백엔드가 어디서 막히는지 본다.
  *   #    k6를 컨테이너로 app-net에 붙여 backend:8080으로 직접 쏜다.
- *   docker run --rm -i --network infra_app-net \
+ *   docker run --rm -i --user "$(id -u):$(id -g)" --network infra_app-net \
  *     -e BASE_URL=http://backend:8080/api -e PROFILE=load -e LOAD_VUS=50 -e THINK_TIME=0 \
  *     -v "$PWD/backend/scripts/loadtest:/work" -w /work grafana/k6:latest run user-journey.js
+ *
+ *   ★ --user 가 필요한 이유: k6 이미지는 uid 12345로 도는데 호스트 ubuntu는 1000이다.
+ *     data/users.json 을 600으로 두면 컨테이너가 읽지 못하고, 에러 메시지는
+ *     "users.json이 없고..."로 나와 파일이 없는 것처럼 보인다(2026-09-23에 실제로 헤맸다).
+ *     권한을 644로 푸는 대신 컨테이너를 호스트 uid로 돌린다.
  *
  * THINK_TIME:
  *   화면을 읽는 대기 시간의 배율이다. 기본 1(실사용 흉내), 0이면 대기 없이 계속 던진다.
@@ -34,6 +39,9 @@ import { Counter, Rate, Trend } from 'k6/metrics';
  * 계정:
  *   backend/scripts/loadtest/data/users.json (gitignore, users.example.json 참고) 또는
  *   DEMO_EMAIL / DEMO_PASSWORD 환경변수(계정 1개). 시연 계정에는 DODAM_DEMO_PASSWORD_SEED.sql이 적용되어 있어야 한다.
+ *   비밀번호는 backend/database/seeds/README.md "시연 계정 로그인" 절에 있다.
+ *   DEMO_EMAIL 한 개로 돌리면 VU 전원이 같은 토큰·같은 사용자 데이터를 쓰게 되어
+ *   DB 버퍼풀에 유리하게 편향된다. 계정 4개(U0001~U0004)를 users.json에 넣는 쪽을 쓴다.
  *
  * 제약(infra/nginx/conf.d/default.conf):
  *   - /api/v1/auth/login 은 IP당 20r/m(burst 10)이라 VU마다 로그인하면 곧바로 429가 난다.
