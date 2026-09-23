@@ -34,9 +34,9 @@ public class JdbcAccountTransactionWriter {
                 merchant_name, payment_method, spending_type, summary, memo,
                 hidden, source_type, created_at, updated_at
             ) VALUES (
-                :transactionId, :userId, :accountId, NULL, NULL,
+                :transactionId, :userId, :accountId, NULL, :categoryId,
                 :transactionDate, :transactionTime, :transactionType, :amount, :balanceAfter,
-                NULL, 'ACCOUNT', NULL, :summary, :memo,
+                NULL, 'ACCOUNT', :spendingType, :summary, :memo,
                 FALSE, 'SSAFY', :createdAt, NULL
             )
             """;
@@ -73,6 +73,8 @@ public class JdbcAccountTransactionWriter {
                         .addValue("transactionType", transaction.transactionType())
                         .addValue("amount", transaction.amount())
                         .addValue("balanceAfter", transaction.balanceAfter())
+                        .addValue("categoryId", transaction.categoryId())
+                        .addValue("spendingType", transaction.spendingType())
                         .addValue("summary", transaction.summary())
                         .addValue("memo", transaction.memo())
                         .addValue("createdAt", now))
@@ -97,7 +99,14 @@ public class JdbcAccountTransactionWriter {
             long amount,
             Long balanceAfter,
             String summary,
-            String memo
+            String memo,
+            Long categoryId,
+            String spendingType
     ) {
+        public NewTransaction(String transactionId, LocalDate transactionDate, LocalTime transactionTime,
+                String transactionType, long amount, Long balanceAfter, String summary, String memo) {
+            this(transactionId, transactionDate, transactionTime, transactionType, amount, balanceAfter,
+                    summary, memo, null, null);
+        }
     }
 }

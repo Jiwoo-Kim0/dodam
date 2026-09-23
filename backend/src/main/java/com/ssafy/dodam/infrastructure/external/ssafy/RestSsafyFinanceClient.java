@@ -35,6 +35,7 @@ public class RestSsafyFinanceClient implements SsafyFinanceClient {
 
     static final String MEMBER_CREATE_PATH = "/ssafy/api/v1/member/";
     static final String MEMBER_SEARCH_PATH = "/ssafy/api/v1/member/search";
+    private static final String DEPOSIT_BASE = "/ssafy/api/v1/edu/demandDeposit/";
     static final String DEMAND_DEPOSIT_ACCOUNT_LIST_PATH =
             "/ssafy/api/v1/edu/demandDeposit/inquireDemandDepositAccountList";
     static final String API_INQUIRE_DEMAND_DEPOSIT_ACCOUNT_LIST = "inquireDemandDepositAccountList";
@@ -117,6 +118,69 @@ public class RestSsafyFinanceClient implements SsafyFinanceClient {
     }
 
     // ---------- 거래 API (공통 Header) ----------
+
+    @Override
+    public List<SsafyDemandDepositProduct> inquireDemandDepositList() {
+        return inquireList(DEPOSIT_BASE + "inquireDemandDepositList", "inquireDemandDepositList", null,
+                SsafyDemandDepositProduct.class);
+    }
+
+    @Override
+    public SsafyDemandDepositProduct createDemandDeposit(String bankCode, String name, String description) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("bankCode", bankCode);
+        body.put("accountTypeName", name);
+        body.put("accountTypeDescription", description);
+        String path = DEPOSIT_BASE + "createDemandDeposit";
+        return convert(extractRec(post(path, "createDemandDeposit", null, body), path, false),
+                SsafyDemandDepositProduct.class, path);
+    }
+
+    @Override
+    public SsafyDemandDepositAccount createDemandDepositAccount(String userKey, String typeNo) {
+        String path = DEPOSIT_BASE + "createDemandDepositAccount";
+        return convert(extractRec(post(path, "createDemandDepositAccount", userKey,
+                Map.of("accountTypeUniqueNo", typeNo)), path, false), SsafyDemandDepositAccount.class, path);
+    }
+
+    @Override
+    public SsafyDepositResult depositToAccount(String userKey, String accountNo, long amount, String summary) {
+        String path = DEPOSIT_BASE + "updateDemandDepositAccountDeposit";
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("accountNo", accountNo);
+        body.put("transactionBalance", amount);
+        body.put("transactionSummary", summary);
+        return convert(extractRec(post(path, "updateDemandDepositAccountDeposit", userKey, body), path, false),
+                SsafyDepositResult.class, path);
+    }
+
+    @Override
+    public List<SsafyTransferEntry> transfer(String userKey, String withdrawalNo, String depositNo,
+            long amount, String withdrawalSummary, String depositSummary) {
+        String path = DEPOSIT_BASE + "updateDemandDepositAccountTransfer";
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("withdrawalAccountNo", withdrawalNo);
+        body.put("depositAccountNo", depositNo);
+        body.put("transactionBalance", amount);
+        body.put("withdrawalTransactionSummary", withdrawalSummary);
+        body.put("depositTransactionSummary", depositSummary);
+        JsonNode rec = extractRec(post(path, "updateDemandDepositAccountTransfer", userKey, body), path, false);
+        if (!rec.isArray() || rec.size() != 2) {
+            throw new SsafyUnavailableException("SSAFY transfer returned an invalid REC", null);
+        }
+        try {
+            return objectMapper.readerForListOf(SsafyTransferEntry.class).readValue(rec);
+        } catch (IOException exception) {
+            throw new SsafyUnavailableException("SSAFY transfer REC could not be parsed", exception);
+        }
+    }
+
+    @Override
+    public SsafyAccountBalance inquireAccountBalance(String userKey, String accountNo) {
+        String path = DEPOSIT_BASE + "inquireDemandDepositAccountBalance";
+        return convert(extractRec(post(path, "inquireDemandDepositAccountBalance", userKey,
+                Map.of("accountNo", accountNo)), path, false), SsafyAccountBalance.class, path);
+    }
 
     /**
      * 2.4 수시입출금 계좌 목록 조회. 계좌가 없는 사용자는 REC가 빈 배열(또는 생략)로 오므로 빈 목록으로 해석한다.
@@ -278,7 +342,7 @@ public class RestSsafyFinanceClient implements SsafyFinanceClient {
         } catch (IOException | RuntimeException ignored) {
             // 아래에서 원문 그대로 로그로 남긴다
         }
-        log.warn("SSAFY finance API returned HTTP {} with unparseable body: {}", exception.getStatusCode(), body);
+        log.warn("SSAFY finance API returned HTTP {} with unparseable body", exception.getStatusCode());
         return new SsafyUnavailableException(
                 "SSAFY finance API returned HTTP " + exception.getStatusCode(), exception
         );
