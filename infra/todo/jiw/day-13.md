@@ -477,3 +477,68 @@ API 조회로 `uid=dodam-loadtest` 로드를 확인했다.
 
 **호스트 파일과 컨테이너 파일을 둘 다 찍어 보고서야** 구분됐다. 원격에서 파일을 고칠 때는
 고쳐졌는지부터 확인해야 한다 — 09-17의 `LIKE '[1-4]'`, 09-22의 컬럼명 추측과 같은 계열의 실수다.
+
+### 24. cAdvisor 도입 시도 — 실패, 대안으로 전환
+
+"컨테이너별로 누가 CPU를 먹는지" 보려고 cAdvisor를 넣었다가 **되돌렸다.**
+
+#### 왜 필요했나
+
+node-exporter는 **호스트 전체**만 본다. EC2 한 대에 MySQL·Redis·백엔드·Jenkins·Grafana가
+모두 사는 구조라, 부하 중 CPU가 치솟아도 **누구 때문인지 구분할 수 없었다.**
+"CPU 한계"라는 결론이 나와도 원인을 못 밝히면 개선 방향이 안 나온다.
+
+#### 왜 실패했나
+
+```
+E manager.go:1116] Failed to create existing container: /system.slice/docker-<id>.scope:
+  failed to identify the read-write layer ID ...
+  open /rootfs/var/lib/docker/image/overlayfs/layerdb/mounts/<id>/mount-id: no such file
+```
+
+원인: 이 호스트의 **Docker 29.8.0이 containerd 이미지 스토어**를 쓴다(`Storage Driver: overlayfs`).
+그러면 `/var/lib/docker/image/<driver>/layerdb/`가 아예 없고(실제로 `identity-cache.db` 하나뿐),
+cAdvisor의 Docker 핸들러가 RW 레이어를 못 찾아 **컨테이너를 통째로 건너뛴다.**
+
+| 시도 | 결과 |
+| --- | --- |
+| v0.49.1 기본 설정 | `id="/"` 루트 cgroup 1개만 |
+| v0.52.1로 올림 | 동일 |
+| `--containerd=/run/containerd/containerd.sock` 추가 | 동일 |
+| `--docker_only=true` 제거 | systemd 서비스 47개는 잡히지만 **docker 컨테이너는 여전히 실패** |
+
+cAdvisor 쪽 미지원 문제라 우리가 설정으로 풀 수 없다고 판단하고 중단했다.
+**오늘이 부하 테스트 날이라 더 파지 않았다.**
+
+#### 대안 — 이미 있던 지표로 대부분 해결됐다
+
+micrometer가 **백엔드 프로세스의 CPU를 이미 내보내고 있었다.**
+
+```
+process_cpu_usage = 0.0027     (백엔드 JVM)
+system_cpu_usage  = 0.0270     (호스트 전체)
+→ 백엔드가 호스트 CPU 사용량의 약 10%
+```
+
+| 방안 | 검토 | 채택 |
+| --- | --- | --- |
+| **`process_cpu_usage`로 백엔드 몫만 분리** | 컨테이너별 세부는 없지만 **"백엔드냐 아니냐"**는 답할 수 있다. 추가 컨테이너·권한 없음 | **채택** |
+| cAdvisor 계속 파기 | 상류 미지원이라 시간 대비 성공 확률이 낮다. 오늘 테스트를 못 돌린다 | 기각 |
+| cgroup을 직접 읽는 수집기 자작 | 시간이 없고 유지보수 부담 | 기각 |
+| Docker 스토리지 드라이버를 overlay2로 되돌림 | **위험하다.** 이미지 재빌드·재다운로드가 필요하고 시연 5일 전이다 | 기각 |
+
+→ 대시보드 `호스트 CPU·메모리` 패널에 **백엔드 프로세스 CPU** 선을 추가했다.
+
+**읽는 법**: 호스트 CPU는 높은데 백엔드 몫이 낮으면 → 범인은 MySQL·Jenkins 등 **다른 컨테이너**다
+(앱을 고쳐도 소용없다). 둘이 같이 오르면 → **백엔드가 원인**이다.
+
+#### 남는 한계
+
+컨테이너별 **메모리·디스크 I/O**는 여전히 볼 수 없다. CPU만 백엔드 몫이 분리된다.
+MySQL이 메모리를 얼마나 쓰는지는 `mysql_global_status_*`로 간접 추정해야 한다.
+이 점을 잔여 한계로 기록해 둔다.
+
+#### 부수 확인 — 어제 고친 디렉터리 마운트가 실제로 동작했다
+
+cAdvisor 잡을 추가할 때 **`prometheus.yml`을 고치고 리로드만으로 새 잡이 잡혔다**(재생성 불필요).
+23절에서 임시 파일로 검증했던 것이 실제 작업에서 확인된 셈이다.
