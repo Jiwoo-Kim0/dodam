@@ -31,21 +31,33 @@ export function GoalLinkedAccounts({
   onWithdraw,
 }: GoalLinkedAccountsProps) {
   const goalAccount = findGoalAccount(accounts);
+  /*
+   * 목표 통장이 없고 연결된 계좌가 있으면 아래에 "목표 통장 연결하기" 안내가 뜬다.
+   * 그 상태에서만 관리 버튼과 역할이 겹친다.
+   */
+  const showManageButton = goalAccount !== null || accounts.length === 0;
 
   return (
     <View style={styles.section}>
       <View style={styles.header}>
         <Text style={styles.title}>{`연결 계좌 (${accounts.length})`}</Text>
-        <Pressable
-          accessibilityRole="button"
-          onPress={onManage}
-          style={({ pressed }) => [
-            styles.manageButton,
-            pressed && styles.manageButtonPressed,
-          ]}
-        >
-          <Text style={styles.manageButtonLabel}>관리</Text>
-        </Pressable>
+        {/*
+          아래 안내의 "목표 통장 연결하기"가 이 버튼과 같은 화면을 연다. 목표 통장이 없을 때는
+          둘이 겹쳐 보이므로 눈에 띄는 쪽만 남긴다. 목표 통장이 연결되면 그 안내가 보내기·
+          되가져오기로 바뀌어, 계좌를 바꿀 통로가 이 버튼뿐이라 다시 보여 준다.
+        */}
+        {showManageButton ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={onManage}
+            style={({ pressed }) => [
+              styles.manageButton,
+              pressed && styles.manageButtonPressed,
+            ]}
+          >
+            <Text style={styles.manageButtonLabel}>관리</Text>
+          </Pressable>
+        ) : null}
       </View>
 
       <View style={styles.card}>
