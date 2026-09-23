@@ -136,7 +136,7 @@ async function loadBriefing(): Promise<HomeBriefing> {
     .filter((event) => event.direction === 'OUTFLOW' && event.eventDate >= today)
     .sort((left, right) => left.eventDate.localeCompare(right.eventDate))[0];
   let message = eventsResult
-    ? '앞으로 2주간 예정된 출금이 없어요.'
+    ? '예정된 출금이 없어요.'
     : '현금흐름 예측 데이터가 아직 없어요.';
 
   if (nextOutflow) {
