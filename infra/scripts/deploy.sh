@@ -21,7 +21,7 @@ ENV_FILE="$APP_DIR/infra/.env"
 # 모니터링 서비스도 반드시 포함한다. 목록에서 빠지면 설정 파일이나 이미지 태그를
 # 고쳐 머지해도 배포가 반영하지 않아, 수동으로 올린 변경이 다음 배포의
 # git reset --hard에 밀려 조용히 원복된다. (Day 3에서 같은 방식으로 사고가 났었다)
-DEPLOY_SERVICES="${DEPLOY_SERVICES:-mysql redis backend nginx certbot prometheus node-exporter mysqld-exporter redis-exporter loki promtail grafana}"
+DEPLOY_SERVICES="${DEPLOY_SERVICES:-mysql redis backend nginx certbot prometheus node-exporter mysqld-exporter redis-exporter cadvisor loki promtail grafana}"
 # 배포 검증은 두 단계로 한다.
 #
 #  1) readiness — 앱이 의존성(DB/Redis)에 실제로 붙었는가
@@ -281,8 +281,16 @@ docker exec nginx nginx -s reload 2>/dev/null || log "nginx reload 생략(컨테
 # 위 `up -d`는 --force-recreate가 없어 서비스 정의·이미지가 그대로면 컨테이너를 건드리지 않는다.
 # nginx와 같은 이유로 여기서 설정만 다시 읽힌다(--web.enable-lifecycle이 켜져 있다).
 log "prometheus 설정 리로드 (스크레이프 잡 변경 반영)"
-docker exec prometheus wget -q --post-data="" -O- http://localhost:9090/-/reload >/dev/null 2>&1 \
-    || log "prometheus reload 생략(컨테이너 미기동?)"
+# 응답 코드를 직접 본다. busybox wget은 HTTP 500에도 종료코드 0을 돌려주기 때문에
+# `wget ... || log 실패` 형태로는 설정 오류를 못 잡는다(2026-09-23에 실제로 겪었다 —
+# prometheus.yml이 깨진 채 "리로드 OK"로 보였고, 새 잡이 30분간 반영되지 않았다).
+if docker exec prometheus wget -S --post-data="" -O- http://localhost:9090/-/reload 2>&1 \
+        | grep -q "HTTP/1.1 200"; then
+    log "  prometheus 리로드 완료"
+else
+    log "  WARN: prometheus 리로드 실패 — prometheus.yml 문법 오류일 수 있다."
+    log "        옛 설정이 그대로 돌고 있다. 'docker logs prometheus | grep \"Error reloading\"' 확인"
+fi
 
 log "① readiness 검사 (의존성 포함): actuator/health"
 READY=0

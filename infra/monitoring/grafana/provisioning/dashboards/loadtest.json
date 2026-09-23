@@ -631,6 +631,90 @@
         }
       ],
       "description": "eviction이 0을 넘으면 캐시가 밀려나는 중이다. 코치 응답 캐시 적중률이 떨어져 외부 API 호출이 는다."
+    },
+    {
+      "type": "timeseries",
+      "title": "컨테이너별 CPU (상위 6)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "fillOpacity": 8,
+            "lineWidth": 2
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "topk(6, rate(container_cpu_usage_seconds_total{container_id!=\"\"}[1m]) * 100)",
+          "legendFormat": "{{container_id}}",
+          "refId": "A"
+        }
+      ],
+      "description": "누가 CPU를 먹는지. 이름 대신 12자리 컨테이너 ID로 나오므로 `docker ps`로 대조한다. 호스트 CPU가 높은데 백엔드가 아니면 여기서 범인을 찾는다."
+    },
+    {
+      "type": "timeseries",
+      "title": "컨테이너별 메모리 (상위 6)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 28,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "fillOpacity": 8,
+            "lineWidth": 2
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "topk(6, container_memory_working_set_bytes{container_id!=\"\"})",
+          "legendFormat": "{{container_id}}",
+          "refId": "A"
+        }
+      ],
+      "description": "working set 기준. MySQL 버퍼풀이 커지는지, 백엔드 힙 외 메모리가 느는지 본다. ID는 `docker ps`의 CONTAINER ID와 같다."
     }
   ]
 }

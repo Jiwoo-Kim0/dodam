@@ -349,6 +349,39 @@ services:
     networks:
       - app-net
 
+  # ── 컨테이너별 자원 지표 (2026-09-23 추가, S15P21D105-693) ────────────────
+  # node-exporter는 호스트 전체만 본다. EC2 한 대에 MySQL·Redis·백엔드·Jenkins·Grafana가
+  # 모두 같이 살아서, 부하 중 CPU가 치솟아도 "누가 먹는지" 구분할 수 없었다.
+  #
+  # ⚠️ docker.sock을 **의도적으로 마운트하지 않는다.** 두 가지 이유다.
+  #   1) 이 호스트는 Docker 29 + containerd 이미지 스토어(Storage Driver: overlayfs)라
+  #      /var/lib/docker/image/<driver>/layerdb 가 없다. cAdvisor의 Docker 핸들러가 컨테이너를
+  #      가로챈 뒤 RW 레이어를 못 찾아 **전부 건너뛴다**(day-13 24절에서 겪음).
+  #      소켓을 빼면 raw cgroup 핸들러로 떨어져 정상 수집된다.
+  #   2) docker.sock은 사실상 호스트 root 권한이다(infra/todo/security.md). 안 쓰는 편이 낫다.
+  #
+  # 대가: 컨테이너 **이름을 모른다.** cgroup 경로의 12자리 짧은 ID만 남으며,
+  #       prometheus.yml의 metric_relabel_configs가 이를 `container_id` 라벨로 뽑는다.
+  #       `docker ps`의 CONTAINER ID와 같은 값이라 대조할 수 있다.
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    container_name: cadvisor
+    restart: unless-stopped
+    mem_limit: 256m
+    # 수집기가 측정 대상을 방해하면 안 된다(mysqld-exporter의 MAX_USER_CONNECTIONS 3과 같은 원칙).
+    # 기본 1초 간격과 전체 지표는 부하 중 CPU를 눈에 띄게 먹는다.
+    # 실측(2026-09-23): 이 설정에서 CPU 0.25~0.9%, 메모리 15MB.
+    command:
+      - --housekeeping_interval=10s
+      - --store_container_labels=false
+      - --disable_metrics=percpu,sched,tcp,udp,advtcp,process,hugetlb,referenced_memory,cpu_topology,resctrl
+    volumes:
+      - /:/rootfs:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - app-net
+
   loki:
     image: grafana/loki:3.3.2
     container_name: loki
