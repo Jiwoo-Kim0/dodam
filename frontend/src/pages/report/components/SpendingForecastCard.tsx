@@ -29,6 +29,7 @@ type ChartPoint = {
   lowerBound: number;
   upperBound: number;
   predicted: boolean;
+  monthsFromStart: number;
   x: number;
   y: number;
   lowerY: number;
@@ -39,14 +40,26 @@ function monthLabel(month: string) {
   return `${Number(month.slice(5, 7))}월`;
 }
 
-/** 축 최댓값. 상한 띠까지 담아야 띠가 잘리지 않는다. */
+/**
+ * 축 최댓값. 상한 띠까지 담아야 띠가 잘리지 않는다.
+ *
+ * 눈금 간격을 먼저 반올림 단위에 맞춘 뒤 구간 수를 곱한다. 최댓값만 올림하면 200만을 셋으로 나눠
+ * 67만·133만 같은 눈금이 나온다.
+ */
 function axisMaximumOf(amounts: readonly number[]) {
   const maximum = amounts.reduce((current, amount) => Math.max(current, amount), 0);
   if (maximum === 0) {
     return 1;
   }
   const unit = maximum >= 1_000_000 ? 500_000 : 100_000;
-  return Math.ceil(maximum / unit) * unit;
+  const intervals = GRID_LINE_COUNT - 1;
+  const step = Math.max(unit, Math.ceil(maximum / intervals / unit) * unit);
+  return step * intervals;
+}
+
+/** `2026-09` -> 연속된 월 번호. x좌표를 배열 순서가 아니라 시간으로 잡는 데 쓴다 */
+function monthOrdinal(month: string) {
+  return Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7));
 }
 
 export function SpendingForecastCard({ forecast }: SpendingForecastCardProps) {
@@ -70,14 +83,21 @@ export function SpendingForecastCard({ forecast }: SpendingForecastCardProps) {
       })),
     ];
     const axisMaximum = axisMaximumOf(merged.map((point) => point.upperBound));
-    const step = merged.length > 1 ? (PLOT_RIGHT - PLOT_LEFT) / (merged.length - 1) : 0;
+    // x는 배열 순서가 아니라 첫 달로부터의 개월 수다. 순서로 잡으면 기준 달(9월)처럼 값이 없는 달이
+    // 축에서 사라져 8월과 10월이 한 칸 간격으로 붙고, 결측이 있는 사용자도 같은 왜곡을 겪는다.
+    const firstOrdinal = monthOrdinal(merged[0].month);
+    const span = monthOrdinal(merged[merged.length - 1].month) - firstOrdinal;
     const toY = (amount: number) =>
       PLOT_BOTTOM - (Math.max(0, amount) / axisMaximum) * (PLOT_BOTTOM - PLOT_TOP);
 
-    return merged.map((point, index) => ({
+    return merged.map((point) => ({
       ...point,
       label: monthLabel(point.month),
-      x: PLOT_LEFT + step * index,
+      monthsFromStart: monthOrdinal(point.month) - firstOrdinal,
+      x:
+        span === 0
+          ? PLOT_LEFT
+          : PLOT_LEFT + ((monthOrdinal(point.month) - firstOrdinal) / span) * (PLOT_RIGHT - PLOT_LEFT),
       y: toY(point.amount),
       lowerY: toY(point.lowerBound),
       upperY: toY(point.upperBound),
@@ -127,9 +147,19 @@ export function SpendingForecastCard({ forecast }: SpendingForecastCardProps) {
   return (
     <View style={screenStyles.card}>
       <View style={styles.header}>
-        <Text style={screenStyles.cardTitle}>예상 소비</Text>
+        <View style={styles.titleGroup}>
+          <Text style={screenStyles.cardTitle}>예상 소비</Text>
+          <Text style={styles.unit}>(단위: 원)</Text>
+        </View>
         <Text style={styles.headerCaption}>{`앞으로 ${forecasts.length}개월`}</Text>
       </View>
+
+      {selected ? (
+        <Text style={styles.summary}>
+          {`${selected.label} ${selected.predicted ? '예상' : '실제'} `}
+          <Text style={styles.summaryAmount}>{`${formatNumber(selected.amount)}원`}</Text>
+        </Text>
+      ) : null}
 
       <Svg
         accessibilityLabel={accessibilityLabel}
@@ -224,7 +254,7 @@ export function SpendingForecastCard({ forecast }: SpendingForecastCardProps) {
         })}
 
         {points.map((point, index) =>
-          index % 3 === 0 || index === points.length - 1 ? (
+          point.monthsFromStart % 3 === 0 || index === points.length - 1 ? (
             <SvgText
               fill={colors.textTertiary}
               fontFamily={fontFamily.regular}
@@ -248,18 +278,6 @@ export function SpendingForecastCard({ forecast }: SpendingForecastCardProps) {
             r={14}
           />
         ))}
-
-        {selected ? (
-          <SvgText
-            fill={colors.textPrimary}
-            fontFamily={fontFamily.semiBold}
-            fontSize={12}
-            textAnchor="middle"
-            x={Math.min(CHART_WIDTH - 46, Math.max(46, selected.x))}
-            y={Math.max(PLOT_TOP - 12, selected.y - 12)}>
-            {`${selected.label} ${formatNumber(selected.amount)}원`}
-          </SvgText>
-        ) : null}
       </Svg>
 
       <View style={styles.legend}>

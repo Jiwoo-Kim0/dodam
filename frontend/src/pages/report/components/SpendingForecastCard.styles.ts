@@ -9,13 +9,35 @@ export const PLOT_LEFT = 44;
 export const PLOT_RIGHT = 312;
 export const PLOT_TOP = 30;
 export const PLOT_BOTTOM = 140;
-export const GRID_LINE_COUNT = 4;
+/** 눈금 5개 = 구간 4개. 축 최댓값을 4로 나눠 떨어지게 잡아야 67만·133만 같은 눈금이 안 생긴다 */
+export const GRID_LINE_COUNT = 5;
 
 export const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
+  },
+  titleGroup: {
+    alignItems: 'baseline',
+    flexDirection: 'row',
+    gap: spacing[1],
+  },
+  unit: {
+    color: colors.textTertiary,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.detail,
+  },
+  summary: {
+    color: colors.textSecondary,
+    fontFamily: fontFamily.medium,
+    fontSize: fontSize.body2,
+    marginTop: spacing[1],
+  },
+  summaryAmount: {
+    color: colors.textPrimary,
+    fontFamily: fontFamily.semiBold,
+    fontSize: fontSize.subtitle,
   },
   headerCaption: {
     color: colors.textSecondary,
