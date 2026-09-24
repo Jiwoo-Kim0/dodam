@@ -25,14 +25,15 @@ class SpendingForecastCalculatorTest {
     /** 적재된 U0003의 2024-09 ~ 2026-08 변동 소비 월 합계 */
     private static List<MonthlyPoint> u0003History() {
         return List.of(
-            p("2024-09", 800000), p("2024-10", 830000), p("2024-11", 850000),
-            p("2024-12", 1020000), p("2025-01", 810000), p("2025-02", 740000),
-            p("2025-03", 825000), p("2025-04", 800000), p("2025-05", 1085000),
-            p("2025-06", 870000), p("2025-07", 905000), p("2025-08", 880000),
-            p("2025-09", 940000), p("2025-10", 980000), p("2025-11", 1010000),
-            p("2025-12", 1210000), p("2026-01", 960000), p("2026-02", 870000),
+            p("2024-09", 830000), p("2024-10", 860000), p("2024-11", 890000),
+            p("2024-12", 1070000), p("2025-01", 850000), p("2025-02", 1050000),
+            p("2025-03", 860000), p("2025-04", 1250000), p("2025-05", 1130000),
+            p("2025-06", 900000), p("2025-07", 940000), p("2025-08", 910000),
+            p("2025-09", 1240000), p("2025-10", 980000), p("2025-11", 1010000),
+            p("2025-12", 1210000), p("2026-01", 1320000), p("2026-02", 870000),
             p("2026-03", 974000), p("2026-04", 939000), p("2026-05", 1653000),
-            p("2026-06", 1015000), p("2026-07", 1031000), p("2026-08", 994000)        );
+            p("2026-06", 1015000), p("2026-07", 1031000), p("2026-08", 994000)
+        );
     }
 
     @Test
@@ -43,10 +44,10 @@ class SpendingForecastCalculatorTest {
         assertThat(result.fallbackReason()).isEqualTo(ForecastFallbackReason.NONE);
         assertThat(result.months()).extracting(f -> f.month().toString())
                 .containsExactly("2026-10", "2026-11", "2026-12");
-        // 파이썬 계산기: 984,923 / 1,017,216 / 1,224,746
-        assertThat(result.months().get(0).predicted()).isCloseTo(984_923L, org.assertj.core.data.Offset.offset(100L));
-        assertThat(result.months().get(1).predicted()).isCloseTo(1_017_216L, org.assertj.core.data.Offset.offset(100L));
-        assertThat(result.months().get(2).predicted()).isCloseTo(1_224_746L, org.assertj.core.data.Offset.offset(100L));
+        // 파이썬 계산기: 976,270 / 1,012,340 / 1,219,128
+        assertThat(result.months().get(0).predicted()).isCloseTo(976_270L, org.assertj.core.data.Offset.offset(100L));
+        assertThat(result.months().get(1).predicted()).isCloseTo(1_012_340L, org.assertj.core.data.Offset.offset(100L));
+        assertThat(result.months().get(2).predicted()).isCloseTo(1_219_128L, org.assertj.core.data.Offset.offset(100L));
         assertThat(result.trend()).isPositive();
         // 8월 실적 994,000 대비 12월이 20% 이상 높아야 화면에서 연말 상승이 보인다
         assertThat(result.months().get(2).predicted()).isGreaterThan((long) (994_000 * 1.20));

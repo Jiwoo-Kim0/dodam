@@ -1,5 +1,7 @@
 import type { ImageSourcePropType } from 'react-native';
 
+import type { SpendingForecast } from './forecastApi.types';
+
 /** 금융 효율 점수 도넛의 구성 색상 단계 */
 export type ReportScoreDimensionStatus = 'good' | 'normal' | 'check' | 'unavailable';
 
@@ -185,5 +187,7 @@ export interface MonthlyReport {
   /** 또래 비교 조회 자체가 실패하면 null이며, 이때 카드를 렌더링하지 않는다. */
   peerComparison: ReportPeerComparison | null;
   keyMetrics: readonly ReportKeyMetric[];
+  /** 예측 조회가 실패하면 null이며, 이때 카드를 렌더링하지 않는다. */
+  spendingForecast: SpendingForecast | null;
   pastSpending: ReportPastSpending;
 }

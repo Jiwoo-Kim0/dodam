@@ -15,6 +15,7 @@ import { FinancePatternCard } from './components/FinancePatternCard';
 import { KeyMetricsCard } from './components/KeyMetricsCard';
 import { MonthlySpendingCard } from './components/MonthlySpendingCard';
 import { PeerComparisonCard } from './components/PeerComparisonCard';
+import { SpendingForecastCard } from './components/SpendingForecastCard';
 import { styles } from './ReportScreen.styles';
 import { useReportData } from './hooks/useReportData';
 
@@ -88,6 +89,9 @@ export function ReportScreen() {
               />
               <KeyMetricsCard metrics={data.keyMetrics} />
               <MonthlySpendingCard pastSpending={data.pastSpending} />
+              {data.spendingForecast ? (
+                <SpendingForecastCard forecast={data.spendingForecast} />
+              ) : null}
             </View>
           </>
         ) : (
