@@ -6,6 +6,7 @@ export { cashflowApi } from './cashflowApi';
 export { coachApi } from './coachApi';
 export { diagnosisApi } from './diagnosisApi';
 export { financeDataApi, financeErrorCodes } from './financeDataApi';
+export { forecastApi } from './forecastApi';
 export { goalApi } from './goalApi';
 export { ledgerApi } from './ledgerApi';
 export { notificationApi } from './notificationApi';

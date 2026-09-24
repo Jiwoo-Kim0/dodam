@@ -3,12 +3,14 @@ import { useCallback, useRef, useState } from 'react';
 import {
   assetApi,
   coachApi,
+  forecastApi,
   isApiError,
   ledgerApi,
   patternApi,
   reportApi,
   userApi,
 } from '@/api';
+import type { SpendingForecast } from '@/types/forecastApi.types';
 import type {
   MonthlyReport,
   ReportMetricChange,
@@ -75,6 +77,18 @@ async function loadOptionalResource<T>(request: Promise<T>): Promise<T | null> {
   }
 }
 
+/**
+ * 소비 예측을 조회한다. 이력이 짧으면 서버가 `forecasts`를 비우고 사유만 주므로 그대로 넘긴다.
+ * 호출 실패는 null로 흡수한다. 예측 카드 하나 때문에 리포트 전체가 비지 않게 한다.
+ */
+async function loadSpendingForecast(): Promise<SpendingForecast | null> {
+  try {
+    return await forecastApi.getSpendingForecast();
+  } catch {
+    return null;
+  }
+}
+
 async function loadCoachSummary() {
   try {
     return await coachApi.getFinancialSummary();
@@ -125,6 +139,7 @@ async function fetchReport(): Promise<MonthlyReport> {
     coachSummary,
     peerComparison,
     monthlyReport,
+    spendingForecast,
   ] = await Promise.all([
     userApi.getMe(),
     ledgerApi.getCategoryTrend(trendStart.yearMonth, reportMonth.yearMonth),
@@ -139,6 +154,7 @@ async function fetchReport(): Promise<MonthlyReport> {
     loadCoachSummary(),
     loadPeerComparison(),
     loadOptionalResource(reportApi.getMonthly(reportMonth.yearMonth)),
+    loadSpendingForecast(),
   ]);
 
   const anomaly = anomalies?.anomalies[0];
@@ -196,6 +212,7 @@ async function fetchReport(): Promise<MonthlyReport> {
         icon: require('@/assets/icons/common/report_money.png'), iconScale: 0.85,
       },
     ],
+    spendingForecast,
     pastSpending: {
       months: trend.months.map((month) => ({
         yearMonth: month.yearMonth,
