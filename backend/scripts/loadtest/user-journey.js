@@ -18,11 +18,21 @@ import { Counter, Rate, Trend } from 'k6/metrics';
  *   # 2) 실사용 부하 — 화면을 읽는 시간까지 흉내낸다. Nginx를 거치므로 20r/s를 넘기지 않는 선에서.
  *   BASE_URL=https://j15D105.p.ssafy.io/api PROFILE=load LOAD_VUS=25 k6 run backend/scripts/loadtest/user-journey.js
  *
- *   # 3) 한계 탐색 — 대기를 없애고 Nginx를 우회해 백엔드가 어디서 막히는지 본다.
+ *   # 3) 한계 탐색(짧게, 4분 20초) — 어디서 막히는지만 빠르게 본다.
+ *   docker run --rm -i --user "$(id -u):$(id -g)" --network infra_app-net \
+ *     -e BASE_URL=http://backend:8080/api -e PROFILE=probe \
+ *     -v "$PWD/backend/scripts/loadtest:/work" -w /work grafana/k6:latest run user-journey.js
+ *
+ *   # 4) 한계 탐색(길게, 22분) — 오래 버티는지까지 본다.
  *   #    k6를 컨테이너로 app-net에 붙여 backend:8080으로 직접 쏜다.
- *   docker run --rm -i --network infra_app-net \
+ *   docker run --rm -i --user "$(id -u):$(id -g)" --network infra_app-net \
  *     -e BASE_URL=http://backend:8080/api -e PROFILE=load -e LOAD_VUS=50 -e THINK_TIME=0 \
  *     -v "$PWD/backend/scripts/loadtest:/work" -w /work grafana/k6:latest run user-journey.js
+ *
+ *   ★ --user 가 필요한 이유: k6 이미지는 uid 12345로 도는데 호스트 ubuntu는 1000이다.
+ *     data/users.json 을 600으로 두면 컨테이너가 읽지 못하고, 에러 메시지는
+ *     "users.json이 없고..."로 나와 파일이 없는 것처럼 보인다(2026-09-23에 실제로 헤맸다).
+ *     권한을 644로 푸는 대신 컨테이너를 호스트 uid로 돌린다.
  *
  * THINK_TIME:
  *   화면을 읽는 대기 시간의 배율이다. 기본 1(실사용 흉내), 0이면 대기 없이 계속 던진다.
@@ -31,9 +41,27 @@ import { Counter, Rate, Trend } from 'k6/metrics';
  *   한계를 재려면 THINK_TIME=0으로 둔다. 이때 응답시간 임계(p95<800 등)는 실패하는 것이 정상이며,
  *   그 실패 지점이 곧 찾으려던 한계다.
  *
+ * PROFILE:
+ *   verify  1 VU × 3회. 경로·계정·응답 형식 확인. 약 30초. 지연 임계 없음
+ *   probe   5 → 10 → 20 → PROBE_VUS(40) 계단, 각 1분. **4분 20초**
+ *           THINK_TIME 기본값이 0이다. 임계는 판정이 아니라 중단 조건이며
+ *           초과 시 abortOnFail로 즉시 끊는다(초과가 곧 찾던 답이다)
+ *   load    LOAD_VUS의 75% → 87.5% → 100% 계단. **22분**. 합격/불합격 판정용
+ *
+ * probe 결과를 어디서 보나:
+ *   **핵심 지표는 gauge라 짧은 계단에서도 그대로 보인다.**
+ *     hikaricp_connections_pending / active   (DB 풀 포화)
+ *     tomcat_threads_busy_threads             (요청 스레드 포화)
+ *   반면 처리량·5xx율·지연 p95는 Grafana에서 rate(...[5m])로 계산하므로
+ *   1분짜리 계단은 평활화돼 계단 모양이 흐려진다. 이 세 가지는
+ *   **k6가 끝에 출력하는 숫자**를 쓰거나, 대시보드 시간 범위를 10분 이내로 좁혀서 본다.
+ *
  * 계정:
  *   backend/scripts/loadtest/data/users.json (gitignore, users.example.json 참고) 또는
  *   DEMO_EMAIL / DEMO_PASSWORD 환경변수(계정 1개). 시연 계정에는 DODAM_DEMO_PASSWORD_SEED.sql이 적용되어 있어야 한다.
+ *   비밀번호는 backend/database/seeds/README.md "시연 계정 로그인" 절에 있다.
+ *   DEMO_EMAIL 한 개로 돌리면 VU 전원이 같은 토큰·같은 사용자 데이터를 쓰게 되어
+ *   DB 버퍼풀에 유리하게 편향된다. 계정 4개(U0001~U0004)를 users.json에 넣는 쪽을 쓴다.
  *
  * 제약(infra/nginx/conf.d/default.conf):
  *   - /api/v1/auth/login 은 IP당 20r/m(burst 10)이라 VU마다 로그인하면 곧바로 429가 난다.
@@ -61,13 +89,21 @@ if (!BASE_URL) {
 
 const HTTP_TIMEOUT = __ENV.HTTP_TIMEOUT || '10s';
 
-// 화면을 읽는 대기 시간의 배율. 1 = 실사용 흉내(기본), 0 = 대기 없음(한계 탐색).
+// 화면을 읽는 대기 시간의 배율. 1 = 실사용 흉내, 0 = 대기 없음(한계 탐색).
 // 0.5처럼 중간값도 쓸 수 있다. 음수는 0으로 본다.
-const THINK_TIME = Math.max(0, parseFloat(__ENV.THINK_TIME ?? '1') || 0);
+// 기본값이 프로필마다 다르다: probe는 한계를 재는 것이 목적이라 대기가 있으면
+// VU를 아무리 올려도 동시 요청이 늘지 않아 0으로 둔다. 나머지는 실사용 흉내가 기본이다.
+const THINK_TIME_DEFAULT = PROFILE === 'probe' ? '0' : '1';
+const THINK_TIME = Math.max(0, parseFloat(__ENV.THINK_TIME ?? THINK_TIME_DEFAULT) || 0);
 const VERBOSE = (__ENV.VERBOSE || 'false').toLowerCase() === 'true';
 
 // load 프로필의 최대 VU. Nginx를 거치는 실행에서는 20r/s 제한 때문에 50 전후가 의미 있는 상한이다.
 const LOAD_VUS = parseInt(__ENV.LOAD_VUS || '50', 10);
+
+// probe 프로필의 마지막 계단. 기본 40은 DB 커넥션 풀(10)의 4배로,
+// 풀이 병목이라면 훨씬 앞 계단에서 이미 pending이 오른다. 40에서도 안 오르면
+// 병목이 DB가 아니라는 뜻이므로 그때 값을 올려 다시 탐색한다.
+const PROBE_VUS = parseInt(__ENV.PROBE_VUS || '40', 10);
 
 const PAGE_QUERY = 'page=0&size=5';
 
@@ -165,15 +201,88 @@ function buildScenarios() {
         };
     }
 
+    // 한계 탐색: 짧은 계단으로 "어디서 막히는가"만 빠르게 본다. 총 4분 20초.
+    //
+    // load(21분)와 달리 오래 버티는지는 보지 않는다. DB 커넥션 풀이 10이라
+    // 포화는 수십 초면 드러나며, 매번 21분을 쓰는 것은 시행착오 비용이 너무 크다.
+    //
+    // 계단을 5 → 10 → 20 → PROBE_VUS(40)로 두 배씩 올린다. 풀 크기(10)를
+    // 가운데 두어 그 앞뒤에서 pending이 언제 생기는지 끼워 볼 수 있다.
+    //
+    // 한 계단을 1분(ramp 20초 + 유지 40초)으로 잡은 이유는 Prometheus scrape이
+    // 15초 간격이라 유지 구간에서 표본이 2~3개는 나와야 하기 때문이다.
+    if (PROFILE === 'probe') {
+        const steps = [5, 10, 20, Math.max(1, PROBE_VUS)];
+        const stages = [];
+        for (const target of steps) {
+            stages.push({ duration: '20s', target });
+            stages.push({ duration: '40s', target });
+        }
+        stages.push({ duration: '20s', target: 0 });
+        return {
+            probe_user_journey: {
+                executor: 'ramping-vus',
+                exec: 'userJourney',
+                startVUs: 0,
+                stages,
+                gracefulRampDown: '10s',
+                gracefulStop: '10s',
+            },
+        };
+    }
+
     throw new Error(`지원하지 않는 PROFILE입니다: ${PROFILE}`);
 }
 
-export const options = {
-    scenarios: buildScenarios(),
+/*
+ * 임계는 프로필마다 뜻이 다르다.
+ *
+ * - load  : 합격/불합격 판정. 넘으면 그 버전은 기준 미달이다.
+ * - probe : 판정이 아니라 **중단 조건**이다. 한계를 넘기는 것이 목적이므로
+ *           임계 초과는 실패가 아니라 찾던 답이다. 다만 한 번 무너진 뒤로는
+ *           더 돌려도 얻을 것이 없으므로 abortOnFail로 즉시 끊어 시간을 아낀다.
+ * - verify: 경로·응답 형식 확인용이라 지연 임계를 걸지 않는다.
+ */
+// 부하 중 호출하는 엔드포인트. probe 요약에 엔드포인트별 줄을 띄우는 데 쓴다.
+const MEASURED_ENDPOINTS = [
+    'account_summary', 'cards', 'card_summary', 'loans',
+    'loan_summary', 'diagnoses', 'recommendation_summary', 'simulations',
+];
 
-    summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)', 'count'],
+function buildThresholds() {
+    if (PROFILE === 'probe') {
+        const thresholds = {
+            // 서버가 5xx를 5% 넘게 뱉기 시작하면 그 지점이 한계다. 더 밀 이유가 없다.
+            http_req_failed: [{ threshold: 'rate<0.05', abortOnFail: true, delayAbortEval: '30s' }],
+            // p95 3초는 "사실상 사용 불가" 선이다. 여기까지 왔으면 병목이 이미 드러났다.
+            http_req_duration: [{ threshold: 'p(95)<3000', abortOnFail: true, delayAbortEval: '30s' }],
+        };
 
-    thresholds: {
+        // k6는 **임계가 걸린 sub-metric만** 요약에 출력한다. probe에는 엔드포인트별 판정 기준이
+        // 없으므로 그냥 두면 어느 API가 느린지 전혀 보이지 않는다 — 실제로 첫 실행(#4)에서
+        // 전체 p95 84ms만 얻고 개선 대상을 고를 근거가 없었다.
+        //
+        // 그래서 **절대 실패하지 않는 임계**(min>=0)를 걸어 출력만 끌어낸다.
+        // 응답 시간은 언제나 0 이상이므로 이 조건은 깨지지 않는다.
+        // 숫자 임계(p(95)<60000 같은 것)를 쓰지 않는 이유는 그 값이 판정 기준처럼 읽히기 때문이다.
+        //
+        // count>=0이 더 직관적이지만 k6가 거부한다 — Trend 메트릭이 지원하는 집계는
+        // avg·min·max·med·p 뿐이고 count는 없다(2026-09-23에 실행해 보고 확인).
+        for (const name of MEASURED_ENDPOINTS) {
+            thresholds[`http_req_duration{name:${name}}`] = ['min>=0'];
+        }
+        return thresholds;
+    }
+
+    if (PROFILE === 'verify') {
+        return {
+            http_req_failed: ['rate<0.01'],
+            checks: ['rate>0.99'],
+            journey_failed: ['rate<0.01'],
+        };
+    }
+
+    return {
         // 429는 responseCallback에서 실패로 세지 않으므로 여기서는 백엔드 오류(5xx·타임아웃)만 잡힌다.
         http_req_failed: ['rate<0.01'],
         checks: ['rate>0.99'],
@@ -190,7 +299,15 @@ export const options = {
         'http_req_duration{name:diagnoses}': ['p(95)<700'],
         'http_req_duration{name:recommendation_summary}': ['p(95)<700'],
         'http_req_duration{name:simulations}': ['p(95)<700'],
-    },
+    };
+}
+
+export const options = {
+    scenarios: buildScenarios(),
+
+    summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)', 'count'],
+
+    thresholds: buildThresholds(),
 };
 
 // 200~399만 성공으로 보고 429는 http_req_failed에서 제외한다. 429 건수는 rate_limited 지표로 본다.

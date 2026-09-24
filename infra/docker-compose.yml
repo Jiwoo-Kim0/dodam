@@ -177,6 +177,12 @@ services:
       - ALL
     mem_limit: 1536m
     environment:
+      # 프로파일링(693). 평소에는 비어 있어 아무 영향이 없다.
+      # infra/.env 에 JFR_OPTS를 넣고 재배포하면 그 배포에서만 JFR이 켜진다.
+      # 이미지를 JDK로 바꾸는 방법도 있으나(jcmd 사용 가능) 런타임 이미지가 267MB 커지고
+      # 컨테이너 안에 디버깅 도구가 상주하게 되어, 환경변수 방식을 택했다.
+      # 사용법은 infra/docs/profiling.md 참고.
+      JAVA_TOOL_OPTIONS: ${JFR_OPTS:-}
       SPRING_PROFILES_ACTIVE: prod
       DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
       DB_USERNAME: ${MYSQL_USER}
