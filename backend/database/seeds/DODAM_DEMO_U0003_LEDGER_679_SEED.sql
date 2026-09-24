@@ -5,7 +5,8 @@
 -- Dependency: 491 (user/account/profile), 522 (primary card), 492 + 625 (INC/FIX/SAV rows), 633 (loan + repayments),
 --             636 (variable story), 655 (subscriptions), 678 rev. 2026-09-22 (two ACTIVE savings accounts paying on the 15th
 --             + one matured account without transfers)
--- Dataset: U0003 only. Fixed 70 rows (10 items x 7 months), savings transfers 14, tax refund 1, salary amount override on
+-- Dataset: U0003 only. Fixed 249 rows (10 items x 25 months - 1), savings transfers 36 (주택청약 25 + 청년도약 11
+--          from 2025-11), tax refund 1, salary amount override on
 --          the 7 existing INC-00 rows, card billing statements 7 (PAID 6 + SCHEDULED 1),
 --          financial_profile monthly_income / annual_income / fixed_expense / emergency_fund_target.
 -- Snapshot: 2026-09-22 (planning: backend/docs/demo-ledger-cashflow-679-plan.md; revised the same day: salary 3,012,400,
@@ -129,7 +130,27 @@ INSERT INTO tmp_dodam_679_months VALUES
   (4, '202606', '2026-06-01', 'SEED-U0003-',     '2026-09-22 09:00:00'),
   (5, '202607', '2026-07-01', 'SEED-U0003-',     '2026-09-22 09:00:00'),
   (6, '202608', '2026-08-01', 'SEED-U0003-',     '2026-09-22 09:00:00'),
-  (7, '202609', '2026-09-01', 'SEED-SEP-U0003-', '2026-09-22 09:00:00');
+  (7, '202609', '2026-09-01', 'SEED-SEP-U0003-', '2026-09-22 09:00:00'),
+  -- S15P21D105-706: past 18 months (2024-09 .. 2026-02). month_no continues at 8 so the existing
+  -- seven months keep their numbers; nothing downstream orders by month_no.
+  ( 8, '202409', '2024-09-01', 'SEED-U0003-',     '2026-09-22 09:00:00'),
+  ( 9, '202410', '2024-10-01', 'SEED-U0003-',     '2026-09-22 09:00:00'),
+  (10, '202411', '2024-11-01', 'SEED-U0003-',     '2026-09-22 09:00:00'),
+  (11, '202412', '2024-12-01', 'SEED-U0003-',     '2026-09-22 09:00:00'),
+  (12, '202501', '2025-01-01', 'SEED-U0003-',     '2026-09-22 09:00:00'),
+  (13, '202502', '2025-02-01', 'SEED-U0003-',     '2026-09-22 09:00:00'),
+  (14, '202503', '2025-03-01', 'SEED-U0003-',     '2026-09-22 09:00:00'),
+  (15, '202504', '2025-04-01', 'SEED-U0003-',     '2026-09-22 09:00:00'),
+  (16, '202505', '2025-05-01', 'SEED-U0003-',     '2026-09-22 09:00:00'),
+  (17, '202506', '2025-06-01', 'SEED-U0003-',     '2026-09-22 09:00:00'),
+  (18, '202507', '2025-07-01', 'SEED-U0003-',     '2026-09-22 09:00:00'),
+  (19, '202508', '2025-08-01', 'SEED-U0003-',     '2026-09-22 09:00:00'),
+  (20, '202509', '2025-09-01', 'SEED-U0003-',     '2026-09-22 09:00:00'),
+  (21, '202510', '2025-10-01', 'SEED-U0003-',     '2026-09-22 09:00:00'),
+  (22, '202511', '2025-11-01', 'SEED-U0003-',     '2026-09-22 09:00:00'),
+  (23, '202512', '2025-12-01', 'SEED-U0003-',     '2026-09-22 09:00:00'),
+  (24, '202601', '2026-01-01', 'SEED-U0003-',     '2026-09-22 09:00:00'),
+  (25, '202602', '2026-02-01', 'SEED-U0003-',     '2026-09-22 09:00:00');
 
 DROP TABLE IF EXISTS tmp_dodam_679_categories;
 CREATE TABLE tmp_dodam_679_categories (
@@ -164,6 +185,26 @@ INSERT INTO tmp_dodam_679_fixed_items VALUES
   ('09', 'INSURANCE',      20, '06:32:00', '한화생명',                '보험료 자동이체',          112000, 112000, 112000, 112000, 112000, 112000, 112000),
   ('10', 'LOAN_REPAYMENT', 10, '06:05:00', 'KB국민은행',              'KB 국민ONE대출 원리금',    410331, 410331, 410331, 410331, 410331, 410331, 410331);
 
+-- S15P21D105-706: the three weather-driven items need a value for every calendar month once the
+-- window is 24 months. Months 3..9 repeat the m1..m7 columns above; 10..2 are new. Every other item
+-- is flat, so the past block falls back to m1.
+DROP TABLE IF EXISTS tmp_dodam_679_fixed_seasonal;
+CREATE TABLE tmp_dodam_679_fixed_seasonal (
+  kind CHAR(2) NOT NULL,
+  cal_month TINYINT NOT NULL,
+  amount BIGINT NOT NULL,
+  PRIMARY KEY (kind, cal_month),
+  CHECK (amount > 0),
+  CHECK (cal_month BETWEEN 1 AND 12)
+);
+INSERT INTO tmp_dodam_679_fixed_seasonal VALUES
+  ('02',1,182000),('02',2,180000),('02',3,178000),('02',4,165000),('02',5,158000),('02',6,162000),
+  ('02',7,171000),('02',8,176000),('02',9,168000),('02',10,164000),('02',11,172000),('02',12,179000),
+  ('06',1,34000),('06',2,32000),('06',3,31000),('06',4,27000),('06',5,29000),('06',6,36000),
+  ('06',7,48000),('06',8,55000),('06',9,41000),('06',10,30000),('06',11,29000),('06',12,33000),
+  ('07',1,61000),('07',2,58000),('07',3,52000),('07',4,34000),('07',5,21000),('07',6,14000),
+  ('07',7,12000),('07',8,12000),('07',9,13000),('07',10,22000),('07',11,41000),('07',12,57000);
+
 DROP TABLE IF EXISTS tmp_dodam_679_fixed_plan;
 CREATE TABLE tmp_dodam_679_fixed_plan (
   month_no TINYINT NOT NULL,
@@ -180,10 +221,18 @@ CREATE TABLE tmp_dodam_679_fixed_plan (
 );
 INSERT INTO tmp_dodam_679_fixed_plan
 SELECT m.month_no, i.kind, i.category_code, i.day_of_month, i.tx_time,
-       CASE m.month_no WHEN 1 THEN i.m1 WHEN 2 THEN i.m2 WHEN 3 THEN i.m3 WHEN 4 THEN i.m4 WHEN 5 THEN i.m5 WHEN 6 THEN i.m6 ELSE i.m7 END,
+       CASE
+         WHEN m.month_no = 1 THEN i.m1 WHEN m.month_no = 2 THEN i.m2 WHEN m.month_no = 3 THEN i.m3
+         WHEN m.month_no = 4 THEN i.m4 WHEN m.month_no = 5 THEN i.m5 WHEN m.month_no = 6 THEN i.m6
+         WHEN m.month_no = 7 THEN i.m7
+         ELSE COALESCE(sea.amount, i.m1)
+       END,
        i.merchant_name, i.summary
 FROM tmp_dodam_679_months m
-CROSS JOIN tmp_dodam_679_fixed_items i;
+CROSS JOIN tmp_dodam_679_fixed_items i
+LEFT JOIN tmp_dodam_679_fixed_seasonal sea ON sea.kind = i.kind AND sea.cal_month = MONTH(m.month_start)
+-- the loan starts 2024-09-10 and its first instalment falls on 2024-10-10, so 2024-09 has no LOAN row
+WHERE m.month_no <= 7 OR i.kind <> '10' OR m.month_start >= '2024-10-01';
 
 -- savings transfers: must equal the 678 savings_payment rows (15th, PAID Mar..Sep)
 DROP TABLE IF EXISTS tmp_dodam_679_saving_items;
@@ -192,11 +241,15 @@ CREATE TABLE tmp_dodam_679_saving_items (
   account_name VARCHAR(150) NOT NULL,
   amount BIGINT NOT NULL,
   tx_time TIME NOT NULL,
-  summary VARCHAR(255) NOT NULL
+  summary VARCHAR(255) NOT NULL,
+  -- 706: the 청년도약 account opens 2025-11-15 so it has no transfer before that month.
+  -- 목돈적금 (500,000, paid through 2026-02) keeps its savings_payment history but gets no transfer
+  -- row: this file mirrors only the accounts that are still active, exactly as it did before 706.
+  first_month_start DATE NOT NULL
 );
 INSERT INTO tmp_dodam_679_saving_items VALUES
-  ('01', '신한 청년도약계좌',  300000, '09:35:00', '적금 자동이체'),
-  ('02', '주택청약종합저축',   100000, '09:36:00', '청약 자동이체');
+  ('01', '신한 청년도약계좌',  300000, '09:35:00', '적금 자동이체', '2025-11-01'),
+  ('02', '주택청약종합저축',   100000, '09:36:00', '청약 자동이체', '2024-09-01');
 
 -- card charges per usage month (read-only input for the billing statements; built outside the transaction)
 DROP TABLE IF EXISTS tmp_dodam_679_card_usage;
@@ -276,7 +329,7 @@ FROM (
 ) m
 WHERE m.context_count = 1 AND m.card_count = 1 AND m.category_count = 7 AND m.savings_account_count = 2
   AND m.savings_paid_count = 14 AND m.loan_count = 1 AND m.loan_paid_count = 7 AND m.salary_month_count = 7
-  AND m.fixed_plan_count = 70
+  AND m.fixed_plan_count = 249   -- 706: 10 items x 25 months - 1 (no LOAN row in 2024-09)
   -- 유효 날짜 수만 세면 같은 날 다른 회차나 잘못된 금액의 추가 납입을 놓친다.
   -- 기간 내 PAID 전체 건수도 맞아야 날짜·금액이 일치하는 회차만 정확히 남는다.
   AND (SELECT COUNT(*) FROM savings_payment sp
@@ -291,7 +344,7 @@ WHERE m.context_count = 1 AND m.card_count = 1 AND m.category_count = 7 AND m.sa
          AND r.repayment_date BETWEEN '2026-03-01' AND '2026-09-30') = 7
   AND (SELECT COUNT(*) FROM financial_profile fp
        JOIN tmp_dodam_679_context ctx ON ctx.user_id = fp.user_id) = 1
-  AND (SELECT COUNT(*) FROM tmp_dodam_679_card_usage WHERE total_balance > 0) = 7;
+  AND (SELECT COUNT(*) FROM tmp_dodam_679_card_usage WHERE total_balance > 0) = 25;
 
 SELECT * FROM tmp_dodam_679_preflight;
 SELECT 'DODAM_679_READY' AS check_name, COUNT(*) AS passed FROM tmp_dodam_679_preflight;
@@ -305,7 +358,7 @@ START TRANSACTION;
 DELETE tx FROM `transaction` tx
 JOIN tmp_dodam_679_context ctx ON ctx.user_id = tx.user_id
 WHERE tx.source_type = 'SEED'
-  AND tx.transaction_date BETWEEN '2026-03-01' AND '2026-09-30'
+  AND tx.transaction_date BETWEEN '2024-09-01' AND '2026-09-30'
   AND (tx.transaction_id LIKE 'SEED-U0003-%-FIX-%' OR tx.transaction_id LIKE 'SEED-SEP-U0003-%-FIX-%'
     OR tx.transaction_id LIKE 'SEED-U0003-%-SAV-%' OR tx.transaction_id LIKE 'SEED-SEP-U0003-%-SAV-%'
     OR tx.transaction_id LIKE 'SEED-U0003-%-TRF-%' OR tx.transaction_id LIKE 'SEED-SEP-U0003-%-TRF-%'
@@ -313,7 +366,7 @@ WHERE tx.source_type = 'SEED'
   AND EXISTS (SELECT 1 FROM tmp_dodam_679_preflight pf WHERE pf.ready = 1);
 
 -- ---------------------------------------------------------------------------
--- 3. fixed expenses (10 items x 7 months)
+-- 3. fixed expenses (10 items x 25 months, less the 2024-09 LOAN row)
 -- ---------------------------------------------------------------------------
 INSERT INTO `transaction` (
   transaction_id, user_id, account_id, card_id, category_id,
@@ -334,7 +387,7 @@ CROSS JOIN tmp_dodam_679_context ctx
 WHERE EXISTS (SELECT 1 FROM tmp_dodam_679_preflight pf WHERE pf.ready = 1);
 
 -- ---------------------------------------------------------------------------
--- 4. savings transfers (2 x 7, 15th) — mirror of the 678 instalments; the savings balances already hold the money
+-- 4. savings transfers (15th) — mirror of the 678 instalments for the accounts still active that month
 -- ---------------------------------------------------------------------------
 INSERT INTO `transaction` (
   transaction_id, user_id, account_id, card_id, category_id,
@@ -349,7 +402,7 @@ SELECT
   s.account_name, 'ACCOUNT', 'NON_SPENDING', s.summary, NULL,
   0, 'SEED', m.created_at, NULL
 FROM tmp_dodam_679_saving_items s
-CROSS JOIN tmp_dodam_679_months m
+JOIN tmp_dodam_679_months m ON m.month_start >= s.first_month_start
 JOIN tmp_dodam_679_categories cat ON cat.code = 'SAVING'
 CROSS JOIN tmp_dodam_679_context ctx
 WHERE EXISTS (SELECT 1 FROM tmp_dodam_679_preflight pf WHERE pf.ready = 1);
@@ -359,11 +412,13 @@ WHERE EXISTS (SELECT 1 FROM tmp_dodam_679_preflight pf WHERE pf.ready = 1);
 -- ---------------------------------------------------------------------------
 UPDATE `transaction` tx
 JOIN tmp_dodam_679_context ctx ON ctx.user_id = tx.user_id
-SET tx.amount = 3012400,
+-- 706: one raise on 2025-09. Before that 2,900,000; from 2025-09 the 3,012,400 the demo contract uses.
+-- Leaving the past months at 491's formula value would make the model read a halved income at 2026-03.
+SET tx.amount = CASE WHEN tx.transaction_date < '2025-09-01' THEN 2900000 ELSE 3012400 END,
     tx.updated_at = '2026-09-22 09:00:00'
 WHERE tx.source_type = 'SEED' AND tx.transaction_type = 'INCOME'
   AND (tx.transaction_id LIKE 'SEED-U0003-%-INC-00' OR tx.transaction_id LIKE 'SEED-SEP-U0003-%-INC-00')
-  AND tx.transaction_date BETWEEN '2026-03-01' AND '2026-09-30'
+  AND tx.transaction_date BETWEEN '2024-09-01' AND '2026-09-30'
   AND EXISTS (SELECT 1 FROM tmp_dodam_679_preflight pf WHERE pf.ready = 1);
 
 INSERT INTO `transaction` (

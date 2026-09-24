@@ -94,7 +94,10 @@ INSERT INTO tmp_dodam_demo_loan_expected VALUES (
   410331
 );
 
--- Repayments inside the seed window (installments 18~24) + the next scheduled installment.
+-- Repayments: installments 1~24 (2024-10-10 ~ 2026-09-10) + the next scheduled installment.
+-- S15P21D105-706 added installments 1~17 so the 24-month transaction window has a matching source;
+-- 679 writes the LOAN_REPAYMENT transactions from these rows. Before 706 only 18~24 were inserted
+-- (the header's "24 installments paid" always described the loan's state, not the row count).
 -- principal/interest come from the equal-payment schedule of the original loan (see header).
 DROP TABLE IF EXISTS tmp_dodam_demo_loan_expected_repayments;
 CREATE TABLE tmp_dodam_demo_loan_expected_repayments (
@@ -108,6 +111,23 @@ CREATE TABLE tmp_dodam_demo_loan_expected_repayments (
 );
 
 INSERT INTO tmp_dodam_demo_loan_expected_repayments (repayment_date, amount, principal, interest, status) VALUES
+  ('2024-10-10', 410331, 268664, 141667, 'PAID'),
+  ('2024-11-10', 410331, 270567, 139764, 'PAID'),
+  ('2024-12-10', 410331, 272484, 137847, 'PAID'),
+  ('2025-01-10', 410331, 274414, 135917, 'PAID'),
+  ('2025-02-10', 410331, 276358, 133973, 'PAID'),
+  ('2025-03-10', 410331, 278315, 132016, 'PAID'),
+  ('2025-04-10', 410331, 280287, 130044, 'PAID'),
+  ('2025-05-10', 410331, 282272, 128059, 'PAID'),
+  ('2025-06-10', 410331, 284271, 126060, 'PAID'),
+  ('2025-07-10', 410331, 286285, 124046, 'PAID'),
+  ('2025-08-10', 410331, 288313, 122018, 'PAID'),
+  ('2025-09-10', 410331, 290355, 119976, 'PAID'),
+  ('2025-10-10', 410331, 292412, 117919, 'PAID'),
+  ('2025-11-10', 410331, 294483, 115848, 'PAID'),
+  ('2025-12-10', 410331, 296569, 113762, 'PAID'),
+  ('2026-01-10', 410331, 298670, 111661, 'PAID'),
+  ('2026-02-10', 410331, 300785, 109546, 'PAID'),
   ('2026-03-10', 410331, 302916, 107415, 'PAID'),
   ('2026-04-10', 410331, 305061, 105270, 'PAID'),
   ('2026-05-10', 410331, 307222, 103109, 'PAID'),
@@ -250,7 +270,7 @@ CROSS JOIN tmp_dodam_demo_loan_expected_repayments x;
 -- 5. verification
 -- ---------------------------------------------------------------------------
 -- Expected: 1 row, balance 12998492, rate 8.5000, ACTIVE, product linked (financial_product_id NOT NULL),
---           next_repayment_date 2026-10-10, repayment_count 8 (7 PAID + 1 SCHEDULED).
+--           next_repayment_date 2026-10-10, repayment_count 25 (24 PAID + 1 SCHEDULED).
 SELECT
   u.email,
   l.loan_id,
