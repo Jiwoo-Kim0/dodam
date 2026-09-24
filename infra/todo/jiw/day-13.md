@@ -1516,3 +1516,62 @@ JFR 프로파일링(`#6`)에서 나온 1순위 후보를 적용하고 재측정�
 
 - `infra/docker-compose.yml` — `DB_URL`에 PreparedStatement 캐시 옵션
 - `infra/docs/load-test-records.md` `#7` — 첫 전후 비교표
+
+### 2026-09-24 · 개선 ② 적용과 재측정 — 누적 처리량 +9.4%
+
+#### 무엇을 했나
+
+`MANAGEMENT_OBSERVATIONS_ENABLE_SPRING_SECURITY=false`를 넣어 Spring Security의
+필터 체인 Observation을 껐다(커밋 `aa00ced`). 근거는 JFR `#6` —
+Micrometer 5.6% 중 46.5%가 `ObservationFilterChainDecorator`였고,
+우리 대시보드는 `spring_security_*` 지표를 하나도 쓰지 않는다.
+
+**결과(`#8`): 서버 측 피크 처리량 745 → 831 req/s(누적 +11.5%),
+k6 처리량 631 → 690(+9.4%), 지연 p95 285 → 266ms, 스토리 소요 p95 2.01 → 1.47s(-27%).**
+
+#### 적용 방법 — application.yml 대신 환경변수
+
+| 방안 | 검토 내용 | 채택/기각 |
+| --- | --- | --- |
+| **환경변수 `MANAGEMENT_OBSERVATIONS_ENABLE_SPRING_SECURITY`** | Spring Boot의 relaxed binding이 `management.observations.enable.spring.security`로 풀어 준다. **컨테이너 재생성만으로 반영**돼 측정을 바로 이어갈 수 있다 | **채택** |
+| `application.yml`에 프로퍼티 추가 | 설정이 코드와 함께 관리돼 더 정석이다. 그러나 yml은 jar 안에 들어가 **이미지 재빌드(5~10분 + CPU 3코어 점유)**가 필요하고, 그동안 측정을 못 한다 | 기각(측정 단계에서는) |
+| Observation 자체를 전역 비활성화 | 더 많이 회수된다. 그러나 **우리가 쓰는 지표(http_server_requests 등)까지 꺼진다** | 기각 |
+
+측정이 끝나면 `application.yml`로 옮기는 것이 맞다 — 지금은 배포 경로에 따라
+환경변수가 빠질 수 있다.
+
+#### 검증을 먼저 설계했다
+
+"껐다"를 어떻게 확인할지 정해 두고 적용했다 — **`/actuator/prometheus`에서
+`spring_security*` 지표 줄 수가 0이 되는지**. 적용 전에 해당 지표가 존재하는 것을
+확인해 뒀으므로(`spring_security_filterchains_*` 등) 0이 되면 확실하다.
+
+환경변수 이름이 맞는지 확신이 없었는데, **검증 방법이 있었기 때문에 시도해 볼 수 있었다.**
+결과는 0줄 — 정상 동작.
+
+#### 조건 차이를 그대로 적었다
+
+`#7`의 시작 유휴 CPU는 37.19%, `#8`은 5.77%다. **`#8`이 유리한 조건**이므로
+②만의 효과 +3.4%는 과대평가일 수 있다(프로파일 기대치는 2.6%).
+반면 `#5 → #8` 누적 +9.4%는 `#5`도 정상 조건이라 신뢰할 수 있다.
+
+`#7`에서 얻은 교훈대로 **`#8`부터는 안정화 조건(CPU<10% 그리고 고부하 프로세스 없음)을
+자동으로 기다린 뒤 측정을 시작**하도록 절차를 바꿨다. 이번에는 한 번에 통과했다.
+
+#### 남은 한계 — 병목의 위치는 바뀌지 않았다
+
+개선 두 건은 **요청당 CPU를 줄였을 뿐**이다. 호스트 CPU는 여전히 97~98%에서 포화하고
+120 VU에서 `pending`이 100을 넘는다. 구조를 바꾸려면 스케일 업(4 → 8 vCPU)이나
+응답 캐싱이 필요하며, 이는 남은 기간과 범위를 넘는다 — **잔여 한계로 PPT 315에 전달한다.**
+
+#### 남은 것
+
+- [ ] `aa00ced` push → 정식 배포 (지금 서버는 직접 수정 상태)
+- [ ] 측정 종료 후 `MANAGEMENT_OBSERVATIONS_*`를 `application.yml`로 이관 검토
+- [ ] `load` 22분 한 판 — 지속성·누수 확인 (아직 미실시)
+- [ ] PPT 315 전달 내용 정리
+
+#### 산출물
+
+- `infra/docker-compose.yml` — `MANAGEMENT_OBSERVATIONS_ENABLE_SPRING_SECURITY`
+- `infra/docs/load-test-records.md` `#8` — 누적 전후 비교표
