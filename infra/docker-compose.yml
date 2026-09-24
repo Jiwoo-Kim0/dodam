@@ -184,7 +184,12 @@ services:
       # 사용법은 infra/docs/profiling.md 참고.
       JAVA_TOOL_OPTIONS: ${JFR_OPTS:-}
       SPRING_PROFILES_ACTIVE: prod
-      DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+      # PreparedStatement 캐시(693). JFR 프로파일링(#6)에서 MySQL 드라이버의 SQL 문자열
+      # 파싱이 전체 CPU의 10.2%를 차지했다(StringInspector.indexOfNextChar 4.1% 등).
+      # cachePrepStmts는 기본값이 false라 같은 SQL을 매 실행마다 다시 파싱하고 있었다.
+      # 값은 HikariCP가 권장하는 조합이다. 커넥션 10개 × 캐시 250 = 2,500으로
+      # MySQL max_prepared_stmt_count(16,382)에 여유가 있다.
+      DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true
       DB_USERNAME: ${MYSQL_USER}
       DB_PASSWORD: ${MYSQL_PASSWORD}
       REDIS_HOST: redis

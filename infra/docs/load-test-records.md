@@ -531,3 +531,199 @@ CPU를 썼다는 뜻인데(dockerd·containerd·ssh 세션 등), 정확한 출�
 실행 직전 확인한 유휴 CPU는 3.31%였고 부하 구간은 명확히 분리되므로
 `#5` 결과 자체는 유효하다. 다만 **"유휴=3%"가 항상 참은 아니다**는 것을 알게 됐고,
 다음 측정에서는 시작 직전 유휴값을 매번 기록에 남긴다.
+
+---
+
+## #6 JFR 프로파일링 (2026-09-24 07:02~07:17 UTC) — **CPU를 쓰는 곳을 찾았다**
+
+배포 커밋 서버 HEAD `f31b20f` · JFR `settings=profile duration=15m` ·
+`PROFILE=probe PROBE_VUS=120` · 시작 직전 유휴 CPU **7.88%** ·
+k6 `--cpus=1` · 기록 파일 39MB · **ExecutionSample 18,200개**
+
+### 부하 자체는 #5를 재현했다
+
+| | #5 (JFR 없음) | #6 (JFR 켬) |
+| --- | --- | --- |
+| 처리량 | 631 req/s | **563 req/s** |
+| 서버 측 피크 | 745 req/s | **700 req/s** |
+| 지연 p95 | 285ms | **336ms** |
+| pending 피크 | 108 | **108** |
+| busy 피크 | 121 | **121** |
+| 실패율 | 0.00% | **0.00%** |
+
+JFR 오버헤드로 처리량이 약 6% 낮다. **이 수치는 개선 전후 비교의 "전"으로 쓰지 않는다.**
+
+### 엔드포인트별 지연 (probe 임계 복구 효과)
+
+| 엔드포인트 | avg | p95 |
+| --- | --- | --- |
+| `diagnoses` | 69.85ms | 341.43ms |
+| `recommendation_summary` | 68.39ms | 348.62ms |
+| `simulations` | 65.52ms | 338.20ms |
+| `cards` | 61.88ms | 330.74ms |
+| `card_summary` | 60.99ms | 337.66ms |
+| `loan_summary` | 59.83ms | 332.66ms |
+| `loans` | 59.55ms | 326.91ms |
+| `account_summary` | 58.99ms | 335.13ms |
+
+**p95는 8개가 327~349ms로 거의 동일하다.** 부하가 걸리면 개별 API 특성보다
+공통 대기(CPU 경합)가 지배한다는 뜻이다.
+
+### CPU를 태운 계층 (최상단 프레임 기준, 18,200 샘플)
+
+| 계층 | 비중 |
+| --- | --- |
+| JDK 기본 (HashMap·String·ConcurrentHashMap 등) | 42.3% |
+| Spring(기타) | 13.0% |
+| **MySQL 드라이버** | **10.2%** |
+| Hibernate/JPA | 8.8% |
+| Jackson(JSON 직렬화) | 8.6% |
+| **Micrometer/Observation** | **5.6%** |
+| Tomcat | 5.0% |
+| 기타 | 3.4% |
+| Spring Security | 1.7% |
+| Logback | 1.2% |
+| **우리 코드(`com.ssafy.dodam`)** | **0.4%** |
+
+> **우리 코드가 최상단인 샘플은 0.4%뿐이다.** 비즈니스 로직 자체는 CPU를 거의 쓰지 않고,
+> **프레임워크 계층이 대부분을 쓴다.** 도메인 로직을 손봐서 얻을 것이 거의 없다는 뜻이다.
+
+스레드별로는 **97.2%가 `http-nio-8080-exec-*`** — 요청 처리 스레드가 CPU를 다 쓴다.
+배치·스케줄러 같은 백그라운드 작업은 무관하다.
+
+### 개선 후보 ① MySQL 드라이버의 SQL 문자열 파싱 (10.2%)
+
+최상단 프레임 상위에 드라이버의 문자열 스캔이 반복해서 나온다.
+
+```
+4.1%  com.mysql.cj.util.StringInspector.indexOfNextChar
+1.1%  com.mysql.cj.util.StringUtils.regionMatchesIgnoreCase
+0.9%  com.mysql.cj.util.StringInspector.indexOfNextValidIdentifierChar
+```
+
+**PreparedStatement를 매 실행마다 다시 파싱하고 있다는 신호다.** 현재 JDBC URL에
+캐시 옵션이 하나도 없다.
+
+```
+jdbc:mysql://mysql:3306/<db>?useSSL=false&allowPublicKeyRetrieval=true
+  &serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+```
+
+`cachePrepStmts`는 기본값이 **false**다. HikariCP가 권장하는 조합을 붙이면
+같은 SQL의 재파싱을 줄일 수 있다.
+
+```
+cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true
+```
+
+**설정만 바꾸면 되고 효과를 전후 비교로 잴 수 있다.** 개선 1순위로 삼는다.
+
+### 개선 후보 ② Spring Security Observation (약 2.6%)
+
+Micrometer 5.6% 중 **46.5%가 Spring Security의 필터 체인 관측**이었다.
+
+```
+37.5%  ObservationFilterChainDecorator$ObservationFilter.wrapFilter
+ 4.9%  ObservationFilterChainDecorator$...$ObservationReference.start
+ 4.1%  ObservationFilterChainDecorator$FilterChainObservationConvention.getLowCardinalityKeyValues
+```
+
+Spring Security 6은 필터마다 Observation을 만든다. 우리는 이 지표를 쓰지 않는다
+(대시보드에 Security 필터 지표가 없다). 끄면 약 2.6%를 회수한다.
+
+### 내가 틀린 것 — #5의 "필터·인증은 병목이 아니다"는 근거가 틀렸다
+
+`#5`에서 톰캣 평균(49.08ms)과 Spring MVC 평균(48.89ms)의 차가 0.19ms인 것을 보고
+**"필터·인증·파싱은 비용이 없다"**고 적었다. 결론의 방향은 맞았지만 근거가 틀렸다.
+
+Spring Boot의 `WebMvcMetricsFilter`는 필터 체인의 **가장 바깥쪽**에 등록된다.
+즉 `http_server_requests_seconds`는 **Security 필터를 포함한 시간**을 잰다.
+따라서 톰캣과의 차 0.19ms는 "Security 필터 비용"이 아니라
+**톰캣 커넥터와 메트릭 필터 사이**만 잰 값이었다. 처음부터 Security 필터를 볼 수 없는 지표였다.
+
+실제로는 Security 필터 체인이 **약 4.3%**(Security 1.7% + 그 안의 Observation 2.6%)를 쓴다.
+0은 아니다. **지표로 "없다"를 증명했다고 생각한 것이 잘못이었고, 프로파일러가 필요했던 이유다.**
+
+한편 JWT 인증 자체는 실제로 가벼웠다. `JwtAuthenticationFilter.doFilterInternal`이
+우리 코드 중 1위(14.3%)로 보였지만, **그 샘플의 98.3%가 `filterChain.doFilter()` 하위**였다.
+필터 자신의 일(`parseAccessToken` 등)은 약 4.6%다.
+**"우리 코드 중 가장 안쪽 프레임"만 세면 체인의 바깥 필터가 과대평가된다**는 함정이다.
+
+### 곁다리 — `jfr` 도구가 원본을 덮어썼다
+
+`docker compose exec backend jfr summary /tmp/load.jfr`을 돌렸더니
+`file is empty`가 나왔다. **`jfr` 도구도 JVM이라 `JAVA_TOOL_OPTIONS`를 물려받아
+`-XX:StartFlightRecording=...filename=/tmp/load.jfr`로 새 기록을 시작하며 원본을 비웠다.**
+
+호스트에 `docker cp`로 사본을 먼저 떠 둔 덕에 39MB를 잃지 않았다.
+분석은 `-e JAVA_TOOL_OPTIONS=`로 비워서 실행해야 한다. `profiling.md`에 반영했다.
+
+---
+
+## #7 개선 ① PreparedStatement 캐시 적용 후 (2026-09-24 07:26 UTC) — **첫 전후 쌍**
+
+변경: `DB_URL`에 `cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true`
+(커밋 `36a54b2`) · 그 외 조건은 `#5`와 동일(JFR 없음, `PROFILE=probe PROBE_VUS=120`, k6 `--cpus=1`)
+
+### 전후 비교 — 기준선은 `#5`
+
+| 지표 | #5 (캐시 없음) | **#7 (캐시 있음)** | 변화 |
+| --- | --- | --- | --- |
+| k6 처리량 | 631 req/s | **667 req/s** | **+5.7%** |
+| 서버 측 피크 처리량 | 745 req/s | **778 req/s** | **+4.4%** |
+| k6 지연 p95 | 285.3ms | **275.98ms** | **-3.3%** |
+| k6 지연 avg | — | 53.03ms | — |
+| 스토리 소요 p95 | 2.01s | **1.59s** | **-21%** |
+| 총 요청 | 146,784 | **174,144** | +18.6% |
+| 실패율 | 0.00% | **0.00%** | 동일 |
+| busy 스레드 피크 | 121 | 121 | 동일 |
+| 호스트 CPU | 97~98.5% | 97~98.4% | 동일 |
+
+### 가장 뚜렷한 차이 — 60 VU 구간에서 `pending`이 0을 유지한다
+
+```
+#5   t=153 rps 745 pending  2 | t=184 rps 743 pending  6 | t=198 rps 686 pending 29
+#7   t=123 rps 775 pending  0 | t=154 rps 757 pending  0 | t=199 rps 779 pending  2
+```
+
+같은 60 VU에서 **#5는 커넥션 대기가 생기기 시작했지만 #7은 0을 유지**하면서
+처리량도 743 → 775 수준으로 높다. 서버 측 p95도 같은 구간에서
+#5 34~70ms → **#7 18~47ms**로 낮아졌다.
+
+120 VU로 올리면 둘 다 무너지는 것은 같다(pending 108~112, p95 400ms대).
+**병목이 CPU라는 사실은 그대로이고, 그 CPU를 조금 덜 쓰게 된 것이다.**
+
+### 기대보다 효과가 작다 — 정직하게
+
+프로파일에서 MySQL 드라이버가 **10.2%**였으므로 그만큼의 개선을 기대했으나
+실제는 **4~6%**다. 가능한 이유:
+
+- 드라이버 10.2% 전부가 PreparedStatement 재파싱은 아니다(결과 집합 처리·문자열 인코딩 포함)
+- `useServerPrepStmts=true`는 파싱을 줄이는 대신 **서버 사이드 prepare 왕복**을 추가한다
+- CPU가 여전히 98%이므로 **병목 자체는 그대로**다. 총량이 줄어 같은 CPU로 조금 더 처리할 뿐이다
+
+확인하려면 JFR을 다시 떠서 드라이버 비중이 실제로 줄었는지 봐야 한다(미실시).
+
+### 이번 측정의 조건 차이 — 시작 유휴 CPU가 높았다
+
+| | 시작 직전 CPU |
+| --- | --- |
+| #6 | 7.88% |
+| **#7** | **37.19%** |
+
+컨테이너를 재생성한 직후라 워밍업이 `rate[1m]` 창에 남아 있었다.
+**#7은 불리한 조건에서 측정됐고, 그럼에도 #5보다 나은 수치가 나왔다.**
+즉 위 개선폭은 과소평가일 가능성이 있다.
+
+### 대시보드 화면 (16:25~16:30 구간)
+
+| 패널 | 값 |
+| --- | --- |
+| 처리량 | **757 req/s** |
+| 지연 p95 | 304ms |
+| DB풀 대기 | 109 |
+| 5xx 오류율 | **0%** |
+| 수집 대상 정상 | 1 |
+
+지연 분위수 패널의 최대값(p50 183ms / p95 569ms / p99 772ms)은
+**16:05~16:10의 `#6`(JFR 켜짐) 구간**이 포함된 값이다. `#7` 구간만 보면 더 낮다.
