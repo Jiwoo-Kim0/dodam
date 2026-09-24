@@ -44,7 +44,11 @@ export function ReportScreen() {
         onBackPress={handleBackPress}
         right={
           <View style={styles.monthSelector}>
-            <Text style={styles.monthLabel}>{monthLabel || '최근 월'}</Text>
+            {/*
+             * 리포트는 끝난 달만 만들기 때문에(BE ReportPeriodPolicy) 9월에 열어도 기준 달은 8월이다.
+             * 달 이름만 두면 앱이 지난달에 멈춘 것처럼 읽혀서 "기준"을 붙여 어느 달 분석인지 밝힌다.
+             */}
+            <Text style={styles.monthLabel}>{monthLabel ? `${monthLabel} 기준` : '최근 월 기준'}</Text>
           </View>
         }
         showBackButton

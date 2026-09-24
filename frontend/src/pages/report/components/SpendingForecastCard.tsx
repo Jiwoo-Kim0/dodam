@@ -63,7 +63,7 @@ function monthOrdinal(month: string) {
 }
 
 export function SpendingForecastCard({ forecast }: SpendingForecastCardProps) {
-  const { history, forecasts } = forecast;
+  const { baseMonth, history, forecasts } = forecast;
 
   const points = useMemo<ChartPoint[]>(() => {
     const merged = [
@@ -104,9 +104,13 @@ export function SpendingForecastCard({ forecast }: SpendingForecastCardProps) {
     }));
   }, [forecasts, history]);
 
-  // 기본 선택은 마지막 예측 달이다. 손대지 않아도 화면이 말하려는 숫자가 먼저 보인다.
+  // 기본 선택은 첫 예측 달, 즉 다음 달이다. 이 카드가 답하는 질문이 "다음 달에 얼마나 쓸까"인데
+  // 마지막 예측 달을 먼저 띄우면 9월에 보는 사람이 12월 예상치를 다음 달 예상으로 읽는다.
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
-  const selected = points.find((point) => point.month === selectedMonth) ?? points.at(-1);
+  const selected =
+    points.find((point) => point.month === selectedMonth) ??
+    points.find((point) => point.predicted) ??
+    points.at(-1);
 
   if (points.length === 0 || forecasts.length === 0) {
     return (
@@ -126,6 +130,12 @@ export function SpendingForecastCard({ forecast }: SpendingForecastCardProps) {
   const actualPoints = points.filter((point) => !point.predicted);
   // 예측선은 마지막 실측에서 이어 그린다. 끊어 그리면 두 선이 다른 이야기로 읽힌다.
   const predictedPoints = [lastActual, ...points.filter((point) => point.predicted)];
+  // "오늘" 기준선은 기준 달(진행 중인 이번 달)에 세운다. 마지막 실측 달에 세우면 9월에 열어도 선이 8월에
+  // 붙어 이번 달이 이미 끝난 것처럼 읽힌다. 기준 달은 실측에도 예측에도 없으므로 x를 직접 잰다.
+  const firstOrdinal = monthOrdinal(points[0].month);
+  const span = monthOrdinal(points[points.length - 1].month) - firstOrdinal;
+  const baseRatio = span === 0 ? 0 : (monthOrdinal(baseMonth) - firstOrdinal) / span;
+  const todayX = PLOT_LEFT + Math.min(1, Math.max(0, baseRatio)) * (PLOT_RIGHT - PLOT_LEFT);
 
   const toPath = (list: readonly ChartPoint[]) =>
     list.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
@@ -202,8 +212,8 @@ export function SpendingForecastCard({ forecast }: SpendingForecastCardProps) {
           stroke={colors.border}
           strokeDasharray="3 3"
           strokeWidth={1}
-          x1={lastActual.x}
-          x2={lastActual.x}
+          x1={todayX}
+          x2={todayX}
           y1={PLOT_TOP - 6}
           y2={PLOT_BOTTOM}
         />
@@ -212,7 +222,7 @@ export function SpendingForecastCard({ forecast }: SpendingForecastCardProps) {
           fontFamily={fontFamily.medium}
           fontSize={9}
           textAnchor="middle"
-          x={lastActual.x}
+          x={todayX}
           y={PLOT_TOP - 10}>
           오늘
         </SvgText>
