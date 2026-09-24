@@ -14,7 +14,10 @@ public enum SsafyErrorCode {
     /** API_KEY가 유효하지 않습니다 (거래 API). */
     INVALID_HEADER_API_KEY("H1008"),
     /** USER_KEY가 유효하지 않습니다. */
-    INVALID_USER_KEY("H1009");
+    INVALID_USER_KEY("H1009"),
+    INSUFFICIENT_BALANCE("A1014"),
+    ONE_TIME_TRANSFER_LIMIT("A1016"),
+    DAILY_TRANSFER_LIMIT("A1017");
 
     private final String code;
 

@@ -1,5 +1,7 @@
 import type {
   AccountApiResponse,
+  AccountTransferApiResponse,
+  AccountTransferRequest,
   AccountBalanceSummaryApiResponse,
   AccountSummaryApiResponse,
   CardApiResponse,
@@ -96,5 +98,14 @@ export const assetApi = {
   }: GetInstallmentScheduleParams = {}) =>
     apiClient.get<InstallmentScheduleApiResponse>('/v1/installments/monthly-schedule', {
       query: { startMonth, endMonth },
+    }),
+
+  /**
+   * 계좌 간 이체. 목표 통장 보내기와 되가져오기가 두 id를 맞바꿔 같은 함수를 쓴다.
+   * **실제 돈이 움직인다.** 응답을 받기 전에 화면을 미리 바꾸지 않는다.
+   */
+  transfer: (request: AccountTransferRequest) =>
+    apiClient.post<AccountTransferApiResponse>('/v1/accounts/transfer', {
+      body: request,
     }),
 };

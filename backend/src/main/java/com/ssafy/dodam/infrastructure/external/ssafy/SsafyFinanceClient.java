@@ -10,6 +10,19 @@ import java.util.List;
  */
 public interface SsafyFinanceClient {
 
+    List<SsafyDemandDepositProduct> inquireDemandDepositList();
+
+    SsafyDemandDepositProduct createDemandDeposit(String bankCode, String name, String description);
+
+    SsafyDemandDepositAccount createDemandDepositAccount(String userKey, String typeNo);
+
+    SsafyDepositResult depositToAccount(String userKey, String accountNo, long amount, String summary);
+
+    List<SsafyTransferEntry> transfer(String userKey, String withdrawalNo, String depositNo,
+            long amount, String withdrawalSummary, String depositSummary);
+
+    SsafyAccountBalance inquireAccountBalance(String userKey, String accountNo);
+
     /**
      * 2.2.1 사용자 계정 생성.
      *

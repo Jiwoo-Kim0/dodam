@@ -133,10 +133,8 @@ class GoalCalculationApiIntegrationTest {
         long goalId = createSaving(10_000_000, today.plusMonths(10));
         backdateCreatedAt(goalId, 10);
         link(goalId, List.of(MAIN_ID, SAVINGS_ID));
-        // 연결 후 동기화로 잔액이 바뀐 상황. 예·적금은 전액 연결이라 확보액이 잔액을 따라가고,
-        // 입출금은 담은 금액이 절대값이라 잔액이 늘어도 그대로다(703 세이프박스)
+        // 연결 후 동기화로 잔액이 바뀐 상황
         jdbcTemplate.update("UPDATE account SET balance = 2000000 WHERE account_id = 11");
-        jdbcTemplate.update("UPDATE account SET balance = 2000000 WHERE account_id = 12");
 
         LocalDate start = today.minusMonths(10);
         LocalDate target = today.plusMonths(10);
@@ -498,19 +496,10 @@ class GoalCalculationApiIntegrationTest {
     }
 
     private void link(long goalId, List<Long> accountIds) throws Exception {
-        long demandAmount = accountIds.contains(MAIN_ID)
-                ? jdbcTemplate.queryForObject("SELECT balance FROM account WHERE account_id = ?", Long.class, MAIN_ID)
-                : 0L;
-        mockMvc.perform(put("/api/v1/goals/" + goalId + "/allocations/" + MAIN_ID)
-                        .header(HttpHeaders.AUTHORIZATION, bearer)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("amount", demandAmount))))
-                .andExpect(status().isOk());
-        List<Long> directAccountIds = accountIds.stream().filter(id -> id != MAIN_ID).toList();
         mockMvc.perform(put("/api/v1/goals/" + goalId + "/accounts")
                         .header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("accountIds", directAccountIds))))
+                        .content(json(Map.of("accountIds", accountIds))))
                 .andExpect(status().isOk());
     }
 

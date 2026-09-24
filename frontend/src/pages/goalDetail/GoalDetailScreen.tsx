@@ -3,7 +3,7 @@ import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import { Alert, Pressable, Text, View } from 'react-native';
 
-import { goalApi } from '@/api';
+import { assetApi, goalApi } from '@/api';
 import { AppHeader } from '@/components/appHeader/AppHeader';
 import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import { ScreenState } from '@/components/screenState/ScreenState';
@@ -11,6 +11,11 @@ import { routes } from '@/constants/routes';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import { colors } from '@/styles';
 import { formatCurrency } from '@/utils/currency';
+import type { GoalAccountApiResponse } from '@/types/goalApi.types';
+import {
+  getAccountTransferErrorMessage,
+  isFinanceNotConnected,
+} from '@/utils/accountTransferError';
 import { calculateProgressPercent } from '@/utils/goal';
 
 import { GoalAccountManagementBottomSheet } from './components/GoalAccountManagementBottomSheet';
@@ -18,6 +23,10 @@ import { GoalInsightCard } from './components/GoalInsightCard';
 import { GoalLinkedAccounts } from './components/GoalLinkedAccounts';
 import { GoalProgressChart } from './components/GoalProgressChart';
 import { GoalSpendingCategories } from './components/GoalSpendingCategories';
+import {
+  GoalTransferBottomSheet,
+  type GoalTransferDirection,
+} from './components/GoalTransferBottomSheet';
 import { OtherGoalsBottomSheet } from './components/OtherGoalsBottomSheet';
 import { useGoalDetail } from './hooks/useGoalDetail';
 import { styles } from './GoalDetailScreen.styles';
@@ -38,6 +47,18 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const isSavingAccountsRef = useRef(false);
   const isDeletingRef = useRef(false);
+  /** 열려 있는 이체 시트. null이면 닫힌 상태다. */
+  const [transfer, setTransfer] = useState<{
+    direction: GoalTransferDirection;
+    goalAccount: GoalAccountApiResponse;
+  } | null>(null);
+  const [isTransferring, setIsTransferring] = useState(false);
+  const [transferError, setTransferError] = useState<string | null>(null);
+  /*
+   * 실제 이체라 두 번 누르면 두 번 빠져나간다. 버튼 비활성만으로는 연타를 다 막지 못해
+   * 요청 시작 시점에 동기적으로 잠근다(docs/goal-transfer-plan.md §3-4).
+   */
+  const isTransferringRef = useRef(false);
   const parsedGoalId = Number(goalId);
   const hasValidGoalId = Number.isSafeInteger(parsedGoalId) && parsedGoalId > 0;
 
@@ -48,6 +69,106 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
     }
 
     router.replace(routes.home);
+  };
+
+  /**
+   * 이체 한 번. 확인을 받은 뒤에만 부른다.
+   *
+   * 낙관적 업데이트를 하지 않는다 — 실제 이체라 실패할 수 있어, 응답을 받은 뒤에만 화면을 바꾼다.
+   * 응답에는 두 계좌 잔액만 오고 목표 진행률은 없어 목표 상세를 다시 조회한다(§3-5).
+   */
+  const runTransfer = async (
+    goalAccount: GoalAccountApiResponse,
+    direction: GoalTransferDirection,
+    counterpartAccountId: number,
+    amount: number,
+  ) => {
+    if (isTransferringRef.current) return;
+
+    isTransferringRef.current = true;
+    setIsTransferring(true);
+    setTransferError(null);
+
+    try {
+      await assetApi.transfer(
+        direction === 'send'
+          ? {
+              withdrawalAccountId: counterpartAccountId,
+              depositAccountId: goalAccount.accountId,
+              amount,
+            }
+          : {
+              withdrawalAccountId: goalAccount.accountId,
+              depositAccountId: counterpartAccountId,
+              amount,
+            },
+      );
+
+      setTransfer(null);
+      await refetch();
+      Alert.alert(
+        direction === 'send' ? '보냈어요' : '되가져왔어요',
+        `${formatCurrency(amount)}을 옮겼어요.`,
+      );
+    } catch (transferFailure) {
+      // 금융망이 끊겨 있으면 금액을 고쳐도 안 되므로 연결 화면으로 보낸다.
+      if (isFinanceNotConnected(transferFailure)) {
+        setTransfer(null);
+        Alert.alert(
+          '금융 정보 연결이 필요해요',
+          '연결을 먼저 진행해주세요.',
+          [
+            { text: '나중에', style: 'cancel' },
+            {
+              text: '연결하기',
+              onPress: () => router.push(routes.financeConnection),
+            },
+          ],
+        );
+        return;
+      }
+
+      // 그 밖의 실패는 시트를 열어 둔 채 알린다. 금액만 고치면 되는 경우가 많다.
+      setTransferError(getAccountTransferErrorMessage(transferFailure));
+    } finally {
+      isTransferringRef.current = false;
+      setIsTransferring(false);
+    }
+  };
+
+  /**
+   * 실제 돈이 움직이므로 확인 없이 실행하지 않는다(§2-4).
+   * 되가져오기는 목표 진행률이 내려간다는 것까지 알린다.
+   */
+  const confirmTransfer = (counterpartAccountId: number, amount: number) => {
+    if (transfer === null || goal === undefined) return;
+
+    const { direction, goalAccount } = transfer;
+    const currentPercent = calculateProgressPercent(goal.currentAmount, goal.targetAmount);
+    const nextPercent = calculateProgressPercent(
+      direction === 'send' ? goal.currentAmount + amount : goal.currentAmount - amount,
+      goal.targetAmount,
+    );
+
+    Alert.alert(
+      direction === 'send'
+        ? `${goalAccount.accountName}으로
+${formatCurrency(amount)}을 보낼까요?`
+        : `${goalAccount.accountName}에서
+${formatCurrency(amount)}을 되가져올까요?`,
+      direction === 'send'
+        ? undefined
+        : `${goal.title} 진행률이 ${currentPercent}% → ${nextPercent}%로 내려가요.`,
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: direction === 'send' ? '보내기' : '되가져오기',
+          onPress: () => {
+            void runTransfer(goalAccount, direction, counterpartAccountId, amount);
+          },
+        },
+      ],
+    );
   };
 
   const saveLinkedAccounts = async () => {
@@ -233,6 +354,14 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
               );
               setIsAccountManagementVisible(true);
             }}
+            onSend={(goalAccount) => {
+              setTransferError(null);
+              setTransfer({ direction: 'send', goalAccount });
+            }}
+            onWithdraw={(goalAccount) => {
+              setTransferError(null);
+              setTransfer({ direction: 'withdraw', goalAccount });
+            }}
           />
         ) : (
           <GoalSpendingCategories categories={goal.categories} />
@@ -284,6 +413,32 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
         }}
         visible={isOtherGoalsVisible}
       />
+
+      {/*
+        보내기·되가져오기. 상대편 계좌는 자유입출금 중 목표 통장이 아닌 것만 고를 수 있다.
+        해지된 계좌는 이체가 400이라 미리 걸러 둔다(§2-2).
+      */}
+      {transfer === null ? null : (
+        <GoalTransferBottomSheet
+          direction={transfer.direction}
+          errorMessage={transferError}
+          goalAccount={transfer.goalAccount}
+          isSubmitting={isTransferring}
+          onClose={() => {
+            if (isTransferring) return;
+            setTransfer(null);
+            setTransferError(null);
+          }}
+          onSubmit={confirmTransfer}
+          selectableAccounts={data.availableAccounts.filter(
+            (account) =>
+              account.accountType === 'DEMAND_DEPOSIT' &&
+              account.status !== 'CLOSED' &&
+              account.accountId !== transfer.goalAccount.accountId,
+          )}
+          visible
+        />
+      )}
 
       <GoalAccountManagementBottomSheet
         accounts={data.availableAccounts}
