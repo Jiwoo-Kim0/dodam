@@ -33,6 +33,9 @@
 --   SAVING_FOCUSED    variable 20%, saving transfer 30%
 --   VOLATILE          variable 70% on odd months / 20% on even months, saving transfer 8%
 -- All amounts are deterministic functions of (sequence_no, month_no, slot). No RAND().
+-- Window: 2024-09-01 .. 2026-08-31 (24 months, S15P21D105-706). The 2026-03 .. 2026-08 block keeps
+-- month_no 1..6 and its generated rows are byte-identical to the pre-706 run; the past 18 months are
+-- month_no 7..24. See the comment on the months table for why the numbering is not chronological.
 --
 -- Conventions
 -- -----------
@@ -84,6 +87,22 @@ SELECT
   DATE_FORMAT(DATE_ADD('2026-03-01', INTERVAL d.digit MONTH), '%Y%m')
 FROM tmp_dodam_492_digit d
 WHERE d.digit BETWEEN 0 AND 5;
+
+-- S15P21D105-706: past 18 months (2024-09 .. 2026-02) for the 24-month time-series window.
+-- month_no continues at 7 instead of renumbering the window from 2024-09. Every amount, date, time,
+-- category and payment method comes out of h = sequence_no * 7919 + month_no * 104729 + slot * 15485863,
+-- so moving 2026-03 from 1 to 19 would rewrite all six existing months and break the 2026-08 demo
+-- contract (678/679) and the K-Means feature window. Calendar order lives in month_start, not month_no.
+-- A single digit table caps at 10 rows, so the past block cross-joins two digits like the slot table does.
+INSERT INTO tmp_dodam_492_months (month_no, month_start, month_end, ym)
+SELECT
+  7 + (tens.digit * 10 + ones.digit),
+  DATE_ADD('2024-09-01', INTERVAL (tens.digit * 10 + ones.digit) MONTH),
+  LAST_DAY(DATE_ADD('2024-09-01', INTERVAL (tens.digit * 10 + ones.digit) MONTH)),
+  DATE_FORMAT(DATE_ADD('2024-09-01', INTERVAL (tens.digit * 10 + ones.digit) MONTH), '%Y%m')
+FROM tmp_dodam_492_digit tens
+CROSS JOIN tmp_dodam_492_digit ones
+WHERE tens.digit * 10 + ones.digit BETWEEN 0 AND 17;
 
 -- variable spending slots 0..15
 DROP TABLE IF EXISTS tmp_dodam_492_slots;
@@ -436,8 +455,9 @@ COMMIT;
 -- ---------------------------------------------------------------------------
 -- 6. verification
 -- ---------------------------------------------------------------------------
--- Expected: 4000 users, 24000 income, 72000 fixed, 36000 subscription (24000 + 12000), 24000 saving,
---           variable = 3996*6*8 + 4*6*16 = 192192; total 348192.
+-- Expected (706, 24 months): 4000 users, 96000 income, 288000 fixed, 144000 subscription (96000 + 48000),
+--           96000 saving, variable = 3996*24*8 + 4*24*16 = 768768; total 1392768.
+--           first_date 2024-09-xx, last_date 2026-08-xx.
 SELECT
   SUBSTRING_INDEX(SUBSTRING_INDEX(tx.transaction_id, '-', 4), '-', -1) AS kind,
   COUNT(*) AS row_count,
@@ -470,7 +490,7 @@ JOIN tmp_dodam_492_context ctx ON ctx.user_id = tx.user_id
 LEFT JOIN `account` a ON a.account_id = tx.account_id AND a.user_id = tx.user_id
 LEFT JOIN `card` c ON c.card_id = tx.card_id AND c.user_id = tx.user_id
 WHERE tx.source_type = 'SEED' AND tx.transaction_id LIKE 'SEED-U%'
-  AND (tx.transaction_date NOT BETWEEN '2026-03-01' AND '2026-08-31'
+  AND (tx.transaction_date NOT BETWEEN '2024-09-01' AND '2026-08-31'
        OR tx.amount <= 0
        OR tx.category_id IS NULL
        OR (tx.account_id IS NULL AND tx.card_id IS NULL)
