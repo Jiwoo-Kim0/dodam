@@ -18,18 +18,31 @@
 SET NAMES utf8mb4;
 SET time_zone = '+09:00';
 
--- 1. 기존 6개월 불변. Expected: 348192 (706 이전 적재 결과와 같은 값)
-SELECT COUNT(*) AS existing_window_rows
-FROM `transaction`
-WHERE source_type = 'SEED' AND transaction_id LIKE 'SEED-U%'
-  AND transaction_date BETWEEN '2026-03-01' AND '2026-08-31';
+-- 1. 기존 6개월 불변 — 이 파일의 핵심 검사.
+--    시연 사용자 U0001~U0004는 636·655·679가 행을 다시 만들어 건수가 달라지므로 제외한다.
+--    나머지 3,996명의 2026-03~08 행은 492만 만들고 아무도 건드리지 않아 값이 고정된다.
+--    Expected: 347652 / 195906782800 / 499687287  (2026-09-24 로컬 MySQL 8.0 실측)
+SELECT COUNT(*) AS existing_window_rows, SUM(tx.amount) AS existing_window_amount,
+  BIT_XOR(CRC32(CONCAT_WS('|', tx.transaction_id, tx.transaction_date, tx.transaction_time, tx.amount,
+    tx.category_id, COALESCE(tx.account_id,'-'), COALESCE(tx.card_id,'-'), tx.payment_method,
+    tx.merchant_name))) AS existing_window_fingerprint
+FROM `transaction` tx
+JOIN `user` u ON u.user_id = tx.user_id
+WHERE tx.source_type = 'SEED' AND tx.transaction_id LIKE 'SEED-U%'
+  AND u.email NOT IN ('seed.kmeans.u0001@dodam.invalid', 'seed.kmeans.u0002@dodam.invalid',
+                      'seed.kmeans.u0003@dodam.invalid', 'seed.kmeans.u0004@dodam.invalid')
+  AND tx.transaction_date BETWEEN '2026-03-01' AND '2026-08-31';
 
--- 2. 전체 창. Expected: 1392768, first 2024-09-xx, last 2026-08-xx
-SELECT COUNT(*) AS total_rows, MIN(transaction_date) AS first_date, MAX(transaction_date) AS last_date
-FROM `transaction`
-WHERE source_type = 'SEED' AND transaction_id LIKE 'SEED-U%';
+-- 2. 전체 창 (시연 4명 제외). Expected: 1390608, first 2024-09-xx, last 2026-08-xx
+SELECT COUNT(*) AS total_rows, MIN(tx.transaction_date) AS first_date, MAX(tx.transaction_date) AS last_date
+FROM `transaction` tx
+JOIN `user` u ON u.user_id = tx.user_id
+WHERE tx.source_type = 'SEED' AND tx.transaction_id LIKE 'SEED-U%'
+  AND u.email NOT IN ('seed.kmeans.u0001@dodam.invalid', 'seed.kmeans.u0002@dodam.invalid',
+                      'seed.kmeans.u0003@dodam.invalid', 'seed.kmeans.u0004@dodam.invalid');
 
--- 3. 종류별. Expected: INC 96000 / FIX 288000 / SUB 144000 / SAV 96000 / VAR 768768
+-- 3. 종류별 (전체). 492 직후라면 INC 96000 / FIX 288000 / SUB 144000 / SAV 96000 / VAR 768768,
+--    체인 전체를 돌린 뒤에는 시연 4명 몫이 636·655·679 값으로 바뀌어 조금 늘어난다.
 SELECT SUBSTRING_INDEX(SUBSTRING_INDEX(transaction_id, '-', 4), '-', -1) AS kind, COUNT(*) AS row_count
 FROM `transaction`
 WHERE source_type = 'SEED' AND transaction_id LIKE 'SEED-U%'
@@ -57,7 +70,7 @@ JOIN `user` u ON u.user_id = tx.user_id AND u.email = 'seed.kmeans.u0003@dodam.i
 WHERE tx.source_type = 'SEED' AND tx.spending_type = 'VARIABLE'
 GROUP BY ym ORDER BY ym;
 
--- 7. U0003 고정비·저축 이체. Expected: FIX 249행, SAV 36행, 2024-09에 LOAN_REPAYMENT 없음
+-- 7. U0003 고정비·저축 이체. Expected: FIX 249, SAV 36, loan_before_first_instalment 0
 SELECT
   SUM(tx.transaction_id LIKE '%-FIX-%') AS fixed_rows,
   SUM(tx.transaction_id LIKE '%-SAV-%') AS saving_rows,
