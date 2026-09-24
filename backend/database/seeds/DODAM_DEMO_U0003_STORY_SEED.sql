@@ -3,10 +3,11 @@
 -- Dialect: MySQL 8.x (window functions)
 -- Schema basis: V1__create_user_and_auth_session.sql (`user.name`), V6__create_transaction_category_and_transaction.sql
 -- Dependency: S15P21D105-491 User/Account seed, S15P21D105-522 Card seed (primary card),
---             DODAM_TRANSACTION_SEED.sql (492, INC/FIX/SUB/SAV rows 2026-03 ~ 2026-08),
+--             DODAM_TRANSACTION_SEED.sql (492, INC/FIX/SUB/SAV rows 2024-09 ~ 2026-08),
 --             DODAM_DEMO_SEPTEMBER_SEED.sql (625, INC/FIX/SUB/SAV rows 2026-09)
--- Dataset: 1 user rename + U0003 variable spending 2026-03-01 ~ 2026-09-27 regenerated (about 430 rows)
--- Snapshot: 2026-09-18
+-- Dataset: 1 user rename + U0003 variable spending 2024-09-01 ~ 2026-09-27 regenerated
+--          (25 months, 1,466 rows, 25,754,000 won in total)
+-- Snapshot: 2026-09-24 (S15P21D105-706 widened the window from 7 months to 25)
 --
 -- Why this file exists
 -- --------------------
@@ -23,7 +24,7 @@
 --    saving rate, subscription list and cashflow inputs stay as they were.
 -- 3. Updates account.last_transaction_date of the primary demand-deposit account.
 --
--- The story (variable spending, won)                          FOOD    CAFE   GROCERY  ...   total
+-- The demo window (variable spending, won)                    FOOD    CAFE   GROCERY  ...   total
 -- --------------------------------------------------------------------------------------------------
 --   2026-03  baseline                                        320,000  90,000  240,000        974,000
 --   2026-04  quiet month                                     300,000  85,000  240,000        939,000
@@ -36,7 +37,20 @@
 --   FOOD  Aug 520,000 vs avg(May..Jul) 343,333 -> +51%  detected
 --   CAFE  Aug 145,000 vs avg 100,000            -> +45%  detected
 --   every other category is flat or lower in August (TAXI 24,000 vs 34,667, GROCERY 150,000 vs 226,667 ...) -> only two flagged
--- Only May is an outlier in the monthly total (about +65%); the other six months stay within about +-5% of 1,000,000.
+-- Inside the demo window only May is an outlier (about +65%); the other six months stay within about +-5% of 1,000,000.
+--
+-- The 706 history block (variable spending, won) — 2024-09 .. 2026-02, 18 months added for the time-series model.
+-- Month numbers and the per-category plan are further down (see "706: past 18 months", month_no 8..25).
+--   2024   09 830,000    10 860,000    11 890,000    12 1,070,000
+--   2025   01 850,000    02 1,050,000* 03 860,000    04 1,250,000* 05 1,130,000  06 900,000
+--          07 940,000    08 910,000    09 1,240,000* 10 980,000    11 1,010,000  12 1,210,000
+--   2026   01 1,320,000* 02 870,000
+--   * one-off events: ETC_HOLIDAY 280,000 (2025-02) and 300,000 (2025-09), SHOPPING_BIG 420,000 (2025-04) and
+--     360,000 (2026-01). They sit 1~3 months apart on purpose — a fixed parity lands on calendar month parity and
+--     the estimator then reads the one-offs as a season (that defect was found and fixed on 2026-09-24).
+--   December shows up twice (1,070,000 / 1,210,000, SHOPPING + TAXI up). That repetition IS the seasonal lift the
+--     model should find; the one-off months above must NOT become one.
+--   FOOD/CAFE climb slowly toward 2026-08 so the model reads a gentle upward trend, not a step.
 -- Saving transfer is 400,000 a month (679 rev. 2026-09-22), i.e. about 13% of the 3,012,400 salary — not the
 -- 30% the 492 cohort formula would give. Measured over the K-Means window (2026-03..08): saving rate 0.130,
 -- fixed share 0.585, spending/income 0.861, so U0003 no longer sits in the saving-focused cluster.
@@ -49,16 +63,19 @@
 --   time     = CAFE 08~11h, FOOD lunch 11~13h or dinner 18~20h, others 10~20h
 --   merchant = MOD(h DIV 7, merchants in group); "sequential" groups (trip, dental) use n so each merchant appears once
 --   payment  = CARD (primary card) for 8 of 10 rows, ACCOUNT (primary account) otherwise; some groups are ACCOUNT only
---   ids      = SEED-U0003-2026MM-VAR-nn (Mar~Aug) / SEED-SEP-U0003-202609-VAR-nn (Sep), nn = row number inside the month
+--   ids      = SEED-U0003-YYYYMM-VAR-nn (2024-09 ~ 2026-08) / SEED-SEP-U0003-202609-VAR-nn (2026-09),
+--              nn = row number inside the month
 --
 -- Rerun / ordering contract
 -- -------------------------
 -- - Run AFTER 6번(492), 8번, 11번(625). Rerunning this file alone is idempotent (deletes and regenerates U0003 VAR rows).
--- - A 492 rerun deletes 'SEED-U%' rows (this file's Mar~Aug rows included) and a 625 rerun deletes 'SEED-SEP-U%' rows
---   (this file's September rows included) and both put the flat rows back. Run this file again after either.
+-- - A 492 rerun deletes 'SEED-U%' rows (this file's 2024-09 ~ 2026-08 rows included) and a 625 rerun deletes
+--   'SEED-SEP-U%' rows (this file's September rows included) and both put the flat rows back. Run this file again
+--   after either.
 -- - The id prefixes are chosen so that 492 / 625 verification and cleanup treat these rows as their own.
 -- - Preflight: U0003 exists, one ACTIVE primary demand-deposit account, one primary card, 11 variable categories,
---   7 monthly INCOME rows (492 six months + 625 September) present. Otherwise nothing is written.
+--   7 monthly INCOME rows in the demo window (492 + 625 September) and 18 in the 706 past block (2024-09 ~ 2026-02).
+--   The past block must already exist or this file would build a story on top of nothing. Otherwise nothing is written.
 --
 -- MySQL TEMPORARY-table constraint
 -- --------------------------------
@@ -520,6 +537,8 @@ HAVING august > 0
 ORDER BY increase_percent DESC;
 
 -- Expected: 0 (positive amounts, exactly one of account_id / card_id, dates inside the window, ids unique by definition)
+-- The window is 2024-09-01 (706 past block) .. 2026-09-27 (625 cut-off). It was still 2026-03-01 here after the
+-- 706 expansion, which flagged every past-block row as a violation — the bound has to follow tmp_dodam_u3story_months.
 SELECT COUNT(*) AS contract_violation_count
 FROM `transaction` tx
 JOIN tmp_dodam_u3story_context ctx ON ctx.user_id = tx.user_id
@@ -527,9 +546,12 @@ WHERE tx.source_type = 'SEED' AND tx.spending_type = 'VARIABLE'
   AND (tx.amount <= 0
        OR (tx.account_id IS NULL AND tx.card_id IS NULL)
        OR (tx.account_id IS NOT NULL AND tx.card_id IS NOT NULL)
-       OR tx.transaction_date < '2026-03-01' OR tx.transaction_date > '2026-09-27');
+       OR tx.transaction_date < '2024-09-01' OR tx.transaction_date > '2026-09-27');
 
--- Expected: INC 7, FIX 21, SUB 7, SAV 7 untouched (492 six months + 625 September)
+-- Expected: VAR is the only kind this file rebuilds; INC / FIX / SUB / SAV must still be there.
+-- Exact counts are NOT asserted here. They come from 492 (now 24 months), 625, 655 (subscription rebuild) and
+-- 679 (U0003 salary / fixed / saving rebuild), so they move whenever any of those change. Read them off after a
+-- reload and compare against the previous reload instead of against a number frozen in this comment.
 SELECT
   CASE WHEN tx.transaction_id LIKE '%-INC-%' THEN 'INC' WHEN tx.transaction_id LIKE '%-FIX-%' THEN 'FIX'
        WHEN tx.transaction_id LIKE '%-SUB-%' THEN 'SUB' WHEN tx.transaction_id LIKE '%-SAV-%' THEN 'SAV' ELSE 'VAR' END AS kind,
