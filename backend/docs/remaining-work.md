@@ -17,7 +17,9 @@
 
 ### 검증
 
-- [ ] **MySQL 검증이 없다.** 월별 변동 소비 조회(`JdbcSpendingForecastReader`)는 `YEAR()`·`MONTH()` GROUP BY와 `COALESCE` 해석 규칙을 쓰는데 H2 회귀만 있다. H2 통과로 MySQL을 대체하지 않는다(계획서 §10 위험 4).
+- [x] **MySQL 검증 완료**(2026-09-24, `JdbcSpendingForecastReaderMySqlIntegrationTest`). 환경변수 `SPENDING_FORECAST_MYSQL_TEST_URL` 게이트이며 24개월 seed가 적재된 MySQL 8.0에서 3건 통과했다. `YEAR()`·`MONTH()` 별칭 GROUP BY, `COALESCE` 해석 규칙, 달 경계 포함을 본다. 같이 확인한 것: 리더의 SQL을 U0003에 그대로 돌려 24개월 합계가 seed plan 표와 **한 달도 어긋나지 않았다**(2024-09 830,000 ~ 2026-08 994,000).
+- [ ] **`COALESCE` 분기는 seed 데이터로 타지 않는다.** 적재된 139만 행의 `spending_type` NULL이 0건, `category_id` NULL이 0건이라 실제 데이터는 첫 인자에서 끝난다. 규칙이 바뀌면 통합 테스트만 깨지고 시연 화면은 그대로이므로, 규칙을 손댈 때는 테스트를 근거로 삼는다.
+- [ ] **로컬 검증 DB(`dodam_706_test`)의 스키마가 뒤처져 있다.** seed 적재 시점에 멈춰 있어 `monthly_report.metrics_summary`와 `user.credit_score`(680 V42)가 없다. 그래서 위 테스트는 `ddl-auto=none`으로 돌고 사용자 행을 새로 만들지 않는다. 시연 서버는 전체 재적재로 최신이라 해당 없음.
 - [x] 컨트롤러 계층을 덮었다(2026-09-24, `SpendingForecastApiTest`). 인증 없는 호출 401, 소유권 격리, `horizonMonths` 1~12 경계, 이력 부족 시 200 + 사유, `spending_type` NULL 해석, 결측 월 제외까지 일곱 가지.
 
 ### 시연 서버
