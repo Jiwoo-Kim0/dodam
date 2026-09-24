@@ -1,970 +1,393 @@
-# 시계열 예측 모델 도입 설계
+# 시계열 예측 seed 정비
 
 - Jira: S15P21D105-706
-- 브랜치: `S15P21D105-706-db` (develop 4e75e68에서 분기, 원격에 있고 내용은 develop과 동일)
-- 작성일: 2026-09-24 (rev.17)
+- 브랜치: `S15P21D105-706-db`
+- 작성일: 2026-09-24 (rev.18)
 - 상태: 설계. 코드·데이터 변경 없음.
+
+rev.18에서 **목적과 범위를 다시 잡았다.** rev.17까지는 예측 기능 전체(모델·API·cashflow 연동·목표
+속도·화면)를 한 이슈로 묶어 MR 11개였다. 이 이슈의 실제 목적은 **시계열 예측이 시연에서 제대로
+보이도록 seed 데이터를 정비하는 것**이므로, 데이터 작업과 그것을 검증할 최소한만 남기고 나머지는
+부록 A로 내렸다. rev.17의 상세는 커밋 `9c5e519`에 있다.
+
+## 0. 목적과 범위
+
+**목적**: 시연 계정 U0003의 소비 예측이 설득력 있는 그림으로 나오도록 seed SQL을 고친다.
+
+| 이 이슈에서 한다 | 별도 이슈로 뺀다 (부록 A) |
+| --- | --- |
+| seed 24개월 확장(과거 방향) | 예측 결과 테이블·엔티티(`V45`) |
+| U0003 스토리 표 재설계 | 실행·조회 API |
+| 추정 로직과 검증 | cashflow 합성 이벤트 연동 |
+| 예측 그래프 화면 | 목표 저축 속도 배율 |
+
+**프론트엔드는 이 이슈에 포함한다**(2026-09-24 결정). 예측 그래프는 seed 작업의 결과가 눈에
+보이는 유일한 지점이라 같이 가는 편이 낫고, 704가 같은 담당자의 `frontend/` 작업으로 나간 선례가
+있다. 다만 루트 지침의 기본 변경 범위는 `backend/`이므로 **화면 MR에서만 `frontend/`를 연다.**
 
 ## 1. 결정 사항
 
 | 항목 | 결정 | 근거 절 |
 | --- | --- | --- |
-| 예측 대상 | 월별 소비 지출, 일별 계좌 잔액, 목표 달성일 단축 | 2 |
-| 모델 실행 | 오프라인 학습 → JSON 아티팩트 → Java 추론 (K-Means 전례와 동일) | 4 |
-| 데이터 | 4,000명 거래 이력 24개월 확장, 예측 결과 테이블 신설, 파생 결과 재계산 | 8 |
-| `spending_type` NULL | 카테고리 기본값으로 해석, 그것도 NULL이면 `VARIABLE` | 2.1 |
-| `V` 집계 경로 | 패턴 쿼리는 그대로 두고 **예측 전용 월 집계 쿼리를 신설**한다 | 2.1, 3 |
-| 군집 키 | 아티팩트에 `clusterId → ClusterFeature` 맵을 동봉. 라벨 문자열로 역산하지 않는다 | 4.1 |
-| MR 6 효율 점수 상승 | 의도된 개선으로 보고 소급하지 않는다 | 6.5 |
-| 예측 기반 위험 | `cashflow_risk`에 기록하되 **알림과 효율 점수에서 제외** | 6.3, 6.4 |
-| 소급 범위 | 굳힌 스냅샷만 재촬영. 과거 리포트·목표 이력은 그대로 둔다 | 7 |
-| 이슈 구성 | 이슈 706 하나, 브랜치 하나, MR 11개를 **순차로** 낸다 | 12 |
-| 프론트엔드 | 예측 표시도 이 이슈에서 **MR 11로 직접 한다**(704 선례) | 12, 13 |
-| 범위 | 축소안 없이 전체 진행(cashflow 포함). 시뮬레이션 미사용 3종은 QA 후순위 | 2.4, 12 |
+| 확장 방향 | **과거로만.** `2026-03-01~08-31`은 한 행도 건드리지 않는다 | 2 |
+| 기간 | `2024-09-01 ~ 2026-08-31` 24개월 (계절 2주기) | 6.1 |
+| 표본 수 | **4,000명 유지.** 늘려도 정보량이 늘지 않는다 | 2.3 |
+| 계절성 출처 | 군집 아티팩트가 아니라 **사용자 본인 24개월에서 추정** | 5 |
+| K-Means 재학습 | **불필요.** 특징 창(2026-03~08)이 안 변한다 | 2.1 |
+| 시연 스토리 | 외식 증가 추세 + 12월 계절 상승 | 3.1 |
+| 화면 | 과거 12개월 실선 + 예측 3개월 점선 + 예상 범위 띠 | 3.2 |
+| 예측 대상 | 변동 소비 V 하나만 예측하고 나머지는 조립 | 4 |
+| `spending_type` NULL | 카테고리 기본값으로 해석, 그것도 NULL이면 `VARIABLE` | 4.1 |
+| 평가의 의미 | 모델 성능 근거가 **아니다.** 생성 규칙 역산 확인용 | 7.2 |
 
-## 2. 모델이 실제로 예측하는 값은 하나다
+## 2. 설계 원칙 — 2026-03~08을 건드리지 않는다
 
-세 산출물을 각각 예측하지 않는다. **변동 소비 V(u, m) 하나만 예측하고 나머지는 조립한다.**
+이 원칙 하나가 작업량의 절반을 없앤다. rev.17은 이것을 "위험 3(2026-08을 불변점으로)"이라는
+주의사항으로 적었는데, **설계 원칙으로 올리면 위험이 아니라 범위 축소 수단이 된다.**
 
-| 성분 | 출처 | 모델 대상 |
-| --- | --- | --- |
-| 수입 | `financial_profile.monthly_income` 또는 과거 INCOME 거래 평균 (2.2) | 아니오 |
-| 고정비 | 고정비·구독·대출 상환 예정 이벤트 | 아니오 |
-| 변동 소비 | 거래 이력 | **예** |
+### 2.1 K-Means 재학습이 필요 없어진다
 
-이미 날짜와 금액이 확정된 항목에 예측 오차를 얹을 이유가 없다. Cashflow가 확정 예정 이벤트만
-누적하도록 만들어진 이유와 같다. 조립은 이렇게 된다.
+배포된 `spending-kmeans-v2.json`은 `window: 2026-03 ~ 2026-08`, 6개월로 학습됐다. 군집 특징
+다섯(`spendingToIncomeRatio`, `savingRate`, `fixedExpenseShare`, `discretionaryShare`,
+`spendingVolatility`)이 전부 그 창에서 계산된다. **그 구간의 거래가 변하지 않으면 특징도 중심점도
+그대로다.**
 
-- 월별 소비 지출 = 확정 고정비 + V̂
-- 일별 잔액 = 확정 이벤트 + V̂를 일별로 분배
-- 목표 단축 = V̂가 만드는 저축 여력 변화 (7절, 스코프 주의)
+rev.17은 재학습을 MR에 넣고 두 아티팩트의 버전 결합을 위험으로 관리했다. 과거만 늘리면 그
+문제 자체가 생기지 않는다.
 
-**"확정 고정비"의 출처를 정해야 한다.** `CashflowEventCollector`가 만드는 예정 이벤트는 일 단위
-horizon용이고, 월 예측은 최대 12개월 앞을 본다. 구독은 `next_payment_date`와 주기로, 대출·할부는
-상환 스케줄로 그만큼 펼칠 수 있지만 주거·공과금처럼 스케줄이 없는 고정비는 그렇지 않다.
+### 2.2 시연 계약이 자동으로 지켜진다
 
-**결정**: 스케줄이 있는 항목은 스케줄로 펼치고, 없는 항목은 **최근 3개 완료 월의 `fixedSpending`
-중앙값을 매월 반복**한다. 중앙값을 쓰는 이유는 평균이 연납 보험료 같은 한 달짜리 큰 건에 끌리기
-때문이다. 어느 경로로 채웠는지를 월별로 구분해 응답에 싣는다.
+678·679가 굳힌 U0003의 2026-08 값(income 3,012,400 / spending 2,559,221 / saving 400,000 /
+fixed 1,565,221)을 699 검증 seed가 선행 조건으로 검사한다. 그 구간을 안 만지면 검사를 통과할지
+걱정할 일이 없다.
 
-이 값의 오차는 11.1의 평가에 잡히지 않는다(평가는 V̂만 잰다). `predicted_total`을 서버가 낼지
-V̂만 내고 화면에서 조립할지는 13절 미결이다.
+### 2.3 표본은 4,000명을 유지한다
 
-`transaction.spending_type`이 `FIXED` / `VARIABLE` / `NON_SPENDING`으로 나뉘어 있고
-`transaction_category`의 `SUBSCRIPTION`은 `default_spending_type = 'FIXED'`라, 확정 이벤트와 V̂는
-**겹치지 않는다.**
+늘리자는 검토가 있었으나 채택하지 않았다. 현재 4,000명은 **4개 파라미터 세트의 1,000개
+복사본**이다. K-Means 군집이 각각 정확히 1,000명이고 코호트 안에서 `savingRate` 표준편차가
+**0.0**인 것이 그 증거다. 표본을 25배로 늘려도 패턴은 여전히 4개이고, 이미 결정적인 상수를 더
+정밀하게 추정할 뿐이다.
 
-### 2.2 "확정 수입"은 없다 — 급여 예정 이벤트가 구현되어 있지 않다
+반면 비용은 그대로 25배다. 거래 약 134만 행이 약 3,360만 행이 되고, 파생 체인 전체(패턴·현금흐름·
+알림·**전원 계산인 신용점수 680**)가 그 인원을 대상으로 다시 돈다. 숫자 생성기도 네 자리 digit
+CROSS JOIN이라 `sequence_no` 상한이 10,000이어서 다섯 번째 조인을 여러 파일에 추가해야 하고,
+`CHECK (expected_user_count = 4000)` 같은 검증 상수가 여러 파일에 박혀 있다.
 
-rev.10까지 수입 출처를 "급여 예정 이벤트"라고 적었다. **그런 이벤트는 만들어지지 않는다.**
+다양성이 필요하다면 인원이 아니라 **사용자별 파라미터 분산**이 답이지만, 시연이 U0003 한 명이므로
+지금은 필요하지 않다.
 
-`CashflowEventCollector`가 직접 만드는 이벤트는 카드대금·대출상환·적금납입·구독 넷이고 **전부
-`OUTFLOW`**다. 입금은 확장점 `AccountScheduledEventSource`를 통해서만 들어올 수 있는데
-**구현체가 하나도 없다**(`backend/src/main/java` 전체에 `implements AccountScheduledEventSource`
-가 없고, 컬렉터는 비어 있을 때 `ACCOUNT_SCHEDULE_SOURCE_UNAVAILABLE` 사유를 남긴다).
+## 3. 시연 스토리
 
-따라서 이 모델이 쓰는 수입은 `PatternFeatures.incomeBasis`가 이미 정의해 둔 것을 그대로 따른다.
-문서에서 **기준 수입**이라 부른다.
+무엇을 보여줄지 먼저 정하고 데이터를 거기서 역산한다. **모델은 seed에 써 넣은 것을 되읽는다.**
+이 순서를 뒤집으면 데이터를 다 만든 뒤에 화면이 심심하다는 것을 알게 된다.
 
-| `IncomeBasis` | 값 |
-| --- | --- |
-| `TRANSACTIONS` | 창 안 INCOME 거래의 월평균 |
-| `PROFILE` | `financial_profile.monthly_income` |
-| `NONE` | 없음 → 예측하지 않는다 (4.4) |
+### 3.1 이야기
 
-### 2.1 그러나 덮지도 않는다 — `spending_type`은 NULL을 허용한다
+**최근 외식이 늘어 소비가 증가하는 중이고, 12월에 한 번 더 오른다.**
 
-V6의 `chk_transaction_spending_type`은 `spending_type IS NULL`을 허용하고,
-`JdbcPatternFeatureReader`의 `IS_SPENDING`은 **NULL을 소비로 센다**
-(`spending_type IS NULL OR spending_type <> 'NON_SPENDING'`). 반면 `fixedSpending`과
-`variableSpending`은 각각 명시값을 요구한다. 따라서
+이 조합을 고른 이유는 두 가지다.
 
-```
-spending ≥ fixedSpending + variableSpending      (등호가 아니다)
-```
+- 636이 이미 그 흐름을 깔아 놨다. 8월 FOOD 520,000이 직전 3개월 평균 343,333 대비 +51%라
+  627 진단이 `CATEGORY_SPENDING_INCREASE`를 잡는다. 예측이 그 흐름을 이어받으면 **진단에서 예측,
+  추천까지 한 줄로 이어진다.** 감소 스토리를 고르면 진단 화면과 예측 화면이 서로 다른 말을 한다
+- 12월 상승은 계절성이 화면에 드러나는 유일한 지점이다. 과거 구간에 작년 12월 상승이 찍혀 있어야
+  올해 12월 예측의 근거가 눈에 보인다
 
-이고 그 차이가 **NULL 잔여 버킷**이다. seed는 항상 명시값을 넣지만 금융망 동기화로 들어온 거래는
-그렇지 않을 수 있다. `월별 소비 지출 = 확정 고정비 + V̂`를 그대로 쓰면 이 잔여만큼 과소 집계된다.
+### 3.2 화면
+
+- **과거 실측과 예측을 한 선으로 잇는다.** 예측 3개월만 막대로 보여주면 근거 없는 숫자가 된다.
+  과거 흐름이 이어지는 것이 보여야 설득되고, 계절성도 작년 같은 달을 같이 봐야 의미가 생긴다
+- 과거는 **12개월만** 그린다. 24개월을 전부 그리면 폰 화면에서 뭉갠다
+- 실측과 예측의 경계에 세로선을 두고 실선에서 점선으로 바꾼다. 예측을 확정처럼 보이게 하지 않는다
+- 상·하한은 띠로 깔고 라벨은 "예상 범위"로 둔다. 정확도를 주장하는 값이 아니다(7.2)
+- `react-native-svg`를 쓰는 `frontend/src/pages/goalDetail/components/GoalProgressChart.tsx`가
+  이미 꺾은선·포인트 선택·접근성 라벨을 갖고 있다. 차트 라이브러리를 새로 넣지 않고 그 구조를 따른다
+
+### 3.3 데이터에 붙는 조건
+
+과거를 같이 그리기로 했으므로 **과거 12개월(2025-09~2026-08)이 화면에 내놓을 만한 모양이어야
+한다.** 이것이 6.2 표 설계의 입력 조건이다.
+
+## 4. 모델이 예측하는 값
+
+세 가지를 각각 예측하지 않는다. **변동 소비 V(u, m) 하나만 예측하고 나머지는 조립한다.** 이미
+날짜와 금액이 확정된 항목에 예측 오차를 얹을 이유가 없다.
+
+- 수입 = `PatternFeatures.incomeBasis` 규칙(`TRANSACTIONS` 월평균 / `PROFILE` / `NONE`)
+- 고정비 = 스케줄이 있으면 스케줄로, 없으면 최근 3개 완료 월 `fixedSpending`의 중앙값 반복
+- 변동 소비 = **예측 대상**
+
+`transaction_category`의 `SUBSCRIPTION`이 `default_spending_type = 'FIXED'`라 확정 이벤트와 V는
+겹치지 않는다.
+
+### 4.1 `spending_type` NULL 처리
+
+V6의 `chk_transaction_spending_type`은 NULL을 허용하고, `JdbcPatternFeatureReader`의
+`IS_SPENDING`은 **NULL을 소비로 센다.** 반면 `fixedSpending`과 `variableSpending`은 명시값을
+요구한다. 그래서 `spending >= fixedSpending + variableSpending`이고 그 차이가 NULL 잔여다.
 
 **결정**: NULL은 `transaction_category.default_spending_type`으로 해석하고, 그것도 NULL이면
-`VARIABLE`로 본다(예측 대상에 포함). 신규 카테고리×월 쿼리와 `V` 정의 모두 같은 규칙을 쓴다.
-쿼리마다 규칙이 갈리면 `predicted_total`과 리포트 합계가 어긋난다.
+`VARIABLE`로 본다.
 
-**그래서 `readUserMonthly()`의 `variableSpending`을 `V`로 쓸 수 없다**(rev.17 정정).
-`JdbcPatternFeatureReader`의 `variable_spending`은 `spending_type = 'VARIABLE'` 명시값만 세므로
-NULL 잔여가 빠진다. 그 쿼리에 이 규칙을 넣으면 `fixedExpenseShare`·`discretionaryShare`가 같이
-움직여 K-Means 특징과 저장된 `pattern_analysis`로 번지는데, 700의 무효화는 거래 지문 비교라
-**SQL 규칙 변경을 감지하지 못한다.** 따라서 패턴 쪽 쿼리는 그대로 두고 **예측 전용 월 집계 쿼리를
-따로 둔다**(3절).
+**그래서 `readUserMonthly()`의 `variableSpending`을 V로 쓸 수 없다.** 그 쿼리에 규칙을 넣으면
+`fixedExpenseShare`와 `discretionaryShare`가 같이 움직여 K-Means 특징과 저장된 `pattern_analysis`로
+번지는데, 700의 무효화는 거래 지문 비교라 **SQL 규칙 변경을 감지하지 못한다.** 패턴 쪽 쿼리는
+그대로 두고 **예측 전용 월 집계 쿼리를 따로 둔다.**
 
-이 규칙 덕에 `predicted_total`을 `spending`과 같은 축에서 비교할 수 있다. 대신 카테고리가
-`HOUSING`·`INSURANCE`인데 `spending_type`이 NULL인 거래는 카테고리 기본값이 `FIXED`라 예측
-대상에서 빠진다. 무조건 `VARIABLE`로 두는 것보다 이 편이 맞다.
+### 4.2 결측 월
 
-### 2.3 이 예측이 쓰이는 곳
+`readUserMonthly()`는 **거래가 있는 달만** 돌려준다(Javadoc 명시). 결측 월이 `count = 0` 행으로
+오는 것이 아니라 **아예 안 온다.** `transactionCount == 0`이 의미 있는 것은 0으로 채우는
+`PatternFeatures.months` 쪽이다.
 
-예측값이 닿는 화면은 신규 API 하나가 아니다. 두 개의 주입 지점(cashflow 합성 이벤트, 목표 속도
-배율)을 거쳐 기존 API 다수로 번진다. MR 순서와 회귀 범위가 이 표에서 나온다.
+- 결측 판정은 **`readUserMonthly()`가 돌려주지 않은 달**이다
+- **수입 거래만 있고 지출이 없는 달은 결측이 아니라 `V = 0`이다.** 신규 V 쿼리는 지출 행만 보므로
+  그 달을 돌려주지 않는데, 결측으로 오해하면 휴면 판정이 반대로 된다
 
-**① 직접 — 신규 API (MR 5)**
+## 5. 계절성은 사용자 본인 24개월에서 추정한다
 
-| Endpoint | 쓰이는 값 |
-| --- | --- |
-| `POST /api/v1/spending-forecasts` | 실행 |
-| `GET /api/v1/spending-forecasts/latest` | 월별 V̂·구간·카테고리 배분 |
+rev.17은 군집별 계절지수를 JSON 아티팩트에 넣고 런타임이 군집 키로 조회하는 구조였다.
+**이 구조를 쓰지 않는다.**
 
-이 API를 쓰는 **화면은 MR 11**이다. ②·③의 기존 화면은 코드 변경 없이 숫자만 바뀌지만, 신규 예측
-화면과 "예상 소비 기준" 구분 표시는 `frontend/` 작업이 따로 필요하다(12절).
+### 5.1 왜 바꾸는가
 
-**② cashflow — 합성 이벤트 경로 (MR 7)**
+군집 계절지수는 그 군집 1,000명이 **같은 계절 모양**을 가져야 의미가 있다. 시연이 U0003 한 명이면
+나머지 999명에게 같은 모양을 심는 작업이 순전히 아티팩트를 채우기 위한 일이 된다.
 
-V̂를 일별 `CashflowEvent`로 넣으므로 예측을 읽는 모든 cashflow 조회가 바뀐다.
+사용자 단위 추정은 보통 표본 부족으로 불가능하다. 12개 계수를 2주기로 추정하는 셈이기 때문이다.
+그런데 **이 seed는 결정적이라 2주기면 정확히 복원된다.** 실데이터였다면 쓸 수 없는 방법이지만
+여기서는 성립하고, 대신 다음이 전부 사라진다.
 
-| Endpoint | 영향 |
-| --- | --- |
-| `GET /api/v1/cashflow/daily-balances` | 일별 예상잔액이 변동 소비만큼 내려간다 |
-| `GET /api/v1/cashflow/forecasts/latest` | `minimum_balance`, `risk_date` |
-| `GET /api/v1/cashflow/available-today` | 오늘 쓸 수 있는 돈 |
-| `GET /api/v1/cashflow/risks` | 예측 기반 위험이 추가된다(구분 값 포함) |
-| `GET /api/v1/cashflow/events` | 합성 이벤트가 목록에 나타난다 |
+- 군집 키 설계. `ClusterLabelPolicy.representativeFeature()`가 모르는 라벨에
+  `SPENDING_TO_INCOME_RATIO`를 조용히 돌려주는 문제를 우회할 필요가 없다
+- 두 아티팩트의 버전 결합과 "한쪽만 재학습하면 조용히 계절성이 사라지는" 위험
+- K-Means 재학습(2.1)
 
-**③ 목표 — 속도 배율 경로 (MR 9)**
+### 5.2 추론 절차
 
-`predictedMonthlyPace()`가 `GoalCalculationService`·`GoalHistoryRecorder`·
-`SimulationBaselineReader` 세 곳에 들어가면서 번진다.
+입력은 그 사용자의 최근 24개월 V(결측 제외).
 
-| Endpoint | 영향 |
-| --- | --- |
-| `GET /api/v1/goals/{goalId}/forecast` | 예상 달성일, `daysDifference`, `onSchedule` |
-| `GET /api/v1/goals/{goalId}/required-saving` | `averageMonthlySaving` |
-| `GET /api/v1/goals/{goalId}/risk` | 위험상태 |
-| `GET /api/v1/goals/summary` | 목표 요약의 달성일 |
-| `GET /api/v1/goals/{goalId}/history` | **이후 기록되는 행부터**. 과거 행은 그대로(7절) |
+1. **계절 추정** — 같은 달끼리 묶어 `V(m) / 그 사용자의 전체 평균`의 중앙값. 기하평균 1로 정규화.
+   관측이 1회뿐인 달은 1.0
+2. **계절 제거** — `Vt(m) = V(m) / seasonal[month(m)]`
+3. **이상치 클리핑** — med = median(Vt), mad = median(|Vt - med|), `[med +- 3 * 1.4826 * mad]`로
+   자른다. **`mad = 0`이면 건너뛴다.** 구간이 `[med, med]`로 붕괴해 모든 달이 중앙값으로 눌리고
+   추세가 0이 된다. 492가 슬롯마다 0.60~1.40배 계수를 붙이므로 흔하지는 않지만, 거래가 적은
+   사용자에서 나올 수 있고 증상이 "추세 없음"으로만 보여 원인을 찾기 어렵다
+4. **level** — 클리핑된 Vt에 지수평활(alpha), 최신 달이 마지막
+5. **trend** — Theil-Sen 기울기(모든 점쌍 기울기의 중앙값). 최소제곱은 남은 이상치 하나에도 끌린다
+6. **예측** — 감쇠 추세는 누적 합이다.
 
-**④ 하류 — 코드를 고치지 않아도 따라오는 곳**
+   ```
+   D(h) = f + f^2 + ... + f^h = f * (1 - f^h) / (1 - f)
+   base(h) = max(0, level + D(h) * trend)
+   Vhat(m+h) = base(h) * seasonal[month(m+h)]
+   ```
 
-③의 값을 그대로 받으므로 별도 작업이 없다. 회귀 테스트 대상은 여기가 가장 넓다.
+   `D(h)`는 `f/(1-f)`(f=0.85면 5.67)로 단조 수렴한다. `f^h * h` 형태를 쓰면 h가 커질 때 값이
+   늘었다 줄어 예측선이 level 쪽으로 되꺾인다
 
-| Endpoint | 경로 |
-| --- | --- |
-| `POST /api/v1/simulations/*` (실사용 7종, 2.4) | `SimulationBaseline.averageMonthlySaving` |
-| `GET /api/v1/simulations/{id}/comparison`, `/cashflow` | 위 기준선 |
-| `GET /api/v1/diagnoses/{id}/goal-impact` | `GoalCalculationService` |
-| `GET /api/v1/recommendations/{id}/goal-impact`, `/summary`, `/{id}/effect` | 진단이 굳힌 `goalSnapshot` |
-| `GET /api/v1/improvements/goal-impact`, `/summary` | `goalCalculations.getForecast()` |
-| `POST /api/v1/coach/chat` 외 | 시뮬레이션·추천 결과 문장 속 숫자 |
+7. **구간** — 시그마는 계절 제거 축(Vt)의 잔차 표준편차다. 예측값은 계절을 곱한 값이므로 구간도
+   같이 곱해야 단위가 맞는다.
 
-**⑤ 명시적으로 제외하는 곳**
+   ```
+   [하한, 상한] = max(0, base(h) -+ 1.28 * sigma * sqrt(h)) * seasonal[month(m+h)]
+   ```
 
-| Endpoint | 이유 |
-| --- | --- |
-| `GET /api/v1/reports/monthly/upcoming-expenses` | 확정 지출 목록이다. 예측이 섞이면 안 된다 (6.1) |
-| `GET /api/v1/reports/monthly` 효율 점수 | 예측 위험을 입력에서 뺀다 (6.4) |
-| 알림 (`notification`) | 예측 기반 부족은 알림을 만들지 않는다 (6.3) |
+8. **카테고리 배분** — 그 사용자의 월별 카테고리 비중. 반올림 잔돈은 **그 달 배분액이 가장 큰
+   카테고리에 몰아준다.** 규칙이 없으면 카테고리 합계와 월 예측이 서로 다른 금액을 말한다
 
-### 2.4 시뮬레이션 실사용 7종 / 미사용 3종
+### 5.3 폴백
 
-`SimulationController`의 실행 엔드포인트는 10개이고 **전부** `SimulationBaselineReader:120`의
-`paceReader.monthlyPace()`를 기준선으로 쓴다. 그중 **할부·리볼빙·현금서비스 3종은 현재 쓰지
-않는다**(2026-09-23 확인).
-
-| 구분 | Endpoint |
-| --- | --- |
-| 실사용 (7) | `/spending`, `/saving`, `/saving-product`, `/loan/new`, `/loan/prepayment`, `/loan/refinance`, `/combined` |
-| 미사용 (3) | `/installment`, `/revolving`, `/cash-advance` |
-
-**미사용이라고 회귀 대상에서 빠지지는 않는다.** 두 가지 이유다.
-
-1. `CombinedSimulationRequest`는 `scenarios[]`의 각 원소로 **COMBINED를 제외한 9종 전부**를
-   받는다. 즉 미사용 3종도 `/combined`를 통해 들어올 수 있고, `/combined`는 실사용이다.
-2. 기존 테스트가 있다 — `CardSimulationCalculatorTest`, `SimulationCardCombinedApiTest`,
-   `CombinedSimulationCalculatorTest`, `SimulationIntegrationApiTest`,
-   `SimulationMySqlIntegrationTest`. 속도 정의가 바뀌면 이 테스트들이 깨질 수 있고, 화면에서
-   안 쓴다는 사실은 테스트를 고치지 않아도 되는 이유가 되지 못한다.
-
-**달라지는 것은 QA 우선순위뿐이다.** MR 9 검증에서 실사용 7종은 화면까지 확인하고, 미사용 3종은
-테스트 통과로 끝낸다.
-
-## 3. 재사용 가능한 자산
-
-`JdbcPatternFeatureReader`가 이미 학습·추론에 필요한 행렬을 만든다. 새로 만들 쿼리는 둘이고,
-**둘 다 2.1의 NULL 해석 규칙을 같은 SQL 조각으로 공유한다.** 규칙이 두 벌이 되면 2.1이 막으려던
-불일치가 그대로 생긴다.
-
-| 필요한 것 | 현재 | 조치 |
+| 조건 | 결과 | 사유 |
 | --- | --- | --- |
-| 사용자 × 월 집계 (수입·결측 월 판정) | `readUserMonthly()` — income, spending, fixedSpending, variableSpending, discretionary, savingTransfer, loanRepayment, **count** | 그대로 사용. `variableSpending`만 `V`로 쓰지 않는다 (2.1) |
-| **사용자 × 월 변동 소비 `V`** | **없음** — `readUserMonthly()`의 `variableSpending`은 NULL 잔여를 뺀 값이다 | **신규 쿼리 추가** (2.1 규칙) |
-| 인구 × 월 집계 (학습 입력) | `readPopulationMonthly()` | 그대로 사용 |
-| 원천 지문 | `readSourceFingerprint()` — cnt, amountSum, lastCreatedAt, lastUpdatedAt (700에서 확립) | 그대로 사용 |
-| 군집 배정 | `ClusterAssigner`, `ClusterModelProvider` | 그대로 사용 |
-| 아티팩트 로드 + 폴백 | `ClusterModelArtifactLoader` (기동 실패 금지, 경고 후 폴백) | 구조 복제 |
-| **사용자 × 월 × 카테고리** | **없음** — `USER_CATEGORY_SQL`은 창 전체를 합칠 뿐 월 분해가 없다 | **신규 쿼리 추가** |
-
-인덱스는 이미 맞는 것이 있다. V6의 `idx_transaction_user_date (user_id, transaction_date)`가
-사용자 단위 월·카테고리 집계를 받는다. 반면 `readPopulationMonthly()`는 `user_id` 조건이 없어
-24개월 구간을 전부 훑는다(약 1.34M행). **학습 전용 경로이므로 수용하되 런타임에서 부르지 않는다.**
-
-### 3.1 결측 월 처리 — 0이 아니라 결측이다
-
-`PatternFeatures.months`는 거래 없는 달을 **0으로 채운다.** 패턴 지표에는 맞지만 예측 입력에
-그대로 쓰면 안 된다. 0을 소비 관측치로 넣으면 level이 끌려 내려가고, 휴면 구간이 있는 사용자의
-예측이 실제의 절반 이하가 된다.
-
-예측 입력에서는 `transactionCount == 0`인 달을 **결측으로 다루고 추정에서 제외한다.** 이 구분은
-구현 시 놓치기 쉬우므로 `SpendingForecastFeatures`에서 `PatternFeatures.months`를 그대로 받지 말고
-`readUserMonthly()` 원본 행을 직접 받는다.
-
-결측 판정의 `count`는 `readUserMonthly()`에서, `V` 값은 신규 쿼리에서 온다(3절 표). 두 결과를 월
-키로 맞춰야 하며, **수입 거래만 있고 지출이 없는 달은 결측이 아니라 `V = 0`이다.** 신규 쿼리는
-지출 행만 보므로 그 달을 아예 돌려주지 않는데, 이때 결측으로 오해하면 휴면 판정이 반대로 된다.
-
-## 4. 모델 식
-
-### 4.1 아티팩트에 들어가는 것
-
-사용자별 파라미터는 넣을 수 없다. 운영 중 사용자가 늘고, 4,000명 × 카테고리 계수는 아티팩트
-크기와 재학습 주기를 같이 망가뜨린다. **공유 파라미터만 아티팩트에, 사용자별 성분은 요청 시 추정한다.**
-
-`backend/src/main/resources/ml/spending-ts-v1.json` (수십 KB 예상). 키 구성은
-`spending-kmeans-v2.json` 관례를 따른다.
-
-```
-modelVersion, algorithm, trainedAt, trainedBy, window{start,end,months},
-referenceDate, minUserMonths, populationSize, evaluation{...},
-trainedAgainst: "spending-kmeans-v2",                  # 이 계수를 학습할 때 쓴 군집 모델 (아래)
-seasonal:  { "<ClusterFeature|BALANCED>": [12개], "ALL": [12개] }  # month-of-year 지수, 기하평균 1
-dow:       { "<ClusterFeature|BALANCED>": [7개],  "ALL": [7개]  }  # 요일 계수, 평균 1
-category:  { "<ClusterFeature|BALANCED>": { "<code>": [12개] } }   # 월별 카테고리 비중, 각 월 합 1
-coldStart: { "<ClusterFeature|BALANCED>": {"variableToIncome": 0.xx} }  # 이력 부족 사용자용 (4.4)
-damping:   0.85
-alpha:     0.5
-```
-
-`coldStart`가 없으면 4.4의 "데이터 월 수 < 3" 폴백이 참조할 값이 없다.
-
-`"ALL"` 칸은 군집 배정이 `RULE_ONLY`로 떨어진 사용자용이다. 군집이 없다고 예측을 포기하지 않는다.
-
-#### 군집 키는 번호도 라벨도 아니다
-
-`ClusterModel.ClusterSummary`의 `clusterId`는 **0부터의 정수**이고 K-Means는 재학습할 때마다
-중심 순서가 바뀔 수 있다. 두 아티팩트(`spending-kmeans-*`, `spending-ts-*`)를 서로 다른 시점에
-학습하면 `seasonal["0"]`이 학습 때와 다른 성향을 가리킨다. **조용히 틀린 값이 나오고 예외도
-로그도 남지 않는다.**
-
-`ClusterLabelPolicy`가 이미 같은 문제를 같은 이유로 풀어 두었다. 그 Javadoc의 표현 그대로다.
-
-> K-Means 번호는 학습마다 뒤바뀔 수 있어 그대로 노출하면 뜻이 없다. 원 단위 중심점을 보고
-> 결정적으로 이름을 정한다.
-
-**그러나 라벨 문자열을 키로 쓰는 것도 안전하지 않다.** 같은 Javadoc이 "라벨은 운영자 부여
-성격이라 50자 안에서 바꿔도 저장 구조에는 영향이 없다"고 한다. 누가 "저축 중심형"을 "저축형"으로
-바꾸면 아티팩트 키가 조용히 안 맞는다. 군집 수가 후보보다 많을 때 붙는 `"소비 유형 N"`은 아예
-군집 번호 순서에서 나오므로 처음부터 불안정하다.
-
-- 아티팩트 키는 **`ClusterFeature` enum 이름**(`SAVING_RATE`, `SPENDING_VOLATILITY` …)으로 잡고,
-  균형형은 `BALANCED` 센티널로 둔다. enum은 코드이므로 표시 문구를 바꿔도 흔들리지 않는다
-- **그러나 `ClusterLabelPolicy.representativeFeature(label)`로 키를 구하면 안 된다**(rev.17 정정).
-  그 메서드는 `PRIORITY`에서 라벨을 못 찾으면 **조용히 `SPENDING_TO_INCOME_RATIO`를 돌려준다.**
-  라벨을 "저축 중심형" → "저축형"으로 바꾸면 그 군집이 소비 집중형 계수를 쓰게 되고 예외도 로그도
-  남지 않는다 — rev.16이 "표시 문구를 바꿔도 흔들리지 않는다"고 한 근거가 키 산출 자체에는
-  적용되지 않는다. 군집 수가 후보보다 많을 때 붙는 `"소비 유형 N"`도 같은 값으로 떨어져
-  **소비 집중형과 키가 충돌한다.** 현재 `clusterCount = 4`(저축 중심형·소비 변동형·소비 집중형·
-  균형형)라 아직 충돌이 드러나지 않을 뿐이다
-- 따라서 **아티팩트에 `clusterId → 키` 맵을 함께 싣는다.** 학습 스크립트는 라벨 문자열을 되짚지
-  말고 `ClusterLabelPolicy.PRIORITY`와 같은 순서로 원 단위 중심점에서 키를 직접 배정하고, 런타임은
-  `trainedAgainst` 검사를 통과한 경우에만 그 맵으로 조회한다. 키가 중복이면 아티팩트를 거부하고
-  `"ALL"`로 내려간다
-- ts 아티팩트에 학습에 쓴 K-Means 아티팩트의 `modelVersion`을 `trainedAgainst`로 기록한다.
-  군집 수나 특징 집합이 바뀌면 라벨 체계 자체가 달라지는데, 이건 키 규칙으로는 못 잡고
-  버전 비교로만 잡힌다
-- 런타임에 현재 `ClusterModel`의 `modelVersion`과 다르면 군집별 계수를 쓰지 않고 `"ALL"`로
-  내려간다(`fallback_reason = MODEL_NOT_AVAILABLE`)
-
-두 모델을 항상 같이 재학습한다는 규칙만으로는 부족하다. 규칙은 깨지고 그때 증상이 안 보인다.
-
-### 4.2 추론 (요청 시, 사용자별)
-
-입력은 최근 12개월 V(u, m)(결측 제외). c는 그 사용자의 **군집 키**(4.1의 `ClusterFeature` 이름,
-번호도 표시 라벨도 아니다).
-
-1. **계절 제거** — Ṽ(m) = V(m) / seasonal[c][month(m)]
-2. **이상치 클리핑** — med = median(Ṽ), mad = median(|Ṽ − med|),
-   Ṽ를 [med ± 3 × 1.4826 × mad]로 자른다.
-   U0003 시연 데이터에는 **5월 여행 아웃라이어가 의도적으로 심어져 있다**(636 스토리 seed).
-   클리핑이 없으면 그 한 달이 level과 추세를 둘 다 끌어올린다.
-
-   **`mad = 0`이면 클리핑을 건너뛴다.** 8.2가 모든 금액을 `(sequence_no, month_no, slot)`의
-   결정적 함수로 만들므로 계절 제거 후 Ṽ가 거의 상수인 사용자가 다수 나온다. `mad = 0`이면
-   구간이 `[med, med]`로 붕괴해 **모든 달이 중앙값으로 눌리고 Theil–Sen 기울기가 0이 된다.**
-   8.2가 애써 심어 둔 계절성과 추세가 이 단계에서 지워져 시연 화면의 단축일이 전부 0으로
-   돌아간다. 가드가 없으면 8.2의 작업이 무의미해진다
-3. **level** — 클리핑된 Ṽ에 지수평활(alpha) 적용, 최신 달이 마지막
-4. **trend** — Theil–Sen 기울기(모든 점쌍 기울기의 중앙값). 최소제곱은 남은 이상치 하나에도 끌린다
-5. **예측** — 감쇠 추세는 **누적 합**이다. `φ = damping`일 때
-
-   ```
-   D(h) = φ + φ² + … + φ^h = φ × (1 − φ^h) / (1 − φ)
-   base(h) = max(0, level + D(h) × trend)
-   V̂(m+h) = base(h) × seasonal[c][month(m+h)]
-   ```
-
-   `D(h)`는 `φ / (1 − φ)`(φ=0.85면 5.67)로 **단조 수렴한다.** `φ^h × h` 같은 형태를 쓰면
-   h가 커질 때 값이 늘었다가 다시 줄어(φ=0.85, h=20에서 0.78배) 예측선이 level 쪽으로 되꺾인다.
-   감쇠가 아예 없으면 6개월 뒤 값이 비현실적으로 벌어진다
-6. **구간** — σ는 **계절 제거 축(Ṽ)의 잔차 표준편차**다. V̂는 계절을 곱한 값이므로 구간도 같이
-   곱해야 단위가 맞는다.
-
-   ```
-   [하한, 상한] = max(0, base(h) ∓ 1.28 × σ × √h) × seasonal[c][month(m+h)]
-   ```
-
-   정확도를 주장하는 값이 아니라 화면 표시용이며 응답 문서에 그렇게 적는다
-7. **카테고리 배분** — 개인 비중과 군집 비중을 섞는다.
-   w = 0.7 × min(1, 데이터월수 / 12),
-   share = w × 개인 + (1 − w) × category[c][code][month].
-   데이터가 적은 사용자일수록 군집 쪽으로 기운다
-
-### 4.3 학습 (오프라인)
-
-`backend/scripts/train_spending_ts.py` — 기존 `make_demo_*_fixture.py`와 같은 위치·방식. 수동 실행,
-산출 아티팩트는 커밋한다.
-
-- `readPopulationMonthly()`와 동일한 SQL로 24개월 인구 행을 읽는다
-- 사용자별 정규화 r(u, m) = V(u, m) / mean_u(V) — 절대 금액이 큰 사용자가 계절지수를 지배하지 않게
-- 군집 × month-of-year 별 r의 **중앙값** → seasonal[c], 기하평균 1로 정규화
-- 표본이 임계(제안: 30 사용자-월) 미만인 (c, month) 칸은 1.0
-- 요일 계수·카테고리 비중도 같은 절차
-
-### 4.4 폴백
-
-사유 이름은 `pattern`의 `FallbackReason` **어휘를 그대로 쓰되 enum은 따로 둔다.** 도메인 간
-코드값 enum을 재사용하지 않는 것은 `IssueSeverity`가 `cashflow`의 `RiskSeverity`를 쓰지 않은 것과
-같은 판단이다. 어휘까지 새로 만들면 같은 상황이 도메인마다 다른 이름으로 불린다.
-
-| 조건 | 결과 | `fallback_reason` |
-| --- | --- | --- |
-| 아티팩트 없음·형식 오류 | seasonal = dow = 1, 카테고리는 개인 비중 | `MODEL_NOT_AVAILABLE` |
-| 군집 미배정 또는 K-Means 버전 불일치 | `"ALL"` 칸 사용 | `MODEL_NOT_AVAILABLE` |
-| 데이터 월 수 < 3 | `coldStart[c].variableToIncome × 기준 수입`(2.2) | `USER_DATA_TOO_SHORT` |
+| 데이터 월 수 < 12 | 계절 추정 없이 level·trend만 | `SEASONALITY_UNAVAILABLE` |
+| 데이터 월 수 < 3 | 예측하지 않음 | `USER_DATA_TOO_SHORT` |
 | 데이터 월 수 < 2 또는 `IncomeBasis.NONE` | 예측하지 않음 | `FEATURES_UNAVAILABLE` |
 
-아티팩트가 없을 때의 결과는 **현행 평균 기반과 같은 값이 아니다.** seasonal·dow만 1이 될 뿐
-MAD 클리핑·Theil–Sen 추세·지수평활은 그대로 돌기 때문에 "최근 3개월 단순 평균"과 다른 수를 낸다.
-11.1의 기준선 비교에서 두 값을 구분해 기록한다.
+사유 어휘는 `pattern`의 `FallbackReason`을 따르되 enum은 따로 둔다. 도메인 간 코드값 enum을
+재사용하지 않는 것은 `IssueSeverity`가 `cashflow`의 `RiskSeverity`를 쓰지 않은 것과 같은 판단이다.
 
-군집이 없으면 `coldStart`도 `"ALL"` 칸을 쓴다.
+## 6. seed 개정 계획
 
-폴백 사유는 응답과 저장 행에 남긴다. 굳힌 결과가 어느 경로로 나왔는지 구분하지 못하면 재계산
-판단이 불가능하다. 아티팩트 문제로 기동이 막히면 안 된다(`ClusterModelArtifactLoader`와 동일).
+### 6.1 기간과 적재 방식
 
-## 5. 스키마 — `V45__create_spending_forecast.sql`
+`2026-03-01 ~ 2026-08-31` 6개월(약 336,000행)에서 `2024-09-01 ~ 2026-08-31` 24개월(약 134만 행)로.
+계절성 추정에 최소 2주기가 필요하므로 24개월이 하한이다.
 
-`cashflow_forecast` 관례를 따른다. 금액은 전부 `BIGINT` 원 단위 정수다.
+**기존 6개월 블록은 그대로 두고 과거 18개월 블록을 따로 만든다.** 기존 행의 `transaction_id`
+규칙(`SEED-U%`)을 건드리지 않고 새 접두(예: `SEED-PAST-U%`)로 분리하면, 재실행 시 과거 블록만
+지우고 다시 만들 수 있고 **기존 행은 한 줄도 변하지 않는다.** 월 번호를 24개로 바꿔 전 구간을
+재생성하는 방식은 2026-03~08 금액이 미묘하게 달라질 위험이 있어 쓰지 않는다.
 
-```
-spending_forecast
-  forecast_id BIGINT PK AI
-  user_id BIGINT NOT NULL FK -> user
-  base_month DATE NOT NULL            -- 해당 월 1일로 정규화
-  horizon_months INT NOT NULL         -- CHECK > 0
-  status VARCHAR(30) NOT NULL         -- CHECK IN (PENDING,RUNNING,COMPLETED,FAILED)
-  model_version VARCHAR(50) NULL
-  fallback_reason VARCHAR(50) NULL
-  request_hash CHAR(64) NULL
-  source_fingerprint CHAR(64) NULL    -- 700 지문을 길이 접두 직렬화 후 SHA-256 (아래 주석)
-  created_at DATETIME NOT NULL
-  completed_at DATETIME NULL
-  KEY (user_id, base_month, created_at)
-  KEY (user_id, request_hash)
+636이 U0003의 변동 소비를 지울 때 쓰는 패턴(`SEED-U0003-%-VAR-%`, `SEED-SEP-U0003-%-VAR-%`)에
+과거 블록 접두를 함께 넣어야 한다.
 
-spending_forecast_month
-  forecast_month_id BIGINT PK AI
-  forecast_id BIGINT NOT NULL FK
-  target_month DATE NOT NULL
-  predicted_variable BIGINT NOT NULL   -- CHECK >= 0
-  predicted_total BIGINT NOT NULL      -- 확정 고정비 + predicted_variable
-  lower_bound BIGINT NOT NULL          -- CHECK >= 0
-  upper_bound BIGINT NOT NULL
-  UNIQUE (forecast_id, target_month)
-  -- CHECK (lower_bound <= predicted_variable AND predicted_variable <= upper_bound)
+### 6.2 636 — U0003 스토리 표를 24개월로 (핵심 작업)
 
-spending_forecast_category
-  forecast_category_id BIGINT PK AI
-  forecast_month_id BIGINT NOT NULL FK
-  category_id BIGINT NOT NULL FK -> transaction_category
-  predicted_amount BIGINT NOT NULL     -- CHECK >= 0
-  UNIQUE (forecast_month_id, category_id)
-```
+**여기가 이 이슈의 실질적인 전부다.** U0003의 변동 소비는 492가 만들지 않는다. 636이 492·625의
+`VARIABLE` 행을 지우고 **손으로 쓴 월×카테고리 표**로 다시 만든다. 따라서 예측 품질은 4,000명
+학습이 아니라 이 표로 결정된다.
 
-카테고리 금액에도 **6.1과 같은 잔돈 규칙을 적용한다.** `share × V̂`를 반올림하면 합이
-`predicted_variable`과 어긋나므로, 내림한 뒤 남는 잔돈은 **그 달에서 배분액이 가장 큰 카테고리
-하나에 몰아준다.** 규칙이 없으면 카테고리 합계와 월 예측이 서로 다른 금액을 말하게 된다 —
-6.1이 일별 이벤트에서 막은 것과 같은 종류의 어긋남이다.
+현재 표는 7개월이고 5월을 빼면 월 합계가 약 100만원 ±5%로 평평하다.
 
-`readSourceFingerprint()`는 해시가 아니라 레코드(cnt, amountSum, lastCreatedAt, lastUpdatedAt)를
-돌려주고, pattern은 그것을 `feature_summary_json` 안에 넣어 `.equals()`로 비교한다. 여기서는
-컬럼 하나로 인덱스를 태우려는 것이므로 `CashflowEventKeys`와 같은 **길이 접두 인코딩으로
-직렬화한 뒤 SHA-256**을 건다. 구분자만 쓰면 값 안의 구분자로 서로 다른 입력이 같은 문자열이 된다.
-
-카테고리를 JSON 컬럼이 아니라 별도 테이블로 두는 이유는 카테고리별 집계·정렬 조회가 들어올 때
-JSON 함수로 풀면 인덱스를 타지 못하기 때문이다. `pattern_analysis`의 `*_json` 컬럼은 **조회 시
-재계산하지 않기 위한 스냅샷**이라 성격이 다르다.
-
-## 6. Cashflow 연동
-
-### 6.0 선행 조건 — 입금이 없는 예측에 출금만 더하면 안 된다
-
-2.2 때문에 현재 cashflow 예측 곡선은 **현재 잔액에서 출금만 빼 나가는 단조 감소선**이다. 급여
-입금이 한 번도 들어오지 않는다.
-
-여기에 변동 소비(출금)를 더하면 거의 모든 사용자가 horizon 안에서 부족에 걸린다. 6.3·6.4에서
-알림과 효율 점수를 제외하기로 했으므로 그 둘은 막히지만, **`GET /risks` 화면과
-`minimum_balance`·`risk_date`는 그대로 망가진다.**
-
-**결정: 급여 INFLOW 이벤트 소스를 먼저 구현한다.** `AccountScheduledEventSource`는 이미 확장점으로
-열려 있고 시그니처가 그대로 맞는다.
-
-```java
-List<AccountEvent> read(Long userId, LocalDate start, LocalDate end);
-record AccountEvent(Long userId, LocalDate date, String type, String name, Direction direction,
-        long amount, String sourceType, String sourceId, String occurrence) { }
-```
-
-`financial_profile`의 `payday`와 `monthly_income`으로 월 급여 입금을 만들어 `@Component`로
-등록하면 컬렉터가 `List<AccountScheduledEventSource>` 주입으로 받아 간다. 컬렉터·계산기·저장은
-손대지 않는다. 인터페이스 주석대로 **소유권을 조회 조건으로 검증**하고 `sourceType`/`sourceId`/
-`occurrence`에 민감번호를 넣지 않는다(예: `SALARY` / `financial_profile` / `yyyy-MM`).
-
-`payday`는 `CHECK (payday BETWEEN 1 AND 31)`이라(V2) **그 달에 없는 날이 나온다.** 지급일이 그 달
-마지막 날을 넘으면 **말일로 당긴다**(2월의 31일 → 28·29일). 주말·공휴일 이동은 하지 않는다 —
-공휴일 달력이 없고, 예측 목적에는 며칠 차이가 곡선의 모양을 바꾸지 않는다. 이 규칙을 구현 문서와
-테스트에 고정한다.
-
-`UpcomingExpenseService`는 INFLOW를 이미 거르므로(`:96`) "다가오는 지출" 금액은 바뀌지 않는다.
-다만 소스가 하나 생기면서 `ACCOUNT_SCHEDULE_SOURCE_UNAVAILABLE` 경고가 그 응답에서 사라진다.
-응답 계약 변화이므로 기대 경고 목록을 가진 기존 테스트를 함께 본다.
-
-이 작업은 시계열 모델과 무관하게 **단독으로도 예측 정확도를 올린다.** 12절 MR 6이며 MR 7의
-선행이다.
-
-### 6.1 합성 이벤트로 주입한다
-
-`CashflowDailyBalanceCalculator`의 Javadoc이 이미 이 구멍을 명시한다.
-
-> **제한**: 기획안이 함께 제시한 요일별 평균 변동지출은 반영하지 않는다. (…) 확정 예정 이벤트만
-> 반영하므로 예상잔액은 실제보다 낙관적이다.
-
-계산기를 고치지 않는다. V̂를 일별로 쪼개 **`CashflowEvent`로 만들어 넣는다.** 그러면 입금 선반영
-순서, `uk_cashflow_event_forecast_dedupe` 중복 차단, 부족 사건 수집이 전부 공짜로 따라온다.
-별도 계산 경로를 만들면 이 세 가지가 두 곳에 생긴다.
-
-**단, `CashflowEventCollector.collect()` 안에 넣으면 안 된다.** `UpcomingExpenseService:82`가 같은
-`collect()`를 불러 리포트의 "다가오는 지출"을 만든다. 그 목록은 카드 청구·대출 상환·정기결제·적금
-납입처럼 **확정된 지출**을 보여 주는 화면이다. 여기에 예측 소비가 섞이면 사용자는 오지 않을
-지출을 확정 청구로 읽는다.
-
-주입은 `CashflowForecastRunner`가 수집 결과를 받은 **뒤에** 한다. `collect()`에 플래그를 더하는
-방식은 기본값을 잘못 잡으면 같은 사고가 나므로, 확정 이벤트를 만드는 곳과 예측 이벤트를 붙이는
-곳을 아예 분리한다.
-
-- 일별 금액 = V̂(월) × dow[c][요일] / (그 달 요일 계수 합)
-- `sourceType = "PREDICTED_VARIABLE"`, `sourceId = modelVersion`, `occurrence = yyyy-MM-dd`
-- `dedupe_key = CashflowEventKeys.key(userId, sourceType, sourceId, occurrence)`
-- `amount > 0` CHECK 때문에 **0원으로 떨어지는 날은 이벤트를 만들지 않는다**
-- 금액은 원 단위 정수다. 일별로 내림한 뒤 남는 잔돈은 **그 달의 마지막 생성일 하나에 몰아준다.**
-  이 규칙이 없으면 일별 합이 `predicted_variable`과 어긋나 월 예측과 일별 잔액이 서로 다른
-  소비를 말하게 된다
-
-### 6.2 캐시 무효화 — 구멍이 하나 있다
-
-`CashflowRequestHash.of(userId, period, calculationVersion)`는 계산 버전을 포함하므로
-`CashflowCalculationVersion.CURRENT`를 v1 → v2로 올리면 기존 캐시가 자동으로 갈라진다.
-(`CURRENT`에는 이미 540 TODO가 달려 있다.)
-
-**그러나 지문에 원천 데이터가 들어 있지 않다.** 확정 이벤트만 쓰던 동안에는 방어가 됐지만,
-거래 이력에 의존하는 V̂가 들어가면 거래가 바뀌어도 같은 기준일·기간·버전이면 낡은 예측이
-그대로 재사용된다. `CashflowRequestHash`에 `readSourceFingerprint()` 값을 추가한다.
-
-다만 범위를 정확히 적어 둔다. `CashflowForecastRunner`의 재사용은 **같은 서비스일에 완료된 행만**
-대상이고 `forceRefresh` 경로도 있다. 즉 이것은 하루를 넘기지 않는 불일치이며, 지문 추가는
-**당일 안에서** 거래가 바뀌었을 때를 막는 보강이다. 지속적인 버그처럼 적으면 우선순위를 잘못 잡는다.
-
-지문의 창은 **예측 기간(미래)이 아니라 추론 입력 창(기준일 직전 12개월)**이다.
-`readSourceFingerprint(userId, startDate, endDate)`는 과거 구간을 받으므로 여기에 미래 구간을
-넘기면 항상 빈 지문이 나와 아무것도 무효화하지 못한다.
-
-### 6.3 알림 — 정책 결정이 필요하다
-
-`NotificationEventService.cashflowRisk()`가 최신 COMPLETED 예측의 `cashflow_risk`를 읽어 알림을
-만든다. 예측 출금이 들어가면 부족 사건이 늘고 **알림이 같이 늘어난다.** 지금까지 "잔액 부족"
-알림은 확정 이벤트 기반이었다.
-
-**결정: 기록하되 알림 대상에서 제외한다.** 예측으로 만든 경고를 확정 경고와 같은 무게로 보내면
-알림 신뢰도가 떨어진다.
-
-구현은 `cashflow_risk`에 **예측 기반 여부 컬럼을 추가**하고 `JdbcNotificationEventReader`의
-`cashflowRisks()` 쿼리에서 걸러낸다. 6.4의 효율 점수도 같은 컬럼을 쓴다. 조회 API
-(`GET /risks`)에는 그대로 내보내되 응답에 구분 값을 실어, 사용자가 "예상 소비 기준"임을 알 수
-있게 한다.
-
-### 6.4 월간 리포트 효율 점수도 같이 움직인다
-
-`EfficiencyScoreCalculator:78-99`는 최신 COMPLETED `CashflowForecast`와 그 예측의 `cashflow_risk`
-심각도 목록을 읽어 `EfficiencyScorePolicy.cashflow(...)`에 넣는다. 예측 출금이 위험을 늘리면
-**효율 점수가 내려간다.**
-
-6.3에서 알림만 막는 것으로는 부족하다. 계산기는 알림이 아니라 `cashflow_risk` **행을 직접** 읽는다.
-
-**결정: 효율 점수에서도 제외한다.** 6.3이 추가하는 예측 기반 여부 컬럼을 여기서도 쓴다.
-`EfficiencyScorePolicy.cashflow(boolean, boolean, List<String> riskSeverities)`는 심각도 문자열
-목록만 받으므로, **호출 전에 `EfficiencyScoreCalculator`에서 예측 기반 행을 걸러낸다.** 시그니처를
-넓히면 정책 클래스가 cashflow의 저장 구조를 알게 되므로 걸러내는 쪽이 경계가 깨끗하다.
-
-그 결과 효율 점수는 MR 7 배포 전후로 **바뀌지 않는다.** READY 월간 리포트는 갱신 API가 없는
-불변 스냅샷이라(699) 점수가 바뀌면 배포 지점에서 월별 점프가 생기는데, 애초에 입력이 안 바뀌면
-그 문제가 발생하지 않는다. 과거 리포트를 소급해 다시 만들 필요도 없다(7절 결정과 일관).
-
-### 6.5 그러나 MR 6은 효율 점수를 바꾼다 (rev.17 추가)
-
-6.4의 결론은 **MR 7만 덮는다.** MR 6이 급여 INFLOW를 넣으면 잔액 곡선이 올라가 **확정 기반**
-부족 사건이 줄고, `EfficiencyScoreCalculator`가 읽는 `riskSeverities` 목록이 짧아져 cashflow 차원
-점수가 **오른다.** 6.3·6.4가 추가하는 예측 구분 컬럼으로는 걸러지지 않는다 — 예측 행이 늘어나는
-것이 아니라 확정 행이 줄어드는 것이기 때문이다. 6.4가 피했다고 본 "배포 지점의 월별 점프"가
-MR 6에서 다른 경로로 생긴다.
-
-**결정: 의도된 개선으로 보고 소급하지 않는다.** 급여 입금이 빠져 있던 쪽이 틀린 값이었고,
-6.3·6.4가 막으려던 것은 "예측으로 만든 경고가 점수를 깎는 것"이지 "확정 곡선이 정확해지는 것"이
-아니다. 다만 MR 6 배포 지점에서 효율 점수에 **한 번의 상향 점프가 생긴다는 사실**을 구현 문서에
-남기고, 시연 전에 만들어 둔 READY 리포트가 있으면 8.4의 파생 리셋 대상에 포함한다.
-
-같은 이유로 **MR 6도 `CashflowCalculationVersion.CURRENT`를 올려야 한다**(MR 6 → `v2`,
-MR 7 → `v3`). rev.16의 MR 표는 v2를 MR 7에만 뒀는데, MR 6도 계산 결과를 바꾸므로 같은
-`request_hash`가 낡은 값을 가리킨다. 영향은 6.2의 같은 서비스일 규칙 때문에 배포 당일로 한정된다.
-
-## 7. 목표 단축 — rev.1 계획의 오류 정정
-
-rev.1 문서는 "예측 속도 = 예측 수입 − 예측 지출"이라고 썼다. **이대로 하면 안 된다.**
-
-`GoalSavingPaceReader.monthlyPace()`는 사용자 전체가 아니라 **목표에 연결된 계좌**만 본다.
-연결 예·적금의 PAID 납입 + 연결 입출금 계좌의 순현금흐름이며, 한 계좌를 여러 목표에 담았을 때는
-`shareOf()`로 (기여액 / 그 계좌의 총 할당액) 몫만 가져간다(703). 사용자 레벨 예측치를 그대로
-넣으면 계좌 스코프와 몫 계산이 둘 다 무너지고, 694에서 잡았던 "연결한 잔액 전체를 한 달 저축으로
-세는" 부류의 버그가 다시 생긴다.
-
-### 전제: 달성일 식이 일 단위여야 한다
-
-`GoalForecastFormula.expectedDate()`는 **일 단위로 계산한다**(658). 축은 달력 개월
-`t(k) = 기준일.plusMonths(k)`이고, 정수 개월은 그 축 위의 날짜, 나머지 금액은
-`(t(whole), t(whole+1)]` 구간의 실제 일수에 비례해 올림한다.
-
-이 전제가 이 절 전체를 지탱한다. 658 이전의 `기준일 + ceil(남은금액 / 속도)개월`은 월 단위
-올림이라 속도가 몇 %P 움직여도 달성일이 한 달 단위로만 변해 "변화 없음"으로 나왔다. 아래 배율은
-`clamp(0.5, 1.5)` 안에서 움직이므로 대부분의 달에 속도 변화가 크지 않고, **월 단위 올림 식이었다면
-계절성 효과가 화면에서 전부 사라진다.** 달성일 식을 월 단위로 되돌리는 변경이 들어오면 이 기능은
-같이 죽는다.
-
-### 올바른 형태: 스코프는 그대로, 배율만 씌운다
-
-```java
-// 새 메서드. 기존 monthlyPace()의 의미는 건드리지 않는다.
-long predictedMonthlyPace(userId, allocation, today) {
-    long base = monthlyPace(userId, allocation, today);   // 계좌 스코프·몫 계산 그대로
-    double factor = clamp(predictedSavingCapacity / recentSavingCapacity, 0.5, 1.5);
-    return Math.max(0L, Math.round(base * factor));
-}
-```
-
-- `recentSavingCapacity` = 최근 3개 완료 월 평균 (수입 − 소비). `monthlyPace`의 창과 같은 3개월
-- `predictedSavingCapacity` = 기준 수입(2.2) − (확정 고정비 + V̂)
-- 분모가 0 이하면 factor = 1 (배율을 정의할 수 없다)
-- clamp(0.5, 1.5)가 안전장치다. 이게 없으면 계절지수가 큰 달에 달성일이 몇 년씩 튄다
-
-**이것은 가정이다.** 분자·분모는 **사용자 레벨** 저축 여력이고 `base`는 **계좌 스코프** 값이다.
-배율을 씌운다는 것은 "사용자 전체의 저축 여력이 x% 변하면 이 목표 계좌로 가는 돈도 x% 변한다"를
-가정한다는 뜻이다. 계좌별 월 순현금흐름을 따로 예측하면 가정을 없앨 수 있지만 계좌 단위 월
-집계가 없어 모델과 쿼리가 같이 커진다. 가정을 택한 이유와 함께 구현 문서와 API 응답 주석에 적는다.
-
-단축일은 새로 만들지 않는다. `GoalForecastFormula.expectedDate()`에 두 속도를 각각 넣어 차이를
-구하고, "목표일 안에 들어온 경우에만 노출"하는 `GeneratorSupport`의 기존 규칙을 그대로 쓴다.
-
-### 호출부는 3개다 (rev.2 정정)
-
-rev.2는 "6개 API를 동시에 바꾼다"고 썼는데, **직접 호출부와 하류 소비자를 섞어 센 것이다.**
-`paceReader.monthlyPace(...)`를 실제로 부르는 곳은 셋뿐이다.
-
-| # | 호출부 | 영향 |
+| 월 | 합계 | 비고 |
 | --- | --- | --- |
-| 1 | `GoalCalculationService:367` | Goal 510 예상 달성일·필요 저축액 |
-| 2 | `GoalHistoryRecorder:63` | `goal_history.forecast_date` (511) |
-| 3 | `SimulationBaselineReader:120` | 시뮬레이션 기준선 |
+| 2026-03 | 974,000 | baseline |
+| 2026-04 | 939,000 | quiet |
+| 2026-05 | 1,653,000 | 제주 여행(TRAVEL 480,000) — 이상치 |
+| 2026-06 | 1,015,000 | 치과(MEDICAL 120,000) |
+| 2026-07 | 1,031,000 | 외식 증가 시작 |
+| 2026-08 | 994,000 | FOOD 520,000 / CAFE 145,000 (627 진단 근거) |
+| 2026-09 | 978,000 | 27일까지 |
 
-진단·추천·코치는 pace reader를 부르지 않는다. `DiagnosisEvaluator`가 `goalSnapshot`을 evidence
-JSON에 굳히고, 추천 생성기(`GeneratorSupport.SnapshotSavingGoal`)는 **그 저장된 JSON**을 읽는다.
-코치는 시뮬레이션 결과 문장을 받는다. 따라서 이전 대상은 3개이고 나머지는 따라온다.
+**추가할 것**: `2024-09 ~ 2026-02`의 18개월. 설계 조건은 다음과 같다.
 
-1. `predictedMonthlyPace()` 추가 + 단위 테스트 (호출부 없음, 동작 변화 0)
-2. 신규 예측 API에서만 사용
-3. 호출부 1 → 3 → 2 순서로 이전. 1에서 회귀 테스트가 가장 많이 깨진다
+- **계절 모양의 일관성** — 각 달력 월이 24개월 안에서 2번 관측되어야 계절 추정이 성립한다.
+  3~8월은 과거 블록(2025-03~08)과 기존 블록(2026-03~08)에서 각 1번씩이므로 **2025-03~08을
+  2026-03~08과 같은 모양으로** 두되 추세만큼 낮게 잡는다. 9~2월은 과거 블록 안에서 2번 나온다
+- **증가 추세** — 과거로 갈수록 FOOD·CAFE를 낮춘다. 그래야 최근 증가가 추세로 읽힌다
+- **12월 상승** — 2024-12와 2025-12를 올린다. 두 번 나와야 계절로 추정된다
+- **이상치** — 2025-05에도 여행 이상치를 둔다. MAD 클리핑이 실제로 걸리는지 화면과 테스트에서
+  확인할 수 있다
+- **2026-08 불변** — 기존 블록이므로 자동으로 지켜진다
+- **생성 규칙** — 636의 기존 방식(`h = month_no * 104729 + plan_no * 7919 + n * 15485863 + 93`,
+  가중치 분할, 100원 단위 누적 반올림)을 그대로 쓴다. `RAND()`를 쓰지 않는다
+- **TRAVEL 주의** — TRAVEL은 `DISCRETIONARY_CATEGORY_CODES`에 속하고 그것은 K-Means 특징이다.
+  다만 과거 블록은 군집 창(2026-03~08) 밖이라 영향이 없다
 
-각 단계에서 factor = 1을 강제하면 이전 동작과 **한 날짜도 다르지 않아야 한다.** 이것을 이전
-단계마다 테스트로 고정한다.
+손으로 쓴 표이므로 **예측 결과를 미리 계산해 검증 기준으로 삼을 수 있다.** 7.1의 근거다.
 
-### 굳힌 스냅샷과 기준이 섞인다 — 별도 처리가 필요하다
+### 6.3 679·633 — U0003 주변을 잇는다
 
-속도 정의가 바뀌면 **이미 저장된 "변경 전" 값들이 새 정의로 계산한 "현재" 값과 비교된다.**
-셋 다 실제로 그렇게 동작한다.
+과거 18개월에 U0003의 급여·고정비·저축이체·카드청구·대출상환이 없으면, 모델은 "2026-03에 소득이
+급증하고 고정비가 급증한" 사람으로 읽는다.
 
-| 저장물 | 비교 상대 | 증상 |
-| --- | --- | --- |
-| `improvement_action.before_snapshot`의 `goalForecastDate` | `ImprovementQueryService.goalImpact()`가 `goalCalculations.getForecast()`로 구하는 현재값 | 개선 행동을 하나도 안 했는데 목표일이 앞당겨지거나 밀린 것으로 보인다 |
-| 진단 evidence의 `goalSnapshot` | 추천 생성기가 그 위에서 계산하는 개선 후 날짜 | `advancedDays`가 두 정의의 차이만큼 틀어진다 |
-| `goal_history.forecast_date` | 이력 그래프의 이전 행들 | 정의 변경 지점에서 꺾인다 |
+**679** — 재구성 구간을 과거 18개월까지 넓힌다. 679는 급여 행을 새로 만들지 않고 492·625가 만든
+`INC-00` 행의 금액을 덮으므로 과거 블록에도 같은 오버라이드가 필요하다. 과거 급여는 성장률을
+역산해 3,012,400보다 낮게 둔다. 그대로 두면 491이 넣은 원래 값이 남아 **"소득이 반토막 난 사람"**의
+예측이 나온다.
 
-8.4의 파생 리셋은 **seed 데이터 변경**을 위한 것이고, 이건 **속도 정의 변경**에서 따로 생기는
-문제다. 같은 리셋으로 덮이지 않는다.
-
-**결정: 굳힌 스냅샷만 재촬영하고 과거 값은 그대로 둔다.**
-
-- `improvement_action` / 진단 evidence — 새 정의 적용 시점에 **측정 가능 상태의 before 스냅샷을
-  현재 기준으로 다시 찍는다.** 그 시점까지의 효과는 0이 되지만 이후 측정이 정확해진다.
-  거짓 효과를 그대로 보여 주는 것보다 낫다
-- `goal_history` — 소급 재계산하지 **않는다.** 기록 시점 값이라는 계약이 있고(511), 과거 행을
-  고치면 이력의 의미가 사라진다
-- 월간 리포트 — 다시 만들지 않는다. 6.4의 결정으로 효율 점수 입력이 바뀌지 않으므로 소급할
-  이유가 없다
-
-정의 변경일은 `backend/docs/`의 구현 문서에 남긴다. 목표 이력 그래프가 그 지점에서 꺾이는 것은
-**의도된 동작**이며, 기록 시점 값이라는 511 계약과 일관된다.
-
-이 처리는 MR 9에 포함되어야 하며, 빠지면 "개선 안 했는데 3개월 단축"이 시연에 그대로 나온다.
-
-## 8. 데이터 변경
-
-### 8.1 기간 확장
-
-`2026-03-01 ~ 2026-08-31` 6개월(사용자당 약 84건, 약 336,000행) →
-`2024-09-01 ~ 2026-08-31` 24개월(**약 1,340,000행**). 계절성 학습에 최소 2주기가 필요하므로
-24개월이 하한이다.
-
-### 8.2 기간만 늘리면 모델이 학습할 것이 없다
-
-`financial_profile.monthly_income`은 **시간축이 없는 스칼라 한 값**이고, 492 생성 규칙은 이 값의
-고정 비율(성향별 variable 20~70%, saving 3~30%)로 월별 금액을 만든다. 기간만 늘리면 24개월이
-완전히 평탄해진다. 추세는 0, 계절지수는 전부 1.0으로 학습되고 시연 화면의 단축일이 전부 0이 된다.
-
-생성 규칙에 다음을 넣는다. 전부 (순번, 월번호, 슬롯)의 결정적 함수이며 `RAND()`를 쓰지 않는다
-(기존 seed 규약).
-
-| 성분 | 규칙 |
-| --- | --- |
-| 소득 성장 | income × (1 + g)^(경과월/12), g는 성향별 0.02~0.05 |
-| 월 계절성 | 1월 1.15, 2월 1.10, 5월 1.05, 7·8월 1.20, 12월 1.25, 그 외 0.92~1.00 (기하평균 1로 정규화) |
-| 카테고리별 패턴 | CULTURE·TAXI 7·8월, SHOPPING·BEAUTY 12월, FOOD·CAFE·GROCERY 평탄 |
-
-**TRAVEL은 쓸 수 없다.** 492의 변동 슬롯 표가 만드는 카테고리는 FOOD·CAFE·GROCERY·
-PUBLIC_TRANSPORT·TAXI·SHOPPING·BEAUTY·CULTURE·MEDICAL·ETC 열 개뿐이고 **TRAVEL은 4,000명
-데이터에 아예 없다**(U0003 스토리 seed의 5월 아웃라이어만 예외). 여름 성수기를 TRAVEL로 표현하려면
-슬롯 표에 카테고리를 새로 넣어야 하는데, TRAVEL은 `DISCRETIONARY_CATEGORY_CODES`에 속하므로
-**4,000명의 `discretionaryShare`가 통째로 움직이고 그것은 K-Means 특징이다**(8.5).
-기존 카테고리 안에서 계절성을 주는 편이 파급이 작다.
-
-**카테고리마다 다른 패턴을 주는 것이 핵심이다.** 전 카테고리가 같은 배율로 움직이면 4.1의
-category[c][code][month] 계수가 월과 무관해져 카테고리 배분이 학습되지 않는다.
-
-계좌 `created_at`(2026-09-07)보다 이른 거래가 생기는 것은 현행 seed에도 이미 있는 상태이므로
-새로 생기는 문제가 아니다.
-
-### 8.2.1 무엇을 고치고 무엇을 새로 만드는가
-
-**기존 파일 개정이 대부분이다.** 492는 멱등이라 재실행하면 `SEED-U%` 행을 지우고 다시 만든다.
-
-| 파일 | 작업 |
-| --- | --- |
-| `DODAM_TRANSACTION_SEED.sql` (492) | **개정** — 월 테이블을 `2024-09-01` 시작·24개월로, 급여에 성장률, 변동 금액에 월·카테고리 배율 |
-| `DODAM_DEMO_U0003_LEDGER_679_SEED.sql` (679) | **개정** — 8.2.2 |
-| `backend/database/seeds/README.md` | **개정** — 적재 체인과 창 표기 |
-| 검증 SQL (가칭 `DODAM_TRANSACTION_VERIFY.sql`) | **신규** — 678·679의 `*_VERIFY.sql` 전례 |
-
-492의 작업 테이블 `tmp_dodam_492_months`는 `tmp_dodam_492_digit`(0~9) 하나에서
-`WHERE d.digit BETWEEN 0 AND 5`로 6개월을 만든다. **제약은 `month_no TINYINT`가 아니라 digit
-소스다**(rev.17 정정) — 한 자리 숫자 표로는 10개월이 상한이다. 같은 파일의 슬롯 생성이 이미 쓰는
-`tens.digit * 10 + ones.digit` CROSS JOIN 패턴으로 바꾸면 24개월이 나온다. 모든 금액이 이미
-`(sequence_no, month_no, slot)`의 결정적 함수라 배율을 곱할 자리는 있다.
-
-### 8.2.2 확장 구간에서 U0003 급여가 끊긴다
-
-14절 위험 3("2026-08을 불변점으로 고정하고 과거로만 뻗어야 한다")이 구체적으로 어떤 경로로
-발생하는지다.
-
-**679는 급여 행을 새로 만들지 않는다.** 492·625가 만든 `INC-00` 행의 금액만 덮는다.
-
-```sql
--- 679, 2026-03~09 구간만
-SET tx.amount = 3012400, ...
-SET fp.monthly_income = 3012400, ...
-```
-
-492를 24개월로 늘리면 **신규 18개월(2024-09~2026-02)은 679가 건드리지 않는다.** 그 구간은 491이
-넣은 원래 `monthly_income`으로 남고 2026-03부터 3,012,400으로 떨어진다. 시계열에 **계단 단절**이
-생기고 모델은 그것을 급격한 하락 추세로 학습한다. U0003은 시연 주인공이므로 그대로 두면
-"소비를 줄이는 사람"이 아니라 **"소득이 반토막 난 사람"의 예측**이 나온다.
-
-**처리**: 679의 급여·`monthly_income` 오버라이드를 24개월 전 구간으로 넓히되, 8.2의 성장률을
-역산해 과거를 3,012,400보다 낮게 둔다. 2026-08 기대값(income 3,012,400)은 699 검증 seed의 선행
-조건이므로 불변점으로 고정한다.
-
-같은 점검을 636(U0003 변동 소비)·655(구독)·625(9월 확장)·633(대출)·678(적금)에도 한다.
-전체 모습은 8.2.3이다.
-
-### 8.2.3 원천 테이블은 과거를 덮지만 `transaction`은 아니다
-
-8.2.2가 급여 하나를 다뤘다면 이건 같은 문제의 전체 모습이다. **모델은 `transaction`만 읽는다**
-(`readUserMonthly()`). 그런데 후속 seed들이 만드는 `transaction` 행은 거의 전부 2026-03부터다.
-
-| 원천 | 원천 테이블 범위 | `transaction` 행 범위 |
-| --- | --- | --- |
-| 대출 상환 (633) | `loan_repayment` **2026-03-10 ~ 2026-10-10, 8행**(PAID 7 + SCHEDULED 1) | 679가 만드는 **2026-03~09 7건뿐** |
-| 적금 납입 (678) | `savings_payment` 193회, 계좌 개설 2025-11~ | 492·679의 저축 이체 구간만 |
-| 구독 (655) | `subscription_payment_history` 2026-03~09 | 2026-03~09 |
-| 할부 (522) | 2026-01·02 개시 | 카드 청구 경유 |
-
-즉 확장 구간 18개월(2024-09~2026-02)에는 **대출은 있는데 상환 거래가 없고, 적금은 있는데 납입
-거래가 부분적으로만 있다.** 그대로 두면 U0003의 고정비가 2026-03에 410,331원(대출)만큼 튀어
-오르고, 모델은 그것을 고정비 급증 추세로 학습한다. 8.2.2의 급여 단절과 **반대 방향으로 겹쳐**
-저축 여력 곡선이 심하게 꺾인다.
-
-**처리**: 679의 재구성 구간을 24개월로 넓히는 것이 급여·고정비·저축 이체·카드 청구를 한 번에
-해결하는 길이다(679는 이미 그 넷을 한 파일에서 다룬다).
-
-**단, 대출은 원천에도 과거가 없다**(rev.17 정정). `DODAM_DEMO_LOAN_SEED.sql`이 넣는
-`loan_repayment`는 **2026-03-10 ~ 2026-10-10의 8행**(PAID 7 + SCHEDULED 1)뿐이다. 파일 25행의
-"24 installments paid"는 잔액 12,998,492가 나온 근거를 설명하는 서술이고 삽입 행 수가 아니다 —
+**633** — `loan_repayment` **17행을 새로 만든다**(회차 1~17, `2024-10-10 ~ 2026-02-10`).
+현재 파일이 넣는 것은 `2026-03-10 ~ 2026-10-10`의 **8행**(PAID 7 + SCHEDULED 1)뿐이다. 파일 25행의
+"24 installments paid"는 잔액 12,998,492가 나온 근거를 적은 서술이지 삽입 행 수가 아니다.
 바로 위 97행이 `Repayments inside the seed window (installments 18~24)`라고 못 박는다.
-rev.16은 이 주석을 행 수로 읽었다.
+원금·이자는 `seeds/README.md` 118행 기준대로 `LoanRepaymentScheduleCalculator`와 같은 식·반올림을
+쓰고, 24회차 후 잔액 12,998,492에 맞는지 역산으로 검증한다. 상환 **거래** 행은 679가 만든다.
 
-따라서 확장 18개월은 **거래 행을 복사할 원천이 없고, `loan_repayment` 17행(회차 1~17,
-2024-10-10 ~ 2026-02-10)을 먼저 생성해야 한다.** 원금·이자는 `seeds/README.md` 118행 기준대로
-`LoanRepaymentScheduleCalculator`와 같은 식·반올림을 쓰고, 24회차 후 잔액 12,998,492와 14절
-위험 3의 2026-08 불변점에 맞는지 역산으로 검증한다. **MR 2의 작업량이 rev.16 추정보다 그만큼
-늘어난다.**
+### 6.4 492 — 과거 18개월 단순 확장
 
-### 8.2.4 README와 633 파일은 어긋나지 않는다 (rev.17 정정)
+나머지 3,999명은 **정교하게 만들 필요가 없다.** 계절성을 사용자 본인 데이터에서 추정하므로(5절)
+이들은 U0003 예측에 영향을 주지 않는다. 기존 생성 규칙을 과거로 늘리기만 한다.
 
-rev.16은 둘이 충돌하므로 MR 2에서 확인이 필요하다고 적었으나 **충돌이 아니다.** 세어 보았다.
+- 월 테이블의 digit 소스를 바꿔야 한다. 현재 `tmp_dodam_492_digit`(0~9) 하나에서
+  `WHERE d.digit BETWEEN 0 AND 5`로 만들어 **한 자리 표로는 10개월이 상한이다.** 같은 파일의 슬롯
+  생성이 이미 쓰는 `tens.digit * 10 + ones.digit` CROSS JOIN 패턴으로 바꾼다
+- 홀짝 교대(`variable_ratio_odd` 70 / `variable_ratio_even` 20)는 `behavior_index 3`에만 있고
+  **U0003은 `behavior_index 2`(`MOD(sequence_no - 1, 4)`), 군집 3이라 해당이 없다.** 손대지 않는다.
+  다만 그 코호트의 `spendingVolatility`가 0.2819로 나머지(0.013~0.018)보다 20배 높은 것은 실제
+  변동이 아니라 격월 아티팩트이며, 나중에 인구 단위 계절 학습을 하게 되면 그때 정리해야 한다
 
-| 출처 | 내용 | 가리키는 것 |
-| --- | --- | --- |
-| `seeds/README.md` 117행 | "24회 납입(2024-10-10 ~ 2026-09-10, 월 410,331원) → 잔액 12,998,492원" | 대출의 **상태** |
-| `seeds/README.md` 118행 | "2026-03-10 ~ 2026-09-10 PAID 7건 + 2026-10-10 SCHEDULED 1건" | **삽입 행 수** |
-| `DODAM_DEMO_LOAN_SEED.sql` 25행 | "24 installments paid (2024-10-10 ~ 2026-09-10)" | 대출의 **상태** |
-| `DODAM_DEMO_LOAN_SEED.sql` 97·110~117행 | `installments 18~24` + 다음 회차, 실제 INSERT **8행** | **삽입 행 수** |
+### 6.5 README와 검증 SQL
 
-README 13번 항목의 "상환 8건"은 118행과 같은 것을 가리키며 파일과 일치한다. 고칠 문서가 없고
-MR 2에서 확인할 미결도 아니다. 실제 결론은 8.2.3에 있다 — **과거 구간 상환 행을 새로 만들어야
-한다.**
+- `backend/database/seeds/README.md` — 적재 체인의 기간 표기를 갱신하고 재적재 연쇄에
+  **9번(알림)을 넣는다.** README 15번 항목이 "6·8·11 중 하나를 다시 돌리면 그 뒤 9번도 다시
+  돌린다"고 이미 적고 있는데 rev.17의 연쇄 목록에서 빠져 있었다
+- `DODAM_TRANSACTION_VERIFY.sql`(가칭) 신규 — 678·679의 `*_VERIFY.sql` 전례. 24개월 행 수, 월별
+  합계, **2026-03~08 구간이 변하지 않았음**, U0003의 급여·고정비 연속성(계단 단절 없음)을 검사한다
 
-### 8.3 조회 기간 상한은 건드리지 않는다
+### 6.6 재적재 순서
 
-- `PatternProperties.MAX_LOOKBACK_MONTHS = 12`
-- `QueryPeriodPolicy.MAX_PERIOD_MONTHS = 12`
+```
+6(492) -> 8(구독) -> 9(알림) -> 11(625) -> 13(633) -> 14(636) -> 15(655) -> 17(679) -> 18(680)
+```
 
-학습은 오프라인 스크립트가 DB를 직접 읽으므로 상한과 무관하다. 런타임 추론은 계절지수를
-아티팩트에서 받고 사용자별로는 level·trend만 추정하므로 12개월 입력이면 충분하다(4.2).
-상수를 올리면 Spending·Pattern·Report 전 API의 쿼리 비용과 응답 크기가 같이 올라간다.
+**18번 신용점수는 반드시 마지막**이다. U0003 점수를 하드코딩하지 않고 계산하므로 모든 보정이
+끝난 뒤여야 한다.
 
-### 8.4 재적재 순서와 파생 리셋
+파생 결과는 699 패턴을 따른다. 월간 리포트는 READY 스냅샷에 갱신 API가 없으므로 **삭제 후
+재조회**, pattern·cashflow·diagnosis는 이력 보존과 `forceRefresh`로 새 행(삭제하면 추천의 외래키가
+깨진다). **다만 2026-03~08이 안 변하므로 최근 6개월 기준 지표는 값이 달라지지 않는다.**
 
-`backend/database/seeds/README.md`의 18단계 체인을 갱신한다. 거래(6번)를 다시 만들면
-8·11·14·15·17번이 연쇄로 다시 실행돼야 하고 **18번 신용점수(680)는 반드시 마지막**이다.
+## 7. 검증
 
-파생 결과는 699 패턴을 그대로 확장한다.
+### 7.1 심은 값이 복원되는가
 
-- 월간 리포트 — READY 스냅샷은 갱신 API가 없으므로 **삭제 후 재조회**
-- pattern / cashflow forecast / diagnosis — 이력 보존 + `forceRefresh`로 새 행 (삭제하면 추천의
-  외래키가 깨진다)
-- 대상이 U0003 하나에서 **U0001~U0004 + 4,000명 pattern 집계**로 넓어진다
+636 표를 손으로 쓰므로 **기대값을 미리 계산할 수 있다.** 이것이 이 작업의 합격 기준이다.
 
-### 8.5 seed를 바꾸면 K-Means부터 다시 학습해야 한다
+- 12월에 배율 x를 심었으면 추정 계절지수가 x 근처인가
+- U0003 예측 3개월이 3.1의 이야기대로 나오는가(증가 + 12월 상승)
+- 2025-05 이상치가 MAD 클리핑에 걸려 추세를 끌어올리지 않는가
+- 과거 12개월 실측선이 화면에 내놓을 만한 모양인가(3.3)
 
-배포된 `spending-kmeans-v2.json`은 **`window: 2026-03 ~ 2026-08`, 6개월**로 학습됐고 특징은
-`spendingToIncomeRatio`, `savingRate`, `fixedExpenseShare`, `discretionaryShare`,
-`spendingVolatility` 다섯이다. 표준화 계수(`standardization.means`/`stds`)와 중심점이 **그때의
-분포에 맞춰져 있다.**
+### 7.2 평가 수치의 의미를 문서에 적는다
 
-24개월 확장과 8.2의 성장률·계절성은 이 다섯 특징을 모두 움직인다. 특히 `spendingVolatility`는
-월 소비 변동계수라 **계절성을 넣는 순간 거의 모든 사용자에서 올라간다.** 낡은 중심점으로 배정하면
-군집이 틀어지고, ts 아티팩트는 그 군집 위에 얹히므로(4.1 `trainedAgainst`) 계절지수까지 엉뚱한
-집단의 값을 쓴다.
+홀드아웃 MAPE 같은 수치를 내더라도 **그것은 모델 성능이 아니다.** 4,000명은 4개 파라미터 세트의
+복사본이고(2.3) 계절성도 우리가 seed에 써 넣은 것이다. 그 수치가 재는 것은 **추정 로직이 생성
+규칙을 역산할 수 있는가**이며, 버그 탐지로는 쓸모가 있지만 "모델이 낫다"는 근거로는 쓸 수 없다.
 
-**따라서 순서는 seed → K-Means 재학습 → ts 학습이다.** rev.9까지의 MR 표에는 K-Means 재학습이
-없었다. 12절 MR 4에 포함한다.
+이 문장을 문서에 남기지 않으면 나중에 같은 수치가 운영 성능으로 인용된다.
 
-재학습 시 정할 것: 학습 창을 현행 6개월로 둘지 24개월로 늘릴지. **6개월 유지를 제안한다** —
-`PatternProperties.DEFAULT_LOOKBACK_MONTHS`가 6이고 군집은 "최근 성향"을 보는 지표이므로,
-창을 늘리면 오래된 행동이 현재 군집을 끌어당긴다. 시계열 계절성은 ts 아티팩트가 24개월로
-따로 학습한다.
+### 7.3 테스트
 
-## 9. API
+- `mad = 0`인 입력에서 클리핑이 적용되지 않고 추세가 살아 있는지 (5.2-3)
+- `D(h)`가 h에 대해 단조 증가하고 `f/(1-f)`로 수렴하는지 (5.2-6)
+- 카테고리 예측 금액의 합이 월 예측 금액과 같은지 (5.2-8 잔돈 규칙)
+- 결측 월이 0으로 취급되지 않는지, 수입만 있는 달이 `V = 0`으로 들어가는지 (4.2)
+- `spending_type IS NULL`인 지출이 V에 들어가는지 (4.1)
+- 폴백 3종 각각의 사유 (5.3)
+- 관측이 1회뿐인 달의 계절지수가 1.0인지 (5.2-1)
 
-기존 `ApiResponse` / `PageResponse` / `ErrorCode` / `AuthenticatedUserIdResolver` 계약을 재사용한다.
+## 8. MR 구성
 
-기존 컨트롤러는 전부 `/api/v1/<도메인>` 기준이고 cashflow는 `/api/v1/cashflow` + `/forecasts`,
-`/forecasts/latest`다. 같은 형태로 맞춘다. (rev.3까지 적었던 `/forecasts/spending`은 `/api/v1`
-접두도 없고 존재하지 않는 기준 경로였다.)
-
-| Method | Path | 비고 |
-| --- | --- | --- |
-| POST | `/api/v1/spending-forecasts` | 실행. `horizonMonths` 기본 3, 최대 12. 같은 `request_hash`면 재사용, `forceRefresh`로 강제 |
-| GET | `/api/v1/spending-forecasts/latest` | 최신 COMPLETED 1건 + 월별·카테고리별 |
-
-복합어 기준 경로는 `/api/v1/deposit-savings` 전례를 따른다.
-소유권 조건을 모든 조회·변경에 포함하고, 타인 예측은 `RESOURCE_NOT_FOUND`로 처리한다.
-
-### 9.1 동시성 — 기존 장치를 그대로 복제한다
-
-중복 실행 방지는 `request_hash` 비교만으로 되지 않는다. 같은 사용자의 POST가 동시에 들어오면 둘 다
-"재사용할 행 없음"을 보고 각자 새 행을 만든다.
-
-- **사용자 행 잠금** — `PatternUserLock`(= `DiagnosisUserLock`)과 같은 `PESSIMISTIC_WRITE`로 접수와
-  완료 순서를 직렬화한다. 계산 동안에는 잠금을 잡지 않는다
-- **진행 중 만료** — `CashflowForecastRunner.IN_PROGRESS_TIMEOUT`(10분)과 같은 장치가 필요하다.
-  계산 도중 프로세스가 내려가면 헤더가 `PENDING`으로 남아 `forceRefresh`로도 다시 돌릴 수 없다.
-  실제 소요 시간을 잰 뒤 값을 정한다
-- **기준 시각** — 17개 도메인이 전부 `*Clock`(`Asia/Seoul`, 테스트에서 고정 시각 주입)을 갖고 있다.
-  `SpendingForecastClock`을 같은 형태로 둔다. `LocalDate.now()`를 직접 부르면 월 경계 테스트를 쓸 수 없다
-
-## 10. 설정
-
-`app.forecast.*` (`PatternProperties` 관례). `model-location` 기본값
-`classpath:ml/spending-ts-v1.json`, `min-user-months`, `default-horizon-months`,
-`max-horizon-months`, `damping`, `alpha`. 아티팩트 값이 있으면 아티팩트가 우선하고 설정은 폴백
-기본값이다.
-
-`app.forecast.enabled`(기본 true)를 둔다. 운영에서 예측이 이상하게 나올 때 배포 없이 끌 수 있어야
-한다. `false`면 신규 API는 `FEATURES_UNAVAILABLE`을 내고, cashflow는 합성 이벤트를 만들지 않으며
-(`CURRENT`도 v1로 되돌아가야 지문이 갈린다), 목표 속도는 factor = 1로 고정된다. 이 세 곳이 한
-스위치에 묶여 있지 않으면 일부만 꺼져 앞뒤가 다른 숫자가 나온다.
-
-## 11. 검증
-
-### 11.1 모델이 실제로 나은지 먼저 본다
-
-마지막 3개월을 홀드아웃으로 빼고 학습해 MAPE·MAE를 측정하고, **기준선 둘과 비교한다.**
-
-| 비교 대상 | 의미 |
+| MR | 범위 |
 | --- | --- |
-| 최근 3개월 단순 평균 | 현행 동작 |
-| 이 모델에서 seasonal·dow만 1로 둔 값 | 계절성이 실제로 기여하는 몫 (4.4가 말하는 그 값) |
+| 1 | 이 설계 문서 (`Docs`) |
+| 2 | **636 24개월 표 + 679·633 과거 구간** (6.2~6.3) |
+| 3 | 492 과거 18개월 확장 + README + 검증 SQL (6.4~6.5) |
+| 4 | 추정 로직 + 단위 테스트 + 7.1 검증 |
+| 5 | 파생 리셋 seed |
+| 6 | **예측 그래프 화면** (3.2) — `npm run lint`·`npx tsc --noEmit`, 검증한 플랫폼 명시 |
 
-두 번째 기준선이 없으면 개선이 계절지수 덕인지 로버스트 추정 덕인지 구분되지 않는다. 계절지수가
-기여하지 않으면 적용하지 않는 것이 옳은 결론이다. 수치는 `backend/docs/`의 구현 문서에 남긴다.
+MR 2를 먼저 내는 이유는 U0003 표가 이 작업의 본체이고 나머지가 거기에 맞춰지기 때문이다.
+착수 전에 **과거 18개월 생성 시간을 측정한다.**
 
-**배포하는 아티팩트는 24개월 전체로 다시 학습한다.** 홀드아웃 모델은 평가용이며, 평가 수치는
-"학습에 쓰지 않은 3개월"에 대한 것이고 배포 모델의 정확도가 아니다. 이 구분을 문서에 적지 않으면
-나중에 같은 수치가 운영 성능으로 인용된다.
+이 저장소는 이슈 하나에 브랜치 하나, 그 브랜치에서 MR을 여러 번 낸다(589는 10개, 693은 5개,
+703은 4개). MR 하나를 develop에 병합한 뒤 같은 브랜치를 최신 develop 위로 rebase하고 다음 MR을
+잇는다. **브랜치가 하나이므로 MR은 병렬이 아니라 순차다.**
 
-### 11.2 테스트
+## 9. 미결
 
-- factor = 1, seasonal = 1 고정 시 기존 값과 **완전 일치** (7절 이전 단계마다)
-- `spending_type IS NULL`인 지출이 `V`에 들어가고 `predicted_total`이 `spending`과 맞는지 (2.1)
-- `D(h)`가 h에 대해 단조 증가하고 `φ/(1−φ)`로 수렴하는지 (4.2-5)
-- 일별 이벤트 금액 합 = `predicted_variable` (6.1 잔돈 규칙)
-- 개선 행동이 없을 때 `goalImpact`의 단축일이 0인지 — 스냅샷 재촬영 후 (7절)
-- 결측 월(`transactionCount = 0`)이 0으로 취급되지 않는지 (3.1)
-- 이상치 클리핑이 U0003 5월 여행을 걸러내는지
-- 폴백 4종 각각의 `fallback_reason`
-- 인증 실패, 소유권 격리, 빈 결과, 경계값(`horizonMonths` 0·13), 이력 0~2개월
-- 같은 사용자의 동시 POST가 행을 하나만 만드는지, `PENDING` 만료 후 재실행되는지 (9.1)
-- **리포트 "다가오는 지출"에 예측 이벤트가 섞이지 않는지** (6.1) — `UpcomingExpenseService` 경유
-- 예측 기반 위험이 늘어도 `EfficiencyScorePolicy.cashflow(…, List<String> riskSeverities)`가
-  구분하는지 (6.4) — 호출 전에 걸러낼지 시그니처를 넓힐지 함께 정한다
-- K-Means `modelVersion`이 `trainedAgainst`와 다를 때 `"ALL"`로 내려가는지 (4.1)
-- `app.forecast.enabled = false`일 때 API·cashflow·목표 속도가 **함께** 꺼지는지 (10절)
-- 시뮬레이션 **실사용 7종은 화면까지**, 미사용 3종은 테스트 통과로 확인 (2.4).
-  `/combined`가 미사용 3종을 시나리오로 받을 수 있으므로 복합 경로는 실사용 취급한다
-- 급여 INFLOW가 생긴 뒤 일별 잔액이 급여일에 올라가는지, `payday`·`monthly_income`이 NULL인
-  사용자에게는 이벤트를 만들지 않는지 (6.0)
-- `mad = 0`인 사용자에게 클리핑이 적용되지 않고 추세가 살아 있는지 (4.2-2)
-- 카테고리 예측 금액의 합 = `predicted_variable` (5절 잔돈 규칙)
-- 아티팩트의 `clusterId → 키` 맵이 중복 키를 가지면 거부하고 `"ALL"`로 내려가는지 (4.1)
-- `payday = 31`인 사용자의 2월·4월 급여 이벤트가 말일에 생기는지 (6.0)
-- 수입 거래만 있고 지출이 없는 달이 결측이 아니라 `V = 0`으로 들어가는지 (3.1)
-- `V45`의 CHECK·UNIQUE·FK는 H2로 검증되지 않는다 — `*MySqlIntegrationTest` 경로로 따로 확인
+1. **시연 날짜** — 문서에 없다. "앞으로 3개월"이 10·11·12월이면 12월 상승이 화면에 걸리지만
+   시연이 11월이면 걸리지 않는다. 3.1의 계절 상승을 어느 달에 둘지가 여기에 달려 있다
+2. **`predicted_total`을 응답에 실을지** — 고정비 펼침 오차는 7.1에서 측정되지 않으므로, 서버가
+   합계를 내면 측정 안 된 오차가 응답 숫자로 드러난다. 화면 설계와 같이 정한다
+3. **과거 급여 성장률** — 6.3에서 역산할 값. 2026-03의 3,012,400에서 거꾸로 얼마씩 낮출지
 
-## 12. MR 11개 (이슈 706, 브랜치 하나)
+## 10. 위험
 
-이 저장소는 **이슈 하나에 브랜치 하나, 그 브랜치에서 MR을 여러 번** 낸다. 확인한 이력이다.
+1. **재적재 시간** — 과거 18개월 생성 시간은 측정하지 않았다. MR 2 착수 시 먼저 잰다
+2. **표 설계가 곧 결과** — 636 표를 잘못 쓰면 예측이 이상하게 나오고, 그것은 모델 문제가 아니라
+   데이터 문제다. 7.1의 기대값 계산을 표를 쓰면서 같이 해야 한다
+3. **접합면** — 과거 블록(2025-03~08)과 기존 블록(2026-03~08)의 모양이 어긋나면 계절 추정이 그
+   달들에서 흔들린다. 6.2의 첫 번째 조건이 이것이다
+4. **H2 한계** — 신규 월별 카테고리 쿼리(`YEAR()`·`MONTH()` GROUP BY)는 MySQL에서 따로 본다
 
-| 이슈 | 브랜치 | MR 수 |
-| --- | --- | --- |
-| 589 | `S15P21D105-589-AI-coach` | 10 |
-| 693 | `S15P21D105-693-load-test` | 5 |
-| 703 | `S15P21D105-703-be` | 4 |
+---
 
-`S15P21D105-706-db`도 같은 방식으로 쓴다. MR 하나를 develop에 병합한 뒤 같은 브랜치를 최신
-develop 위로 rebase하고 다음 MR을 잇는다(679가 678 위로 rebase한 것과 같다).
+## 부록 A. 이 이슈 범위 밖 (별도 이슈용)
 
-**브랜치가 하나이므로 MR은 병렬이 아니라 순차다.** rev.8까지는 MR 2와 3의 선행을 둘 다 "1"로
-적어 병렬처럼 보였는데, 한 브랜치에서는 성립하지 않는다. 아래 순서가 곧 의존 관계다.
+rev.17까지 이 문서에 있던 기능 구현 항목이다. 상세 설계와 검증 근거는 커밋 `9c5e519`(rev.17)에
+남아 있다. 별도 이슈를 만들 때 그쪽을 기준으로 삼는다.
 
-| MR | 범위 | 비고 |
-| --- | --- | --- |
-| 1 | 이 설계 문서 (`Docs`) | 703이 계획 문서를 같은 이슈 첫 MR로 낸 것과 같다 |
-| 2 | seed 개정 — 492·679 + **`loan_repayment` 17행 생성**(8.2.3) + README + 검증 SQL 신규 (8.2.1~8.2.2) | 착수 전 재적재 시간 측정. 8.2.3 때문에 rev.16 추정보다 크다 |
-| 3 | `V45` + 엔티티·Repository + **신규 쿼리 2개** — 월 `V`, 월×카테고리(2.1 NULL 규칙을 같은 SQL 조각으로 공유) | |
-| 4 | **K-Means 재학습(8.5)** + ts 학습 스크립트·아티팩트 + 로더·폴백 + 홀드아웃 평가 | 순서는 seed → K-Means → ts |
-| 5 | 월별 지출 예측 API + 사용자 락·진행 중 만료(9.1) + `SpendingForecastClock` + `enabled` 스위치 | |
-| 6 | **급여 INFLOW 이벤트 소스 구현**(`AccountScheduledEventSource`, 6.0) + `CURRENT` v2 | 7번의 선행. 단독으로도 예측 정확도가 올라가고, 효율 점수가 한 번 오른다(6.5) |
-| 7 | cashflow 합성 이벤트(`Runner`에 주입, 6.1) + `CURRENT` v3 + 지문 보강 + `V46` 예측 구분 컬럼(6.3·6.4) | 6 없이는 위험이 폭증한다 |
-| 8 | `predictedMonthlyPace()` 추가 (호출부 없음, 동작 변화 0) | |
-| 9 | 호출부 3개 이전 + **굳힌 스냅샷 재촬영**(7절) | 회귀가 여기 몰린다 |
-| 10 | 파생 리셋 seed + 검증 seed | 9 이후여야 리셋을 두 번 돌지 않는다 |
-| 11 | **FE 예측 표시** — 신규 예측 화면 + `home`·`dailyBriefing`의 "예상 소비 기준" 구분 표시(6.3) | 5·7·9 이후. `npm run lint`·`npx tsc --noEmit`, 검증한 플랫폼을 결과에 명시 |
-
-### 12.1 브랜치 이름이 `-db`인 점
-
-**결정(2026-09-23): 10개 MR 전부를 이 브랜치에서 낸다.** `703-be`가 그랬듯 이름은 범위 제한이
-아니다. 축소안(cashflow 제외, seed 12개월, 계절성 포기)은 모두 검토 후 채택하지 않았다.
-
-**rev.17 보강: FE도 이 브랜치에서 MR 11로 낸다.** 704가 같은 담당자의 `frontend/` 작업으로
-나갔으므로(`4e75e68`) 예측 표시를 별도 이슈로 분리할 이유가 없다. 다만 루트 지침의 기본 변경
-범위는 `backend/`이므로 **MR 11에서만 `frontend/`를 연다**는 것을 커밋 범위로 지킨다.
-
-## 13. 미결 사항
-
-1. ~~`-db` 브랜치의 범위~~ — **닫힘(2026-09-23)**: 10개 MR 전부를 이 브랜치에서 낸다. FE를 더해 11개다(rev.17).
-2. **`predicted_total`을 응답에 실을지** (2절) — 스케줄 없는 고정비는 최근 3개월 `fixedSpending`
-   중앙값 반복으로 채우기로 했으나(결정), 그 합계를 서버가 낼지 V̂만 내고 화면에서 조립할지는
-   **열어 둔다.** 서버가 내면 화면이 단순하지만 14절 위험 8(고정비 펼침 오차, 11.1에서 측정되지
-   않는다)이 서버 응답 숫자로 드러난다. FE도 같은 담당이므로(MR 11) 표시 설계가 굳는 대로 본인이
-   정한다. **MR 5 착수 전까지**
-3. ~~프론트엔드 범위~~ — **닫힘(2026-09-24)**: 별도 보고가 아니라 이 이슈의 **MR 11**로 직접
-   한다(12절). 704가 같은 담당자의 `frontend/` 작업으로 나간 선례를 따른다
-
-## 14. 남은 위험
-
-1. **회귀 범위** — 직접 호출부는 3개지만(7절) 표시 숫자가 바뀌는 API는 그보다 많다(MR 9). 고정
-   기대값을 가진 기존 테스트가 전부 재검토 대상이고, factor = 1 일치 테스트가 유일한 안전망이다.
-   굳힌 스냅샷 재촬영을 빠뜨리면 "개선 안 했는데 단축"이 시연에 나온다.
-2. **재적재 시간과 MR 2 범위** — 1.34M행 결정적 생성의 소요 시간은 **측정하지 않았다.** MR 2 착수
-   시 먼저 잰다. `IN_PROGRESS_TIMEOUT`(9.1) 값도 이 측정에 달려 있다. 여기에 rev.17에서
-   `loan_repayment` 17행 생성(8.2.3)이 새로 들어왔다 — rev.16은 원천에 24회가 있다고 보고 이
-   작업을 0으로 잡았다.
-3. **시연 계약 충돌** — 678·679가 굳힌 U0003 8월 계약(income 3,012,400 / spending 2,559,221 /
-   saving 400,000 / fixed 1,565,221)을 24개월 확장이 깨면 699 검증 seed의 선행 검사가 거부한다.
-   확장 규칙은 2026-08을 **불변점으로 고정**하고 과거로만 뻗어야 한다. 발생 경로는 8.2.2.
-4. **계절지수의 시연 위험** — 12월 배율 1.25를 학습하면 12월 시연에서 "소비가 늘 것"이라는 예측이
-   나온다. 의도한 동작이지만 시연 시나리오와 맞는지 기획 확인이 필요하다.
-5. **H2 한계** — 5절 스키마와 신규 월별 카테고리 쿼리(`YEAR()`·`MONTH()` GROUP BY)는 MySQL에서
-   따로 본다.
-6. **두 아티팩트의 결합** — ts 모델은 K-Means 군집에 얹혀 있다. seed가 바뀌면 K-Means부터
-   다시 학습해야 하고(8.5), 이후에도 한쪽만 재학습하면 4.1의 버전 검사가 `"ALL"`로 떨어뜨려
-   **조용히 계절성이 사라진다.** 예외가 아니라 품질 저하로 나타나므로 폴백 사유 분포를
-   모니터링 대상으로 둔다.
-7. **급여 INFLOW 구현 범위** — `payday`나 `monthly_income`이 NULL인 사용자는 급여 이벤트를
-   만들 수 없다. 그 사용자들의 예측 곡선은 지금과 같이 단조 감소로 남고, 변동 소비를 더하면
-   위험이 늘어난다. MR 6에서 그 집단의 비율을 먼저 재고 처리를 정한다.
-8. **고정비 펼침의 불확실성** — 2절 기본안(스케줄 없는 항목은 최근 3개월 중앙값 반복)은 12개월
-   앞에서 실제와 크게 벌어질 수 있다. `predicted_total`의 오차가 V̂의 오차보다 클 수 있으며,
-   11.1의 평가는 V̂만 재므로 이 부분은 측정되지 않는다.
+| 항목 | rev.17에서 확정된 것 |
+| --- | --- |
+| 스키마 | `V45` — `spending_forecast` / `_month` / `_category` 3테이블. `cashflow_forecast` 관례, 금액 BIGINT 원 단위 |
+| API | `POST /api/v1/spending-forecasts`, `GET .../latest`. `/deposit-savings` 복합어 전례 |
+| 동시성 | `PatternUserLock`과 같은 `PESSIMISTIC_WRITE`, 진행 중 만료(현행 10분), `SpendingForecastClock` |
+| cashflow 연동 | 예측값을 일별 `CashflowEvent`로 주입. **`CashflowEventCollector.collect()` 안에 넣으면 안 된다** — `UpcomingExpenseService`가 같은 `collect()`로 "다가오는 지출"을 만든다 |
+| 급여 INFLOW | `AccountScheduledEventSource` 구현체가 하나도 없어 현재 cashflow 곡선은 단조 감소다. 이것만으로도 예측 정확도가 오른다. `payday`가 1~31이라 말일 당김 규칙이 필요하다 |
+| 효율 점수 | 급여 INFLOW가 확정 기반 위험을 줄여 점수를 **올린다.** 예측 구분 컬럼으로는 걸러지지 않는다 |
+| 목표 속도 | `predictedMonthlyPace()`는 계좌 스코프를 유지하고 배율만 씌운다. 직접 호출부는 3곳(`GoalCalculationService:367`, `GoalHistoryRecorder:63`, `SimulationBaselineReader:120`) |
+| 굳힌 스냅샷 | 속도 정의가 바뀌면 `improvement_action.before_snapshot`·진단 evidence·`goal_history`가 새 정의와 섞인다. 재촬영이 필요하다 |
+| 캐시 | `CashflowRequestHash`에 원천 지문이 없다. 재사용은 같은 서비스일 완료분만이라 영향은 하루 이내 |
