@@ -1391,3 +1391,73 @@ java.lang.module.FindException: Module jdk.jcmd not found
 - `infra/docs/profiling.md` — 검토한 6개 방안, 켜기·부하·회수·읽기·끄기 절차, 해석 주의
 - `infra/docker-compose.yml` — backend에 `JAVA_TOOL_OPTIONS: ${JFR_OPTS:-}`
 - `infra/docs/load-test-records.md` — `#5 Grafana 화면 판독` 절
+
+### 2026-09-24 · JFR 프로파일링 실행 — CPU를 쓰는 계층을 찾았다
+
+#### 무엇을 했나
+
+JFR을 켜고 probe(120 VU)를 돌려 **ExecutionSample 18,200개**를 얻었다.
+결과 전문은 `docs/load-test-records.md` `#6`.
+
+**결정적 수치: 우리 코드(`com.ssafy.dodam`)가 최상단 프레임인 샘플은 0.4%뿐이다.**
+비즈니스 로직은 CPU를 거의 안 쓰고 프레임워크 계층이 대부분을 쓴다.
+MySQL 드라이버 10.2% · Hibernate 8.8% · Jackson 8.6% · Micrometer 5.6% · Tomcat 5.0%.
+
+개선 후보 두 개를 근거와 함께 뽑았다.
+
+1. **MySQL 드라이버 SQL 파싱 10.2%** — `StringInspector.indexOfNextChar` 등 문자열 스캔이
+   상위에 반복 등장한다. JDBC URL에 `cachePrepStmts`가 없어(기본 false) 같은 SQL을
+   매번 다시 파싱하는 것으로 보인다. **URL만 고치면 되고 효과를 전후로 잴 수 있다.**
+2. **Spring Security Observation 약 2.6%** — Micrometer 5.6% 중 46.5%가
+   `ObservationFilterChainDecorator`였다. 우리는 이 지표를 대시보드에서 쓰지 않는다.
+
+#### 실행 중 겪은 것 세 가지
+
+**① Jenkins 빌드가 측정을 두 번 망칠 뻔했다.** 호스트 CPU가 부하도 없이 60~88%에서
+안 떨어져서 `top`을 보니 root 소유 java가 **300% CPU**를 쓰고 있었다.
+Jenkins의 gradle 빌드(테스트 1058개 포함)였다. 게다가 그 빌드가 끝나자
+`deploy.sh`가 backend를 재배포해 **내가 06:55에 올린 컨테이너를 07:02에 교체**했다.
+부하 중이었다면 측정과 JFR 타이머가 통째로 날아갔다.
+
+→ 브리프의 "DB 적재와 실행 시간대 분리"에 **빌드·배포 시간대 분리**를 더해야 한다.
+팀 공용 서버라 다른 사람의 push만으로도 빌드가 돈다.
+
+**② 시작 직전 유휴 CPU를 기록하는 규칙이 바로 값을 했다.** `#5`에서 정한 규칙인데,
+이번에 7.88%를 확인하고 나서야 "지금은 깨끗하다"고 말할 수 있었다.
+(그 전 시도에서는 83.71%였고, 그대로 부하를 걸었다면 오염된 측정이 됐다.)
+
+**③ `jfr` 도구가 원본을 덮어썼다.** `jfr summary`를 돌렸더니 `file is empty`.
+**`jfr`도 JVM이라 `JAVA_TOOL_OPTIONS`를 물려받아 새 기록을 시작하며 원본을 비운 것이다.**
+호스트에 `docker cp` 사본을 먼저 떠 둔 덕에 39MB를 잃지 않았다.
+`-e JAVA_TOOL_OPTIONS=`로 비워 실행하는 절차를 `profiling.md`에 박아 뒀다.
+
+#### 내가 틀린 것 — `#5`의 "필터·인증은 병목이 아니다"는 근거가 틀렸다
+
+톰캣 평균(49.08ms)과 Spring MVC 평균(48.89ms)의 차가 0.19ms인 것을 보고
+"필터·인증·파싱은 비용이 없다"고 적었다. **결론 방향은 맞았지만 근거가 틀렸다.**
+
+`WebMvcMetricsFilter`는 필터 체인의 **가장 바깥**에 등록되므로
+`http_server_requests_seconds`에는 **Security 필터 시간이 이미 포함**된다.
+즉 0.19ms는 "Security 필터 비용"이 아니라 톰캣 커넥터와 메트릭 필터 사이만 잰 값이고,
+**애초에 Security 필터를 볼 수 없는 지표였다.** 실제로는 약 4.3%를 쓴다.
+
+**지표로 "없다"를 증명했다고 믿은 것이 잘못이었다.** 지표는 자기가 재는 구간만 말한다.
+프로파일러가 필요했던 이유가 정확히 이것이다.
+
+또 하나: 집계에서 `JwtAuthenticationFilter.doFilterInternal`이 우리 코드 1위(14.3%)로
+보였는데, 쪼개 보니 **그 샘플의 98.3%가 `filterChain.doFilter()` 하위**였다.
+필터 자신의 일은 약 4.6%다. **"우리 코드 중 가장 안쪽 프레임"만 세면
+체인 바깥쪽 필터가 과대평가된다** — 집계 방식 자체의 함정이라 한 번 더 쪼개서 확인했다.
+
+#### 남은 것
+
+- [ ] **`JFR_OPTS`를 `.env`에서 제거하고 재배포** (안 하면 배포마다 15분 기록 + 상시 2% 오버헤드)
+- [ ] 개선 ①: JDBC URL에 PreparedStatement 캐시 옵션 추가 → 재측정
+- [ ] 개선 ②: Spring Security Observation 비활성화 → 재측정
+- [ ] 개선은 **한 번에 하나씩** 적용한다(둘을 같이 넣으면 어느 쪽 효과인지 모른다)
+- [ ] 재측정 기준선은 `#5`(JFR 없는 판)를 쓴다
+
+#### 산출물
+
+- `infra/docs/load-test-records.md` `#6`
+- `infra/docs/profiling.md` — `jfr` 덮어쓰기 함정 반영

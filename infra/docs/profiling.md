@@ -77,7 +77,10 @@ docker run --rm -i --name k6-jfr --cpus=1 --user "$(id -u):$(id -g)" --network i
 
 ```bash
 docker compose exec -T backend ls -l /tmp/load.jfr        # 생겼는지 확인
-docker cp $(docker compose ps -q backend):/tmp/load.jfr ./load.jfr
+docker cp $(docker compose ps -q backend):/tmp/load.jfr /tmp/load.jfr
+
+# 분석용으로 다시 넣는다(원본을 덮어쓰지 않도록 이름을 바꾼다)
+docker cp /tmp/load.jfr "$(docker compose ps -q backend)":/tmp/analyze.jfr
 ```
 
 ---
@@ -86,15 +89,20 @@ docker cp $(docker compose ps -q backend):/tmp/load.jfr ./load.jfr
 
 컨테이너에 `jfr` 도구가 이미 있다(JRE에 포함된다).
 
+> **★ 반드시 `-e JAVA_TOOL_OPTIONS=`로 비워서 실행한다.**
+> `jfr` 도구도 JVM이라 `JAVA_TOOL_OPTIONS`를 물려받아 **새 기록을 시작하면서
+> `filename=`이 가리키는 원본을 비워버린다**(2026-09-24에 실제로 당했다).
+> 그래서 3번에서 `docker cp`로 호스트에 사본을 먼저 뜬다.
+
 ```bash
 # CPU를 가장 많이 쓴 메서드 상위 (가장 먼저 볼 것)
-docker compose exec -T backend jfr summary /tmp/load.jfr
+docker compose exec -T -e JAVA_TOOL_OPTIONS= backend jfr summary /tmp/analyze.jfr
 
 # 실행 샘플 원본 — 스택의 최상단 프레임을 세면 곧 CPU 프로파일이다
-docker compose exec -T backend jfr print --events jdk.ExecutionSample /tmp/load.jfr | head -200
+docker compose exec -T -e JAVA_TOOL_OPTIONS= backend jfr print --events jdk.ExecutionSample /tmp/load.jfr | head -200
 
 # 쿼리 실행 이벤트
-docker compose exec -T backend jfr print --events jdk.JavaMonitorEnter,jdk.SocketRead /tmp/load.jfr | head -100
+docker compose exec -T -e JAVA_TOOL_OPTIONS= backend jfr print --events jdk.JavaMonitorEnter,jdk.SocketRead /tmp/load.jfr | head -100
 ```
 
 로컬에서 GUI로 보려면 파일을 받아 **JDK Mission Control(JMC)**로 연다.
