@@ -2454,3 +2454,72 @@ Grafana를 재시작해 프로비저닝을 확실히 반영한 뒤 `#11`과 같�
 증설 후 재측정 시 `tomcat_threads_*`를 먼저 봐야 한다는 뜻이며,
 이 점을 기록에 남겨 뒀다 — 증설만 하고 스레드 설정을 그대로 두면
 기대만큼 처리량이 늘지 않을 수 있다.
+
+### 2026-09-25 · 개선 ③ 조사·적용·철회 — 요청당 쿼리 수
+
+#### 무엇을 했나
+
+요청당 6.54개 쿼리의 정체를 `performance_schema`로 밝히고, 개선안을 적용했다가
+**테스트 323개가 깨져 되돌렸다.** 전문은 `docs/load-test-records.md` "개선 ③ 시도와 철회".
+
+#### 조사 결과가 예상과 정반대였다
+
+N+1을 의심하고 들어갔는데 **N+1은 없었다.**
+
+```
+요청당 6.54개 = 트랜잭션 제어 4.5개 + 실제 데이터 조회 약 1.7개
+  SET autocommit 2.0 · COMMIT 1.0 · SET SESSION TRANSACTION READ ONLY/WRITE 1.5
+```
+
+**오버헤드가 본체의 3배**다. 쿼리 자체는 이미 효율적이었다.
+
+덤으로 개선 ①이 잘 동작한다는 증거도 나왔다 —
+`Com_stmt_prepare 1,728` 대 `Com_stmt_execute 3,824,456`으로,
+준비 1회로 약 2,200회 재사용 중이다.
+
+#### 적용했다가 철회한 과정
+
+`spring.datasource.hikari.auto-commit: false` + `hibernate.connection.provider_disables_autocommit: true`를
+넣었다(환경변수로는 불가 — relaxed binding이 `provider_disables_autocommit`의
+언더스코어를 점으로 바꿔 키가 깨진다).
+
+**단위 테스트 하나는 통과했지만 전체를 돌리니 1,388개 중 323개가 실패했다.**
+`404`, `EmptyResultDataAccessException`, 참조 무결성 위반 — 전형적인 "커밋 안 됨" 증상이다.
+
+`git stash`로 되돌려 같은 테스트를 돌리니 통과해 **원인이 내 변경임을 확정**했다.
+
+#### 철회 근거 — 테스트만의 문제가 아니었다
+
+원인은 `JdbcTemplate`으로 픽스처를 만드는 테스트 57개 파일이었다.
+"그럼 `application-prod.yml`에만 넣으면 되겠네"로 갈 뻔했는데,
+**운영 코드를 확인한 것이 판단을 바꿨다.**
+
+| 위치 | 작업 |
+| --- | --- |
+| `CashflowResultWriter` (3곳) | 현금흐름 결과 저장 |
+| **`JdbcAccountBalanceWriter` (2곳)** | **계좌 잔액 수정** |
+
+이들이 `@Transactional` 밖에서 호출되면 커밋되지 않는다.
+**잔액이 유실될 수 있는 위험**을 이득(쿼리 31% 감소, 효과는 아직 미측정)과
+남은 기간에 견주어 감당할 수 없다고 봤다.
+
+#### 배운 것 — 단위 테스트 하나로 안심하면 안 된다
+
+처음에 `HealthApiIntegrationTest` 하나만 돌려 통과한 것을 보고 넘어갈 뻔했다.
+**트랜잭션 동작에 닿는 변경이라 전체를 돌린 것**이 맞았다.
+
+지금까지 개선 ①②는 설정 변경이었지만 **트랜잭션 경계를 건드리지 않았다.**
+이번 것은 같은 "설정 한 줄"처럼 보여도 성격이 달랐다.
+**변경의 크기가 아니라 닿는 범위로 검증 수준을 정해야 한다.**
+
+#### 남긴 것
+
+이 조사는 실패가 아니다. 요청당 쿼리의 정체를 수치로 밝혔고,
+**왜 지금 고칠 수 없는지를 근거와 함께** 남겼다.
+`load-test-summary.md` 잔여 한계에 `5'`번으로 추가했다(선행 조건 2가지 명시).
+
+#### 산출물
+
+- `infra/docs/load-test-records.md` — "개선 ③ 시도와 철회" 절
+- `infra/docs/load-test-summary.md` — 잔여 한계 `5'` 추가
+- `backend/src/main/resources/application.yml` — **변경 없음(철회)**
