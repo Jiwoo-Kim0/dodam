@@ -558,18 +558,24 @@ JOIN tmp_dodam_679_context ctx ON ctx.user_id = fp.user_id
 JOIN `account` a ON a.account_id = ctx.primary_account_id;
 
 -- 9g. contract violations (must be 0): wrong account/card, future rows beyond the 625 window, non-positive amounts
+--     The id patterns below also match the rows 492 generates outside this file's rebuild window, so the lower
+--     bound has to be the start of the 492 window (2024-09-01 since 706), not the start of the demo window.
+--     It was still '2026-03-01' after the 706 expansion, which reported the 201 past FIX / SAV / INC rows of
+--     492 as violations although every one of them sits on the primary account with a positive amount
+--     (measured on the demo server 2026-09-25). Same defect as the one fixed in 636 by 0b20801.
 SELECT COUNT(*) AS violation_count
 FROM `transaction` tx
 JOIN tmp_dodam_679_context ctx ON ctx.user_id = tx.user_id
 WHERE tx.source_type = 'SEED'
   AND (tx.transaction_id LIKE '%-FIX-%' OR tx.transaction_id LIKE '%-SAV-%' OR tx.transaction_id LIKE '%-TRF-%' OR tx.transaction_id LIKE '%-INC-01')
   AND (tx.account_id <> ctx.primary_account_id OR tx.card_id IS NOT NULL OR tx.amount <= 0
-       OR tx.transaction_date > '2026-09-27' OR tx.transaction_date < '2026-03-01');
+       OR tx.transaction_date > '2026-09-27' OR tx.transaction_date < '2024-09-01');
 
 -- ---------------------------------------------------------------------------
 -- 10. cleanup
 -- ---------------------------------------------------------------------------
 DROP TABLE IF EXISTS tmp_dodam_679_card_usage;
+DROP TABLE IF EXISTS tmp_dodam_679_fixed_seasonal;
 DROP TABLE IF EXISTS tmp_dodam_679_preflight;
 DROP TABLE IF EXISTS tmp_dodam_679_saving_items;
 DROP TABLE IF EXISTS tmp_dodam_679_fixed_plan;

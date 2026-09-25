@@ -9,8 +9,8 @@
 | 순서 | 파일 | Jira | 선행 조건 |
 | --- | --- | --- | --- |
 | 1 | `DODAM_FINANCIAL_PRODUCTS_CUMULATIVE_B01_B05_COMPAT_FIXED.sql`, `DODAM_FINANCIAL_PRODUCTS_BATCH_05_BIG4_CARDS_COMPAT_FIXED.sql` | 525 | V10 |
-| 2 | `DODAM_USER_ACCOUNT_FINANCIAL_PROFILE_SEED.sql` | 491 | V1~V3, 애플리케이션이 만든 계좌번호 암호문·해시 fixture 테이블(일반 테이블) |
-| 3 | `DODAM_CARD_INSTALLMENT_SEED.sql` | 522 | 491, V11~V12, 카드번호 암호문 fixture 테이블(일반 테이블) |
+| 2 | `DODAM_USER_ACCOUNT_FINANCIAL_PROFILE_SEED.sql` | 491 | V1~V3, 계좌번호 암호문·해시 fixture 테이블(일반 테이블). `backend/scripts/make_seed_fixtures.py`가 `.env`의 실제 키로 만든다(2~5번 공용) |
+| 3 | `DODAM_CARD_INSTALLMENT_SEED.sql` | 522 | 491, V11~V12, 카드번호 암호문 fixture 테이블(일반 테이블, 2번과 같은 생성기) |
 | 4 | `DODAM_LOAN_MINUS_ACCOUNT_SEED.sql` | 523 | 491, V13~V14 |
 | 5 | `DODAM_DEPOSIT_SAVING_SEED.sql` | 524 | 491, V15 |
 | 6 | `DODAM_TRANSACTION_SEED.sql` | 492 | 491, 522, V6 (카테고리 기준 행 20개) |
@@ -38,6 +38,72 @@
 2·3·6·7·8번은 자릿수 교차곱과 preflight 서브쿼리가 그 제약에 걸리므로 `tmp_dodam_*` 작업 테이블과 2·3번의 fixture 테이블을 일반 테이블로 만들고
 파일 끝의 cleanup 절에서 모두 지운다. 4·5번은 파생 테이블과 단일 참조 문장으로 작성돼 TEMPORARY fixture로도 동작한다(머리말 참고).
 파일이 중간에 멈추면 작업 테이블이 남는데, 다음 실행의 `DROP TABLE IF EXISTS`가 정리한다.
+
+## 빈 DB에 1~18번을 처음부터 적재하기 (2026-09-24 인프라 실측)
+
+706 재적재 때 실제로 밟은 절차다. **스크립트는 `infra/scripts/seed-load.sh`에 있다**(`bootstrap` → `load` → `check`).
+아래는 그 스크립트가 왜 그렇게 생겼는지에 대한 근거다.
+
+### ⚠️ 마이그레이션만으로는 빈 스키마를 만들 수 없다
+
+빈 DB에 backend를 붙여 Flyway로 V1~V44를 받으면 **V6에서 멈춘다.**
+
+```
+Migrating schema `dodam` to version "6 - create transaction category and transaction"
+Error Code : 1824   Message : Failed to open the referenced table 'card'
+Location  : db/migration/V6__create_transaction_category_and_transaction.sql   Line : 29
+```
+
+`transaction.card_id`가 FK로 거는 `card`는 **V11**에서 생긴다. 번호 구간을 팀별로 나눠 쓴 결과
+(`application-prod.yml`의 `out-of-order: true` 주석 참고) 기존 DB는 V11이 먼저 적용된 뒤 V6가 추가돼
+통과했을 뿐이고, **빈 DB에 번호순으로 적용하면 항상 V6에서 깨진다.**
+
+그래서 빈 스키마는 **운영 백업에서 정의만 떠서** 만든다.
+
+```bash
+./scripts/restore.sh <덤프.sql.gz>                       # 임시 DB dodam_restore_test (운영 미접촉)
+mysqldump --no-data --routines --events dodam_restore_test \
+  | sed 's/ AUTO_INCREMENT=[0-9]*//g' | mysql dodam      # 테이블 정의만, 채번은 1부터
+mysqldump --no-create-info dodam_restore_test flyway_schema_history transaction_category | mysql dodam
+```
+
+세 줄이 모두 필요하다.
+
+- **`flyway_schema_history` 34행** — 없으면 다음 기동에서 Flyway가 전부 다시 적용하려 들고 같은 자리에서 깨진다.
+- **`transaction_category` 20행** — **V6 마이그레이션이 직접 넣는 기준 데이터**라 `--no-data`로는 따라오지 않는다.
+  6번 seed의 선행 조건 "카테고리 기준 행 20개"가 바로 이것이고, 빠뜨리면 6번 preflight가 막는다.
+- **`AUTO_INCREMENT=` 제거** — `mysqldump --no-data`는 `CREATE TABLE ... AUTO_INCREMENT=9169`처럼
+  **옛 DB의 채번 위치까지 들고 온다.** 지우지 않으면 행 내용은 같은데 `user_id`·`account_id`·`card_id`만 통째로 밀리고,
+  `DODAM_TRANSACTION_VERIFY.sql` 1번 지문이 어긋난다(지문식에 `account_id`·`card_id`가 들어간다).
+  **행수·합계는 맞는데 지문만 다르면 이걸 의심한다.**
+
+### 적재 중에는 backend를 반드시 내린다
+
+`docker compose stop backend` 후에 DB를 만진다. 기동에 실패한 컨테이너는 재기동 루프에 빠지고,
+그 루프가 **만드는 중인 DB에 마이그레이션을 동시에 쓴다**(실제로 `flyway_schema_history`가 오염됐다).
+
+### 적재 후 확인 — `OK`는 통과를 뜻하지 않는다
+
+`mysql` 종료 코드가 0이어도 seed의 자체 검증은 **출력 숫자로** 말한다.
+각 파일 로그에서 `*_violation_count` · `*_mismatch_count` · `*_orphan_count` · `*_conflict*`가 0인지 본다
+(`seed-load.sh check`가 이걸 훑어 준다). 그다음 `DODAM_TRANSACTION_VERIFY.sql`,
+`DODAM_DEMO_DEPOSIT_SAVING_678_VERIFY.sql`, `DODAM_DEMO_U0003_LEDGER_679_VERIFY.sql`을 돌린다.
+
+### 12번·699는 새 DB에서 필요 없다
+
+- 12번(인구통계 백필): 491 최신판이 `birth_date`·`gender`를 채운다. 적재 후 NULL 0건으로 확인했다.
+- 699(파생 결과 초기화): 초기화할 저장본(`monthly_report`·`pattern_analysis`)이 애초에 없다.
+  대신 **앱이 만들던 파생 데이터가 전부 사라지므로**(진단·추천·현금흐름·리포트) 시연 전에
+  U0003으로 현금흐름 예측 → 패턴 분석 → 진단을 `forceRefresh: true`로 한 번씩 만들어 둔다.
+
+### 625(11번)를 건너뛸 수는 없다
+
+655(15번) preflight가 `SEED-SEP-...-202609-INC-` 행 4명분을 요구하고 **그 행은 625만 만든다.**
+11번을 건너뛰면 15번이 `ERROR 3819`로 멈추고 17번까지 연쇄로 막힌다.
+반대로 **655가 이미 적용된 DB에서 6·8번을 다시 돌리면 11번이 멈춘다** —
+625는 시연 4명의 `SUB-U%` 구독을 6건으로 기대하는데 655가 23건으로 바꿔 놓고,
+8번의 DELETE는 자기가 넣을 6건만 지워 655의 03~07번이 남기 때문이다.
+빈 DB에 1~18번을 순서대로 넣으면 이 충돌은 생기지 않는다.
 
 ## 공통 규약
 
@@ -358,7 +424,8 @@ RESET은 679의 8월 최종 합계(수입 3,012,400·소비 2,559,221·저축 40
 - fixture(491·522·523·524)는 서버 `infra/.env`의 `DATA_ENCRYPTION_KEY`·`NUMBER_HASH_KEY`로 애플리케이션 코덱과 같은 형식으로 만들었다
   (`FieldCryptor`: 12바이트 IV + AES-256-GCM 128비트 태그, `SensitiveNumberHasher`: HMAC-SHA-256 소문자 hex, `AccountNumberMasker` 규칙, 카드는 앞4-****-****-뒤4).
   계좌번호 원문은 `1100{순번6}{유형3}` 형식의 합성값이며(유형: 주거래 001, 휴면 002, 대출 101/102, 마이너스 201, 예금 301, 적금 401) 파일에는 남기지 않았다.
-  생성 스크립트는 서버 `~/seed-load/make_seed_fixtures.py`(Python 3, `cryptography`)이고 키는 읽기만 하며 출력하지 않는다.
+  생성 스크립트는 당시 서버 `~/seed-load/make_seed_fixtures.py`에만 있었다(Python 3, `cryptography`). 키는 읽기만 하고 출력하지 않는다.
+  **2026-09-25에 `backend/scripts/make_seed_fixtures.py`로 레포에 옮겼다** — 서버 한 곳에만 있어 그 디렉터리가 사라지면 2~5번을 적재할 방법이 없었다(어느 백업에도 포함되지 않았다).
 - 523·524는 fixture를 `DROP TEMPORARY TABLE`로 정리하므로 일반 테이블로 만든 fixture 6개가 남는다. 적재 후 `DROP TABLE tmp_dodam_523_*, tmp_dodam_524_*`로 지운다.
 - 컨테이너 안에서 적재할 때는 `mysql -h127.0.0.1`(TCP)로 붙는다. 초기화 중 임시 서버는 소켓 ping이 먼저 성공해 문장이 그쪽으로 들어갈 수 있다.
 - seed 사용자는 `password_hash`가 NULL이라 API 로그인이 불가하다. 시연 계정으로 로그인하려면 별도 비밀번호 설정 절차가 필요하다.
