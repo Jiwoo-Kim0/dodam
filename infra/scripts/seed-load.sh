@@ -33,8 +33,9 @@ MYSQL_CONTAINER="${MYSQL_CONTAINER:-mysql}"
 BACKEND_CONTAINER="${BACKEND_CONTAINER:-backend}"
 TEMP_DB="${TEMP_DB:-dodam_restore_test}"
 # 491·522·523·524 fixture 생성기. 애플리케이션 코덱과 같은 형식의 암호문·해시를 만든다.
-# ⚠️ 레포에 없고 서버에만 있다(키를 다루는 스크립트라 그렇게 뒀다). 서버가 날아가면 2~5번을 적재할 수 없다.
-FIXTURE_GEN="${FIXTURE_GEN:-$HOME/seed-load/make_seed_fixtures.py}"
+# 키는 $ENV_FILE 에서 읽기만 하고 출력 SQL에는 암호문·해시·마스킹만 들어간다(원문 번호 없음).
+# 2026-09-25 이전에는 서버 ~/seed-load/ 에만 있었다. 옛 서버를 쓰는 경우 FIXTURE_GEN 으로 지정한다.
+FIXTURE_GEN="${FIXTURE_GEN:-$BE_SCRIPT_DIR/make_seed_fixtures.py}"
 WORK_DIR="${WORK_DIR:-$HOME/seed-load/$(date +%Y%m%d-%H%M%S)}"
 
 log()  { echo "[seed-load $(date '+%H:%M:%S')] $*"; }

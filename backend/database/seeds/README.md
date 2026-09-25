@@ -9,8 +9,8 @@
 | 순서 | 파일 | Jira | 선행 조건 |
 | --- | --- | --- | --- |
 | 1 | `DODAM_FINANCIAL_PRODUCTS_CUMULATIVE_B01_B05_COMPAT_FIXED.sql`, `DODAM_FINANCIAL_PRODUCTS_BATCH_05_BIG4_CARDS_COMPAT_FIXED.sql` | 525 | V10 |
-| 2 | `DODAM_USER_ACCOUNT_FINANCIAL_PROFILE_SEED.sql` | 491 | V1~V3, 애플리케이션이 만든 계좌번호 암호문·해시 fixture 테이블(일반 테이블) |
-| 3 | `DODAM_CARD_INSTALLMENT_SEED.sql` | 522 | 491, V11~V12, 카드번호 암호문 fixture 테이블(일반 테이블) |
+| 2 | `DODAM_USER_ACCOUNT_FINANCIAL_PROFILE_SEED.sql` | 491 | V1~V3, 계좌번호 암호문·해시 fixture 테이블(일반 테이블). `backend/scripts/make_seed_fixtures.py`가 `.env`의 실제 키로 만든다(2~5번 공용) |
+| 3 | `DODAM_CARD_INSTALLMENT_SEED.sql` | 522 | 491, V11~V12, 카드번호 암호문 fixture 테이블(일반 테이블, 2번과 같은 생성기) |
 | 4 | `DODAM_LOAN_MINUS_ACCOUNT_SEED.sql` | 523 | 491, V13~V14 |
 | 5 | `DODAM_DEPOSIT_SAVING_SEED.sql` | 524 | 491, V15 |
 | 6 | `DODAM_TRANSACTION_SEED.sql` | 492 | 491, 522, V6 (카테고리 기준 행 20개) |
@@ -424,7 +424,8 @@ RESET은 679의 8월 최종 합계(수입 3,012,400·소비 2,559,221·저축 40
 - fixture(491·522·523·524)는 서버 `infra/.env`의 `DATA_ENCRYPTION_KEY`·`NUMBER_HASH_KEY`로 애플리케이션 코덱과 같은 형식으로 만들었다
   (`FieldCryptor`: 12바이트 IV + AES-256-GCM 128비트 태그, `SensitiveNumberHasher`: HMAC-SHA-256 소문자 hex, `AccountNumberMasker` 규칙, 카드는 앞4-****-****-뒤4).
   계좌번호 원문은 `1100{순번6}{유형3}` 형식의 합성값이며(유형: 주거래 001, 휴면 002, 대출 101/102, 마이너스 201, 예금 301, 적금 401) 파일에는 남기지 않았다.
-  생성 스크립트는 서버 `~/seed-load/make_seed_fixtures.py`(Python 3, `cryptography`)이고 키는 읽기만 하며 출력하지 않는다.
+  생성 스크립트는 당시 서버 `~/seed-load/make_seed_fixtures.py`에만 있었다(Python 3, `cryptography`). 키는 읽기만 하고 출력하지 않는다.
+  **2026-09-25에 `backend/scripts/make_seed_fixtures.py`로 레포에 옮겼다** — 서버 한 곳에만 있어 그 디렉터리가 사라지면 2~5번을 적재할 방법이 없었다(어느 백업에도 포함되지 않았다).
 - 523·524는 fixture를 `DROP TEMPORARY TABLE`로 정리하므로 일반 테이블로 만든 fixture 6개가 남는다. 적재 후 `DROP TABLE tmp_dodam_523_*, tmp_dodam_524_*`로 지운다.
 - 컨테이너 안에서 적재할 때는 `mysql -h127.0.0.1`(TCP)로 붙는다. 초기화 중 임시 서버는 소켓 ping이 먼저 성공해 문장이 그쪽으로 들어갈 수 있다.
 - seed 사용자는 `password_hash`가 NULL이라 API 로그인이 불가하다. 시연 계정으로 로그인하려면 별도 비밀번호 설정 절차가 필요하다.

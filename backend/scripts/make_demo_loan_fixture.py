@@ -2,8 +2,8 @@
 """DODAM_DEMO_LOAN_SEED.sql 이 요구하는 대출 계좌번호 암호문 fixture 1행을 만든다.
 
 seed 파일은 계좌번호 원문·키를 담지 않으므로, 서버(또는 로컬)의 애플리케이션 키로 이 스크립트를 실행해
-나온 SQL을 seed 파일보다 먼저 같은 DB에 적용한다. 서버의 `~/seed-load/make_seed_fixtures.py`(491·522·523·524 fixture)와
-같은 코덱 규칙이며, 시연 계정 대출 1건만 다루기 위해 레포에 둔다.
+나온 SQL을 seed 파일보다 먼저 같은 DB에 적용한다. `make_seed_fixtures.py`(491·522·523·524 fixture, 2026-09-25에 서버에서
+레포로 옮김)와 같은 코덱 규칙이며, 시연 계정 대출 1건만 다루기 위해 레포에 둔다.
 
 애플리케이션 코덱(FieldCryptor / SensitiveNumberHasher / AccountNumberMasker)과 같은 형식:
   - account_no_encrypted : [12바이트 IV][AES-256-GCM 암호문+128비트 태그], 키는 DATA_ENCRYPTION_KEY(Base64 32바이트)
