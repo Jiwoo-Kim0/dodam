@@ -29,7 +29,7 @@ import { Counter, Rate, Trend } from 'k6/metrics';
  *
  * 사용법:
  *   # 경로·응답 확인
- *   docker run --rm -i --user "$(id -u):$(id -g)" --network infra_app-net \
+ *   docker run --rm -i --user "$(id -u):$(id -g)" --cpus=1 --network infra_app-net \
  *     -e BASE_URL=http://backend:8080/api -e PROFILE=verify \
  *     -v "$PWD/backend/scripts/loadtest:/work" -w /work grafana/k6:latest run ledger-journey.js
  *

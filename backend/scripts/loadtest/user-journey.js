@@ -19,13 +19,13 @@ import { Counter, Rate, Trend } from 'k6/metrics';
  *   BASE_URL=https://j15D105.p.ssafy.io/api PROFILE=load LOAD_VUS=25 k6 run backend/scripts/loadtest/user-journey.js
  *
  *   # 3) 한계 탐색(짧게, 4분 20초) — 어디서 막히는지만 빠르게 본다.
- *   docker run --rm -i --user "$(id -u):$(id -g)" --network infra_app-net \
+ *   docker run --rm -i --user "$(id -u):$(id -g)" --cpus=1 --network infra_app-net \
  *     -e BASE_URL=http://backend:8080/api -e PROFILE=probe \
  *     -v "$PWD/backend/scripts/loadtest:/work" -w /work grafana/k6:latest run user-journey.js
  *
  *   # 4) 한계 탐색(길게, 22분) — 오래 버티는지까지 본다.
  *   #    k6를 컨테이너로 app-net에 붙여 backend:8080으로 직접 쏜다.
- *   docker run --rm -i --user "$(id -u):$(id -g)" --network infra_app-net \
+ *   docker run --rm -i --user "$(id -u):$(id -g)" --cpus=1 --network infra_app-net \
  *     -e BASE_URL=http://backend:8080/api -e PROFILE=load -e LOAD_VUS=50 -e THINK_TIME=0 \
  *     -v "$PWD/backend/scripts/loadtest:/work" -w /work grafana/k6:latest run user-journey.js
  *
@@ -34,6 +34,11 @@ import { Counter, Rate, Trend } from 'k6/metrics';
  *     "users.json이 없고..."로 나와 파일이 없는 것처럼 보인다(2026-09-23에 실제로 헤맸다).
  *     권한을 644로 푸는 대신 컨테이너를 호스트 uid로 돌린다.
  *
+ *
+ *   ★ --cpus=1 을 붙이는 이유: 부하 도구와 대상이 같은 호스트(4 vCPU)에 있다.
+ *     제한이 없으면 k6가 얼마나 가져갔는지 알 수 없어 "백엔드의 한계"가 아니라
+ *     "k6와 나눠 쓴 뒤 남은 CPU의 한계"를 재게 된다. 실측으로 k6는 0.4~0.67코어를 썼다.
+ *     #4~#12 측정은 전부 이 조건이므로, 비교하려면 같이 붙여야 한다.
  * THINK_TIME:
  *   화면을 읽는 대기 시간의 배율이다. 기본 1(실사용 흉내), 0이면 대기 없이 계속 던진다.
  *   기본값에서는 VU 1명이 약 0.7 req/s만 만든다(요청 7건 + 대기 약 10초). VU 50명이어도
