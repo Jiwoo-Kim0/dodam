@@ -39,6 +39,72 @@
 파일 끝의 cleanup 절에서 모두 지운다. 4·5번은 파생 테이블과 단일 참조 문장으로 작성돼 TEMPORARY fixture로도 동작한다(머리말 참고).
 파일이 중간에 멈추면 작업 테이블이 남는데, 다음 실행의 `DROP TABLE IF EXISTS`가 정리한다.
 
+## 빈 DB에 1~18번을 처음부터 적재하기 (2026-09-24 인프라 실측)
+
+706 재적재 때 실제로 밟은 절차다. **스크립트는 `infra/scripts/seed-load.sh`에 있다**(`bootstrap` → `load` → `check`).
+아래는 그 스크립트가 왜 그렇게 생겼는지에 대한 근거다.
+
+### ⚠️ 마이그레이션만으로는 빈 스키마를 만들 수 없다
+
+빈 DB에 backend를 붙여 Flyway로 V1~V44를 받으면 **V6에서 멈춘다.**
+
+```
+Migrating schema `dodam` to version "6 - create transaction category and transaction"
+Error Code : 1824   Message : Failed to open the referenced table 'card'
+Location  : db/migration/V6__create_transaction_category_and_transaction.sql   Line : 29
+```
+
+`transaction.card_id`가 FK로 거는 `card`는 **V11**에서 생긴다. 번호 구간을 팀별로 나눠 쓴 결과
+(`application-prod.yml`의 `out-of-order: true` 주석 참고) 기존 DB는 V11이 먼저 적용된 뒤 V6가 추가돼
+통과했을 뿐이고, **빈 DB에 번호순으로 적용하면 항상 V6에서 깨진다.**
+
+그래서 빈 스키마는 **운영 백업에서 정의만 떠서** 만든다.
+
+```bash
+./scripts/restore.sh <덤프.sql.gz>                       # 임시 DB dodam_restore_test (운영 미접촉)
+mysqldump --no-data --routines --events dodam_restore_test \
+  | sed 's/ AUTO_INCREMENT=[0-9]*//g' | mysql dodam      # 테이블 정의만, 채번은 1부터
+mysqldump --no-create-info dodam_restore_test flyway_schema_history transaction_category | mysql dodam
+```
+
+세 줄이 모두 필요하다.
+
+- **`flyway_schema_history` 34행** — 없으면 다음 기동에서 Flyway가 전부 다시 적용하려 들고 같은 자리에서 깨진다.
+- **`transaction_category` 20행** — **V6 마이그레이션이 직접 넣는 기준 데이터**라 `--no-data`로는 따라오지 않는다.
+  6번 seed의 선행 조건 "카테고리 기준 행 20개"가 바로 이것이고, 빠뜨리면 6번 preflight가 막는다.
+- **`AUTO_INCREMENT=` 제거** — `mysqldump --no-data`는 `CREATE TABLE ... AUTO_INCREMENT=9169`처럼
+  **옛 DB의 채번 위치까지 들고 온다.** 지우지 않으면 행 내용은 같은데 `user_id`·`account_id`·`card_id`만 통째로 밀리고,
+  `DODAM_TRANSACTION_VERIFY.sql` 1번 지문이 어긋난다(지문식에 `account_id`·`card_id`가 들어간다).
+  **행수·합계는 맞는데 지문만 다르면 이걸 의심한다.**
+
+### 적재 중에는 backend를 반드시 내린다
+
+`docker compose stop backend` 후에 DB를 만진다. 기동에 실패한 컨테이너는 재기동 루프에 빠지고,
+그 루프가 **만드는 중인 DB에 마이그레이션을 동시에 쓴다**(실제로 `flyway_schema_history`가 오염됐다).
+
+### 적재 후 확인 — `OK`는 통과를 뜻하지 않는다
+
+`mysql` 종료 코드가 0이어도 seed의 자체 검증은 **출력 숫자로** 말한다.
+각 파일 로그에서 `*_violation_count` · `*_mismatch_count` · `*_orphan_count` · `*_conflict*`가 0인지 본다
+(`seed-load.sh check`가 이걸 훑어 준다). 그다음 `DODAM_TRANSACTION_VERIFY.sql`,
+`DODAM_DEMO_DEPOSIT_SAVING_678_VERIFY.sql`, `DODAM_DEMO_U0003_LEDGER_679_VERIFY.sql`을 돌린다.
+
+### 12번·699는 새 DB에서 필요 없다
+
+- 12번(인구통계 백필): 491 최신판이 `birth_date`·`gender`를 채운다. 적재 후 NULL 0건으로 확인했다.
+- 699(파생 결과 초기화): 초기화할 저장본(`monthly_report`·`pattern_analysis`)이 애초에 없다.
+  대신 **앱이 만들던 파생 데이터가 전부 사라지므로**(진단·추천·현금흐름·리포트) 시연 전에
+  U0003으로 현금흐름 예측 → 패턴 분석 → 진단을 `forceRefresh: true`로 한 번씩 만들어 둔다.
+
+### 625(11번)를 건너뛸 수는 없다
+
+655(15번) preflight가 `SEED-SEP-...-202609-INC-` 행 4명분을 요구하고 **그 행은 625만 만든다.**
+11번을 건너뛰면 15번이 `ERROR 3819`로 멈추고 17번까지 연쇄로 막힌다.
+반대로 **655가 이미 적용된 DB에서 6·8번을 다시 돌리면 11번이 멈춘다** —
+625는 시연 4명의 `SUB-U%` 구독을 6건으로 기대하는데 655가 23건으로 바꿔 놓고,
+8번의 DELETE는 자기가 넣을 6건만 지워 655의 03~07번이 남기 때문이다.
+빈 DB에 1~18번을 순서대로 넣으면 이 충돌은 생기지 않는다.
+
 ## 공통 규약
 
 - 사용자: `seed.kmeans.u0001@dodam.invalid` ~ `u4000`. 성향 코드 `MOD(순번-1, 4)`: 0 BALANCED, 1 SPENDING_FOCUSED, 2 SAVING_FOCUSED, 3 VOLATILE.
