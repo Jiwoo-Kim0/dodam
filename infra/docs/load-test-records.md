@@ -1221,3 +1221,23 @@ p95가 사실상 최댓값이 된다. 이대로 보면 **"로그인이 가장 �
 > 위 숫자(13~17ms)가 `#11` 판독(442~469ms)보다 훨씬 낮은 것은 **측정 시점이 다르기 때문**이다.
 > 이번에는 부하 초반 계단(낮은 VU)에서 쿼리했고, `#11`은 120 VU 포화 구간이었다.
 > 패널 검증 목적은 **어떤 경로가 뽑히는가**이므로 시점 차이는 무관하다.
+
+### 화면 확인 — 수정된 패널 실제 출력
+
+Grafana 화면에서도 `/actuator/*`·`/api/health`·`/api/v1/auth/login`이 사라지고
+사용자 API 6개만 남았다.
+
+| 엔드포인트 | Last | Max |
+| --- | --- | --- |
+| **`/api/v1/cashflow/events`** | **66.3ms** | **529ms** |
+| `/api/v1/transactions` | 63.6ms | 507ms |
+| `/api/v1/spending/daily` | 60.8ms | 515ms |
+| `/api/v1/spending/categories` | 59.1ms | 515ms |
+| `/api/v1/spending/monthly-summary` | 57.2ms | 499ms |
+| `/api/v1/transactions/categories` | 56.2ms | 499ms |
+
+`cashflow/events`가 Last·Max 양쪽에서 1위로, `#11` 정정 내용과 일치한다.
+
+**Max 기준 최고(529ms)와 최저(499ms)의 차이가 6%뿐이다.** 특정 API가 느린 것이 아니라
+**공통 대기(CPU 경합)가 지배**한다는 기존 결론과 같다 —
+"이 API만 고치면 된다"가 성립하지 않는다.
