@@ -1087,7 +1087,7 @@ daily_spending 330.29ms · category_spending 336.05ms · cashflow_events 342.66m
 | 패널 | 읽은 값 | 판단 |
 | --- | --- | --- |
 | 지연 분위수 | p50 **183ms** / p95 **493ms** / p99 **694ms** | 120 VU 포화 구간 최대값 |
-| 느린 엔드포인트 p95 | `/api/v1/spending/categories` **497ms** | 9개 중 가장 느리나 임계(700ms) 이내 |
+| 느린 엔드포인트 p95 | **`/api/v1/cashflow/events` 517ms** · `spending/categories` 497ms | 가장 느린 것은 `cashflow/events`다(아래 정정 참조) |
 | **HikariCP** | **pending 164** · active 10 · idle 10 | 샘플러 관측치(164)와 일치 |
 | MySQL 서버 | 연결 **21** / 151 · **슬로우 쿼리 0** | DB는 끝까지 여유 |
 | **JVM 힙** | used **216MB** / committed 260MB / max 1,038MB | **톱니 모양으로 오르내림 — GC 정상, 누수 없음** |
@@ -1103,6 +1103,62 @@ daily_spending 330.29ms · category_spending 336.05ms · cashflow_events 342.66m
 
 **Redis 명령이 초당 0.78건에 머무는 것**도 그대로다 — 거래 조회 경로에도 캐시가 없다.
 CPU가 병목인 상황에서 **캐시는 아직 쓰지 않은 카드**다.
+
+### 정정 — 가장 느린 엔드포인트를 잘못 적었다 (2026-09-25 추가)
+
+위 표에 처음에는 "`/api/v1/spending/categories` 497ms가 가장 느리다"고 적었으나
+**틀렸다.** 캡처 이미지의 범례에 보이는 항목만 보고 단정했는데, 전체 목록을 보니
+`/api/v1/cashflow/events`가 더 느렸다.
+
+부하 피크 시점(08:35 UTC)을 지정해 다시 쿼리한 값이다.
+
+| uri | p95 |
+| --- | --- |
+| **`/api/v1/cashflow/events`** | **468.5ms** |
+| `/api/v1/spending/categories` | 456.4ms |
+| `/api/v1/spending/daily` | 446.8ms |
+| `/api/v1/transactions/categories` | 443.9ms |
+| `/api/v1/transactions` | 442.6ms |
+| `/api/v1/spending/monthly-summary` | 442.2ms |
+
+**6개가 442~469ms로 촘촘하다.** 순위보다 "특정 API가 유독 느리지 않다"는 점이 중요하다.
+(범례의 517ms는 그래프 최댓값, 468.5ms는 피크 시점 값이라 숫자가 다르다.)
+
+> 서버 uri는 6개인데 k6의 name 태그는 9개다. `/api/v1/transactions` 하나에
+> 목록·숨김·일별·카테고리 조회가 모두 포함되기 때문이다.
+
+### 대시보드 패널을 고쳤다 — 느린 엔드포인트가 잘못 뽑히고 있었다
+
+이 정정을 계기로 패널 자체의 문제를 발견했다. 부하가 **끝난 뒤** 화면을 보면
+실제 API가 아니라 운영용 경로가 상위를 차지한다.
+
+```
+/actuator/health        5.52 ms
+/actuator/prometheus    9.72 ms  (max 98.4 ms)
+/api/health             950 µs
+/api/v1/auth/login      99.3 ms  (max 130 ms)   ← setup에서 4회만 호출
+/api/v1/auth/logout     15.1 ms                 ← teardown에서 4회만 호출
+```
+
+**두 종류가 섞여 있었다.**
+
+| 문제 | 왜 걸러야 하나 |
+| --- | --- |
+| `/actuator/*`, `/api/health` | 운영·모니터링용이라 **개선 대상이 될 수 없다.** 부하가 없으면 이것들만 남는다 |
+| 호출률이 낮은 경로 | 로그인은 `setup()`에서 계정 수만큼(4회)만 부른다. **표본 4건의 p95는 의미가 없는데** 숫자는 커서 상위에 올라온다 |
+
+쿼리를 이렇게 바꿨다.
+
+```promql
+topk(7,
+  histogram_quantile(0.95,
+    sum(rate(http_server_requests_seconds_bucket{uri!~"/actuator.*|/api/health"}[1m])) by (le, uri))
+  and on(uri) (sum by (uri) (rate(http_server_requests_seconds_count[1m])) > 0.5)
+)
+```
+
+부하 피크 시점으로 검증하니 `/actuator/prometheus`가 빠지고 **실제 사용자 API 6개만** 남았다.
+패널 제목도 `느린 엔드포인트 p95 (사용자 API만)`으로 바꿨다.
 
 ### 발견한 버그 — 현재 달 조회가 400으로 실패
 

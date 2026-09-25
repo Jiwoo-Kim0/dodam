@@ -321,7 +321,7 @@
     },
     {
       "type": "timeseries",
-      "title": "느린 엔드포인트 p95 (상위 7)",
+      "title": "느린 엔드포인트 p95 (사용자 API만)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -354,12 +354,12 @@
       },
       "targets": [
         {
-          "expr": "topk(7, histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket[1m])) by (le, uri)))",
+          "expr": "topk(7, histogram_quantile(0.95, sum(rate(http_server_requests_seconds_bucket{uri!~\"/actuator.*|/api/health\"}[1m])) by (le, uri)) and on(uri) (sum by (uri) (rate(http_server_requests_seconds_count[1m])) > 0.5))",
           "legendFormat": "{{uri}}",
           "refId": "A"
         }
       ],
-      "description": "어느 경로가 느린지. 개선 대상을 고르는 근거."
+      "description": "어느 사용자 API가 느린지. 개선 대상을 고르는 근거다.\n\n두 가지를 걸러낸다 — 둘 다 걸러내지 않으면 부하가 없을 때 이 패널이 쓸모없어진다.\n① /actuator/*, /api/health: 운영·모니터링용이라 개선 대상이 아니다. 부하가 끝나면 이것들만 남아 상위를 차지한다.\n② 호출률 0.5건/초 미만: 로그인·로그아웃처럼 setup/teardown에서 몇 번만 부르는 경로는 표본이 4건 수준이라 p95가 의미 없는데도 숫자가 커서 상위에 올라온다.\n\n표시되는 수는 k6의 name 태그(9개)가 아니라 서버 uri 기준이다. 예: /api/v1/transactions 하나에 목록·숨김·일별·카테고리 조회가 모두 포함된다."
     },
     {
       "type": "timeseries",
