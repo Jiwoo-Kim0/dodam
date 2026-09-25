@@ -1284,3 +1284,149 @@ Grafana 화면에서도 `/actuator/*`·`/api/health`·`/api/v1/auth/login`이 �
 **Max 기준 최고(529ms)와 최저(499ms)의 차이가 6%뿐이다.** 특정 API가 느린 것이 아니라
 **공통 대기(CPU 경합)가 지배**한다는 기존 결론과 같다 —
 "이 API만 고치면 된다"가 성립하지 않는다.
+
+---
+
+## 개선 ③ 시도와 철회 — 요청당 쿼리 수 (2026-09-25)
+
+`#12` 이후 남은 개선 후보를 조사하다 **적용까지 갔다가 되돌렸다.** 그 과정을 남긴다.
+
+### 조사 — 요청당 6.54개 쿼리의 정체
+
+`mysql_global_status_questions ÷ http_server_requests_count`로 요청당 **6.54개**가 나왔다.
+N+1을 의심하고 `performance_schema.events_statements_summary_by_digest`를 초기화한 뒤
+`ledger-journey` verify(35요청)를 돌려 쿼리를 셌다.
+
+```
+SET autocommit = ?                     70회   (요청당 2.0)
+COMMIT                                 35회   (요청당 1.0)
+SET SESSION TRANSACTION READ ONLY      27회   (요청당 0.8)
+SET SESSION TRANSACTION READ WRITE     27회   (요청당 0.8)
+──────────────────────────────────────────────
+트랜잭션 제어 구문                    159회   (요청당 4.5)
+```
+
+**N+1은 없었다. 정반대였다.** 실제 데이터를 읽는 SELECT는 요청당 약 **1.7개**뿐이고,
+**트랜잭션 제어 오버헤드가 본체의 약 3배**다.
+
+디스펫치에 SELECT가 안 보인 이유도 확인했다 — 서버 사이드 prepared statement로 실행돼
+별도 집계된다. 그 카운터가 **개선 ①이 잘 동작한다는 증거**이기도 했다.
+
+```
+Com_stmt_prepare    1,728        준비
+Com_stmt_execute    3,824,456    실행   ← 준비 1회로 약 2,200회 재사용
+```
+
+### 적용 시도 — `SET autocommit` 왕복 제거
+
+요청당 2회 나가는 `SET autocommit`은 HikariCP가 커넥션을 빌려줄 때 끄고 반납할 때
+되돌리는 왕복이다. Hibernate + HikariCP의 알려진 최적화로 없앨 수 있다.
+
+```yaml
+spring:
+  datasource:
+    hikari:
+      auto-commit: false
+  jpa:
+    properties:
+      hibernate:
+        connection:
+          provider_disables_autocommit: true
+```
+
+**환경변수로는 줄 수 없어** `application.yml`을 고쳤다 —
+`SPRING_JPA_..._PROVIDER_DISABLES_AUTOCOMMIT`로 주면 relaxed binding이 언더스코어를
+점으로 바꿔 `provider.disables.autocommit`이 되어 키가 깨진다.
+
+### 철회 — 테스트 323개가 깨졌다
+
+전체 테스트에서 **1,388개 중 323개 실패**.
+
+```
+116회  Status expected:<200> but was:<404>
+ 51회  EmptyResultDataAccessException: expected 1, actual 0
+ 37회  DataIntegrityViolationException: DELETE FROM goal ... Referential
+```
+
+전형적인 **"커밋이 안 됨"** 증상이다. 변경 전으로 되돌려 같은 테스트를 돌리니 통과해
+**원인이 이 변경임을 확인**했다.
+
+원인은 **테스트 픽스처**다. `JdbcTemplate`으로 데이터를 넣는 테스트가 **57개 파일**에 있는데,
+트랜잭션 없이 실행하면 autocommit에 의존한다. `auto-commit: false`가 되면 커밋되지 않는다.
+
+### 철회 결정의 근거 — 운영 코드에도 같은 패턴이 있다
+
+테스트만의 문제라면 `application-prod.yml`에만 적용하는 우회가 가능했다.
+그러나 **운영 코드에도 `JdbcTemplate` 쓰기가 6곳** 있었다.
+
+| 위치 | 작업 |
+| --- | --- |
+| `CashflowResultWriter` (3곳) | 현금흐름 결과 저장 |
+| **`JdbcAccountBalanceWriter` (2곳)** | **계좌 잔액 수정** |
+
+이들이 `@Transactional` 밖에서 호출되면 커밋되지 않는다.
+**잔액 수정이 유실될 수 있는 위험**을 남은 기간과 이득에 견주어 감당할 수 없다고 판단했다.
+
+| 방안 | 검토 내용 | 채택/기각 |
+| --- | --- | --- |
+| **철회** | 이득(쿼리 31% 감소, 효과는 미측정)보다 위험이 크다. 테스트 323개 실패로 CI도 막힌다 | **채택** |
+| `application-prod.yml`에만 적용 | 테스트는 통과한다. 그러나 **테스트로 검증되지 않은 설정이 운영에만 들어가고**, 운영 코드의 JdbcTemplate 쓰기 6곳(잔액 수정 포함)은 그대로 위험하다 | 기각 |
+| 테스트 픽스처 57개 파일 수정 | 근본 해결이다. 그러나 범위가 크고, 고친 뒤에도 운영 코드 6곳 검토가 남는다 | 기각(범위 초과) |
+| 운영 코드 6곳에 `@Transactional` 보장 확인 후 적용 | 안전하게 갈 수 있다. 호출 경로를 모두 추적해야 하며 **잔액 관련 코드**라 신중해야 한다 | **향후 과제** |
+
+### 남긴 것 — 향후 개선 항목
+
+**이 조사는 실패가 아니다.** 요청당 쿼리의 정체를 수치로 밝혔고,
+왜 지금 고칠 수 없는지를 근거와 함께 남겼다.
+
+> **향후 개선:** 요청당 트랜잭션 제어 구문 4.5개 중 `SET autocommit` 2개를 제거할 수 있다.
+> 선행 조건 — ① 테스트 픽스처(`JdbcTemplate` 사용 57개 파일)가 트랜잭션 안에서 돌도록 정리,
+> ② 운영 코드의 JDBC 쓰기가 `@Transactional` 경계 안인지 확인. **②는 아래에서 완료했다.**
+
+### 선행 조건 ② 조사 완료 — 운영 코드 JDBC 쓰기 7곳 (2026-09-25)
+
+다음에 이 작업을 할 사람이 같은 추적을 반복하지 않도록 결과를 남긴다.
+
+| # | 쓰기 지점 | 호출 경로 | 트랜잭션 경계 | 판정 |
+| --- | --- | --- | --- | --- |
+| 1~2 | `JdbcAccountBalanceWriter` `updateMinusBalance` · `withdraw` **(잔액 수정)** | `MinusAccountCommandService` (84·85·128행) | **클래스 레벨 `@Transactional`** | ✅ |
+| 3~5 | `CashflowResultWriter` `insertDailyBalances` · `insertEvents` · `insertRisks` | `CashflowForecastStore` (88~90행) | `complete()`의 **메서드 `@Transactional`**(72행), 88~90행이 그 안 | ✅ |
+| 6 | `JdbcAccountTransactionWriter.insertMissing` **(거래 INSERT)** | `AccountTransferService.save()` (184·186행) | `save()`는 **`private`**이고 122행 `transactionTemplate.execute()` 안에서만 호출(호출처 1곳) | ✅ |
+| 7 | 같음 | `AccountSyncHandler.apply()` (304행) | `apply()`는 **`private`**(249행), 105행 `transactionTemplate.execute()` 안에서 호출 | ✅ |
+
+`EntityManager`의 `executeUpdate()` · `createNativeQuery()` 사용은 **0건**이다.
+`transactionTemplate.execute(...)`는 Spring이 트랜잭션을 여는 것이므로 오히려 안전한 형태다.
+
+### 이 조사에서 드러난 것 — 검색의 완전성을 증명할 수 없다
+
+**처음에는 "6곳"이라고 판단했는데 7곳이었다.** 검색 패턴을
+`jdbcTemplate\.(update|execute|batchUpdate)`에서
+`\.(update|batchUpdate|execute)\(` + `jdbc|template` 키워드로 넓히자
+`JdbcAccountTransactionWriter`(거래 INSERT)가 새로 나왔다.
+
+```
+1차 검색: 6곳  →  2차 검색: 7곳
+```
+
+**8번째가 없다는 보장은 없다.** 변수명이 다르거나, SQL이 동적으로 구성되거나,
+람다 안에 감춰져 있으면 grep으로는 찾지 못한다.
+
+### 그래서 ②가 통과해도 적용을 권하지 않는 이유
+
+확인한 7곳이 모두 안전하더라도 **적용 시점에 안전망이 없다.**
+
+```
+지금 적용 → 테스트 323개 실패 → 진짜 회귀가 "원래 깨진 것"에 묻힘 → 잡을 수단 없음
+```
+
+놓친 8번째가 있고 그것이 잔액·거래 쓰기라면, **검증할 방법이 사라진 채로 배포**하게 된다.
+
+**순서가 반대였다.**
+
+```
+❌ 설정 적용 → 테스트 깨짐 → 운영 코드 확인
+✅ 테스트 픽스처 정리(안전망 복구) → 설정 적용 → 테스트로 검증 → 배포 → 측정
+```
+
+선행 조건 ①(테스트 픽스처 57개 파일)은 **테스트 코드 리팩터링**이며
+부하 테스트(693)의 범위를 넘는다. 별도 작업으로 다룬다.
