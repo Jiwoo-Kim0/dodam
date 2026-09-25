@@ -2523,3 +2523,58 @@ N+1을 의심하고 들어갔는데 **N+1은 없었다.**
 - `infra/docs/load-test-records.md` — "개선 ③ 시도와 철회" 절
 - `infra/docs/load-test-summary.md` — 잔여 한계 `5'` 추가
 - `backend/src/main/resources/application.yml` — **변경 없음(철회)**
+
+### 2026-09-25 · 선행 조건 ② 조사 — 운영 코드 JDBC 쓰기 7곳 추적
+
+#### 무엇을 했나
+
+개선 ③ 철회 시 남긴 선행 조건 중 ②(운영 코드의 JDBC 쓰기가 트랜잭션 경계 안인가)를
+끝까지 추적했다. **코드 읽기만 하므로 위험이 없는 작업**이다.
+
+**결과: 7곳 전부 트랜잭션 경계 안.** 표는 `docs/load-test-records.md`에 남겨
+다음 사람이 같은 추적을 반복하지 않도록 했다.
+
+- `JdbcAccountBalanceWriter`(잔액 수정 2곳) → `MinusAccountCommandService` 클래스 `@Transactional`
+- `CashflowResultWriter`(3곳) → `CashflowForecastStore.complete()` 메서드 `@Transactional`
+- `JdbcAccountTransactionWriter`(거래 INSERT) → `AccountTransferService.save()`,
+  `AccountSyncHandler.apply()` 둘 다 `private`이고 `transactionTemplate.execute()` 안에서만 호출
+
+`EntityManager.executeUpdate()`/`createNativeQuery()` 사용은 0건이었다.
+
+#### 조사 중 내가 틀린 것 — "6곳"이 아니라 7곳이었다
+
+철회 기록에 **"운영 코드 JdbcTemplate 쓰기 6곳"**이라고 적었는데 틀렸다.
+검색 패턴을 넓히자 하나가 더 나왔다.
+
+```
+1차: grep "jdbcTemplate\.(update|execute|batchUpdate)"        → 6곳
+2차: grep "\.(update|batchUpdate|execute)\(" + jdbc|template  → 7곳
+```
+
+새로 나온 것이 하필 **`JdbcAccountTransactionWriter`(거래 INSERT)**였다.
+변수명이 `jdbcTemplate`이 아니었으면 2차에서도 놓쳤을 것이다.
+
+**교훈: grep 기반 조사는 완전성을 증명하지 못한다.** 첫 검색 결과를 숫자로 단정해
+기록까지 남긴 것이 잘못이었다. "현재 패턴으로 찾은 것은 N곳"이라고 썼어야 했다.
+
+#### 조사 결과가 좋은데도 적용을 권하지 않는 이유
+
+7곳이 모두 안전해도 **적용 시점에 안전망이 없다.**
+설정을 넣으면 테스트 323개가 깨지고, 그 상태에서는 진짜 회귀가
+"원래 깨진 것"에 묻혀 구분되지 않는다. 놓친 8번째가 잔액·거래 쓰기라면
+**검증 수단이 사라진 채 배포**하게 된다.
+
+**순서가 반대였다는 것이 이번 조사의 결론이다.**
+
+```
+❌ 설정 적용 → 테스트 깨짐 → 운영 코드 확인   (내가 한 순서)
+✅ 테스트 픽스처 정리 → 설정 적용 → 검증 → 배포 → 측정
+```
+
+선행 조건 ①(테스트 픽스처 57개 파일)은 테스트 코드 리팩터링이라
+693(부하 테스트) 범위를 넘는다. 별도 작업으로 넘긴다.
+
+#### 산출물
+
+- `infra/docs/load-test-records.md` — "선행 조건 ② 조사 완료" 절(7곳 추적표)
+- `infra/docs/load-test-summary.md` — 잔여 한계 `5'` 보강

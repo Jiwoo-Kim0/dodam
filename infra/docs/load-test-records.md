@@ -1381,5 +1381,52 @@ spring:
 
 > **향후 개선:** 요청당 트랜잭션 제어 구문 4.5개 중 `SET autocommit` 2개를 제거할 수 있다.
 > 선행 조건 — ① 테스트 픽스처(`JdbcTemplate` 사용 57개 파일)가 트랜잭션 안에서 돌도록 정리,
-> ② 운영 코드의 `JdbcTemplate` 쓰기 6곳이 `@Transactional` 경계 안인지 확인
-> (특히 `JdbcAccountBalanceWriter`의 잔액 수정).
+> ② 운영 코드의 JDBC 쓰기가 `@Transactional` 경계 안인지 확인. **②는 아래에서 완료했다.**
+
+### 선행 조건 ② 조사 완료 — 운영 코드 JDBC 쓰기 7곳 (2026-09-25)
+
+다음에 이 작업을 할 사람이 같은 추적을 반복하지 않도록 결과를 남긴다.
+
+| # | 쓰기 지점 | 호출 경로 | 트랜잭션 경계 | 판정 |
+| --- | --- | --- | --- | --- |
+| 1~2 | `JdbcAccountBalanceWriter` `updateMinusBalance` · `withdraw` **(잔액 수정)** | `MinusAccountCommandService` (84·85·128행) | **클래스 레벨 `@Transactional`** | ✅ |
+| 3~5 | `CashflowResultWriter` `insertDailyBalances` · `insertEvents` · `insertRisks` | `CashflowForecastStore` (88~90행) | `complete()`의 **메서드 `@Transactional`**(72행), 88~90행이 그 안 | ✅ |
+| 6 | `JdbcAccountTransactionWriter.insertMissing` **(거래 INSERT)** | `AccountTransferService.save()` (184·186행) | `save()`는 **`private`**이고 122행 `transactionTemplate.execute()` 안에서만 호출(호출처 1곳) | ✅ |
+| 7 | 같음 | `AccountSyncHandler.apply()` (304행) | `apply()`는 **`private`**(249행), 105행 `transactionTemplate.execute()` 안에서 호출 | ✅ |
+
+`EntityManager`의 `executeUpdate()` · `createNativeQuery()` 사용은 **0건**이다.
+`transactionTemplate.execute(...)`는 Spring이 트랜잭션을 여는 것이므로 오히려 안전한 형태다.
+
+### 이 조사에서 드러난 것 — 검색의 완전성을 증명할 수 없다
+
+**처음에는 "6곳"이라고 판단했는데 7곳이었다.** 검색 패턴을
+`jdbcTemplate\.(update|execute|batchUpdate)`에서
+`\.(update|batchUpdate|execute)\(` + `jdbc|template` 키워드로 넓히자
+`JdbcAccountTransactionWriter`(거래 INSERT)가 새로 나왔다.
+
+```
+1차 검색: 6곳  →  2차 검색: 7곳
+```
+
+**8번째가 없다는 보장은 없다.** 변수명이 다르거나, SQL이 동적으로 구성되거나,
+람다 안에 감춰져 있으면 grep으로는 찾지 못한다.
+
+### 그래서 ②가 통과해도 적용을 권하지 않는 이유
+
+확인한 7곳이 모두 안전하더라도 **적용 시점에 안전망이 없다.**
+
+```
+지금 적용 → 테스트 323개 실패 → 진짜 회귀가 "원래 깨진 것"에 묻힘 → 잡을 수단 없음
+```
+
+놓친 8번째가 있고 그것이 잔액·거래 쓰기라면, **검증할 방법이 사라진 채로 배포**하게 된다.
+
+**순서가 반대였다.**
+
+```
+❌ 설정 적용 → 테스트 깨짐 → 운영 코드 확인
+✅ 테스트 픽스처 정리(안전망 복구) → 설정 적용 → 테스트로 검증 → 배포 → 측정
+```
+
+선행 조건 ①(테스트 픽스처 57개 파일)은 **테스트 코드 리팩터링**이며
+부하 테스트(693)의 범위를 넘는다. 별도 작업으로 다룬다.
