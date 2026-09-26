@@ -14,7 +14,7 @@ public interface SsafyFinanceClient {
 
     SsafyDemandDepositProduct createDemandDeposit(String bankCode, String name, String description);
 
-    SsafyDemandDepositAccount createDemandDepositAccount(String userKey, String typeNo);
+    SsafyCreatedDemandDepositAccount createDemandDepositAccount(String userKey, String typeNo);
 
     SsafyDepositResult depositToAccount(String userKey, String accountNo, long amount, String summary);
 

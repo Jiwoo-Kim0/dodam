@@ -60,6 +60,12 @@ public enum ErrorCode {
     TRANSFER_INSUFFICIENT_BALANCE(HttpStatus.CONFLICT, "출금계좌 잔액이 부족합니다."),
     TRANSFER_LIMIT_EXCEEDED(HttpStatus.CONFLICT, "계좌 이체 한도를 초과했습니다."),
     TRANSFER_DUPLICATE_REQUEST(HttpStatus.CONFLICT, "같은 이체 요청이 최근 처리되었습니다."),
+    SAFEBOX_ACCOUNT_NOT_FOUND(HttpStatus.NOT_FOUND, "도담 전용 계좌가 없습니다."),
+    SAFEBOX_OPEN_RECONCILIATION_REQUIRED(HttpStatus.CONFLICT, "전용 계좌 개설 결과 확인이 필요합니다. 관리자에게 문의해 주세요."),
+    SAFEBOX_ALLOCATION_EXCEEDS_BALANCE(HttpStatus.CONFLICT, "도담 전용 계좌의 배정 가능 금액을 초과했습니다."),
+    SAFEBOX_ALLOCATED_BALANCE(HttpStatus.CONFLICT, "목표에 담긴 금액을 먼저 꺼내 주세요."),
+    SAFEBOX_ACCOUNT_DEBIT_NOT_ALLOWED(HttpStatus.CONFLICT, "도담 전용 계좌는 이 납부의 출금계좌로 사용할 수 없습니다."),
+    SAFEBOX_LEGACY_LINK_CONFLICT(HttpStatus.CONFLICT, "기존 입출금 계좌의 목표 연결을 먼저 해제해 주세요."),
 
     /**
      * 마이너스통장 상환·이자납부(S15P21D105-534)의 상태 전이 검증.

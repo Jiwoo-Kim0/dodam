@@ -50,6 +50,16 @@ public class GoalAccount {
         return new GoalAccount(userId, goalId, accountId, accountType);
     }
 
+    public static GoalAccount allocate(Long userId, Long goalId, Long accountId, long amount) {
+        GoalAccount link = new GoalAccount(userId, goalId, accountId, "DEMAND_DEPOSIT");
+        link.contributionAmount = amount;
+        return link;
+    }
+
+    public void setContributionAmount(long amount) {
+        this.contributionAmount = amount;
+    }
+
     public Long getGoalId() {
         return goalId;
     }

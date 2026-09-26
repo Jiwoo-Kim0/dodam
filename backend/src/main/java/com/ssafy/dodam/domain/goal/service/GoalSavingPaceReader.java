@@ -3,6 +3,8 @@ package com.ssafy.dodam.domain.goal.service;
 import com.ssafy.dodam.domain.account.entity.AccountType;
 import com.ssafy.dodam.domain.goal.repository.JdbcGoalPaceReader;
 import com.ssafy.dodam.domain.goal.repository.JdbcGoalPaceReader.DepositSavingTerms;
+import com.ssafy.dodam.domain.goal.repository.SafeboxAccountRepository;
+import com.ssafy.dodam.domain.goal.repository.SafeboxMovementRepository;
 import java.math.BigInteger;
 import java.time.LocalDate;
 import java.time.YearMonth;
@@ -38,9 +40,14 @@ public class GoalSavingPaceReader {
     public static final int WINDOW_MONTHS = 3;
 
     private final JdbcGoalPaceReader reader;
+    private final SafeboxAccountRepository safeboxAccounts;
+    private final SafeboxMovementRepository movements;
 
-    public GoalSavingPaceReader(JdbcGoalPaceReader reader) {
+    public GoalSavingPaceReader(JdbcGoalPaceReader reader, SafeboxAccountRepository safeboxAccounts,
+            SafeboxMovementRepository movements) {
         this.reader = reader;
+        this.safeboxAccounts = safeboxAccounts;
+        this.movements = movements;
     }
 
     /**
@@ -55,6 +62,7 @@ public class GoalSavingPaceReader {
         YearMonth first = last.minusMonths(WINDOW_MONTHS - 1L);
         LocalDate from = first.atDay(1);
         LocalDate to = last.atEndOfMonth();
+        Long dedicatedId = safeboxAccounts.findById(userId).map(ref -> ref.getAccountId()).orElse(null);
 
         List<Long> exclusive = allocation.accounts().stream()
                 .filter(item -> GoalAllocationReader.isExclusiveType(item.account().getAccountType()))
@@ -62,6 +70,7 @@ public class GoalSavingPaceReader {
                 .toList();
         List<Long> demandDeposits = allocation.accounts().stream()
                 .filter(item -> item.account().getAccountType() == AccountType.DEMAND_DEPOSIT)
+                .filter(item -> !item.account().getId().equals(dedicatedId))
                 .map(item -> item.account().getId())
                 .toList();
 
@@ -72,6 +81,11 @@ public class GoalSavingPaceReader {
             for (Long accountId : exclusive) {
                 pace += depositPace(paid.get(accountId), terms.get(accountId), first, last, today);
             }
+        }
+        if (allocation.accounts().stream().anyMatch(item -> item.account().getId().equals(dedicatedId))) {
+            // 도담 계좌 입금은 목표별 저축이 아니다. 실제로 담은 금액의 완료 월 순증감만 이 목표에 귀속한다.
+            pace += movements.sumDelta(userId, allocation.goalId(), from.atStartOfDay(),
+                    to.plusDays(1).atStartOfDay()) / WINDOW_MONTHS;
         }
         if (!demandDeposits.isEmpty()) {
             int months = monthsCovered(first, last, reader.readFirstTransactionDate(userId, demandDeposits).orElse(null));

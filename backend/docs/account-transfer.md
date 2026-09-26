@@ -1,6 +1,7 @@
 # 계좌 이체 (S15P21D105-703)
 
 `POST /api/v1/accounts/transfer`는 인증 사용자 소유의 수시입출금 계좌 사이에서 SSAFY 금융망 이체를 실행한다.
+사용자에게 [도담 전용 계좌](safebox.md)가 있으면 그 계좌의 출금은 목표에 배정되지 않은 잔액까지만 허용한다.
 
 요청은 `{ "withdrawalAccountId": 11, "depositAccountId": 12, "amount": 500000 }`이고 성공 응답은
 `ApiResponse`의 `data`에 `withdrawalAccountId`, `withdrawalBalance`, `depositAccountId`,

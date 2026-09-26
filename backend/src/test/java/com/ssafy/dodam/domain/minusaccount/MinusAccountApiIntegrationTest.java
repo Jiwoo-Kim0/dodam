@@ -14,6 +14,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.time.ZoneId;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -56,6 +57,7 @@ class MinusAccountApiIntegrationTest {
     @BeforeEach
     void setUp() {
         today = LocalDate.now(ZoneId.of("Asia/Seoul"));
+        jdbcTemplate.update("DELETE FROM safebox_account WHERE user_id = 3");
 
         updateHash(101L, IN_USE_NO);
         updateHash(102L, UNUSED_NO);
@@ -78,6 +80,7 @@ class MinusAccountApiIntegrationTest {
         resetBalance(101L, -3500000);
         resetBalance(102L, 0);
         resetBalance(105L, 5000000);
+        resetBalance(109L, 4000000);
 
         jdbcTemplate.update("DELETE FROM `transaction`");
         insertTransaction("T-1", 1L, 101L, today.minusDays(1), 500000, -3500000, "TRANSFER", "카드대금");
@@ -91,6 +94,11 @@ class MinusAccountApiIntegrationTest {
         insertAlert(1L, 101L, "MINUS_INTEREST", "이자 납부일", true, "2026-09-02 09:00:00");
         insertDeletedAlert(1L, 101L, "MINUS_OVERDUE", "삭제된 알림");
         insertAlert(2L, 103L, "MINUS_LIMIT", "타인 알림", false, null);
+    }
+
+    @AfterEach
+    void clearSafebox() {
+        jdbcTemplate.update("DELETE FROM safebox_account WHERE user_id = 3");
     }
 
     // ---------- 목록 ----------
@@ -455,6 +463,19 @@ class MinusAccountApiIntegrationTest {
                         .content("{\"amount\":1000}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("WITHDRAWAL_ACCOUNT_REQUIRED"));
+    }
+
+    @Test
+    @WithMockUser(username = "3")
+    void 전용계좌를_제외하고_남은_입출금계좌를_자동선택한다() throws Exception {
+        jdbcTemplate.update("INSERT INTO safebox_account (user_id, account_id, account_type, created_at) "
+                + "VALUES (3, 108, 'DEMAND_DEPOSIT', CURRENT_TIMESTAMP)");
+        mockMvc.perform(post(BASE + "/" + MULTI_WITHDRAWAL_MINUS_NO + "/repayments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":1000}"))
+                .andExpect(status().isOk());
+        assertThat(jdbcTemplate.queryForObject("SELECT balance FROM account WHERE account_id = 109", Long.class))
+                .isEqualTo(3999000L);
     }
 
     @Test

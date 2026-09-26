@@ -137,10 +137,10 @@ public class RestSsafyFinanceClient implements SsafyFinanceClient {
     }
 
     @Override
-    public SsafyDemandDepositAccount createDemandDepositAccount(String userKey, String typeNo) {
+    public SsafyCreatedDemandDepositAccount createDemandDepositAccount(String userKey, String typeNo) {
         String path = DEPOSIT_BASE + "createDemandDepositAccount";
         return convert(extractRec(post(path, "createDemandDepositAccount", userKey,
-                Map.of("accountTypeUniqueNo", typeNo)), path, false), SsafyDemandDepositAccount.class, path);
+                Map.of("accountTypeUniqueNo", typeNo)), path, false), SsafyCreatedDemandDepositAccount.class, path);
     }
 
     @Override

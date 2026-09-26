@@ -13,10 +13,14 @@ import com.ssafy.dodam.domain.account.entity.Account;
 import com.ssafy.dodam.domain.account.entity.AccountType;
 import com.ssafy.dodam.domain.goal.repository.JdbcGoalPaceReader;
 import com.ssafy.dodam.domain.goal.repository.JdbcGoalPaceReader.DepositSavingTerms;
+import com.ssafy.dodam.domain.goal.repository.SafeboxAccountRepository;
+import com.ssafy.dodam.domain.goal.repository.SafeboxMovementRepository;
+import com.ssafy.dodam.domain.goal.entity.SafeboxAccount;
 import com.ssafy.dodam.domain.goal.service.GoalAllocationReader.AccountAllocation;
 import com.ssafy.dodam.domain.goal.service.GoalAllocationReader.GoalAllocation;
 import com.ssafy.dodam.domain.goal.service.GoalAllocationReader.LinkedAccount;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.List;
 import java.util.Map;
@@ -35,12 +39,16 @@ class GoalSavingPaceReaderTest {
     private static final long USER = 7L;
 
     private JdbcGoalPaceReader jdbc;
+    private SafeboxAccountRepository safeboxAccounts;
+    private SafeboxMovementRepository movements;
     private GoalSavingPaceReader reader;
 
     @BeforeEach
     void setUp() {
         jdbc = mock(JdbcGoalPaceReader.class);
-        reader = new GoalSavingPaceReader(jdbc);
+        safeboxAccounts = mock(SafeboxAccountRepository.class);
+        movements = mock(SafeboxMovementRepository.class);
+        reader = new GoalSavingPaceReader(jdbc, safeboxAccounts, movements);
         given(jdbc.readPaidPaymentTotals(anyCollection(), any(), any())).willReturn(Map.of());
         given(jdbc.readTerms(anyCollection())).willReturn(Map.of());
         given(jdbc.readFirstTransactionDate(eq(USER), anyCollection())).willReturn(Optional.empty());
@@ -156,6 +164,17 @@ class GoalSavingPaceReaderTest {
     void noLinkedAccountMeansNoPace() {
         assertThat(reader.monthlyPace(USER, null, TODAY)).isZero();
         assertThat(reader.monthlyPace(USER, new GoalAllocation(1L, List.of(), 0L), TODAY)).isZero();
+    }
+
+    @Test
+    void dedicatedAccountUsesGoalMovementInsteadOfWholeAccountCashflow() {
+        given(safeboxAccounts.findById(USER)).willReturn(Optional.of(new SafeboxAccount(USER, 3L,
+                LocalDateTime.of(2026, 6, 1, 0, 0))));
+        given(movements.sumDelta(eq(USER), eq(1L), any(), any())).willReturn(900_000L);
+
+        assertThat(reader.monthlyPace(USER, allocation(sharedDemand(3L, 1_500_000L, 900_000L,
+                1_500_000L)), TODAY)).isEqualTo(300_000L);
+        verify(jdbc, never()).readNetCashflowByAccount(any(), anyCollection(), any(), any());
     }
 
     @Test
