@@ -86,7 +86,7 @@ public class FinanceConnectionService {
                     throw new BusinessException(ErrorCode.FINANCE_ALREADY_CONNECTED);
                 });
 
-        String email = user.getEmail();
+        String email = FinanceMemberService.memberEmailFor(user.getEmail());
         String userKey = financeMemberService.requireUserKey(email);
 
         FinanceConnectionResponse response = transactionTemplate.execute(status -> {
