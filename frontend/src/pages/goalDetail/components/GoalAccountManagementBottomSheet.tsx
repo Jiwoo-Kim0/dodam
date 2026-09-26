@@ -8,6 +8,8 @@ import { styles } from './GoalAccountManagementBottomSheet.styles';
 
 interface GoalAccountManagementBottomSheetProps {
   accounts: readonly AccountApiResponse[];
+  /** 세이프박스 목표처럼 예·적금만 고르는 경우. 입출금 계좌용 안내를 숨긴다. */
+  depositsOnly?: boolean;
   isSubmitting: boolean;
   selectedAccountIds: readonly string[];
   visible: boolean;
@@ -18,6 +20,7 @@ interface GoalAccountManagementBottomSheetProps {
 
 export function GoalAccountManagementBottomSheet({
   accounts,
+  depositsOnly = false,
   isSubmitting,
   selectedAccountIds,
   visible,
@@ -48,7 +51,9 @@ export function GoalAccountManagementBottomSheet({
             <View>
               <Text style={styles.title}>연결 계좌 관리</Text>
               <Text style={styles.description}>
-                목표에 연결할 계좌를 선택해 주세요.
+                {depositsOnly
+                  ? '목표에 함께 모을 예·적금을 선택해 주세요.'
+                  : '목표에 연결할 계좌를 선택해 주세요.'}
               </Text>
             </View>
             <Pressable
@@ -69,13 +74,15 @@ export function GoalAccountManagementBottomSheet({
             고르기 전에 알려 주는 편이 나중에 진행률이 튀는 것을 보고 당황하는 것보다 낫다
             (docs/goal-transfer-plan.md §5).
           */}
-          <View style={styles.accountTip}>
-            <Text style={styles.accountTipTitle}>목표용 통장을 따로 두면 더 정확해요</Text>
-            <Text style={styles.accountTipText}>
-              급여통장은 생활비가 드나들어 모은 금액이 오르내려요.
-              목표 통장은 넣은 만큼 그대로 쌓여요.
-            </Text>
-          </View>
+          {depositsOnly ? null : (
+            <View style={styles.accountTip}>
+              <Text style={styles.accountTipTitle}>목표용 통장을 따로 두면 더 정확해요</Text>
+              <Text style={styles.accountTipText}>
+                급여통장은 생활비가 드나들어 모은 금액이 오르내려요.
+                목표 통장은 넣은 만큼 그대로 쌓여요.
+              </Text>
+            </View>
+          )}
 
           <View style={styles.accountSelection}>
             <GoalAccountSelectionList
