@@ -299,6 +299,17 @@ ${formatCurrency(amount)}을 되가져올까요?`,
     goal.type === 'saving' ? colors.primary.yellow : colors.primary.orange;
   const safeboxAccount = data.safeboxAccount;
   const safeboxGoal = data.safeboxGoal;
+  /*
+   * 세이프박스를 쓰는 목표에서 입출금 계좌 배정은 세이프박스 API 몫이라 BE가 연결 요청을
+   * 거절한다. 그래서 연결 시트에는 예·적금만 보여 주고, 저장할 때도 세이프박스 링크는
+   * 빼고 보낸다(BE가 기존 세이프박스 링크를 보존한다).
+   */
+  const isSafeboxMode = goal.type === 'saving' && safeboxAccount != null && safeboxGoal != null;
+  const linkableAccounts = isSafeboxMode
+    ? data.availableAccounts.filter(
+        ({ accountType }) => accountType === 'DEPOSIT' || accountType === 'SAVINGS',
+      )
+    : data.availableAccounts;
 
   return (
     <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
@@ -379,6 +390,14 @@ ${formatCurrency(amount)}을 되가져올까요?`,
             otherAccounts={data.linkedAccounts.filter(
               (item) => item.accountId !== safeboxAccount.accountId,
             )}
+            onManageDeposits={() => {
+              setDraftAccountIds(
+                data.linkedAccounts
+                  .filter(({ accountId }) => accountId !== safeboxAccount.accountId)
+                  .map(({ accountId }) => String(accountId)),
+              );
+              setIsAccountManagementVisible(true);
+            }}
             onSetAmount={setSafeboxAmount}
             onTransfer={(direction) => {
               const account = data.availableAccounts.find(
@@ -495,7 +514,8 @@ ${formatCurrency(amount)}을 되가져올까요?`,
       )}
 
       <GoalAccountManagementBottomSheet
-        accounts={data.availableAccounts}
+        accounts={linkableAccounts}
+        depositsOnly={isSafeboxMode}
         isSubmitting={isSavingAccounts}
         onClose={() => {
           if (!isSavingAccountsRef.current) setIsAccountManagementVisible(false);
