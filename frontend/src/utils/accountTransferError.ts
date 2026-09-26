@@ -43,6 +43,10 @@ export function getAccountTransferErrorMessage(error: unknown): string {
      * 서버 2차 방어에 걸린 것이라 이미 한 번 이체됐을 수 있다. 다시 보내라고 하면
      * 두 번 나갈 수 있어, 확인부터 하게 안내한다.
      */
+    case 'SAFEBOX_ALLOCATED_BALANCE':
+      return '목표에 담긴 돈은 보낼 수 없어요. 목표에서 먼저 꺼내주세요.';
+    case 'SAFEBOX_ACCOUNT_DEBIT_NOT_ALLOWED':
+      return '도담 계좌에서는 이 출금을 할 수 없어요.';
     case transferErrorCodes.duplicateRequest:
       return '방금 같은 이체가 처리됐어요. 잔액을 확인한 뒤 다시 시도해주세요.';
     case financeErrorCodes.notConnected:

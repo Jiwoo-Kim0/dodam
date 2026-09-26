@@ -1,4 +1,4 @@
-import { Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import type { AssetSection as AssetSectionData } from '@/types/asset.types';
 import { formatCurrency } from '@/utils/currency';
@@ -9,16 +9,29 @@ import { getAssetSectionTotal } from '../utils/assetCalculations';
 
 interface AssetSectionProps {
   section: AssetSectionData;
+  /** 섹션 제목 옆 버튼(예: 입출금의 계좌 이체). */
+  action?: { label: string; onPress: () => void };
 }
 
-export function AssetSection({ section }: AssetSectionProps) {
+export function AssetSection({ section, action }: AssetSectionProps) {
   const totalAmount = getAssetSectionTotal(section);
   const shouldShowTotal = section.items.length > 1 || Boolean(section.summaryPrefix);
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>{section.title}</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.title}>{section.title}</Text>
+          {action ? (
+            <Pressable
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={action.onPress}
+              style={({ pressed }) => [styles.action, pressed && styles.actionPressed]}>
+              <Text style={styles.actionLabel}>{action.label}</Text>
+            </Pressable>
+          ) : null}
+        </View>
 
         {shouldShowTotal ? (
           <Text
