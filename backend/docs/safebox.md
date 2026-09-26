@@ -34,20 +34,22 @@ V45는 사용자당 전용 계좌 1개를 강제하는 `safebox_account`와 목�
 
 ## 시연 계정 준비
 
-무대 흐름은 **주거래 → 도담 계좌 실제 이체 → 목표에 담기**다. 금융망 이체(2.4.10)는 두 계좌가 모두 금융망에 있어야 하므로 리허설 전에 아래를 한 번 수행한다. 시연 당일에 하지 않는다. 운영 서버 작업(키·DB)이다.
+무대 흐름은 **목표 생성 → 주거래 → 도담 계좌 실제 이체 → 목표에 담기**다. 금융망 이체(2.4.10)는 두 계좌가 모두 금융망에 있어야 한다.
 
-| 단계 | 작업 | 확인 |
-| --- | --- | --- |
-| 0 | BE 705·FE 변경 배포(V45 포함) | `GET /api/v1/safebox/account`가 404 `SAFEBOX_ACCOUNT_NOT_FOUND`(아직 미개설) |
-| 1 | `backend/scripts/make_demo_extra_demand_fixture.py` → `database/seeds/DODAM_DEMO_U0003_EXTRA_DEMAND_705_SEED.sql`(seeds/README.md 19번). 카카오뱅크 1,200,000·신한 800,000을 추가하고 주거래를 15,460,000으로 낮춘다(입출금 합계 유지) | preflight `ready = 1`, SEED 입출금 합계 17,460,000 |
-| 2 | 앱에서 U0003 로그인 → 홈 메뉴 **금융 정보 연결**. 금융망 회원이 생기고 `SafeboxOpenListener`가 **도담 계좌를 금융망 실계좌로 연다**(잔액 0) | `GET /api/v1/safebox/account` 200, `balance` 0 |
-| 3 | `backend/scripts/prepare_demo_primary_account.py --balance 15460000 --dry-run` 후 같은 명령에서 `--dry-run`을 빼고 출력 SQL 적용. 금융망 계좌를 하나 만들어 15,460,000을 입금하고, 주거래 행의 계좌번호·은행만 그 계좌로 바꾼다(`account_id`·잔액·거래·`source_type = SEED` 유지) | `replaced_rows = 1`, 계좌 목록에서 주거래 마스킹 번호가 바뀜 |
-| 4 | 리허설: 주거래 → 도담 계좌 소액 이체 → 새 목표에 담기 → 꺼내기 → 도담 계좌 → 주거래 되가져오기 | 두 계좌 잔액이 원래대로, 목표 0원 |
+**자동(배포만 하면 된다).** `SafeboxDemoBootstrap`이 기동 직후 `app.demo.bootstrap-user-emails`(prod 기본 U0003)의 계정을 맞춘다.
 
-- 2단계에서 금융망 회원 생성이 실패하면(시드 이메일 `seed.kmeans.u0003@dodam.invalid`를 금융망이 거절하는 경우 등) 연결 화면에 오류가 난다. 이때 3단계로 넘어가지 않는다. 개설만 실패했으면 목표 생성 화면이 `POST /api/v1/safebox/account`로 다시 연다.
-- 3단계 스크립트는 금융망 계좌 생성·입금을 되돌릴 수 없으므로 한 번만 실행한다. 출력 SQL은 "seed 계좌번호 해시 + 잔액 15,460,000"일 때만 1행을 바꾸며, 입금 후 금융망 잔액이 기대값과 다르면 SQL을 출력하지 않는다.
-- 주거래는 `SEED`라 계좌 동기화가 덮지 않는다(goal-transfer-plan.md §1-2). 도담 계좌는 `SSAFY` 출처라 동기화가 금융망 값으로 갱신한다.
-- 491을 다시 적재하면 주거래 계좌번호가 seed 값으로 돌아간다. 1·3단계를 다시 한다(3단계는 새 금융망 계좌를 만든다).
-- 기존 U0003 목표에는 주거래가 `contribution_amount = NULL`(잔액 전액)로 연결돼 있다. 이 목표는 세이프박스 배정이 409 `SAFEBOX_LEGACY_LINK_CONFLICT`로 막히고 기존 계좌 연결 화면을 보인다. 709 노트북 결제가 이 연결을 쓰므로 해제하지 않는다. 담기 시연은 **무대에서 새로 만든 목표**로 한다.
+1. 금융망 연결이 없으면 `FinanceConnectionService.connect`로 연결한다.
+2. 도담 전용 계좌를 금융망 실계좌로 연다(이미 있으면 그대로).
+3. SEED `주거래 입출금` 계좌번호가 사용자의 금융망 계좌 목록에 없으면, 금융망 계좌를 새로 열어 현재 주거래 잔액만큼 입금하고 주거래 행의 계좌번호·은행만 그 계좌로 바꾼다(goal-transfer-plan.md §5 B안). `account_id`·잔액·거래·`source_type = SEED`는 유지하고, SEED라 동기화가 덮지 않는다.
+
+이미 맞춰진 단계는 건너뛰므로 재기동해도 금융망 계좌가 늘지 않는다. 실패는 `Demo safebox bootstrap failed` 경고 로그만 남기고 기동은 계속된다. 확인: 기동 로그의 `Demo safebox bootstrap ready for user`, 앱에서 U0003 자산 목록에 도담 계좌가 보이고 주거래 마스킹 번호가 금융망 계좌로 바뀐다.
+
+**목표 생성 = 세이프박스 생성.** 모으기 목표를 만들면 `GoalService`가 도담 계좌에 0원 세이프박스 칸(`goal_account.contribution_amount = 0`)을 함께 만든다. 도담 계좌가 없는 사용자는 FE가 먼저 `POST /api/v1/safebox/account`로 연다.
+
+**수동(선택).** 카카오뱅크·신한 입출금을 보이려면 seed 19(`DODAM_DEMO_U0003_EXTRA_DEMAND_705_SEED.sql`)를 **배포 전에** 적재한다. 주거래 잔액을 15,460,000으로 낮추므로 기동 시 대응보다 먼저여야 금융망 입금액과 맞는다. 이미 대응된 뒤 적재하면 preflight는 통과하지만 금융망 주거래 잔액(대응 시점 값)과 DB 잔액이 달라진다.
+
+- 금융망 회원 생성이 시드 이메일(`seed.kmeans.u0003@dodam.invalid`)을 거절하면 1단계에서 멈춘다. 경고 로그의 오류 코드를 확인한다.
+- 기존 U0003 목표 중 주거래가 `contribution_amount = NULL`(잔액 전액)로 연결된 목표는 세이프박스 대상이 아니며(409 `SAFEBOX_LEGACY_LINK_CONFLICT`) 기존 연결 계좌 화면을 보인다. 709 노트북 결제가 이 연결을 쓰므로 해제하지 않는다. 예·적금만 연결된 목표('내 집 마련 준비')와 새 목표는 세이프박스 카드를 보인다.
+- 수동 대체 경로: `backend/scripts/prepare_demo_primary_account.py`(주거래 대응만 수행, 출력 SQL 적용).
 
 새 목표는 0원으로 시작하고, 도담 계좌에 실제 이체한 뒤 `PUT /api/v1/safebox/goals/{goalId}`로 원하는 금액을 담는다. 도담 계좌 잔액 전액을 목표에 자동 귀속하지 않는다. 노트북 결제 시연 API(709)는 아직 이 배분 구조와 연결하지 않았다.

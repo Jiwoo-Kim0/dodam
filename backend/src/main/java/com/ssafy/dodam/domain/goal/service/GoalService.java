@@ -5,12 +5,15 @@ import com.ssafy.dodam.domain.goal.dto.request.UpdateGoalRequest;
 import com.ssafy.dodam.domain.goal.dto.response.GoalResponse;
 import com.ssafy.dodam.domain.goal.dto.response.GoalSummaryResponse;
 import com.ssafy.dodam.domain.goal.entity.Goal;
+import com.ssafy.dodam.domain.goal.entity.GoalAccount;
 import com.ssafy.dodam.domain.goal.entity.GoalHistoryEvent;
 import com.ssafy.dodam.domain.goal.entity.GoalStatus;
 import com.ssafy.dodam.domain.goal.entity.GoalType;
 import com.ssafy.dodam.domain.goal.entity.SavingGoal;
 import com.ssafy.dodam.domain.goal.entity.SpendingGoal;
+import com.ssafy.dodam.domain.goal.repository.GoalAccountRepository;
 import com.ssafy.dodam.domain.goal.repository.GoalRepository;
+import com.ssafy.dodam.domain.goal.repository.SafeboxAccountRepository;
 import com.ssafy.dodam.domain.goal.repository.SavingGoalRepository;
 import com.ssafy.dodam.domain.goal.repository.SpendingGoalRepository;
 import com.ssafy.dodam.global.exception.BusinessException;
@@ -68,19 +71,25 @@ public class GoalService {
     private final SpendingGoalRepository spendingGoalRepository;
     private final GoalHistoryRecorder goalHistoryRecorder;
     private final GoalClock goalClock;
+    private final SafeboxAccountRepository safeboxAccountRepository;
+    private final GoalAccountRepository goalAccountRepository;
 
     public GoalService(
             GoalRepository goalRepository,
             SavingGoalRepository savingGoalRepository,
             SpendingGoalRepository spendingGoalRepository,
             GoalHistoryRecorder goalHistoryRecorder,
-            GoalClock goalClock
+            GoalClock goalClock,
+            SafeboxAccountRepository safeboxAccountRepository,
+            GoalAccountRepository goalAccountRepository
     ) {
         this.goalRepository = goalRepository;
         this.savingGoalRepository = savingGoalRepository;
         this.spendingGoalRepository = spendingGoalRepository;
         this.goalHistoryRecorder = goalHistoryRecorder;
         this.goalClock = goalClock;
+        this.safeboxAccountRepository = safeboxAccountRepository;
+        this.goalAccountRepository = goalAccountRepository;
     }
 
     // ---------- 조회 ----------
@@ -180,13 +189,25 @@ public class GoalService {
 
         Goal goal = goalRepository.save(Goal.create(userId, name, type, now));
         if (type == GoalType.SAVING) {
-            savingGoal = savingGoalRepository.save(
+            // goal_account가 saving_goal을 외래키로 참조하므로 세이프박스 칸보다 먼저 확정한다.
+            savingGoal = savingGoalRepository.saveAndFlush(
                     SavingGoal.create(goal.getId(), request.targetAmount(), request.targetDate()));
+            attachSafebox(userId, goal.getId());
         } else {
             spendingGoal = spendingGoalRepository.save(SpendingGoal.create(goal.getId(), request.monthlyBudget()));
         }
         goalHistoryRecorder.record(goal, savingGoal, GoalHistoryEvent.GOAL_CREATED, now);
         return GoalResponse.from(goal, savingGoal, spendingGoal, now.toLocalDate());
+    }
+
+    /**
+     * 도담 전용 계좌가 있으면 새 모으기 목표에 0원 세이프박스 칸(`goal_account.contribution_amount = 0`)을 만든다(705).
+     * 금액이 0이라 확보액·이동 원장(`safebox_movement`)은 바뀌지 않는다. 전용 계좌가 없는 사용자는 칸 없이 만들고,
+     * 이후 첫 담기(`PUT /api/v1/safebox/goals/{goalId}`)가 칸을 만든다. 금융망 호출은 하지 않는다.
+     */
+    private void attachSafebox(Long userId, Long goalId) {
+        safeboxAccountRepository.findById(userId).ifPresent(ref ->
+                goalAccountRepository.save(GoalAccount.allocate(userId, goalId, ref.getAccountId(), 0L)));
     }
 
     /**
