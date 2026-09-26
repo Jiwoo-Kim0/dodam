@@ -7,6 +7,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.times;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -22,6 +23,7 @@ import com.ssafy.dodam.domain.user.repository.UserSettingRepository;
 import com.ssafy.dodam.global.crypto.FieldCryptor;
 import com.ssafy.dodam.global.security.SensitiveNumberHasher;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyFinanceClient;
+import com.ssafy.dodam.domain.goal.service.SafeboxDemoBootstrap;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyMember;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyTransferEntry;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyAccountBalance;
@@ -101,6 +103,9 @@ class AccountApiIntegrationTest {
 
     @Autowired
     private FieldCryptor fieldCryptor;
+
+    @Autowired
+    private SafeboxDemoBootstrap safeboxDemoBootstrap;
 
     @MockitoBean
     private SsafyFinanceClient ssafyFinanceClient;
@@ -516,6 +521,75 @@ class AccountApiIntegrationTest {
         mockMvc.perform(put(path).header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("amount", 1_000_000))))
                 .andExpect(status().isConflict());
+    }
+
+    @Test
+    void savingGoalCreationAttachesEmptySafeboxSlot() throws Exception {
+        jdbcTemplate.update("INSERT INTO safebox_account (user_id, account_id, account_type, created_at) "
+                + "VALUES (?, 11, 'DEMAND_DEPOSIT', ?)", userId, LocalDateTime.now());
+
+        long goalId = createSavingGoal("세이프박스 목표");
+
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT contribution_amount FROM goal_account WHERE goal_id = ? AND account_id = 11",
+                Long.class, goalId)).isZero();
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM safebox_movement", Integer.class)).isZero();
+        mockMvc.perform(get("/api/v1/safebox/goals/" + goalId).header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.allocatedAmount").value(0));
+    }
+
+    @Test
+    void savingGoalWithoutSafeboxAccountGetsNoSlot() throws Exception {
+        long goalId = createSavingGoal("계좌 없는 목표");
+
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM goal_account WHERE goal_id = ?", Integer.class, goalId)).isZero();
+    }
+
+    @Test
+    void demoBootstrapOpensSafeboxAndAlignsSeedPrimaryAccountOnce() {
+        String seedNo = "1100000099001";
+        String realNo = "8888777766665555";
+        insertAccount(16L, userId, "SEED_BANK_C", "도담테스트은행 C", seedNo, "110000-**-**9001", "주거래 입출금",
+                "DEMAND_DEPOSIT", "ACTIVE", 15_460_000, null, "SEED", SEEDED_AT);
+        jdbcTemplate.update("UPDATE account SET account_no_encrypted = ? WHERE account_id = 16",
+                (Object) fieldCryptor.encrypt(seedNo));
+        given(ssafyFinanceClient.inquireDemandDepositList()).willReturn(List.of(
+                new SsafyDemandDepositProduct("100-1", "004", "KB국민은행", "입출금", "전용 계좌"),
+                new SsafyDemandDepositProduct("200-1", "088", "신한은행", "입출금", "주거래")));
+        given(ssafyFinanceClient.createDemandDepositAccount(anyString(), anyString()))
+                .willReturn(new SsafyCreatedDemandDepositAccount("004", "9999888877776666"),
+                        new SsafyCreatedDemandDepositAccount("088", realNo));
+        given(ssafyFinanceClient.inquireDemandDepositAccountList(anyString())).willReturn(List.of());
+        given(ssafyFinanceClient.inquireAccountBalance(anyString(), eq(realNo)))
+                .willReturn(new SsafyAccountBalance(realNo, 15_460_000L));
+
+        safeboxDemoBootstrap.prepare(EMAIL);
+
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM safebox_account WHERE user_id = ?", Integer.class, userId)).isEqualTo(1);
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForMap(
+                        "SELECT account_no_hash, bank_code, balance, source_type FROM account WHERE account_id = 16"))
+                .containsEntry("ACCOUNT_NO_HASH", sensitiveNumberHasher.hash(realNo))
+                .containsEntry("BANK_CODE", "088")
+                .containsEntry("BALANCE", 15_460_000L)
+                .containsEntry("SOURCE_TYPE", "SEED");
+        verify(ssafyFinanceClient).depositToAccount(anyString(), eq(realNo), eq(15_460_000L), anyString());
+
+        // 주거래가 금융망 목록에 있으면 대응이 끝난 것으로 보고 계좌를 더 만들지 않는다.
+        given(ssafyFinanceClient.inquireDemandDepositAccountList(anyString())).willReturn(List.of(
+                new SsafyDemandDepositAccount("088", "신한은행", "도담", realNo, "주거래", "1", "입출금",
+                        "20260926", "", null, null, 15_460_000L, "", "KRW")));
+        safeboxDemoBootstrap.prepare(EMAIL);
+        verify(ssafyFinanceClient, times(2)).createDemandDepositAccount(anyString(), anyString());
+    }
+
+    @Test
+    void demoBootstrapSkipsUnknownEmail() {
+        safeboxDemoBootstrap.prepare("nobody@example.com");
+        verify(ssafyFinanceClient, times(0)).createDemandDepositAccount(anyString(), anyString());
     }
 
     private long createSavingGoal(String name) throws Exception {
