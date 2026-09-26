@@ -23,6 +23,7 @@ import com.ssafy.dodam.domain.user.repository.UserRepository;
 import com.ssafy.dodam.domain.user.repository.UserSettingRepository;
 import com.ssafy.dodam.global.crypto.FieldCryptor;
 import com.ssafy.dodam.global.security.SensitiveNumberHasher;
+import com.ssafy.dodam.infrastructure.external.ssafy.SsafyDepositResult;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyFinanceClient;
 import com.ssafy.dodam.domain.goal.service.SafeboxDemoBootstrap;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyMember;
@@ -550,41 +551,84 @@ class AccountApiIntegrationTest {
     }
 
     @Test
-    void demoBootstrapOpensSafeboxAndAlignsSeedPrimaryAccountOnce() {
-        String seedNo = "1100000099001";
-        String realNo = "8888777766665555";
-        insertAccount(16L, userId, "SEED_BANK_C", "도담테스트은행 C", seedNo, "110000-**-**9001", "주거래 입출금",
+    void demoBootstrapConnectsAndOpensSafeboxOnceWithoutTouchingSeedPrimary() {
+        insertAccount(16L, userId, "SEED_BANK_C", "도담테스트은행 C", "1100000099001", "110000-**-**9001", "주거래 입출금",
                 "DEMAND_DEPOSIT", "ACTIVE", 15_460_000, null, "SEED", SEEDED_AT);
-        jdbcTemplate.update("UPDATE account SET account_no_encrypted = ? WHERE account_id = 16",
-                (Object) fieldCryptor.encrypt(seedNo));
         given(ssafyFinanceClient.inquireDemandDepositList()).willReturn(List.of(
-                new SsafyDemandDepositProduct("100-1", "004", "KB국민은행", "입출금", "전용 계좌"),
-                new SsafyDemandDepositProduct("200-1", "088", "신한은행", "입출금", "주거래")));
+                new SsafyDemandDepositProduct("100-1", "004", "KB국민은행", "입출금", "전용 계좌")));
         given(ssafyFinanceClient.createDemandDepositAccount(anyString(), anyString()))
-                .willReturn(new SsafyCreatedDemandDepositAccount("004", "9999888877776666"),
-                        new SsafyCreatedDemandDepositAccount("088", realNo));
-        given(ssafyFinanceClient.inquireDemandDepositAccountList(anyString())).willReturn(List.of());
-        given(ssafyFinanceClient.inquireAccountBalance(anyString(), eq(realNo)))
-                .willReturn(new SsafyAccountBalance(realNo, 15_460_000L));
+                .willReturn(new SsafyCreatedDemandDepositAccount("004", "9999888877776666"));
 
+        safeboxDemoBootstrap.prepare(EMAIL);
         safeboxDemoBootstrap.prepare(EMAIL);
 
         org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM safebox_account WHERE user_id = ?", Integer.class, userId)).isEqualTo(1);
-        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForMap(
-                        "SELECT account_no_hash, bank_code, balance, source_type FROM account WHERE account_id = 16"))
-                .containsEntry("ACCOUNT_NO_HASH", sensitiveNumberHasher.hash(realNo))
-                .containsEntry("BANK_CODE", "088")
-                .containsEntry("BALANCE", 15_460_000L)
-                .containsEntry("SOURCE_TYPE", "SEED");
-        verify(ssafyFinanceClient).depositToAccount(anyString(), eq(realNo), eq(15_460_000L), anyString());
+        verify(ssafyFinanceClient, times(1)).createDemandDepositAccount(anyString(), anyString());
+        verify(ssafyFinanceClient, times(0)).depositToAccount(anyString(), anyString(), anyLong(), anyString());
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT account_no_hash FROM account WHERE account_id = 16", String.class))
+                .isEqualTo(sensitiveNumberHasher.hash("1100000099001"));
+    }
 
-        // 주거래가 금융망 목록에 있으면 대응이 끝난 것으로 보고 계좌를 더 만들지 않는다.
-        given(ssafyFinanceClient.inquireDemandDepositAccountList(anyString())).willReturn(List.of(
-                new SsafyDemandDepositAccount("088", "신한은행", "도담", realNo, "주거래", "1", "입출금",
-                        "20260926", "", null, null, 15_460_000L, "", "KRW")));
-        safeboxDemoBootstrap.prepare(EMAIL);
-        verify(ssafyFinanceClient, times(2)).createDemandDepositAccount(anyString(), anyString());
+    /** 시연: seed 주거래 ↔ 도담 계좌(금융망). 금융망 쪽만 입금·출금하고 seed 쪽은 DB에서 반영한다. */
+    @Test
+    void transferBetweenSeedPrimaryAndSafeboxUsesDepositAndWithdrawal() throws Exception {
+        String safeboxNo = "9999888877776666";
+        insertAccount(16L, userId, "SEED_BANK_C", "도담테스트은행 C", "1100000099001", "110000-**-**9001", "주거래 입출금",
+                "DEMAND_DEPOSIT", "ACTIVE", 17_460_000, null, "SEED", SEEDED_AT);
+        insertAccount(17L, userId, "004", "KB국민은행", safeboxNo, "999988-**-**6666", "도담 계좌",
+                "DEMAND_DEPOSIT", "ACTIVE", 0, null, "SSAFY", SYNCED_AT);
+        jdbcTemplate.update("UPDATE account SET account_no_encrypted = ? WHERE account_id = 17",
+                (Object) fieldCryptor.encrypt(safeboxNo));
+        jdbcTemplate.update("INSERT INTO safebox_account (user_id, account_id, account_type, created_at) "
+                + "VALUES (?, 17, 'DEMAND_DEPOSIT', ?)", userId, LocalDateTime.now());
+        given(ssafyFinanceClient.depositToAccount(anyString(), eq(safeboxNo), eq(4_000_000L), anyString()))
+                .willReturn(new SsafyDepositResult("DEP-1", "20260926", "184500", 4_000_000L, 4_000_000L));
+        given(ssafyFinanceClient.withdrawFromAccount(anyString(), eq(safeboxNo), eq(1_000_000L), anyString()))
+                .willReturn(new SsafyDepositResult("WD-1", "20260926", "184600", 1_000_000L, 3_000_000L));
+
+        mockMvc.perform(post("/api/v1/accounts/transfer").header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("withdrawalAccountId", 16, "depositAccountId", 17, "amount", 4_000_000))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.withdrawalBalance").value(13_460_000))
+                .andExpect(jsonPath("$.data.depositBalance").value(4_000_000));
+        mockMvc.perform(post("/api/v1/accounts/transfer").header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("withdrawalAccountId", 17, "depositAccountId", 16, "amount", 1_000_000))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.withdrawalBalance").value(3_000_000))
+                .andExpect(jsonPath("$.data.depositBalance").value(14_460_000));
+
+        verify(ssafyFinanceClient, times(0)).transfer(anyString(), anyString(), anyString(), anyLong(), anyString(),
+                anyString());
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM `transaction` WHERE transaction_id IN ('DEP-1', 'WD-1')", Integer.class))
+                .isEqualTo(2);
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM `transaction` WHERE account_id = 16 AND transaction_id LIKE 'LOCAL-%'",
+                Integer.class)).isEqualTo(2);
+        // 계좌 조회의 대조가 seed 계좌를 금융망에 묻지 않는다.
+        mockMvc.perform(get("/api/v1/accounts").header(HttpHeaders.AUTHORIZATION, bearer)).andExpect(status().isOk());
+    }
+
+    @Test
+    void transferBetweenSeedAccountsStaysLocal() throws Exception {
+        insertAccount(16L, userId, "SEED_BANK_C", "도담테스트은행 C", "1100000099001", "110000-**-**9001", "주거래 입출금",
+                "DEMAND_DEPOSIT", "ACTIVE", 15_460_000, null, "SEED", SEEDED_AT);
+        insertAccount(18L, userId, "KAKAOBANK", "카카오뱅크", "1100000099004", "110000-**-**9004", "카카오뱅크 입출금통장",
+                "DEMAND_DEPOSIT", "ACTIVE", 1_200_000, null, "SEED", SEEDED_AT);
+
+        mockMvc.perform(post("/api/v1/accounts/transfer").header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("withdrawalAccountId", 18, "depositAccountId", 16, "amount", 200_000))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.withdrawalBalance").value(1_000_000))
+                .andExpect(jsonPath("$.data.depositBalance").value(15_660_000));
+
+        verify(ssafyFinanceClient, times(0)).depositToAccount(anyString(), anyString(), anyLong(), anyString());
+        verify(ssafyFinanceClient, times(0)).withdrawFromAccount(anyString(), anyString(), anyLong(), anyString());
     }
 
     @Test

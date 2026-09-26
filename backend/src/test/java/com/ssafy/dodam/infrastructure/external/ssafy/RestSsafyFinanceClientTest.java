@@ -221,6 +221,19 @@ class RestSsafyFinanceClientTest {
         server.verify();
         server.reset();
 
+        server.expect(requestTo(base + "updateDemandDepositAccountWithdrawal"))
+                .andExpect(jsonPath("$.Header.apiName").value("updateDemandDepositAccountWithdrawal"))
+                .andExpect(jsonPath("$.accountNo").value("1234567890123456"))
+                .andExpect(jsonPath("$.transactionBalance").value(500))
+                .andRespond(withSuccess("""
+                        {"Header":{"responseCode":"H0000"},"REC":{"transactionUniqueNo":"W-1","transactionBalance":"500"}}
+                        """, MediaType.APPLICATION_JSON));
+        assertThat(client.withdrawFromAccount("user-key-1", "1234567890123456", 500, "이체")
+                .transactionUniqueNo()).isEqualTo("W-1");
+
+        server.verify();
+        server.reset();
+
         server.expect(requestTo(base + "updateDemandDepositAccountTransfer"))
                 .andExpect(jsonPath("$.withdrawalAccountNo").value("1234567890123456"))
                 .andExpect(jsonPath("$.depositAccountNo").value("1111222233334444"))

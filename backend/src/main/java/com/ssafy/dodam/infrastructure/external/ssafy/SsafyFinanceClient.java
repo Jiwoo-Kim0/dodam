@@ -18,6 +18,9 @@ public interface SsafyFinanceClient {
 
     SsafyDepositResult depositToAccount(String userKey, String accountNo, long amount, String summary);
 
+    /** 2.4.8 수시입출금 계좌 출금. 응답 REC 형식은 입금(2.4.9)과 같다. */
+    SsafyDepositResult withdrawFromAccount(String userKey, String accountNo, long amount, String summary);
+
     List<SsafyTransferEntry> transfer(String userKey, String withdrawalNo, String depositNo,
             long amount, String withdrawalSummary, String depositSummary);
 

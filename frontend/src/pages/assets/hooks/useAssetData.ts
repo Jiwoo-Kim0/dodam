@@ -123,9 +123,12 @@ export function useAssetData() {
           loanSummary,
           safeboxAccount,
         }),
-        transferAccounts: accounts.filter(
-          ({ accountType, status }) => accountType === 'DEMAND_DEPOSIT' && status !== 'CLOSED',
-        ),
+        // 도담 계좌를 맨 앞에 둔다(자산 목록과 같은 순서).
+        transferAccounts: accounts
+          .filter(({ accountType, status }) => accountType === 'DEMAND_DEPOSIT' && status !== 'CLOSED')
+          .sort((left, right) =>
+            Number(right.accountId === safeboxAccount?.accountId)
+              - Number(left.accountId === safeboxAccount?.accountId)),
         safeboxAccount,
       });
     } catch (loadError) {
