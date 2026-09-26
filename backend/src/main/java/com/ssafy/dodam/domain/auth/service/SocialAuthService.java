@@ -7,6 +7,7 @@ import com.ssafy.dodam.domain.auth.repository.UserOauthAccountRepository;
 import com.ssafy.dodam.domain.auth.social.SocialIdentity;
 import com.ssafy.dodam.domain.auth.social.SocialIdentityClients;
 import com.ssafy.dodam.domain.auth.social.SocialProvider;
+import com.ssafy.dodam.domain.finance.event.FinanceConnectedEvent;
 import com.ssafy.dodam.domain.finance.repository.FinanceConnectionRepository;
 import com.ssafy.dodam.domain.finance.service.FinanceMemberService;
 import com.ssafy.dodam.domain.user.entity.FinancialProfile;
@@ -22,6 +23,7 @@ import java.time.LocalDateTime;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -52,6 +54,7 @@ public class SocialAuthService {
     private final FieldCryptor cryptor;
     private final AuthService authService;
     private final TransactionTemplate transactionTemplate;
+    private final ApplicationEventPublisher events;
 
     public SocialAuthService(
             SocialIdentityClients clients,
@@ -63,7 +66,8 @@ public class SocialAuthService {
             FinanceMemberService financeMemberService,
             FieldCryptor cryptor,
             AuthService authService,
-            TransactionTemplate transactionTemplate
+            TransactionTemplate transactionTemplate,
+            ApplicationEventPublisher events
     ) {
         this.clients = clients;
         this.oauthAccounts = oauthAccounts;
@@ -75,6 +79,7 @@ public class SocialAuthService {
         this.cryptor = cryptor;
         this.authService = authService;
         this.transactionTemplate = transactionTemplate;
+        this.events = events;
     }
 
     public SocialLoginResult login(SocialProvider provider, String token) {
@@ -126,7 +131,7 @@ public class SocialAuthService {
         String name = displayName(identity);
         Optional<String> financeUserKey = verifiedEmail.isPresent() ? registerFinanceMember(email) : Optional.empty();
 
-        return transactionTemplate.execute(status -> {
+        SocialLoginResult result = transactionTemplate.execute(status -> {
             User user = User.createSocialUser(email, name);
             try {
                 users.saveAndFlush(user);
@@ -142,6 +147,11 @@ public class SocialAuthService {
                     identity.provider(), user.getId(), verifiedEmail.isEmpty());
             return new SocialLoginResult(authService.startSession(user), true, identity.provider());
         });
+        // 이메일 가입과 같이 커밋 뒤 도담 전용 계좌를 연다. 이메일이 없어 금융망에 연결하지 못한 가입은 건너뛴다.
+        if (financeUserKey.isPresent()) {
+            events.publishEvent(new FinanceConnectedEvent(result.login().user().userId()));
+        }
+        return result;
     }
 
     private void saveLink(Long userId, SocialIdentity identity, String providerUserIdHash) {

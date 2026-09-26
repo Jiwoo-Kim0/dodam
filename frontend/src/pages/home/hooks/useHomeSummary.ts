@@ -225,13 +225,14 @@ export function useHomeSummary() {
       const results = await Promise.allSettled([
         ledgerApi.getMonthlySummary(month.yearMonth),
         assetApi.getAccountSummary(),
+        assetApi.getLoanSummary(),
         loadGoals(),
         loadBriefing(),
         loadTopSpending(month.yearMonth, previousMonth.yearMonth),
       ]);
       if (requestId !== requestIdRef.current) return;
 
-      const [monthlyResult, assetResult, goalsResult, briefingResult, topResult] = results;
+      const [monthlyResult, assetResult, loanResult, goalsResult, briefingResult, topResult] = results;
       const failed = results.find((result) => result.status === 'rejected');
       setSectionErrors({
         assetOverview: assetResult.status === 'rejected',
@@ -244,7 +245,11 @@ export function useHomeSummary() {
         monthLabel: month.monthLabel,
         monthlyExpense: monthlyResult.status === 'fulfilled' ? monthlyResult.value.totalSpending : null,
         assetOverview: assetResult.status === 'fulfilled'
-          ? mapOwnedAssetOverview(assetResult.value)
+          ? mapOwnedAssetOverview(
+              assetResult.value,
+              // 대출 조회만 실패하면 계좌 잔액 도넛은 그대로 두고 대출 조각만 뺀다.
+              loanResult.status === 'fulfilled' ? Math.abs(loanResult.value.totalBalance) : null,
+            )
           : null,
         goals: goalsResult.status === 'fulfilled' ? goalsResult.value : [],
         briefing: briefingResult.status === 'fulfilled' ? briefingResult.value : null,

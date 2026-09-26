@@ -137,10 +137,10 @@ public class RestSsafyFinanceClient implements SsafyFinanceClient {
     }
 
     @Override
-    public SsafyDemandDepositAccount createDemandDepositAccount(String userKey, String typeNo) {
+    public SsafyCreatedDemandDepositAccount createDemandDepositAccount(String userKey, String typeNo) {
         String path = DEPOSIT_BASE + "createDemandDepositAccount";
         return convert(extractRec(post(path, "createDemandDepositAccount", userKey,
-                Map.of("accountTypeUniqueNo", typeNo)), path, false), SsafyDemandDepositAccount.class, path);
+                Map.of("accountTypeUniqueNo", typeNo)), path, false), SsafyCreatedDemandDepositAccount.class, path);
     }
 
     @Override
@@ -151,6 +151,17 @@ public class RestSsafyFinanceClient implements SsafyFinanceClient {
         body.put("transactionBalance", amount);
         body.put("transactionSummary", summary);
         return convert(extractRec(post(path, "updateDemandDepositAccountDeposit", userKey, body), path, false),
+                SsafyDepositResult.class, path);
+    }
+
+    @Override
+    public SsafyDepositResult withdrawFromAccount(String userKey, String accountNo, long amount, String summary) {
+        String path = DEPOSIT_BASE + "updateDemandDepositAccountWithdrawal";
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("accountNo", accountNo);
+        body.put("transactionBalance", amount);
+        body.put("transactionSummary", summary);
+        return convert(extractRec(post(path, "updateDemandDepositAccountWithdrawal", userKey, body), path, false),
                 SsafyDepositResult.class, path);
     }
 

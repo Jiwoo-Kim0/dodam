@@ -7,6 +7,8 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.times;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -21,10 +23,15 @@ import com.ssafy.dodam.domain.user.repository.UserRepository;
 import com.ssafy.dodam.domain.user.repository.UserSettingRepository;
 import com.ssafy.dodam.global.crypto.FieldCryptor;
 import com.ssafy.dodam.global.security.SensitiveNumberHasher;
+import com.ssafy.dodam.infrastructure.external.ssafy.SsafyDepositResult;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyFinanceClient;
+import com.ssafy.dodam.domain.goal.service.SafeboxDemoBootstrap;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyMember;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyTransferEntry;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyAccountBalance;
+import com.ssafy.dodam.infrastructure.external.ssafy.SsafyCreatedDemandDepositAccount;
+import com.ssafy.dodam.infrastructure.external.ssafy.SsafyDemandDepositAccount;
+import com.ssafy.dodam.infrastructure.external.ssafy.SsafyDemandDepositProduct;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyApiException;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyUnavailableException;
 import java.time.LocalDate;
@@ -99,6 +106,9 @@ class AccountApiIntegrationTest {
     @Autowired
     private FieldCryptor fieldCryptor;
 
+    @Autowired
+    private SafeboxDemoBootstrap safeboxDemoBootstrap;
+
     @MockitoBean
     private SsafyFinanceClient ssafyFinanceClient;
 
@@ -108,6 +118,14 @@ class AccountApiIntegrationTest {
 
     @BeforeEach
     void setUp() throws Exception {
+        jdbcTemplate.update("DELETE FROM safebox_movement");
+        jdbcTemplate.update("DELETE FROM safebox_account");
+        jdbcTemplate.update("DELETE FROM safebox_open_attempt");
+        jdbcTemplate.update("DELETE FROM goal_history");
+        jdbcTemplate.update("DELETE FROM goal_account");
+        jdbcTemplate.update("DELETE FROM saving_goal");
+        jdbcTemplate.update("DELETE FROM spending_goal");
+        jdbcTemplate.update("DELETE FROM goal");
         jdbcTemplate.update("DELETE FROM `transaction`");
         jdbcTemplate.update("""
                 MERGE INTO transaction_category (category_id, code, name, default_spending_type, active)
@@ -320,6 +338,412 @@ class AccountApiIntegrationTest {
     // ---------- helpers ----------
 
     @Test
+    void opensOneDedicatedAccountAndReturnsMaskedNumber() throws Exception {
+        given(ssafyFinanceClient.inquireDemandDepositList()).willReturn(List.of(
+                new SsafyDemandDepositProduct("100-1", "004", "KB국민은행", "입출금", "전용 계좌")));
+        given(ssafyFinanceClient.createDemandDepositAccount(anyString(), anyString()))
+                .willReturn(new SsafyCreatedDemandDepositAccount("004", "9999888877776666"));
+
+        MvcResult first = mockMvc.perform(post("/api/v1/safebox/account")
+                        .header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.accountNoMasked").value("999988-**-**6666"))
+                .andExpect(jsonPath("$.data.accountNo").doesNotExist())
+                .andReturn();
+        long accountId = objectMapper.readTree(first.getResponse().getContentAsString())
+                .path("data").path("accountId").asLong();
+        mockMvc.perform(post("/api/v1/safebox/account").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.accountId").value(accountId));
+        verify(ssafyFinanceClient, times(1)).createDemandDepositAccount(anyString(), anyString());
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM safebox_open_attempt WHERE user_id = ?", Integer.class, userId)).isZero();
+    }
+
+    @Test
+    void openedAccountTakesBankAndNameFromProductWithZeroBalance() throws Exception {
+        given(ssafyFinanceClient.inquireDemandDepositList()).willReturn(List.of(
+                new SsafyDemandDepositProduct("100-1", "004", "KB국민은행", "입출금", "전용 계좌")));
+        given(ssafyFinanceClient.createDemandDepositAccount(anyString(), anyString()))
+                .willReturn(new SsafyCreatedDemandDepositAccount(null, "9999888877776666"));
+
+        mockMvc.perform(post("/api/v1/safebox/account").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.balance").value(0));
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForMap(
+                "SELECT a.bank_code, a.bank_name, a.account_name FROM account a "
+                        + "JOIN safebox_account s ON s.account_id = a.account_id WHERE s.user_id = ?", userId))
+                .containsEntry("BANK_CODE", "004")
+                .containsEntry("BANK_NAME", "KB국민은행")
+                .containsEntry("ACCOUNT_NAME", "도담 계좌");
+    }
+
+    @Test
+    void rejectedOpeningClearsAttemptAndAllowsRetry() throws Exception {
+        given(ssafyFinanceClient.inquireDemandDepositList()).willReturn(List.of(
+                new SsafyDemandDepositProduct("100-1", "004", "KB국민은행", "입출금", "전용 계좌")));
+        given(ssafyFinanceClient.createDemandDepositAccount(anyString(), anyString()))
+                .willThrow(new SsafyApiException("A1001", "상품 오류"))
+                .willReturn(new SsafyCreatedDemandDepositAccount("004", "9999888877776666"));
+
+        mockMvc.perform(post("/api/v1/safebox/account").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.code").value("FINANCE_API_ERROR"));
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM safebox_open_attempt WHERE user_id = ?", Integer.class, userId)).isZero();
+
+        mockMvc.perform(post("/api/v1/safebox/account").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isCreated());
+        verify(ssafyFinanceClient, times(2)).createDemandDepositAccount(anyString(), anyString());
+    }
+
+    @Test
+    void unknownOpeningResultBlocksAutomaticRetry() throws Exception {
+        given(ssafyFinanceClient.inquireDemandDepositList()).willReturn(List.of(
+                new SsafyDemandDepositProduct("100-1", "004", "KB국민은행", "입출금", "전용 계좌")));
+        given(ssafyFinanceClient.createDemandDepositAccount(anyString(), anyString()))
+                .willThrow(new SsafyUnavailableException("timeout", null));
+
+        mockMvc.perform(post("/api/v1/safebox/account").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isServiceUnavailable());
+        mockMvc.perform(post("/api/v1/safebox/account").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SAFEBOX_OPEN_RECONCILIATION_REQUIRED"));
+        verify(ssafyFinanceClient, times(1)).createDemandDepositAccount(anyString(), anyString());
+    }
+
+    @Test
+    void allocatesOneAccountAcrossGoalsAndProtectsReservedBalance() throws Exception {
+        prepareTransferAccounts();
+        jdbcTemplate.update("INSERT INTO safebox_account (user_id, account_id, account_type, created_at) "
+                + "VALUES (?, 11, 'DEMAND_DEPOSIT', ?)", userId, LocalDateTime.now());
+        long firstGoal = createSavingGoal("여행 자금");
+        long secondGoal = createSavingGoal("주택 자금");
+        mockMvc.perform(put("/api/v1/safebox/goals/" + firstGoal).header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("amount", 1_000_000))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.allocatedAmount").value(1_000_000));
+        mockMvc.perform(put("/api/v1/safebox/goals/" + secondGoal).header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("amount", 600_000))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.availableAmount").value(250_000));
+        mockMvc.perform(put("/api/v1/safebox/goals/" + secondGoal).header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("amount", 600_000))))
+                .andExpect(status().isOk());
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM safebox_movement", Integer.class)).isEqualTo(2);
+        mockMvc.perform(put("/api/v1/safebox/goals/" + secondGoal).header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("amount", 900_000))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SAFEBOX_ALLOCATION_EXCEEDS_BALANCE"));
+        mockMvc.perform(post("/api/v1/accounts/transfer").header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON).content(transferJson(300_000)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SAFEBOX_ALLOCATED_BALANCE"));
+        verify(ssafyFinanceClient, times(0)).transfer(anyString(), anyString(), anyString(), anyLong(),
+                anyString(), anyString());
+        mockMvc.perform(put("/api/v1/goals/" + firstGoal + "/accounts")
+                        .header(HttpHeaders.AUTHORIZATION, bearer).contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("accountIds", List.of()))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalBalance").value(1_000_000));
+        given(ssafyFinanceClient.transfer(anyString(), anyString(), anyString(), anyLong(), anyString(), anyString()))
+                .willReturn(transferEntries(200_000));
+        mockMvc.perform(post("/api/v1/accounts/transfer").header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON).content(transferJson(200_000)))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/safebox/account").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.availableAmount").value(50_000));
+    }
+
+    @Test
+    void safeboxRequiresAuthenticationOwnershipAndNonNegativeAmount() throws Exception {
+        jdbcTemplate.update("INSERT INTO safebox_account (user_id, account_id, account_type, created_at) "
+                + "VALUES (?, 11, 'DEMAND_DEPOSIT', ?)", userId, LocalDateTime.now());
+        long goalId = createSavingGoal("여행 자금");
+        String otherBearer = login(OTHER_EMAIL);
+        String path = "/api/v1/safebox/goals/" + goalId;
+
+        mockMvc.perform(put(path).contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("amount", 100_000))))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(put(path).header(HttpHeaders.AUTHORIZATION, otherBearer)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("amount", 100_000))))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(put(path).header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("amount", -1))))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get(path).header(HttpHeaders.AUTHORIZATION, otherBearer))
+                .andExpect(status().isNotFound());
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM safebox_movement", Integer.class)).isZero();
+    }
+
+    @Test
+    void safeboxRejectsLegacyDemandLinkUntilItIsRemoved() throws Exception {
+        jdbcTemplate.update("INSERT INTO safebox_account (user_id, account_id, account_type, created_at) "
+                + "VALUES (?, 11, 'DEMAND_DEPOSIT', ?)", userId, LocalDateTime.now());
+        long goalId = createSavingGoal("여행 자금");
+        jdbcTemplate.update("INSERT INTO goal_account (user_id, goal_id, account_id, account_type) "
+                + "VALUES (?, ?, 12, 'DEMAND_DEPOSIT')", userId, goalId);
+        String path = "/api/v1/safebox/goals/" + goalId;
+
+        mockMvc.perform(put(path).header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("amount", 100_000))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SAFEBOX_LEGACY_LINK_CONFLICT"));
+        mockMvc.perform(put("/api/v1/goals/" + goalId + "/accounts")
+                        .header(HttpHeaders.AUTHORIZATION, bearer).contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("accountIds", List.of()))))
+                .andExpect(status().isOk());
+        mockMvc.perform(put(path).header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("amount", 100_000))))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void shortageAllowsAllocationReductionAndReportsShortfall() throws Exception {
+        jdbcTemplate.update("INSERT INTO safebox_account (user_id, account_id, account_type, created_at) "
+                + "VALUES (?, 11, 'DEMAND_DEPOSIT', ?)", userId, LocalDateTime.now());
+        long goalId = createSavingGoal("여행 자금");
+        String path = "/api/v1/safebox/goals/" + goalId;
+        mockMvc.perform(put(path).header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("amount", 1_000_000))))
+                .andExpect(status().isOk());
+        // 금융망 밖의 출금이 뒤늦게 동기화된 상황: 늘리기는 거부하되 줄이기는 계속 가능해야 한다.
+        jdbcTemplate.update("UPDATE account SET balance = 800000 WHERE account_id = 11");
+        mockMvc.perform(get("/api/v1/safebox/account").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.shortfallAmount").value(200_000));
+        mockMvc.perform(put(path).header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("amount", 900_000))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.shortfallAmount").value(100_000));
+        mockMvc.perform(put(path).header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("amount", 1_000_000))))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void savingGoalCreationAttachesEmptySafeboxSlot() throws Exception {
+        jdbcTemplate.update("INSERT INTO safebox_account (user_id, account_id, account_type, created_at) "
+                + "VALUES (?, 11, 'DEMAND_DEPOSIT', ?)", userId, LocalDateTime.now());
+
+        long goalId = createSavingGoal("세이프박스 목표");
+
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT contribution_amount FROM goal_account WHERE goal_id = ? AND account_id = 11",
+                Long.class, goalId)).isZero();
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM safebox_movement", Integer.class)).isZero();
+        mockMvc.perform(get("/api/v1/safebox/goals/" + goalId).header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.allocatedAmount").value(0));
+    }
+
+    @Test
+    void savingGoalWithoutSafeboxAccountGetsNoSlot() throws Exception {
+        long goalId = createSavingGoal("계좌 없는 목표");
+
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM goal_account WHERE goal_id = ?", Integer.class, goalId)).isZero();
+    }
+
+    @Test
+    void demoBootstrapConnectsAndOpensSafeboxOnceWithoutTouchingSeedPrimary() {
+        insertAccount(16L, userId, "SEED_BANK_C", "도담테스트은행 C", "1100000099001", "110000-**-**9001", "주거래 입출금",
+                "DEMAND_DEPOSIT", "ACTIVE", 15_460_000, null, "SEED", SEEDED_AT);
+        given(ssafyFinanceClient.inquireDemandDepositList()).willReturn(List.of(
+                new SsafyDemandDepositProduct("100-1", "004", "KB국민은행", "입출금", "전용 계좌")));
+        given(ssafyFinanceClient.createDemandDepositAccount(anyString(), anyString()))
+                .willReturn(new SsafyCreatedDemandDepositAccount("004", "9999888877776666"));
+
+        safeboxDemoBootstrap.prepare(EMAIL);
+        safeboxDemoBootstrap.prepare(EMAIL);
+
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM safebox_account WHERE user_id = ?", Integer.class, userId)).isEqualTo(1);
+        verify(ssafyFinanceClient, times(1)).createDemandDepositAccount(anyString(), anyString());
+        verify(ssafyFinanceClient, times(0)).depositToAccount(anyString(), anyString(), anyLong(), anyString());
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT account_no_hash FROM account WHERE account_id = 16", String.class))
+                .isEqualTo(sensitiveNumberHasher.hash("1100000099001"));
+    }
+
+    /** 시연: seed 주거래 ↔ 도담 계좌(금융망). 금융망 쪽만 입금·출금하고 seed 쪽은 DB에서 반영한다. */
+    @Test
+    void transferBetweenSeedPrimaryAndSafeboxUsesDepositAndWithdrawal() throws Exception {
+        String safeboxNo = "9999888877776666";
+        insertAccount(16L, userId, "SEED_BANK_C", "도담테스트은행 C", "1100000099001", "110000-**-**9001", "주거래 입출금",
+                "DEMAND_DEPOSIT", "ACTIVE", 17_460_000, null, "SEED", SEEDED_AT);
+        insertAccount(17L, userId, "004", "KB국민은행", safeboxNo, "999988-**-**6666", "도담 계좌",
+                "DEMAND_DEPOSIT", "ACTIVE", 0, null, "SSAFY", SYNCED_AT);
+        jdbcTemplate.update("UPDATE account SET account_no_encrypted = ? WHERE account_id = 17",
+                (Object) fieldCryptor.encrypt(safeboxNo));
+        jdbcTemplate.update("INSERT INTO safebox_account (user_id, account_id, account_type, created_at) "
+                + "VALUES (?, 17, 'DEMAND_DEPOSIT', ?)", userId, LocalDateTime.now());
+        given(ssafyFinanceClient.depositToAccount(anyString(), eq(safeboxNo), eq(4_000_000L), anyString()))
+                .willReturn(new SsafyDepositResult("DEP-1", "20260926", "184500", 4_000_000L, 4_000_000L));
+        given(ssafyFinanceClient.withdrawFromAccount(anyString(), eq(safeboxNo), eq(1_000_000L), anyString()))
+                .willReturn(new SsafyDepositResult("WD-1", "20260926", "184600", 1_000_000L, 3_000_000L));
+
+        mockMvc.perform(post("/api/v1/accounts/transfer").header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("withdrawalAccountId", 16, "depositAccountId", 17, "amount", 4_000_000))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.withdrawalBalance").value(13_460_000))
+                .andExpect(jsonPath("$.data.depositBalance").value(4_000_000));
+        mockMvc.perform(post("/api/v1/accounts/transfer").header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("withdrawalAccountId", 17, "depositAccountId", 16, "amount", 1_000_000))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.withdrawalBalance").value(3_000_000))
+                .andExpect(jsonPath("$.data.depositBalance").value(14_460_000));
+
+        verify(ssafyFinanceClient, times(0)).transfer(anyString(), anyString(), anyString(), anyLong(), anyString(),
+                anyString());
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM `transaction` WHERE transaction_id IN ('DEP-1', 'WD-1')", Integer.class))
+                .isEqualTo(2);
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM `transaction` WHERE account_id = 16 AND transaction_id LIKE 'LOCAL-%'",
+                Integer.class)).isEqualTo(2);
+        // 계좌 조회의 대조가 seed 계좌를 금융망에 묻지 않는다.
+        mockMvc.perform(get("/api/v1/accounts").header(HttpHeaders.AUTHORIZATION, bearer)).andExpect(status().isOk());
+    }
+
+    @Test
+    void transferBetweenSeedAccountsStaysLocal() throws Exception {
+        insertAccount(16L, userId, "SEED_BANK_C", "도담테스트은행 C", "1100000099001", "110000-**-**9001", "주거래 입출금",
+                "DEMAND_DEPOSIT", "ACTIVE", 15_460_000, null, "SEED", SEEDED_AT);
+        insertAccount(18L, userId, "KAKAOBANK", "카카오뱅크", "1100000099004", "110000-**-**9004", "카카오뱅크 입출금통장",
+                "DEMAND_DEPOSIT", "ACTIVE", 1_200_000, null, "SEED", SEEDED_AT);
+
+        mockMvc.perform(post("/api/v1/accounts/transfer").header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("withdrawalAccountId", 18, "depositAccountId", 16, "amount", 200_000))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.withdrawalBalance").value(1_000_000))
+                .andExpect(jsonPath("$.data.depositBalance").value(15_660_000));
+
+        verify(ssafyFinanceClient, times(0)).depositToAccount(anyString(), anyString(), anyLong(), anyString());
+        verify(ssafyFinanceClient, times(0)).withdrawFromAccount(anyString(), anyString(), anyLong(), anyString());
+    }
+
+    @Test
+    void demoBootstrapSkipsUnknownEmail() {
+        safeboxDemoBootstrap.prepare("nobody@example.com");
+        verify(ssafyFinanceClient, times(0)).createDemandDepositAccount(anyString(), anyString());
+    }
+
+    /**
+     * 시연 흐름(705): 금융망 미연결 사용자가 새 목표를 만든다 → 도담 계좌가 열리고 목표에 0원 세이프박스가 생긴다 →
+     * 주거래에서 도담 계좌로 이체 → 목표에 담기 → 담긴 돈은 되가져올 수 없음 → 담지 않은 돈만 되가져오기 → 꺼내기.
+     */
+    @Test
+    void demoFlowFromNewGoalToSafeboxDepositAndWithdraw() throws Exception {
+        prepareTransferAccounts();
+        mockMvc.perform(delete("/api/v1/finance-data/connection").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk());
+        given(ssafyFinanceClient.inquireDemandDepositList()).willReturn(List.of(
+                new SsafyDemandDepositProduct("100-1", "004", "KB국민은행", "입출금", "전용 계좌")));
+        given(ssafyFinanceClient.createDemandDepositAccount(anyString(), anyString()))
+                .willReturn(new SsafyCreatedDemandDepositAccount("004", "9999888877776666"));
+
+        // FE 목표 생성 화면 순서: 도담 계좌 확인·보충 → 목표 생성
+        MvcResult opened = mockMvc.perform(post("/api/v1/safebox/account").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.balance").value(0))
+                .andReturn();
+        long safeboxId = objectMapper.readTree(opened.getResponse().getContentAsString())
+                .path("data").path("accountId").asLong();
+        long goalId = createSavingGoal("노트북 사기");
+        mockMvc.perform(get("/api/v1/safebox/goals/" + goalId).header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.allocatedAmount").value(0));
+
+        // 주거래(11) → 도담 계좌 300,000
+        given(ssafyFinanceClient.transfer(anyString(), eq(MAIN_ACCOUNT_NO), eq("9999888877776666"), eq(300_000L),
+                anyString(), anyString())).willReturn(List.of(
+                new SsafyTransferEntry("DEMO-OUT-1", "20260926", "103000", "2", 300_000L, 1_550_000L, "출금"),
+                new SsafyTransferEntry("DEMO-IN-1", "20260926", "103000", "1", 300_000L, 300_000L, "입금")));
+        mockMvc.perform(post("/api/v1/accounts/transfer").header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("withdrawalAccountId", 11, "depositAccountId", safeboxId,
+                                "amount", 300_000))))
+                .andExpect(status().isOk());
+
+        // 목표에 200,000 담기 → 목표 금액·세이프박스 반영
+        mockMvc.perform(put("/api/v1/safebox/goals/" + goalId).header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("amount", 200_000))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.allocatedAmount").value(200_000))
+                .andExpect(jsonPath("$.data.availableAmount").value(100_000));
+        mockMvc.perform(get("/api/v1/goals/" + goalId).header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.currentAmount").value(200_000));
+        mockMvc.perform(get("/api/v1/safebox/account").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(jsonPath("$.data.balance").value(300_000))
+                .andExpect(jsonPath("$.data.allocatedAmount").value(200_000));
+
+        // 담긴 돈은 되가져올 수 없고, 담지 않은 100,000만 되가져온다
+        mockMvc.perform(post("/api/v1/accounts/transfer").header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("withdrawalAccountId", safeboxId, "depositAccountId", 11,
+                                "amount", 150_000))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SAFEBOX_ALLOCATED_BALANCE"));
+        given(ssafyFinanceClient.transfer(anyString(), eq("9999888877776666"), eq(MAIN_ACCOUNT_NO), eq(100_000L),
+                anyString(), anyString())).willReturn(List.of(
+                new SsafyTransferEntry("DEMO-OUT-2", "20260926", "103100", "2", 100_000L, 200_000L, "출금"),
+                new SsafyTransferEntry("DEMO-IN-2", "20260926", "103100", "1", 100_000L, 1_650_000L, "입금")));
+        mockMvc.perform(post("/api/v1/accounts/transfer").header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("withdrawalAccountId", safeboxId, "depositAccountId", 11,
+                                "amount", 100_000))))
+                .andExpect(status().isOk());
+
+        // 꺼내기(0원) → 목표 금액 0
+        mockMvc.perform(put("/api/v1/safebox/goals/" + goalId).header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("amount", 0))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.allocatedAmount").value(0));
+        mockMvc.perform(get("/api/v1/goals/" + goalId).header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(jsonPath("$.data.currentAmount").value(0));
+    }
+
+    @Test
+    void seedUserConnectsWithAliasMemberEmailWhenOpeningSafebox() throws Exception {
+        String seedEmail = "seed.demo@dodam.invalid";
+        signup(seedEmail, "시드");
+        Long seedUserId = userRepository.findByEmailAndDeletedAtIsNull(seedEmail).orElseThrow().getId();
+        String seedBearer = login(seedEmail);
+        // seed 사용자처럼 finance_connection이 없는 상태
+        jdbcTemplate.update("DELETE FROM finance_connection WHERE user_id = ?", seedUserId);
+        given(ssafyFinanceClient.inquireDemandDepositList()).willReturn(List.of(
+                new SsafyDemandDepositProduct("100-1", "004", "KB국민은행", "입출금", "전용 계좌")));
+        given(ssafyFinanceClient.createDemandDepositAccount(anyString(), anyString()))
+                .willReturn(new SsafyCreatedDemandDepositAccount("004", "7777666655554444"));
+
+        mockMvc.perform(post("/api/v1/safebox/account").header(HttpHeaders.AUTHORIZATION, seedBearer))
+                .andExpect(status().isCreated());
+
+        verify(ssafyFinanceClient).createMember("seed.demo@dodam-seed.com");
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM safebox_account WHERE user_id = ?", Integer.class, seedUserId)).isEqualTo(1);
+    }
+
+    private long createSavingGoal(String name) throws Exception {
+        MvcResult created = mockMvc.perform(post("/api/v1/goals").header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("name", name, "type", "SAVING", "targetAmount", 2_000_000,
+                                "targetDate", LocalDate.now().plusYears(1).toString()))))
+                .andExpect(status().isCreated()).andReturn();
+        return objectMapper.readTree(created.getResponse().getContentAsString()).path("data").path("goalId").asLong();
+    }
+
+    @Test
     void transferMovesBalancesAndWritesTwoSavingTransactionsOnlyOnce() throws Exception {
         prepareTransferAccounts();
         given(ssafyFinanceClient.transfer(anyString(), anyString(), anyString(), anyLong(), anyString(), anyString()))
@@ -407,44 +831,33 @@ class AccountApiIntegrationTest {
     }
 
     @Test
-    void transferRaisesLinkedGoalProgressAndAdvancesForecastWithoutChangingCompletedMonthPace() throws Exception {
+    void transferIntoDedicatedAccountChangesGoalOnlyAfterAllocation() throws Exception {
         prepareTransferAccounts();
+        jdbcTemplate.update("INSERT INTO safebox_account (user_id, account_id, account_type, created_at) "
+                + "VALUES (?, 11, 'DEMAND_DEPOSIT', ?)", userId, LocalDateTime.now());
         LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Seoul"));
-        jdbcTemplate.update("""
-                INSERT INTO `transaction` (transaction_id, user_id, account_id, transaction_date,
-                    transaction_type, amount, source_type, created_at)
-                VALUES ('PACE-BEFORE', ?, 12, ?, 'INCOME', 100000, 'SEED', ?)
-                """, userId, today.minusMonths(1).withDayOfMonth(15), LocalDateTime.now());
         MvcResult created = mockMvc.perform(post("/api/v1/goals").header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("name", "목표 통장", "type", "SAVING", "targetAmount", 1_000_000,
                                 "targetDate", today.plusYears(1).toString()))))
                 .andExpect(status().isCreated()).andReturn();
         long goalId = objectMapper.readTree(created.getResponse().getContentAsString()).path("data").path("goalId").asLong();
-        mockMvc.perform(put("/api/v1/goals/" + goalId + "/accounts").header(HttpHeaders.AUTHORIZATION, bearer)
-                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("accountIds", List.of(12L)))))
-                .andExpect(status().isOk());
-        MvcResult before = mockMvc.perform(get("/api/v1/goals/" + goalId + "/forecast")
-                        .header(HttpHeaders.AUTHORIZATION, bearer))
-                .andExpect(status().isOk()).andReturn();
-        var beforeData = objectMapper.readTree(before.getResponse().getContentAsString()).path("data");
-
-        List<SsafyTransferEntry> reversed = transferEntries(100_000);
         given(ssafyFinanceClient.transfer(anyString(), anyString(), anyString(), anyLong(), anyString(), anyString()))
-                .willReturn(List.of(reversed.get(1), reversed.get(0)));
+                .willReturn(transferEntries(100_000));
         mockMvc.perform(post("/api/v1/accounts/transfer").header(HttpHeaders.AUTHORIZATION, bearer)
-                        .contentType(MediaType.APPLICATION_JSON).content(transferJson(100_000)))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("withdrawalAccountId", 12, "depositAccountId", 11, "amount", 100_000))))
                 .andExpect(status().isOk());
-        MvcResult after = mockMvc.perform(get("/api/v1/goals/" + goalId + "/forecast")
-                        .header(HttpHeaders.AUTHORIZATION, bearer))
-                .andExpect(status().isOk()).andReturn();
-        var afterData = objectMapper.readTree(after.getResponse().getContentAsString()).path("data");
-        org.assertj.core.api.Assertions.assertThat(afterData.path("currentAmount").asLong())
-                .isEqualTo(beforeData.path("currentAmount").asLong() + 100_000);
-        org.assertj.core.api.Assertions.assertThat(afterData.path("averageMonthlySaving").asLong())
-                .isEqualTo(beforeData.path("averageMonthlySaving").asLong());
-        org.assertj.core.api.Assertions.assertThat(LocalDate.parse(afterData.path("expectedAchievementDate").asText()))
-                .isBefore(LocalDate.parse(beforeData.path("expectedAchievementDate").asText()));
+        mockMvc.perform(get("/api/v1/goals/" + goalId + "/forecast").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.currentAmount").value(0));
+        mockMvc.perform(put("/api/v1/safebox/goals/" + goalId).header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("amount", 100_000))))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/goals/" + goalId + "/forecast").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.currentAmount").value(100_000))
+                .andExpect(jsonPath("$.data.averageMonthlySaving").value(0));
     }
 
     @Test

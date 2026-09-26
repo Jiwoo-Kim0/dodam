@@ -105,6 +105,7 @@ class AccountSyncIntegrationTest {
     @BeforeEach
     void setUp() throws Exception {
         jdbcTemplate.update("DELETE FROM `transaction`");
+        jdbcTemplate.update("DELETE FROM safebox_account");
         jdbcTemplate.update("DELETE FROM account");
         financeSyncRepository.deleteAll();
         authSessionRepository.deleteAll();
@@ -166,6 +167,25 @@ class AccountSyncIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.balance").value(1500000));
+    }
+
+    @Test
+    void keepsSafeboxAccountNameWhileSyncingBalance() throws Exception {
+        given(ssafyFinanceClient.inquireDemandDepositAccountList(USER_KEY)).willReturn(List.of(
+                financeAccount("004", "국민은행", MAIN_ACCOUNT_NO, "수시입출금", 0L, "")));
+        syncAccounts();
+        Long accountId = jdbcTemplate.queryForObject("SELECT account_id FROM account WHERE user_id = ?", Long.class, userId);
+        jdbcTemplate.update("UPDATE account SET account_name = '도담 계좌' WHERE account_id = ?", accountId);
+        jdbcTemplate.update("INSERT INTO safebox_account (user_id, account_id, account_type, created_at) "
+                + "VALUES (?, ?, 'DEMAND_DEPOSIT', ?)", userId, accountId, LocalDateTime.now());
+
+        given(ssafyFinanceClient.inquireDemandDepositAccountList(USER_KEY)).willReturn(List.of(
+                financeAccount("004", "국민은행", MAIN_ACCOUNT_NO, "수시입출금", 300_000L, "20260926")));
+        syncAccounts();
+
+        assertThat(jdbcTemplate.queryForMap("SELECT account_name, balance FROM account WHERE account_id = ?", accountId))
+                .containsEntry("ACCOUNT_NAME", "도담 계좌")
+                .containsEntry("BALANCE", 300_000L);
     }
 
     @Test

@@ -12,6 +12,7 @@ import com.ssafy.dodam.domain.goal.entity.GoalType;
 import com.ssafy.dodam.domain.goal.repository.SavingGoalRepository;
 import com.ssafy.dodam.global.repository.UserWriteLock;
 import com.ssafy.dodam.domain.goal.repository.GoalAccountRepository;
+import com.ssafy.dodam.domain.goal.repository.SafeboxAccountRepository;
 import com.ssafy.dodam.domain.goal.repository.GoalRepository;
 import com.ssafy.dodam.global.exception.BusinessException;
 import com.ssafy.dodam.global.exception.ErrorCode;
@@ -58,6 +59,7 @@ public class GoalAccountService {
     private final GoalHistoryRecorder goalHistoryRecorder;
     private final GoalClock goalClock;
     private final GoalAllocationReader allocationReader;
+    private final SafeboxAccountRepository safeboxAccounts;
 
     public GoalAccountService(
             GoalRepository goalRepository,
@@ -67,7 +69,7 @@ public class GoalAccountService {
             AccountRepository accountRepository,
             GoalHistoryRecorder goalHistoryRecorder,
             GoalClock goalClock,
-            GoalAllocationReader allocationReader
+            GoalAllocationReader allocationReader, SafeboxAccountRepository safeboxAccounts
     ) {
         this.goalRepository = goalRepository;
         this.userWriteLock = userWriteLock;
@@ -77,6 +79,7 @@ public class GoalAccountService {
         this.goalHistoryRecorder = goalHistoryRecorder;
         this.goalClock = goalClock;
         this.allocationReader = allocationReader;
+        this.safeboxAccounts = safeboxAccounts;
     }
 
     /**
@@ -104,6 +107,12 @@ public class GoalAccountService {
             throw new BusinessException(ErrorCode.GOAL_NOT_EDITABLE);
         }
 
+        List<GoalAccount> existing = goalAccountRepository.findAllByGoalIdOrderByAccountIdAsc(goal.getId());
+        Set<Long> existingDirectIds = existing.stream()
+                .map(GoalAccount::getAccountId)
+                .collect(Collectors.toSet());
+        Long safeboxAccountId = safeboxAccounts.findById(userId).map(ref -> ref.getAccountId()).orElse(null);
+
         // 요청 계좌 확인: 순서 유지, 중복 제거
         Map<Long, Account> requested = new LinkedHashMap<>();
         for (Long accountId : new LinkedHashSet<>(accountIds)) {
@@ -116,6 +125,11 @@ public class GoalAccountService {
             if (account.getStatus() == AccountStatus.CLOSED) {
                 throw new InvalidRequestException(ACCOUNT_CLOSED_MESSAGE);
             }
+            if (account.getId().equals(safeboxAccountId)
+                    || (safeboxAccountId != null && account.getAccountType() == AccountType.DEMAND_DEPOSIT
+                            && !existingDirectIds.contains(account.getId()))) {
+                throw new InvalidRequestException("입출금 계좌의 목표 배정은 세이프박스 API를 이용해 주세요.");
+            }
             requested.put(account.getId(), account);
         }
 
@@ -126,14 +140,16 @@ public class GoalAccountService {
         if (demandCount > 1) {
             throw new InvalidRequestException(TOO_MANY_DEMAND_ACCOUNTS_MESSAGE);
         }
-        List<GoalAccount> existing = goalAccountRepository.findAllByGoalIdOrderByAccountIdAsc(goal.getId());
-        Set<Long> existingDirectIds = existing.stream()
-                .map(GoalAccount::getAccountId)
-                .collect(Collectors.toSet());
+        // 기존 계좌 연결 화면의 PUT이 내부 배정액을 지우지 않도록 전용 계좌 링크는 보존한다.
+        if (safeboxAccountId != null && existingDirectIds.contains(safeboxAccountId)) {
+            accountRepository.findByIdAndUserId(safeboxAccountId, userId)
+                    .ifPresent(account -> requested.put(safeboxAccountId, account));
+        }
         List<GoalAccount> linkedElsewhere = requested.isEmpty()
                 ? List.of()
                 : goalAccountRepository.findAllByAccountIdIn(requested.keySet()).stream()
                         .filter(link -> !link.getGoalId().equals(goal.getId()))
+                        .filter(link -> !link.getAccountId().equals(safeboxAccountId))
                         .toList();
         List<GoalAccount> staleLinks = new ArrayList<>();
         for (GoalAccount link : linkedElsewhere) {

@@ -40,6 +40,10 @@ app:
     # 병합 중 compose의 전달 줄이 유실되면 배포 전에 잡힌다(소셜 로그인 2줄이 겪은 사고의 반대 경우).
     # 값이 비어도 기동은 성공하고 코치만 템플릿 응답으로 내려간다.
     api-key: ${OPENAI_API_KEY}
+  demo:
+    # 기동 직후 금융망 연결·도담 전용 계좌·주거래 실계좌 대응을 맞출 시연 계정(SafeboxDemoBootstrap, S15P21D105-705).
+    # 이미 맞춰진 단계는 건너뛴다. 환경변수로 두지 않는 이유: check-env.sh가 이 파일의 ${...}를 compose와 대조한다.
+    bootstrap-user-emails: seed.kmeans.u0003@dodam.invalid
   pattern:
     # 군집 모델은 커밋된 Python 학습 아티팩트(classpath:ml/spending-kmeans-v2.json)만 쓴다. 아티팩트가 없으면 Java가 임의 학습하지 않고 RULE_ONLY(MODEL_NOT_AVAILABLE)로 전환한다.
     train-in-process: false

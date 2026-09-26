@@ -3,15 +3,17 @@ import { Text, View } from 'react-native';
 import type { AssetSection as AssetSectionData } from '@/types/asset.types';
 import { formatCurrency } from '@/utils/currency';
 
-import { AssetListItem } from './AssetListItem';
+import { AssetListItem, type AssetItemActions } from './AssetListItem';
 import { styles } from './AssetSection.styles';
 import { getAssetSectionTotal } from '../utils/assetCalculations';
 
 interface AssetSectionProps {
   section: AssetSectionData;
+  /** 이체할 수 있는 섹션이면 항목별 채우기·보내기 동작을 만든다. */
+  getItemActions?: (itemId: string) => AssetItemActions | undefined;
 }
 
-export function AssetSection({ section }: AssetSectionProps) {
+export function AssetSection({ section, getItemActions }: AssetSectionProps) {
   const totalAmount = getAssetSectionTotal(section);
   const shouldShowTotal = section.items.length > 1 || Boolean(section.summaryPrefix);
 
@@ -39,6 +41,7 @@ export function AssetSection({ section }: AssetSectionProps) {
           section.items.map((item, index) => (
             <AssetListItem
               key={item.id}
+              actions={getItemActions?.(item.id)}
               item={item}
               isLast={index === section.items.length - 1}
             />

@@ -9,6 +9,7 @@ import com.ssafy.dodam.domain.minusaccount.entity.MinusAccountOwner;
 import com.ssafy.dodam.domain.minusaccount.repository.AccountBalanceWriter;
 import com.ssafy.dodam.domain.minusaccount.repository.MinusAccountOwnerRepository;
 import com.ssafy.dodam.domain.minusaccount.repository.MinusAccountRepository;
+import com.ssafy.dodam.domain.goal.repository.SafeboxAccountRepository;
 import com.ssafy.dodam.global.exception.BusinessException;
 import com.ssafy.dodam.global.exception.ErrorCode;
 import com.ssafy.dodam.global.exception.ResourceNotFoundException;
@@ -44,19 +45,21 @@ public class MinusAccountCommandService {
     private final AccountBalanceWriter accountBalanceWriter;
     private final SensitiveNumberHasher sensitiveNumberHasher;
     private final MinusAccountClock clock;
+    private final SafeboxAccountRepository safeboxAccounts;
 
     public MinusAccountCommandService(
             MinusAccountOwnerRepository ownerRepository,
             MinusAccountRepository minusAccountRepository,
             AccountBalanceWriter accountBalanceWriter,
             SensitiveNumberHasher sensitiveNumberHasher,
-            MinusAccountClock clock
+            MinusAccountClock clock, SafeboxAccountRepository safeboxAccounts
     ) {
         this.ownerRepository = ownerRepository;
         this.minusAccountRepository = minusAccountRepository;
         this.accountBalanceWriter = accountBalanceWriter;
         this.sensitiveNumberHasher = sensitiveNumberHasher;
         this.clock = clock;
+        this.safeboxAccounts = safeboxAccounts;
     }
 
     public MinusAccountRepaymentResponse repay(
@@ -163,17 +166,30 @@ public class MinusAccountCommandService {
      */
     private MinusAccountOwner resolveWithdrawalAccount(Long userId, String accountNo) {
         if (StringUtils.hasText(accountNo)) {
-            return accountBalanceWriter
+            MinusAccountOwner account = accountBalanceWriter
                     .findWithdrawalAccountForUpdate(userId, sensitiveNumberHasher.hash(accountNo))
-                    .filter(account -> ACTIVE.equals(account.getStatus()))
+                    .filter(candidate -> ACTIVE.equals(candidate.getStatus()))
                     .orElseThrow(() -> new ResourceNotFoundException("출금계좌를 찾을 수 없습니다."));
+            rejectSafeboxDebit(userId, account);
+            return account;
         }
 
-        List<MinusAccountOwner> candidates = accountBalanceWriter.findDemandDepositAccounts(userId);
+        Long dedicatedAccountId = safeboxAccounts.findById(userId)
+                .map(ref -> ref.getAccountId()).orElse(null);
+        List<MinusAccountOwner> candidates = accountBalanceWriter.findDemandDepositAccounts(userId).stream()
+                .filter(candidate -> !candidate.getId().equals(dedicatedAccountId))
+                .toList();
         if (candidates.size() != 1) {
             throw new BusinessException(ErrorCode.WITHDRAWAL_ACCOUNT_REQUIRED);
         }
         return candidates.get(0);
+    }
+
+    private void rejectSafeboxDebit(Long userId, MinusAccountOwner account) {
+        if (safeboxAccounts.findById(userId)
+                .map(ref -> ref.getAccountId().equals(account.getId())).orElse(false)) {
+            throw new BusinessException(ErrorCode.SAFEBOX_ACCOUNT_DEBIT_NOT_ALLOWED);
+        }
     }
 
     private MinusAccount lockDetail(Long userId, Long accountId) {

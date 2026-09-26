@@ -1,4 +1,4 @@
-export type AssetCompositionTone = 'strong' | 'medium' | 'light';
+export type AssetCompositionTone = 'strong' | 'medium' | 'light' | 'debt';
 
 export interface AssetComposition {
   label: string;
@@ -20,7 +20,7 @@ export interface AssetAnalysis {
   inactiveMonths: number;
 }
 
-export type AssetSectionId = 'checking' | 'saving' | 'loan' | 'card';
+export type AssetSectionId = 'checking' | 'safebox' | 'saving' | 'loan' | 'card';
 
 export interface AssetItem {
   id: string;

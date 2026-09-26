@@ -9,10 +9,13 @@ import com.ssafy.dodam.domain.account.repository.JdbcAccountTransactionWriter.Ne
 import com.ssafy.dodam.domain.finance.entity.FinanceSyncScope;
 import com.ssafy.dodam.domain.finance.service.FinanceSyncScopeHandler;
 import com.ssafy.dodam.domain.finance.service.FinanceSyncScopeResult;
+import com.ssafy.dodam.domain.goal.repository.SafeboxAccountRepository;
 import com.ssafy.dodam.global.crypto.FieldCryptor;
 import com.ssafy.dodam.global.exception.BusinessException;
 import com.ssafy.dodam.global.exception.ErrorCode;
 import com.ssafy.dodam.global.policy.QueryPeriodPolicy;
+import com.ssafy.dodam.global.repository.UserWriteLock;
+import com.ssafy.dodam.global.exception.ResourceNotFoundException;
 import com.ssafy.dodam.global.security.SensitiveNumberHasher;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyAccountTransaction;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyApiException;
@@ -43,8 +46,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  *
  * <p>규칙
  * <ul>
- *   <li>금융망 호출과 응답 해석은 트랜잭션 밖에서 모두 끝내고 저장만 한 트랜잭션에서 한다({@link FinanceSyncScopeHandler}
- *       계약). 계좌 목록·거래내역 중 하나라도 실패하면 scope 전체가 FAILED고 부분 반영은 없다.</li>
+ *   <li>계좌 목록·거래내역 중 하나라도 실패하면 scope 전체가 FAILED고 부분 반영은 없다.
+ *       잔액 조회부터 저장까지 사용자 행 잠금을 유지해 이체·배정과 순서를 맞춘다.</li>
  *   <li>계좌는 `(user_id, account_no_hash)`로 대응한다. 계좌번호 원문은 암호문·해시·마스킹으로만 남기고 로그에 쓰지 않는다.</li>
  *   <li>새 계좌는 `source_type = SSAFY`, ACTIVE로 넣는다. 기존 SSAFY 계좌는 최신 값으로 갱신하고 값이 같으면 건드리지 않는다.</li>
  *   <li>`source_type`이 SEED·MANUAL인 계좌는 계좌도 거래도 덮어쓰지 않는다. 시연 데이터와 마이너스통장 상환(534) 결과를 보존한다.</li>
@@ -74,6 +77,8 @@ public class AccountSyncHandler implements FinanceSyncScopeHandler {
     private final SensitiveNumberHasher sensitiveNumberHasher;
     private final AccountClock accountClock;
     private final TransactionTemplate transactionTemplate;
+    private final UserWriteLock userWriteLock;
+    private final SafeboxAccountRepository safeboxAccounts;
 
     public AccountSyncHandler(
             SsafyFinanceClient ssafyFinanceClient,
@@ -82,7 +87,9 @@ public class AccountSyncHandler implements FinanceSyncScopeHandler {
             FieldCryptor fieldCryptor,
             SensitiveNumberHasher sensitiveNumberHasher,
             AccountClock accountClock,
-            TransactionTemplate transactionTemplate
+            TransactionTemplate transactionTemplate,
+            UserWriteLock userWriteLock,
+            SafeboxAccountRepository safeboxAccounts
     ) {
         this.ssafyFinanceClient = ssafyFinanceClient;
         this.accountRepository = accountRepository;
@@ -91,6 +98,8 @@ public class AccountSyncHandler implements FinanceSyncScopeHandler {
         this.sensitiveNumberHasher = sensitiveNumberHasher;
         this.accountClock = accountClock;
         this.transactionTemplate = transactionTemplate;
+        this.userWriteLock = userWriteLock;
+        this.safeboxAccounts = safeboxAccounts;
     }
 
     @Override
@@ -100,9 +109,13 @@ public class AccountSyncHandler implements FinanceSyncScopeHandler {
 
     @Override
     public FinanceSyncScopeResult sync(Long userId, String userKey) {
-        List<FinanceAccount> financeAccounts = fetch(userId, userKey);
         SyncCounts counts = Objects.requireNonNullElse(
-                transactionTemplate.execute(status -> apply(userId, financeAccounts)),
+                transactionTemplate.execute(status -> {
+                    // 금융망 조회 시점부터 저장까지 잠가 이체·배정이 오래된 잔액을 기준으로 진행되지 않게 한다.
+                    userWriteLock.lock(userId)
+                            .orElseThrow(() -> new ResourceNotFoundException("사용자를 찾을 수 없습니다."));
+                    return apply(userId, fetch(userId, userKey));
+                }),
                 SyncCounts.NONE
         );
         return new FinanceSyncScopeResult(
@@ -113,11 +126,10 @@ public class AccountSyncHandler implements FinanceSyncScopeHandler {
         );
     }
 
-    // ---------- 금융망 호출·해석 (트랜잭션 밖) ----------
+    // ---------- 금융망 호출·해석 ----------
 
     /**
-     * 계좌 목록과 계좌별 거래내역을 받아 해석까지 끝낸다. 해석 실패도 여기서 FINANCE_API_UNAVAILABLE로 바꿔야
-     * 저장 트랜잭션 안에서 예외가 나지 않는다.
+     * 계좌 목록과 계좌별 거래내역을 받아 해석까지 끝낸다. 실패하면 저장 전에 트랜잭션 전체를 되돌린다.
      */
     private List<FinanceAccount> fetch(Long userId, String userKey) {
         LocalDate today = accountClock.now().toLocalDate();
@@ -258,6 +270,7 @@ public class AccountSyncHandler implements FinanceSyncScopeHandler {
         Set<String> seenHashes = new HashSet<>();
         List<FinanceAccount> transactionTargets = new ArrayList<>();
         Map<String, Account> accountsByHash = new HashMap<>(existingByHash);
+        Long safeboxAccountId = safeboxAccounts.findById(userId).map(ref -> ref.getAccountId()).orElse(null);
 
         for (FinanceAccount financeAccount : financeAccounts) {
             String hash = sensitiveNumberHasher.hash(financeAccount.accountNo());
@@ -278,7 +291,14 @@ public class AccountSyncHandler implements FinanceSyncScopeHandler {
                 accountChanges++;
                 transactionTargets.add(financeAccount);
             } else if (existing.isFromFinance()) {
-                if (existing.applyFinanceSnapshot(financeAccount.snapshot(), now)) {
+                FinanceSnapshot snapshot = financeAccount.snapshot();
+                if (existing.getId().equals(safeboxAccountId)) {
+                    // 도담 전용 계좌 이름은 금융망 상품명(예: 수시입출금)으로 덮지 않는다(705).
+                    snapshot = new FinanceSnapshot(snapshot.bankCode(), snapshot.bankName(), existing.getAccountName(),
+                            snapshot.accountType(), snapshot.balance(), snapshot.lastTransactionDate(),
+                            snapshot.currency());
+                }
+                if (existing.applyFinanceSnapshot(snapshot, now)) {
                     accountChanges++;
                 }
                 transactionTargets.add(financeAccount);

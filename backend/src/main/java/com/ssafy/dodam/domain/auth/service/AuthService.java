@@ -11,6 +11,8 @@ import com.ssafy.dodam.domain.auth.dto.SignupResponse;
 import com.ssafy.dodam.domain.auth.entity.AuthSession;
 import com.ssafy.dodam.domain.auth.repository.AuthSessionRepository;
 import com.ssafy.dodam.domain.finance.entity.FinanceConnection;
+import com.ssafy.dodam.domain.finance.entity.FinanceConnectionStatus;
+import com.ssafy.dodam.domain.finance.event.FinanceConnectedEvent;
 import com.ssafy.dodam.domain.finance.repository.FinanceConnectionRepository;
 import com.ssafy.dodam.domain.finance.service.FinanceMemberService;
 import com.ssafy.dodam.domain.user.entity.FinancialProfile;
@@ -28,6 +30,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -47,6 +50,7 @@ public class AuthService {
     private final JwtTokenProvider tokenProvider;
     private final RefreshTokenFactory refreshTokenFactory;
     private final TransactionTemplate transactionTemplate;
+    private final ApplicationEventPublisher events;
 
     public AuthService(
             UserRepository userRepository,
@@ -58,7 +62,8 @@ public class AuthService {
             PasswordEncoder passwordEncoder,
             JwtTokenProvider tokenProvider,
             RefreshTokenFactory refreshTokenFactory,
-            TransactionTemplate transactionTemplate
+            TransactionTemplate transactionTemplate,
+            ApplicationEventPublisher events
     ) {
         this.userRepository = userRepository;
         this.userSettingRepository = userSettingRepository;
@@ -70,6 +75,7 @@ public class AuthService {
         this.tokenProvider = tokenProvider;
         this.refreshTokenFactory = refreshTokenFactory;
         this.transactionTemplate = transactionTemplate;
+        this.events = events;
     }
 
     /**
@@ -89,7 +95,7 @@ public class AuthService {
         String passwordHash = passwordEncoder.encode(request.password());
         String name = request.name().trim();
 
-        return transactionTemplate.execute(status -> {
+        SignupResponse response = transactionTemplate.execute(status -> {
             User user = User.createLocalUser(email, passwordHash, name, request.birthDate(), request.gender());
             try {
                 // 동시 가입 요청이 existsByEmail 검사를 동시에 통과한 경우 UNIQUE 제약으로 걸러낸다.
@@ -104,6 +110,11 @@ public class AuthService {
             );
             return SignupResponse.of(user, connection.getStatus());
         });
+        // 가입 트랜잭션이 커밋된 뒤 도담 전용 계좌를 연다. 실패해도 가입은 성공으로 둔다(SafeboxOpenListener).
+        if (response.financeConnectionStatus() == FinanceConnectionStatus.CONNECTED) {
+            events.publishEvent(new FinanceConnectedEvent(response.user().userId()));
+        }
+        return response;
     }
 
     @Transactional

@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors } from '@/styles';
 import type { AccountApiResponse } from '@/types/assetApi.types';
-import type { GoalAccountApiResponse } from '@/types/goalApi.types';
 import { formatCurrency, formatNumber } from '@/utils/currency';
+import { getAccountLogo, getInstitutionLogo, SAFEBOX_INSTITUTION_ID } from '@/utils/institution';
 
 import { styles } from './GoalTransferBottomSheet.styles';
 
@@ -16,8 +16,10 @@ export type GoalTransferDirection = 'send' | 'withdraw';
 const QUICK_AMOUNTS = [10_000, 50_000, 100_000] as const;
 
 interface GoalTransferBottomSheetProps {
-  /** 목표에 연결된 자유입출금 계좌. 받는 곳(보내기) 또는 보내는 곳(되가져오기)으로 고정된다. */
-  goalAccount: GoalAccountApiResponse;
+  /** 도담 계좌 또는 기존 목표 통장. */
+  goalAccount: { accountId: number; accountName: string; accountNoMasked: string; balance: number };
+  isSafebox?: boolean;
+  withdrawalAvailable?: number;
   direction: GoalTransferDirection;
   /** 상대편으로 고를 수 있는 계좌. 목표 통장은 호출부에서 빼고 넘긴다. */
   selectableAccounts: readonly AccountApiResponse[];
@@ -35,6 +37,8 @@ function digitsOf(value: string) {
 
 export function GoalTransferBottomSheet({
   goalAccount,
+  isSafebox = false,
+  withdrawalAvailable,
   direction,
   selectableAccounts,
   isSubmitting,
@@ -62,13 +66,15 @@ export function GoalTransferBottomSheet({
    * 보낼 수 있는 상한은 "돈이 빠져나가는 쪽"의 잔액이다.
    * 보내기는 사용자가 고른 통장, 되가져오기는 목표 통장이다.
    */
-  const maxAmount = isSend ? (counterpart?.balance ?? 0) : goalAccount.balance;
+  const maxAmount = isSend ? (counterpart?.balance ?? 0) :
+    (withdrawalAvailable ?? goalAccount.balance);
   const amount = Number(digitsOf(amountText) || '0');
   const exceedsBalance = amount > maxAmount;
   const canSubmit =
     !isSubmitting && counterpart !== null && amount > 0 && !exceedsBalance;
 
-  const title = isSend ? '목표 통장에 보내기' : '목표 통장에서 되가져오기';
+  const accountLabel = isSafebox ? '도담 계좌' : '목표 통장';
+  const title = isSend ? `${accountLabel}에 보내기` : `${accountLabel}에서 되가져오기`;
 
   return (
     <Modal
@@ -95,6 +101,13 @@ export function GoalTransferBottomSheet({
             {/* 고정된 쪽. 목표당 목표 통장은 하나라 고를 일이 없다. */}
             <Text style={styles.fieldLabel}>{isSend ? '받는 곳' : '보낼 통장'}</Text>
             <View style={styles.fixedAccount}>
+              {isSafebox ? (
+                <Image
+                  accessibilityIgnoresInvertColors
+                  source={getInstitutionLogo(SAFEBOX_INSTITUTION_ID)}
+                  style={styles.logo}
+                />
+              ) : null}
               <View style={styles.accountText}>
                 <Text numberOfLines={1} style={styles.accountName}>
                   {goalAccount.accountName}
@@ -128,6 +141,11 @@ export function GoalTransferBottomSheet({
                         isSelected && styles.accountOptionSelected,
                         pressed && styles.pressed,
                       ]}>
+                      <Image
+                        accessibilityIgnoresInvertColors
+                        source={getAccountLogo(account.bankCode, account.bankName)}
+                        style={styles.logo}
+                      />
                       <View style={styles.accountText}>
                         <Text numberOfLines={1} style={styles.accountName}>
                           {account.accountName}

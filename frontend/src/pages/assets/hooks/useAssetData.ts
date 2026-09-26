@@ -1,8 +1,10 @@
 import { useCallback, useRef, useState } from 'react';
 
-import { assetApi } from '@/api';
+import { assetApi, safeboxApi } from '@/api';
+import type { SafeboxAccountResponse } from '@/api/safeboxApi';
 import { fetchAllPages } from '@/api/pagination';
 import type { AssetAnalysis, AssetOverview, AssetSection } from '@/types/asset.types';
+import type { AccountApiResponse } from '@/types/assetApi.types';
 import { mapOwnedAssetOverview } from '@/utils/assetOverview';
 import { toDateKey } from '@/utils/date';
 
@@ -13,6 +15,9 @@ interface AssetData {
   hasAssets: boolean;
   overview: AssetOverview | null;
   sections: readonly AssetSection[];
+  /** 계좌 간 이체에서 고를 수 있는 입출금 계좌(해지 제외, 도담 계좌 포함). */
+  transferAccounts: readonly AccountApiResponse[];
+  safeboxAccount: SafeboxAccountResponse | null;
 }
 
 const EMPTY_ASSET_DATA: AssetData = {
@@ -20,6 +25,8 @@ const EMPTY_ASSET_DATA: AssetData = {
   hasAssets: false,
   overview: null,
   sections: [],
+  transferAccounts: [],
+  safeboxAccount: null,
 };
 
 function getCurrentMonthSchedulePeriod() {
@@ -69,6 +76,7 @@ export function useAssetData() {
         loanSummary,
         depositSavings,
         depositSavingSummary,
+        safeboxAccount,
       ] = await Promise.all([
         assetApi.getAccounts(),
         assetApi.getAccountSummary(),
@@ -82,6 +90,7 @@ export function useAssetData() {
           assetApi.getDepositSavings({ page, size }),
         ),
         assetApi.getDepositSavingSummary(),
+        safeboxApi.getAccountOrNull(),
       ]);
 
       if (requestId !== requestIdRef.current) return;
@@ -99,7 +108,10 @@ export function useAssetData() {
           cards.length > 0 ||
           loans.length > 0 ||
           depositSavings.length > 0,
-        overview: mapOwnedAssetOverview(accountSummary),
+        overview: mapOwnedAssetOverview(
+          accountSummary,
+          Math.abs(loanSummary.totalBalance),
+        ),
         sections: mapAssetSections({
           accounts,
           accountSummary,
@@ -109,7 +121,15 @@ export function useAssetData() {
           depositSavingSummary,
           loans,
           loanSummary,
+          safeboxAccount,
         }),
+        // 도담 계좌를 맨 앞에 둔다(자산 목록과 같은 순서).
+        transferAccounts: accounts
+          .filter(({ accountType, status }) => accountType === 'DEMAND_DEPOSIT' && status !== 'CLOSED')
+          .sort((left, right) =>
+            Number(right.accountId === safeboxAccount?.accountId)
+              - Number(left.accountId === safeboxAccount?.accountId)),
+        safeboxAccount,
       });
     } catch (loadError) {
       if (requestId !== requestIdRef.current) return;

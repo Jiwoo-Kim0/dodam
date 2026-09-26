@@ -197,10 +197,13 @@ class RestSsafyFinanceClientTest {
                 .andExpect(jsonPath("$.Header.userKey").value("user-key-1"))
                 .andExpect(jsonPath("$.accountTypeUniqueNo").value("TYPE-2"))
                 .andRespond(withSuccess("""
-                        {"Header":{"responseCode":"H0000"},"REC":{"accountNo":"1234567890123456","accountBalance":"0"}}
+                        {"Header":{"responseCode":"H0000"},"REC":{"bankCode":"004","accountNo":"1234567890123456",
+                          "currency":{"currency":"KRW","currencyName":"원화"}}}
                         """, MediaType.APPLICATION_JSON));
-        assertThat(client.createDemandDepositAccount("user-key-1", "TYPE-2").accountNo())
-                .isEqualTo("1234567890123456");
+        // 생성 응답의 currency는 객체다. 목록 record로 받으면 파싱에 실패한다.
+        SsafyCreatedDemandDepositAccount created = client.createDemandDepositAccount("user-key-1", "TYPE-2");
+        assertThat(created.accountNo()).isEqualTo("1234567890123456");
+        assertThat(created.bankCode()).isEqualTo("004");
         server.verify();
     }
 
@@ -214,6 +217,19 @@ class RestSsafyFinanceClientTest {
                         """, MediaType.APPLICATION_JSON));
         assertThat(client.depositToAccount("user-key-1", "1234567890123456", 1000, "준비")
                 .transactionUniqueNo()).isEqualTo("D-1");
+
+        server.verify();
+        server.reset();
+
+        server.expect(requestTo(base + "updateDemandDepositAccountWithdrawal"))
+                .andExpect(jsonPath("$.Header.apiName").value("updateDemandDepositAccountWithdrawal"))
+                .andExpect(jsonPath("$.accountNo").value("1234567890123456"))
+                .andExpect(jsonPath("$.transactionBalance").value(500))
+                .andRespond(withSuccess("""
+                        {"Header":{"responseCode":"H0000"},"REC":{"transactionUniqueNo":"W-1","transactionBalance":"500"}}
+                        """, MediaType.APPLICATION_JSON));
+        assertThat(client.withdrawFromAccount("user-key-1", "1234567890123456", 500, "이체")
+                .transactionUniqueNo()).isEqualTo("W-1");
 
         server.verify();
         server.reset();

@@ -4,6 +4,7 @@ import com.ssafy.dodam.domain.finance.dto.FinanceConnectionResponse;
 import com.ssafy.dodam.domain.finance.dto.FinanceMemberResponse;
 import com.ssafy.dodam.domain.finance.entity.FinanceConnection;
 import com.ssafy.dodam.domain.finance.entity.FinanceSyncStatus;
+import com.ssafy.dodam.domain.finance.event.FinanceConnectedEvent;
 import com.ssafy.dodam.domain.finance.repository.FinanceConnectionRepository;
 import com.ssafy.dodam.domain.finance.repository.FinanceSyncRepository;
 import com.ssafy.dodam.domain.user.entity.User;
@@ -16,6 +17,7 @@ import com.ssafy.dodam.infrastructure.external.ssafy.SsafyMember;
 import java.time.LocalDateTime;
 import java.util.EnumSet;
 import java.util.Optional;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,6 +37,7 @@ public class FinanceConnectionService {
     private final SsafyFinanceClient ssafyFinanceClient;
     private final FieldCryptor fieldCryptor;
     private final TransactionTemplate transactionTemplate;
+    private final ApplicationEventPublisher events;
 
     public FinanceConnectionService(
             UserRepository userRepository,
@@ -43,7 +46,8 @@ public class FinanceConnectionService {
             FinanceMemberService financeMemberService,
             SsafyFinanceClient ssafyFinanceClient,
             FieldCryptor fieldCryptor,
-            TransactionTemplate transactionTemplate
+            TransactionTemplate transactionTemplate,
+            ApplicationEventPublisher events
     ) {
         this.userRepository = userRepository;
         this.financeConnectionRepository = financeConnectionRepository;
@@ -52,6 +56,7 @@ public class FinanceConnectionService {
         this.ssafyFinanceClient = ssafyFinanceClient;
         this.fieldCryptor = fieldCryptor;
         this.transactionTemplate = transactionTemplate;
+        this.events = events;
     }
 
     /**
@@ -81,10 +86,10 @@ public class FinanceConnectionService {
                     throw new BusinessException(ErrorCode.FINANCE_ALREADY_CONNECTED);
                 });
 
-        String email = user.getEmail();
+        String email = FinanceMemberService.memberEmailFor(user.getEmail());
         String userKey = financeMemberService.requireUserKey(email);
 
-        return transactionTemplate.execute(status -> {
+        FinanceConnectionResponse response = transactionTemplate.execute(status -> {
             FinanceConnection connection = financeConnectionRepository.findByUserIdForUpdate(userId).orElse(null);
             if (connection == null) {
                 try {
@@ -102,6 +107,9 @@ public class FinanceConnectionService {
             }
             return FinanceConnectionResponse.from(connection);
         });
+        // 가입 때 연결에 실패했던 사용자는 여기서 도담 전용 계좌를 보충한다.
+        events.publishEvent(new FinanceConnectedEvent(userId));
+        return response;
     }
 
     /**

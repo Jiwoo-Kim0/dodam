@@ -11,6 +11,7 @@ const compositionColors = {
   strong: colors.home.assetChart.strong,
   medium: colors.home.assetChart.medium,
   light: colors.home.assetChart.light,
+  debt: colors.home.assetChart.debt,
 } as const;
 
 interface AssetOverviewCardProps {
@@ -63,7 +64,7 @@ export function AssetOverviewCard({ overview }: AssetOverviewCardProps) {
               </View>
 
               <Text style={styles.legendAmount}>
-                {formatCurrency(item.amount)}
+                {formatCurrency(item.tone === 'debt' ? -item.amount : item.amount)}
               </Text>
             </View>
           ))}

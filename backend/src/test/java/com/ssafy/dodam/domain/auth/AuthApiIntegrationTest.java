@@ -22,6 +22,8 @@ import com.ssafy.dodam.domain.user.repository.UserRepository;
 import com.ssafy.dodam.domain.user.repository.UserSettingRepository;
 import com.ssafy.dodam.global.crypto.FieldCryptor;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyApiException;
+import com.ssafy.dodam.infrastructure.external.ssafy.SsafyCreatedDemandDepositAccount;
+import com.ssafy.dodam.infrastructure.external.ssafy.SsafyDemandDepositProduct;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyFinanceClient;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyMember;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyUnavailableException;
@@ -29,6 +31,7 @@ import com.ssafy.dodam.domain.user.entity.Gender;
 import com.ssafy.dodam.domain.user.entity.User;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,6 +39,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -77,11 +81,17 @@ class AuthApiIntegrationTest {
     @Autowired
     private FieldCryptor fieldCryptor;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     @MockitoBean
     private SsafyFinanceClient ssafyFinanceClient;
 
     @BeforeEach
     void setUp() {
+        jdbcTemplate.update("DELETE FROM safebox_account");
+        jdbcTemplate.update("DELETE FROM safebox_open_attempt");
+        jdbcTemplate.update("DELETE FROM account");
         authSessionRepository.deleteAll();
         financeConnectionRepository.deleteAll();
         userSettingRepository.deleteAll();
@@ -116,6 +126,36 @@ class AuthApiIntegrationTest {
         assertThat(fieldCryptor.decrypt(connection.getExternalUserKeyEncrypted())).isEqualTo(userKeyFor(EMAIL));
         assertThat(connection.getExternalUserKeyHash()).isEqualTo(fieldCryptor.hash(userKeyFor(EMAIL)));
         assertThat(connection.getMemberEmailMasked()).isEqualTo("do***@example.com");
+    }
+
+    @Test
+    void signupOpensDedicatedSafeboxAccount() throws Exception {
+        given(ssafyFinanceClient.inquireDemandDepositList()).willReturn(List.of(
+                new SsafyDemandDepositProduct("100-1", "004", "KB국민은행", "입출금", "전용 계좌")));
+        given(ssafyFinanceClient.createDemandDepositAccount(anyString(), anyString()))
+                .willReturn(new SsafyCreatedDemandDepositAccount("004", "9999888877776666"));
+
+        mockMvc.perform(signup(EMAIL, PASSWORD, NAME)).andExpect(status().isCreated());
+
+        Long userId = userRepository.findByEmailAndDeletedAtIsNull(EMAIL).orElseThrow().getId();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM safebox_account WHERE user_id = ?", Integer.class, userId)).isEqualTo(1);
+    }
+
+    @Test
+    void signupSucceedsEvenWhenSafeboxOpeningFails() throws Exception {
+        given(ssafyFinanceClient.inquireDemandDepositList()).willThrow(new SsafyUnavailableException("timeout", null));
+
+        mockMvc.perform(signup(EMAIL, PASSWORD, NAME))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.financeConnectionStatus").value("CONNECTED"));
+
+        Long userId = userRepository.findByEmailAndDeletedAtIsNull(EMAIL).orElseThrow().getId();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM safebox_account WHERE user_id = ?", Integer.class, userId)).isZero();
+        // 상품 조회 단계 실패는 개설 시도 전이므로 이후 목표 생성 때 다시 열 수 있어야 한다.
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM safebox_open_attempt WHERE user_id = ?", Integer.class, userId)).isZero();
     }
 
     @Test

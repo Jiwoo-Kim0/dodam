@@ -93,6 +93,21 @@ public class FinanceMemberService {
         }
     }
 
+    /** seed 사용자 이메일 도메인. RFC 2606 예약 TLD라 금융망 회원 ID 형식 검증에서 거절될 수 있다. */
+    static final String SEED_EMAIL_DOMAIN = "@dodam.invalid";
+    static final String SEED_MEMBER_DOMAIN = "@dodam-seed.com";
+
+    /**
+     * 금융망 회원 ID로 쓸 이메일. seed 사용자(@dodam.invalid)는 로컬파트를 유지한 고정 대체 도메인을 쓴다(S15P21D105-705).
+     * 항상 같은 값이 나오므로 재연결 시 E4002 → 회원 조회로 같은 userKey를 회수한다. 그 밖의 사용자는 로그인 이메일 그대로다.
+     */
+    public static String memberEmailFor(String email) {
+        if (email != null && email.endsWith(SEED_EMAIL_DOMAIN)) {
+            return email.substring(0, email.length() - SEED_EMAIL_DOMAIN.length()) + SEED_MEMBER_DOMAIN;
+        }
+        return email;
+    }
+
     /**
      * userKey 유무에 따라 CONNECTED 또는 FAILED 연결 행을 만든다 (저장은 호출자 트랜잭션에서).
      */
