@@ -3,7 +3,7 @@ import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import { Alert, Pressable, Text, View } from 'react-native';
 
-import { assetApi, goalApi } from '@/api';
+import { assetApi, goalApi, safeboxApi } from '@/api';
 import { AppHeader } from '@/components/appHeader/AppHeader';
 import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import { ScreenState } from '@/components/screenState/ScreenState';
@@ -11,7 +11,6 @@ import { routes } from '@/constants/routes';
 import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 import { colors } from '@/styles';
 import { formatCurrency } from '@/utils/currency';
-import type { GoalAccountApiResponse } from '@/types/goalApi.types';
 import {
   getAccountTransferErrorMessage,
   isFinanceNotConnected,
@@ -22,6 +21,7 @@ import { GoalAccountManagementBottomSheet } from './components/GoalAccountManage
 import { GoalInsightCard } from './components/GoalInsightCard';
 import { GoalLinkedAccounts } from './components/GoalLinkedAccounts';
 import { GoalProgressChart } from './components/GoalProgressChart';
+import { SafeboxCard } from './components/SafeboxCard';
 import { GoalSpendingCategories } from './components/GoalSpendingCategories';
 import {
   GoalTransferBottomSheet,
@@ -34,6 +34,13 @@ import { styles } from './GoalDetailScreen.styles';
 interface GoalDetailScreenProps {
   goalId: string;
 }
+
+type TransferAccount = {
+  accountId: number;
+  accountName: string;
+  accountNoMasked: string;
+  balance: number;
+};
 
 export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
   const router = useRouter();
@@ -50,7 +57,8 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
   /** 열려 있는 이체 시트. null이면 닫힌 상태다. */
   const [transfer, setTransfer] = useState<{
     direction: GoalTransferDirection;
-    goalAccount: GoalAccountApiResponse;
+    goalAccount: TransferAccount;
+    withdrawalAvailable?: number;
   } | null>(null);
   const [isTransferring, setIsTransferring] = useState(false);
   const [transferError, setTransferError] = useState<string | null>(null);
@@ -59,6 +67,7 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
    * 요청 시작 시점에 동기적으로 잠근다(docs/goal-transfer-plan.md §3-4).
    */
   const isTransferringRef = useRef(false);
+  const isAllocatingRef = useRef(false);
   const parsedGoalId = Number(goalId);
   const hasValidGoalId = Number.isSafeInteger(parsedGoalId) && parsedGoalId > 0;
 
@@ -78,7 +87,7 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
    * 응답에는 두 계좌 잔액만 오고 목표 진행률은 없어 목표 상세를 다시 조회한다(§3-5).
    */
   const runTransfer = async (
-    goalAccount: GoalAccountApiResponse,
+    goalAccount: TransferAccount,
     direction: GoalTransferDirection,
     counterpartAccountId: number,
     amount: number,
@@ -144,6 +153,7 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
     if (transfer === null || goal === undefined) return;
 
     const { direction, goalAccount } = transfer;
+    const isSafeboxTransfer = data?.safeboxAccount?.accountId === goalAccount.accountId;
     const currentPercent = calculateProgressPercent(goal.currentAmount, goal.targetAmount);
     const nextPercent = calculateProgressPercent(
       direction === 'send' ? goal.currentAmount + amount : goal.currentAmount - amount,
@@ -156,9 +166,13 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
 ${formatCurrency(amount)}을 보낼까요?`
         : `${goalAccount.accountName}에서
 ${formatCurrency(amount)}을 되가져올까요?`,
-      direction === 'send'
-        ? undefined
-        : `${goal.title} 진행률이 ${currentPercent}% → ${nextPercent}%로 내려가요.`,
+      isSafeboxTransfer
+        ? direction === 'send'
+          ? '보낸 돈은 도담 계좌의 미배정 금액으로 들어와요. 목표에 담으면 진행률에 반영돼요.'
+          : '목표에 담긴 돈은 그대로예요. 미배정 금액만 이체해요.'
+        : direction === 'send'
+          ? undefined
+          : `${goal.title} 진행률이 ${currentPercent}% → ${nextPercent}%로 내려가요.`,
       [
         { text: '취소', style: 'cancel' },
         {
@@ -201,6 +215,17 @@ ${formatCurrency(amount)}을 되가져올까요?`,
     } finally {
       isSavingAccountsRef.current = false;
       setIsSavingAccounts(false);
+    }
+  };
+
+  const setSafeboxAmount = async (amount: number) => {
+    if (isAllocatingRef.current || !hasValidGoalId) return;
+    isAllocatingRef.current = true;
+    try {
+      await safeboxApi.setGoalAmount(parsedGoalId, amount);
+      await refetch();
+    } finally {
+      isAllocatingRef.current = false;
     }
   };
 
@@ -272,6 +297,8 @@ ${formatCurrency(amount)}을 되가져올까요?`,
   );
   const progressColor =
     goal.type === 'saving' ? colors.primary.yellow : colors.primary.orange;
+  const safeboxAccount = data.safeboxAccount;
+  const safeboxGoal = data.safeboxGoal;
 
   return (
     <SafeAreaLayout edges={['top', 'left', 'right']} style={styles.screen}>
@@ -345,7 +372,32 @@ ${formatCurrency(amount)}을 되가져올까요?`,
 
         <GoalInsightCard goal={goal} />
         {goal.history.length > 0 ? <GoalProgressChart goal={goal} /> : null}
-        {goal.type === 'saving' ? (
+        {goal.type === 'saving' && safeboxAccount && safeboxGoal ? (
+          <SafeboxCard
+            account={safeboxAccount}
+            allocation={safeboxGoal}
+            otherAccounts={data.linkedAccounts.filter(
+              (item) => item.accountId !== safeboxAccount.accountId,
+            )}
+            onSetAmount={setSafeboxAmount}
+            onTransfer={(direction) => {
+              const account = data.availableAccounts.find(
+                (item) => item.accountId === safeboxAccount.accountId,
+              );
+              setTransferError(null);
+              setTransfer({
+                direction,
+                goalAccount: {
+                  accountId: safeboxAccount.accountId,
+                  accountName: account?.accountName ?? '도담 계좌',
+                  accountNoMasked: safeboxAccount.accountNoMasked,
+                  balance: safeboxAccount.balance,
+                },
+                withdrawalAvailable: safeboxAccount.availableAmount,
+              });
+            }}
+          />
+        ) : goal.type === 'saving' ? (
           <GoalLinkedAccounts
             accounts={data.linkedAccounts}
             onManage={() => {
@@ -423,6 +475,8 @@ ${formatCurrency(amount)}을 되가져올까요?`,
           direction={transfer.direction}
           errorMessage={transferError}
           goalAccount={transfer.goalAccount}
+          isSafebox={transfer.goalAccount.accountId === safeboxAccount?.accountId}
+          withdrawalAvailable={transfer.withdrawalAvailable}
           isSubmitting={isTransferring}
           onClose={() => {
             if (isTransferring) return;
