@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors } from '@/styles';
 import type { AccountApiResponse } from '@/types/assetApi.types';
 import { formatCurrency, formatNumber } from '@/utils/currency';
+import { getAccountLogo, getInstitutionLogo, SAFEBOX_INSTITUTION_ID } from '@/utils/institution';
 
 import { styles } from './GoalTransferBottomSheet.styles';
 
@@ -100,6 +101,13 @@ export function GoalTransferBottomSheet({
             {/* 고정된 쪽. 목표당 목표 통장은 하나라 고를 일이 없다. */}
             <Text style={styles.fieldLabel}>{isSend ? '받는 곳' : '보낼 통장'}</Text>
             <View style={styles.fixedAccount}>
+              {isSafebox ? (
+                <Image
+                  accessibilityIgnoresInvertColors
+                  source={getInstitutionLogo(SAFEBOX_INSTITUTION_ID)}
+                  style={styles.logo}
+                />
+              ) : null}
               <View style={styles.accountText}>
                 <Text numberOfLines={1} style={styles.accountName}>
                   {goalAccount.accountName}
@@ -133,6 +141,11 @@ export function GoalTransferBottomSheet({
                         isSelected && styles.accountOptionSelected,
                         pressed && styles.pressed,
                       ]}>
+                      <Image
+                        accessibilityIgnoresInvertColors
+                        source={getAccountLogo(account.bankCode, account.bankName)}
+                        style={styles.logo}
+                      />
                       <View style={styles.accountText}>
                         <Text numberOfLines={1} style={styles.accountName}>
                           {account.accountName}
