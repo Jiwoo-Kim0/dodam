@@ -31,7 +31,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 /** SSAFY 금융망 계좌 한 개를 도담 전용 계좌로 개설하고 사용자에 묶는다. */
 @Service
 public class SafeboxAccountService {
-    private static final String DEFAULT_ACCOUNT_NAME = "도담 전용 계좌";
+    static final String ACCOUNT_NAME = "도담 계좌";
 
     private final SafeboxAccountRepository refs;
     private final AccountRepository accounts;
@@ -147,7 +147,8 @@ public class SafeboxAccountService {
         }
         String bankCode = firstNonBlank(created.bankCode(), product.bankCode());
         String bankName = firstNonBlank(product.bankName(), bankCode);
-        String accountName = firstNonBlank(product.accountTypeName(), DEFAULT_ACCOUNT_NAME);
+        // 상품 유형명(예: 수시입출금)은 다른 입출금 계좌와 구분되지 않아 화면 이름을 고정한다. 동기화도 이 이름을 유지한다.
+        String accountName = ACCOUNT_NAME;
         if (bankCode == null) {
             throw new BusinessException(ErrorCode.FINANCE_API_UNAVAILABLE);
         }

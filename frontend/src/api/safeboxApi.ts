@@ -1,3 +1,4 @@
+import { isApiError } from './ApiError';
 import { apiClient } from './apiClient';
 
 export interface SafeboxAccountResponse {
@@ -20,6 +21,15 @@ export interface SafeboxAllocationResponse {
 
 export const safeboxApi = {
   getAccount: () => apiClient.get<SafeboxAccountResponse>('/v1/safebox/account'),
+  /** 전용 계좌가 아직 없으면(404) null. */
+  getAccountOrNull: async () => {
+    try {
+      return await apiClient.get<SafeboxAccountResponse>('/v1/safebox/account');
+    } catch (error) {
+      if (isApiError(error) && error.status === 404) return null;
+      throw error;
+    }
+  },
   /** 전용 계좌가 있으면 그 계좌를, 없으면 새로 열어 돌려준다(가입 때 개설이 빠진 사용자 보충). */
   openAccount: () => apiClient.post<SafeboxAccountResponse>('/v1/safebox/account'),
   getGoal: (goalId: number) =>

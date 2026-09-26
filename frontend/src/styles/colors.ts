@@ -29,6 +29,7 @@ export const colors = {
       strong: '#5E7F18',
       medium: '#A9C46B',
       light: '#DCE9B9',
+      debt: '#FA9500',
     },
   },
   report: {
