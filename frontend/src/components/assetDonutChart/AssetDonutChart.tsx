@@ -22,6 +22,7 @@ const chartColors: Record<AssetCompositionTone, string> = {
   strong: colors.home.assetChart.strong,
   medium: colors.home.assetChart.medium,
   light: colors.home.assetChart.light,
+  debt: colors.home.assetChart.debt,
 };
 
 function createChartSegments(

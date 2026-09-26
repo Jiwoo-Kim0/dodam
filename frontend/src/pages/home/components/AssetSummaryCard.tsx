@@ -19,6 +19,7 @@ const compositionColors = {
   strong: colors.home.assetChart.strong,
   medium: colors.home.assetChart.medium,
   light: colors.home.assetChart.light,
+  debt: colors.home.assetChart.debt,
 } as const;
 
 export function AssetSummaryCard({
