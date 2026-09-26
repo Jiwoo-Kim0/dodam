@@ -90,8 +90,8 @@ export function SafeboxCard({
         <View style={styles.otherAccounts}>
           <View style={styles.row}>
             <Text style={styles.label}>함께 연결된 예·적금</Text>
-            <Pressable accessibilityRole="button" hitSlop={8} onPress={onManageDeposits}>
-              <Text style={styles.linkText}>{otherAccounts.length > 0 ? '관리' : '연결하기'}</Text>
+            <Pressable accessibilityRole="button" hitSlop={8} onPress={onManageDeposits} style={styles.linkButton}>
+              <Text style={styles.linkText}>{otherAccounts.length > 0 ? '관리' : '+ 연결하기'}</Text>
             </Pressable>
           </View>
           {otherAccounts.map((item) => (
@@ -150,7 +150,8 @@ const styles = StyleSheet.create({
   value: { ...typography.body2, fontFamily: fontFamily.semiBold, color: colors.textPrimary },
   warning: { ...typography.caption, color: colors.primary.orange },
   otherAccounts: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider, paddingTop: spacing[3], gap: spacing[2] },
-  linkText: { ...typography.caption, color: colors.primary.green, fontFamily: fontFamily.semiBold },
+  linkButton: { paddingHorizontal: spacing[3], paddingVertical: spacing[2], backgroundColor: colors.primary.lightGreen, borderRadius: radius.default },
+  linkText: { ...typography.body2, color: colors.primary.green, fontFamily: fontFamily.semiBold },
   actions: { flexDirection: 'row', gap: spacing[1], marginTop: spacing[2] },
   action: { flex: 1, paddingVertical: spacing[3], alignItems: 'center', backgroundColor: colors.primary.lightGreen, borderRadius: radius.default },
   actionText: { ...typography.caption, color: colors.primary.green, fontFamily: fontFamily.semiBold },
