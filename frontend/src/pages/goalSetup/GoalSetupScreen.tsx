@@ -2,13 +2,11 @@ import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, View } from 'react-native';
 
-import { assetApi, goalApi, isApiError } from '@/api';
+import { goalApi, safeboxApi } from '@/api';
 import { BottomActionButton } from '@/components/bottomActionButton/BottomActionButton';
-import { GoalAccountSelectionList } from '@/components/goalAccountSelectionList/GoalAccountSelectionList';
 import { ScreenState } from '@/components/screenState/ScreenState';
 import { routes } from '@/constants/routes';
 import { AuthScreenLayout } from '@/layout/authScreenLayout/AuthScreenLayout';
-import type { AccountApiResponse } from '@/types/assetApi.types';
 
 import {
   GoalTypeStep,
@@ -29,12 +27,9 @@ type GoalSetupStep =
   | 'savingPurpose'
   | 'savingAmount'
   | 'savingDeadline'
-  | 'savingAccount'
   | 'savingComplete'
   | 'reductionAmount'
   | 'reductionComplete';
-
-const MAX_LINKED_ACCOUNTS = 50;
 
 function isValidAmount(value: number) {
   return Number.isSafeInteger(value) && value > 0;
@@ -57,22 +52,6 @@ interface GoalSetupScreenProps {
   editGoalId?: string;
 }
 
-async function findLinkedGoal(accountIds: readonly number[]) {
-  const selectedIds = new Set(accountIds);
-  const response = await goalApi.getGoals({ size: 100 });
-  const savingGoals = response.content.filter((goal) => goal.type === 'SAVING');
-  const goalsWithAccounts = await Promise.all(
-    savingGoals.map(async (goal) => ({
-      goal,
-      accounts: (await goalApi.getGoalAccounts(goal.goalId, { size: 100 })).accounts,
-    })),
-  );
-
-  return goalsWithAccounts.find(({ accounts }) =>
-    accounts.some(({ accountId }) => selectedIds.has(accountId)),
-  )?.goal;
-}
-
 export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
   const router = useRouter();
   const isEditing = editGoalId !== undefined;
@@ -81,47 +60,18 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
   const [goalName, setGoalName] = useState('');
   const [savingAmount, setSavingAmount] = useState(0);
   const [savingDeadline, setSavingDeadline] = useState<Date | null>(null);
-  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   const [reductionAmount, setReductionAmount] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [existingSpendingGoalId, setExistingSpendingGoalId] = useState<number | null>(null);
   const [createdSavingGoalId, setCreatedSavingGoalId] = useState<number | null>(null);
   const [isLoadingGoal, setIsLoadingGoal] = useState(isEditing);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [availableAccounts, setAvailableAccounts] = useState<AccountApiResponse[]>([]);
-  const [isLoadingAccounts, setIsLoadingAccounts] = useState(true);
-  const [accountLoadError, setAccountLoadError] = useState<string | null>(null);
   const submissionInFlightRef = useRef(false);
-  const accountRequestIdRef = useRef(0);
   const goalRequestIdRef = useRef(0);
   const parsedEditGoalId = Number(editGoalId);
   const hasValidEditGoalId = !isEditing || (
     Number.isSafeInteger(parsedEditGoalId) && parsedEditGoalId > 0
   );
-
-  const loadAccounts = useCallback(async () => {
-    const requestId = ++accountRequestIdRef.current;
-    setIsLoadingAccounts(true);
-    setAccountLoadError(null);
-
-    try {
-      const accounts = await assetApi.getAccounts();
-      if (requestId !== accountRequestIdRef.current) return;
-
-      setAvailableAccounts(
-        accounts.filter(
-          ({ accountType, status }) =>
-            accountType !== 'MINUS' && status !== 'CLOSED',
-        ),
-      );
-    } catch {
-      if (requestId !== accountRequestIdRef.current) return;
-      setAvailableAccounts([]);
-      setAccountLoadError('계좌를 불러오지 못했어요. 네트워크 상태를 확인해주세요.');
-    } finally {
-      if (requestId === accountRequestIdRef.current) setIsLoadingAccounts(false);
-    }
-  }, []);
 
   const loadGoal = useCallback(async () => {
     if (!isEditing) return;
@@ -164,13 +114,6 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
   }, [hasValidEditGoalId, isEditing, parsedEditGoalId]);
 
   useEffect(() => {
-    void Promise.resolve().then(loadAccounts);
-    return () => {
-      accountRequestIdRef.current += 1;
-    };
-  }, [loadAccounts]);
-
-  useEffect(() => {
     void Promise.resolve().then(loadGoal);
     return () => {
       goalRequestIdRef.current += 1;
@@ -186,25 +129,6 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
     }
 
     setStep('reductionAmount');
-  };
-
-  const handleAccountToggle = (accountId: string) => {
-    if (submissionInFlightRef.current) return;
-
-    if (selectedAccountIds.includes(accountId)) {
-      setSelectedAccountIds((currentIds) =>
-        currentIds.filter((id) => id !== accountId),
-      );
-      return;
-    }
-    if (selectedAccountIds.length >= MAX_LINKED_ACCOUNTS) {
-      Alert.alert(
-        '계좌를 더 선택할 수 없어요',
-        `계좌는 최대 ${MAX_LINKED_ACCOUNTS}개까지 연결할 수 있어요.`,
-      );
-      return;
-    }
-    setSelectedAccountIds((currentIds) => [...currentIds, accountId]);
   };
 
   const createSpendingGoal = async () => {
@@ -260,24 +184,16 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
       submissionInFlightRef.current ||
       !isFutureDate(savingDeadline) ||
       goalName.trim().length === 0 ||
-      !isValidAmount(savingAmount) ||
-      selectedAccountIds.length === 0 ||
-      selectedAccountIds.length > MAX_LINKED_ACCOUNTS
+      !isValidAmount(savingAmount)
     ) {
       if (!submissionInFlightRef.current) {
         Alert.alert(
           '목표 정보를 확인해주세요',
           !isFutureDate(savingDeadline)
             ? '목표 날짜는 내일 이후로 선택해주세요.'
-            : '목표 이름, 금액과 연결 계좌를 다시 확인해주세요.',
+            : '목표 이름과 금액을 다시 확인해주세요.',
         );
       }
-      return;
-    }
-
-    const accountIds = selectedAccountIds.map(Number);
-    if (accountIds.some((accountId) => !Number.isSafeInteger(accountId) || accountId <= 0)) {
-      Alert.alert('목표를 만들지 못했어요', '계좌 정보를 다시 확인해주세요.');
       return;
     }
 
@@ -288,6 +204,8 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
     submissionInFlightRef.current = true;
     setIsSubmitting(true);
     try {
+      // 전용 계좌는 가입 때 열지만, 금융망 장애로 빠졌으면 여기서 보충한다. 목표 생성으로 잔액을 자동 배정하지 않는다.
+      await safeboxApi.openAccount();
       if (goalId === null) {
         const createdGoal = await goalApi.createGoal({
           name: goalName.trim(),
@@ -306,7 +224,7 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
       }
 
       isLinkingAccounts = true;
-      await goalApi.replaceGoalAccounts(goalId, { accountIds });
+      await safeboxApi.setGoalAmount(goalId, 0);
       setStep('savingComplete');
     } catch (error) {
       const message =
@@ -322,40 +240,9 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
         }
       }
 
-      if (
-        isLinkingAccounts &&
-        isApiError(error) &&
-        error.code === 'ACCOUNT_ALREADY_LINKED_TO_GOAL'
-      ) {
-        let linkedGoal = null;
-        try {
-          linkedGoal = await findLinkedGoal(accountIds);
-        } catch {
-          // 연결된 목표 조회 실패는 원래 계좌 충돌 안내를 막지 않는다.
-        }
-
-        Alert.alert(
-          '이미 다른 목표에 연결된 계좌예요',
-          linkedGoal
-            ? `이 계좌는 '${linkedGoal.name}' 목표에서 사용하고 있어요.`
-            : message,
-          [
-            { text: '다른 계좌 선택', style: 'cancel' },
-            ...(linkedGoal
-              ? [{
-                  text: '연결된 목표 보기',
-                  onPress: () =>
-                    router.replace(routes.goalDetail(String(linkedGoal.goalId))),
-                }]
-              : []),
-          ],
-        );
-        return;
-      }
-
       Alert.alert(
         isLinkingAccounts
-          ? '계좌를 연결하지 못했어요'
+          ? '세이프박스를 준비하지 못했어요'
           : '목표를 만들지 못했어요',
         rollbackFailed
           ? `${message}\n목표만 생성되었어요. 목표 목록에서 삭제해주세요.`
@@ -426,7 +313,7 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
       <AuthScreenLayout
         title="어떤 목표를 만들까요?"
         description="목표 이름을 입력해주세요."
-        headerAccessory={<GoalStepProgress currentStep={1} totalSteps={4} />}
+        headerAccessory={<GoalStepProgress currentStep={1} totalSteps={3} />}
         showBackButton
         onBackPress={() =>
           isEditing ? router.back() : setStep('goalType')
@@ -451,7 +338,7 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
       <AuthScreenLayout
         title="얼마를 모아볼까요?"
         description="목표 금액을 입력해주세요."
-        headerAccessory={<GoalStepProgress currentStep={2} totalSteps={4} />}
+        headerAccessory={<GoalStepProgress currentStep={2} totalSteps={3} />}
         showBackButton
         onBackPress={() => setStep('savingPurpose')}
         footer={
@@ -474,15 +361,15 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
       <AuthScreenLayout
         title="언제까지 모을까요?"
         description="목표 달성 날짜를 선택해주세요."
-        headerAccessory={<GoalStepProgress currentStep={3} totalSteps={4} />}
+        headerAccessory={<GoalStepProgress currentStep={3} totalSteps={3} />}
         showBackButton
         onBackPress={() => setStep('savingAmount')}
         footer={
           <BottomActionButton
-            label={isSubmitting ? '저장 중...' : isEditing ? '수정 완료' : '다음'}
+            label={isSubmitting ? '저장 중...' : isEditing ? '수정 완료' : '목표 만들기'}
             disabled={!isFutureDate(savingDeadline) || isSubmitting}
             onPress={() =>
-              isEditing ? void updateSavingGoal() : setStep('savingAccount')
+              isEditing ? void updateSavingGoal() : void createSavingGoal()
             }
           />
         }>
@@ -490,49 +377,6 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
           value={savingDeadline}
           onChange={setSavingDeadline}
         />
-      </AuthScreenLayout>
-    );
-  }
-
-  if (step === 'savingAccount') {
-    const canSelectAccount = !isLoadingAccounts && !accountLoadError && availableAccounts.length > 0;
-
-    return (
-      <AuthScreenLayout
-        title="어디에 모을까요?"
-        description="목표에 사용할 계좌를 선택해주세요."
-        headerAccessory={<GoalStepProgress currentStep={4} totalSteps={4} />}
-        showBackButton
-        onBackPress={() => setStep('savingDeadline')}
-        footer={canSelectAccount ? (
-          <BottomActionButton
-            label={isSubmitting ? '저장 중...' : '선택 완료'}
-            disabled={selectedAccountIds.length === 0 || isSubmitting}
-            onPress={() => void createSavingGoal()}
-          />
-        ) : undefined}>
-        {isLoadingAccounts ? (
-          <ScreenState description="연결할 계좌를 불러오고 있어요" isLoading />
-        ) : accountLoadError ? (
-          <ScreenState
-            description={accountLoadError}
-            onRetry={() => void loadAccounts()}
-            title="계좌를 불러오지 못했어요."
-          />
-        ) : availableAccounts.length === 0 ? (
-          <ScreenState
-            description="입출금 또는 예·적금 계좌를 연결한 뒤 다시 시도해주세요."
-            onRetry={() => void loadAccounts()}
-            title="선택할 수 있는 계좌가 없어요."
-          />
-        ) : (
-          <GoalAccountSelectionList
-            accounts={availableAccounts}
-            disabled={isSubmitting}
-            selectedAccountIds={selectedAccountIds}
-            onToggle={handleAccountToggle}
-          />
-        )}
       </AuthScreenLayout>
     );
   }

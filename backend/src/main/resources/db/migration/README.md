@@ -36,6 +36,7 @@
 | V42 | `user.credit_score`와 출처·산식 버전·산정 시각 추가 — SSAFY A~E 등급과 병행 | S15P21D105-680 |
 | V43 | `user.credit_score` SMALLINT → INT (엔티티 `Integer`와 정합, 배포 기동 실패 해소) | S15P21D105-475 |
 | V44 | `monthly_report.metrics_summary` 추가 (주요 지표·금융 생활 패턴 JSON) | S15P21D105-697 |
+| V45 | 사용자당 전용 계좌(`safebox_account`), 개설 시도(`safebox_open_attempt`), 목표별 이동 원장(`safebox_movement`) | S15P21D105-705 |
 
 ## 버전 번호 할당
 
@@ -46,7 +47,7 @@
 | V1~V9 | BE-A (Auth/User, Account, Transaction/Spending, Goal 등) — V9로 소진 |
 | V10~V17 | BE-B (금융상품, Card, Installment, Loan, 예적금, Cashflow, Diagnosis) — V17까지 사용 |
 | V18~V29 | **BE-B·Infra 예비 구간** (Recommendation, Simulation, ProductSync, Dashboard, Improvement, Report 등). 2026-09-13 V18(recommendation, S15P21D105-547 브랜치)·V19(simulation) 사용, 다음은 V20 |
-| V30~V49 | **BE-A 2차 구간** (Subscription, Notification, Preference 등). V30~V41 사용. 2026-09-22 V42(user 예상 신용점수, 680)·V43(credit_score SMALLINT→INT 정합, 475)·V44(monthly_report.metrics_summary, 697) 사용. 다음은 **V45** |
+| V30~V49 | **BE-A 2차 구간** (Subscription, Notification, Preference 등). V30~V45 사용. 다음은 **V46** |
 
 2026-09-11 BE-A는 팀원 부재 중에 Subscription 마이그레이션이 필요해 V18을 건너뛰고 **V30**을 잡았다. 돌아온 팀원이 "마지막 다음 번호" V18을
 자연스럽게 잡아도 충돌하지 않게 하기 위한 것이다. `out-of-order: true`라 V17 → V30 다음에 V18이 들어와도 적용에 문제가 없다.

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { assetApi, goalApi, ledgerApi } from '@/api';
+import { assetApi, goalApi, isApiError, ledgerApi, safeboxApi } from '@/api';
+import type { SafeboxAccountResponse, SafeboxAllocationResponse } from '@/api/safeboxApi';
 import type { AccountApiResponse } from '@/types/assetApi.types';
 import type { DailySpendingApiResponse } from '@/types/ledgerApi.types';
 import type { GoalDetail, GoalHistoryPoint } from '@/types/goal.types';
@@ -14,6 +15,17 @@ interface GoalDetailData {
   goal: GoalDetail;
   linkedAccounts: GoalAccountApiResponse[];
   availableAccounts: AccountApiResponse[];
+  safeboxAccount: SafeboxAccountResponse | null;
+  safeboxGoal: SafeboxAllocationResponse | null;
+}
+
+async function loadSafeboxAccount() {
+  try {
+    return await safeboxApi.getAccount();
+  } catch (error) {
+    if (isApiError(error) && error.status === 404) return null;
+    throw error;
+  }
 }
 
 function formatDateLabel(date: string) {
@@ -142,6 +154,7 @@ export function useGoalDetail(goalIdValue: string) {
           accounts,
           availableAccounts,
           history,
+          safeboxAccount,
         ] = await Promise.all([
           goalApi.getProgress(goalId),
           goalApi.getRequiredSaving(goalId),
@@ -150,7 +163,15 @@ export function useGoalDetail(goalIdValue: string) {
           goalApi.getGoalAccounts(goalId, { size: 100 }),
           assetApi.getAccounts(),
           loadGoalHistory(goalId),
+          loadSafeboxAccount(),
         ]);
+        const hasLegacyDemandAccount = accounts.accounts.some((account) =>
+          account.accountType === 'DEMAND_DEPOSIT' &&
+          account.accountId !== safeboxAccount?.accountId,
+        );
+        const safeboxGoal = safeboxAccount && !hasLegacyDemandAccount
+          ? await safeboxApi.getGoal(goalId)
+          : null;
         if (requestId !== requestIdRef.current) return;
         const monthlyShortfall = Math.max(requiredSaving.monthlyShortfall, 0);
 
@@ -182,6 +203,8 @@ export function useGoalDetail(goalIdValue: string) {
             ({ accountType, status }) =>
               accountType !== 'MINUS' && status !== 'CLOSED',
           ),
+          safeboxAccount,
+          safeboxGoal,
         });
         return;
       }
@@ -230,6 +253,8 @@ export function useGoalDetail(goalIdValue: string) {
         },
         linkedAccounts: [],
         availableAccounts: [],
+        safeboxAccount: null,
+        safeboxGoal: null,
       });
     } catch (loadError) {
       if (requestId !== requestIdRef.current) return;
