@@ -222,7 +222,7 @@ scan_logs() {
       is_header() {
         delete cols; active = 0
         for (i = 1; i <= NF; i++)
-          if ($i ~ /(violation|mismatch|orphan|conflict|leak|duplicate|missing|without)/) { cols[i] = $i; active = 1 }
+          if ($i ~ /(violation|mismatch|orphan|conflict|leak|duplicate|missing|without|invalid|unexpected)/) { cols[i] = $i; active = 1 }
         next
       }
       active {
