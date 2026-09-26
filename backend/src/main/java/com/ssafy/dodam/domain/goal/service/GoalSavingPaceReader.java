@@ -7,6 +7,7 @@ import com.ssafy.dodam.domain.goal.repository.SafeboxAccountRepository;
 import com.ssafy.dodam.domain.goal.repository.SafeboxMovementRepository;
 import java.math.BigInteger;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -31,6 +32,8 @@ import org.springframework.stereotype.Component;
  *       포함하지 않는다. 연결된 입출금 계좌에서 연결된 예·적금으로 이체하면 입출금 출금과 PAID 납입이 상쇄되므로 같은 저축을
  *       중복 계산하지 않는다. 음수면 예·적금 납입을 상쇄한다.</li>
  * </ul>
+ * 세이프박스(도담 계좌에 담은 금액)는 담기·꺼내기 기록({@code safebox_movement})의 순증감으로 잰다. 아래
+ * {@link #safeboxPace} 참고.
  * 합이 음수면 0(현재 속도로는 달성 불가). 창을 완료 월로만 잡는 이유는 급여일 전의 이번 달을 넣으면 수입 없이 지출만 잡혀
  * 속도가 매달 초에 떨어졌다 올라오기 때문이다.
  */
@@ -83,9 +86,7 @@ public class GoalSavingPaceReader {
             }
         }
         if (allocation.accounts().stream().anyMatch(item -> item.account().getId().equals(dedicatedId))) {
-            // 도담 계좌 입금은 목표별 저축이 아니다. 실제로 담은 금액의 완료 월 순증감만 이 목표에 귀속한다.
-            pace += movements.sumDelta(userId, allocation.goalId(), from.atStartOfDay(),
-                    to.plusDays(1).atStartOfDay()) / WINDOW_MONTHS;
+            pace += safeboxPace(userId, allocation.goalId(), first, last, today);
         }
         if (!demandDeposits.isEmpty()) {
             int months = monthsCovered(first, last, reader.readFirstTransactionDate(userId, demandDeposits).orElse(null));
@@ -106,6 +107,33 @@ public class GoalSavingPaceReader {
             }
         }
         return Math.max(0L, pace);
+    }
+
+    /**
+     * 도담 계좌 안에서 이 목표에 담은 금액의 월 순증감(705). 도담 계좌 입금 자체는 어느 목표의 저축인지 알 수 없어 세지 않는다.
+     *
+     * <p>담기 기록은 사용자가 직접 만들므로 입출금 계좌처럼 급여일 전 이번 달이 속도를 끌어내릴 이유가 없다. 그래서
+     * <ul>
+     *   <li>첫 담기가 창 안이나 그 전이면 창의 순증감 / 첫 담기부터 덮인 완료 월 수. 예전처럼 늘 3으로 나누면 지난달 만든
+     *       목표의 속도가 3분의 1로 깎였다.</li>
+     *   <li>첫 담기가 이번 달이면(이번 달 만든 목표) 완료 월이 없어 늘 0이 되고 예상 달성일이 "계산 불가"로 남았다.
+     *       이번 달 1일부터 기준일까지의 순증감을 한 달 치 속도로 본다. 다음 달이 되면 완료 월 기준으로 넘어간다.</li>
+     * </ul>
+     */
+    private long safeboxPace(Long userId, Long goalId, YearMonth first, YearMonth last, LocalDate today) {
+        LocalDate firstMovement = movements.findFirstOccurredAt(userId, goalId)
+                .map(LocalDateTime::toLocalDate)
+                .orElse(null);
+        if (firstMovement == null) {
+            return 0L;
+        }
+        int months = monthsCovered(first, last, firstMovement);
+        if (months == 0) {
+            return movements.sumDelta(userId, goalId, YearMonth.from(today).atDay(1).atStartOfDay(),
+                    today.plusDays(1).atStartOfDay());
+        }
+        return movements.sumDelta(userId, goalId, first.atDay(1).atStartOfDay(),
+                last.atEndOfMonth().plusDays(1).atStartOfDay()) / months;
     }
 
     /**

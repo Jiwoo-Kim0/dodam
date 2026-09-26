@@ -860,7 +860,9 @@ class AccountApiIntegrationTest {
         mockMvc.perform(get("/api/v1/goals/" + goalId + "/forecast").header(HttpHeaders.AUTHORIZATION, bearer))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.currentAmount").value(100_000))
-                .andExpect(jsonPath("$.data.averageMonthlySaving").value(0));
+                // 711: 이번 달 만든 목표도 이번 달에 담은 금액을 한 달 치 속도로 보고 예상 달성일을 낸다
+                .andExpect(jsonPath("$.data.averageMonthlySaving").value(100_000))
+                .andExpect(jsonPath("$.data.expectedAchievementDate").isNotEmpty());
     }
 
     @Test

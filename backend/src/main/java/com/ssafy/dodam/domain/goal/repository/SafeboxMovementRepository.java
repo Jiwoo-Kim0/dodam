@@ -2,6 +2,7 @@ package com.ssafy.dodam.domain.goal.repository;
 
 import com.ssafy.dodam.domain.goal.entity.SafeboxMovement;
 import java.time.LocalDateTime;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -11,4 +12,7 @@ public interface SafeboxMovementRepository extends JpaRepository<SafeboxMovement
             + "and m.occurredAt >= :from and m.occurredAt < :until")
     long sumDelta(@Param("userId") Long userId, @Param("goalId") Long goalId,
             @Param("from") LocalDateTime from, @Param("until") LocalDateTime until);
+
+    @Query("select min(m.occurredAt) from SafeboxMovement m where m.userId = :userId and m.goalId = :goalId")
+    Optional<LocalDateTime> findFirstOccurredAt(@Param("userId") Long userId, @Param("goalId") Long goalId);
 }
