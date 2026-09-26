@@ -15,7 +15,10 @@ import { SafeAreaLayout } from '@/layout/safeAreaLayout/SafeAreaLayout';
 
 import { AssetOverviewCard } from './components/AssetOverviewCard';
 import { AssetAnalysisCard } from './components/AssetAnalysisCard';
-import { AccountTransferBottomSheet } from './components/AccountTransferBottomSheet';
+import {
+  AccountTransferBottomSheet,
+  type AccountTransferDirection,
+} from './components/AccountTransferBottomSheet';
 import { AssetSection } from './components/AssetSection';
 import { useAssetData } from './hooks/useAssetData';
 import { styles } from './AssetsScreen.styles';
@@ -36,7 +39,9 @@ export function AssetsScreen() {
     sections,
     transferAccounts,
   } = useAssetData();
-  const [isTransferOpen, setIsTransferOpen] = useState(false);
+  /** 채우기·보내기를 펼친 목록 항목(`account-{id}`). 한 번에 하나만 펼친다. */
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
+  const [transfer, setTransfer] = useState<{ account: AccountApiResponse; direction: AccountTransferDirection } | null>(null);
   const [isTransferring, setIsTransferring] = useState(false);
   const [transferError, setTransferError] = useState<string | null>(null);
   /** 확인 창을 연속으로 눌러도 한 번만 보내도록 요청 시작 시점에 동기적으로 잠근다. */
@@ -56,12 +61,12 @@ export function AssetsScreen() {
         depositAccountId: deposit.accountId,
         amount,
       });
-      setIsTransferOpen(false);
+      setTransfer(null);
       await refetch();
-      Alert.alert('보냈어요', `${accountLabel(deposit)}(으)로 ${formatCurrency(amount)}을 옮겼어요.`);
+      Alert.alert('옮겼어요', `${accountLabel(deposit)}(으)로 ${formatCurrency(amount)}을 옮겼어요.`);
     } catch (failure) {
       if (isFinanceNotConnected(failure)) {
-        setIsTransferOpen(false);
+        setTransfer(null);
         Alert.alert('금융 정보 연결이 필요해요', '연결을 먼저 진행해주세요.', [
           { text: '나중에', style: 'cancel' },
           { text: '연결하기', onPress: () => router.push(routes.financeConnection) },
@@ -81,9 +86,25 @@ export function AssetsScreen() {
       `${accountLabel(withdrawal)} → ${accountLabel(deposit)}`,
       [
         { text: '취소', style: 'cancel' },
-        { text: '보내기', onPress: () => void runTransfer(withdrawal, deposit, amount) },
+        { text: '옮기기', onPress: () => void runTransfer(withdrawal, deposit, amount) },
       ],
     );
+  };
+
+  /** 입출금·도담 계좌 항목만 채우기·보내기를 붙인다. 항목 ID는 `account-{accountId}`다(assetMappers). */
+  const getItemActions = (itemId: string) => {
+    const account = transferAccounts.find(({ accountId }) => `account-${accountId}` === itemId);
+    if (!account) return undefined;
+    const open = (direction: AccountTransferDirection) => {
+      setTransferError(null);
+      setTransfer({ account, direction });
+    };
+    return {
+      expanded: expandedItemId === itemId,
+      onToggle: () => setExpandedItemId((current) => (current === itemId ? null : itemId)),
+      onFill: () => open('fill'),
+      onSend: () => open('send'),
+    };
   };
   // 탭을 다시 눌러 돌아왔을 때도 최신 자산을 보여 준다. 예전에는 앱 실행 후 한 번만 조회했다.
   useFocusEffect(useCallback(() => {
@@ -144,14 +165,8 @@ export function AssetsScreen() {
         <View style={styles.sections}>
           {sections.map((section) => (
             <AssetSection
-              action={section.id === 'checking' && transferAccounts.length >= 2
-                ? {
-                    label: '계좌 이체',
-                    onPress: () => {
-                      setTransferError(null);
-                      setIsTransferOpen(true);
-                    },
-                  }
+              getItemActions={section.id === 'checking' || section.id === 'safebox'
+                ? getItemActions
                 : undefined}
               key={section.id}
               section={section}
@@ -160,16 +175,18 @@ export function AssetsScreen() {
         </View>
       </RefreshableBouncyScrollView>
 
-      {isTransferOpen ? (
+      {transfer ? (
         <AccountTransferBottomSheet
+          account={transfer.account}
           accounts={transferAccounts}
+          direction={transfer.direction}
           errorMessage={transferError}
           isSubmitting={isTransferring}
           safebox={safeboxAccount
             ? { accountId: safeboxAccount.accountId, availableAmount: safeboxAccount.availableAmount }
             : null}
           onClose={() => {
-            if (!isTransferring) setIsTransferOpen(false);
+            if (!isTransferring) setTransfer(null);
           }}
           onSubmit={confirmTransfer}
         />

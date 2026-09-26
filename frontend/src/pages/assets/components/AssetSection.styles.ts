@@ -19,25 +19,6 @@ export const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing[3],
   },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing[2],
-  },
-  action: {
-    paddingHorizontal: spacing[2],
-    paddingVertical: spacing[1],
-    borderRadius: radius.default,
-    backgroundColor: colors.primary.lightGreen,
-  },
-  actionPressed: {
-    opacity: 0.7,
-  },
-  actionLabel: {
-    ...typography.caption,
-    fontFamily: fontFamily.semiBold,
-    color: colors.primary.green,
-  },
   title: {
     ...typography.subtitle,
     flexShrink: 0,

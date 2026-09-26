@@ -136,7 +136,9 @@ export function mapAssetSections({
       }]
     : [];
 
+  // 도담 계좌는 목표 저축의 중심이라 항상 맨 위에 둔다.
   return [
+    ...safeboxSections,
     {
       id: 'checking',
       title: '입출금',
@@ -147,7 +149,6 @@ export function mapAssetSections({
           accountType === 'DEMAND_DEPOSIT' && accountId !== safeboxRow?.accountId)
         .map(mapCheckingAccount),
     },
-    ...safeboxSections,
     {
       id: 'saving',
       title: '예·적금',
