@@ -9,6 +9,7 @@ import com.ssafy.dodam.domain.account.repository.JdbcAccountTransactionWriter.Ne
 import com.ssafy.dodam.domain.finance.entity.FinanceSyncScope;
 import com.ssafy.dodam.domain.finance.service.FinanceSyncScopeHandler;
 import com.ssafy.dodam.domain.finance.service.FinanceSyncScopeResult;
+import com.ssafy.dodam.domain.goal.repository.SafeboxAccountRepository;
 import com.ssafy.dodam.global.crypto.FieldCryptor;
 import com.ssafy.dodam.global.exception.BusinessException;
 import com.ssafy.dodam.global.exception.ErrorCode;
@@ -77,6 +78,7 @@ public class AccountSyncHandler implements FinanceSyncScopeHandler {
     private final AccountClock accountClock;
     private final TransactionTemplate transactionTemplate;
     private final UserWriteLock userWriteLock;
+    private final SafeboxAccountRepository safeboxAccounts;
 
     public AccountSyncHandler(
             SsafyFinanceClient ssafyFinanceClient,
@@ -86,7 +88,8 @@ public class AccountSyncHandler implements FinanceSyncScopeHandler {
             SensitiveNumberHasher sensitiveNumberHasher,
             AccountClock accountClock,
             TransactionTemplate transactionTemplate,
-            UserWriteLock userWriteLock
+            UserWriteLock userWriteLock,
+            SafeboxAccountRepository safeboxAccounts
     ) {
         this.ssafyFinanceClient = ssafyFinanceClient;
         this.accountRepository = accountRepository;
@@ -96,6 +99,7 @@ public class AccountSyncHandler implements FinanceSyncScopeHandler {
         this.accountClock = accountClock;
         this.transactionTemplate = transactionTemplate;
         this.userWriteLock = userWriteLock;
+        this.safeboxAccounts = safeboxAccounts;
     }
 
     @Override
@@ -266,6 +270,7 @@ public class AccountSyncHandler implements FinanceSyncScopeHandler {
         Set<String> seenHashes = new HashSet<>();
         List<FinanceAccount> transactionTargets = new ArrayList<>();
         Map<String, Account> accountsByHash = new HashMap<>(existingByHash);
+        Long safeboxAccountId = safeboxAccounts.findById(userId).map(ref -> ref.getAccountId()).orElse(null);
 
         for (FinanceAccount financeAccount : financeAccounts) {
             String hash = sensitiveNumberHasher.hash(financeAccount.accountNo());
@@ -286,7 +291,14 @@ public class AccountSyncHandler implements FinanceSyncScopeHandler {
                 accountChanges++;
                 transactionTargets.add(financeAccount);
             } else if (existing.isFromFinance()) {
-                if (existing.applyFinanceSnapshot(financeAccount.snapshot(), now)) {
+                FinanceSnapshot snapshot = financeAccount.snapshot();
+                if (existing.getId().equals(safeboxAccountId)) {
+                    // 도담 전용 계좌 이름은 금융망 상품명(예: 수시입출금)으로 덮지 않는다(705).
+                    snapshot = new FinanceSnapshot(snapshot.bankCode(), snapshot.bankName(), existing.getAccountName(),
+                            snapshot.accountType(), snapshot.balance(), snapshot.lastTransactionDate(),
+                            snapshot.currency());
+                }
+                if (existing.applyFinanceSnapshot(snapshot, now)) {
                     accountChanges++;
                 }
                 transactionTargets.add(financeAccount);

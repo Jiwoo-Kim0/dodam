@@ -374,7 +374,7 @@ class AccountApiIntegrationTest {
                         + "JOIN safebox_account s ON s.account_id = a.account_id WHERE s.user_id = ?", userId))
                 .containsEntry("BANK_CODE", "004")
                 .containsEntry("BANK_NAME", "KB국민은행")
-                .containsEntry("ACCOUNT_NAME", "입출금");
+                .containsEntry("ACCOUNT_NAME", "도담 계좌");
     }
 
     @Test
