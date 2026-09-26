@@ -57,13 +57,19 @@ function axisMaximumOf(amounts: readonly number[]) {
   return step * intervals;
 }
 
+/** 증감 금액. 0은 부호 없이 둔다 */
+function signedWon(amount: number) {
+  const sign = amount > 0 ? '+' : amount < 0 ? '-' : '';
+  return `${sign}${formatNumber(Math.abs(amount))}원`;
+}
+
 /** `2026-09` -> 연속된 월 번호. x좌표를 배열 순서가 아니라 시간으로 잡는 데 쓴다 */
 function monthOrdinal(month: string) {
   return Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7));
 }
 
 export function SpendingForecastCard({ forecast }: SpendingForecastCardProps) {
-  const { baseMonth, history, forecasts } = forecast;
+  const { baseMonth, explanation, history, forecasts } = forecast;
 
   const points = useMemo<ChartPoint[]>(() => {
     const merged = [
@@ -124,6 +130,11 @@ export function SpendingForecastCard({ forecast }: SpendingForecastCardProps) {
       </View>
     );
   }
+
+  // 근거는 예측 달을 골랐을 때만 보여 준다. 실측 달에는 분해할 모델 값이 없다.
+  const basis = selected?.predicted
+    ? forecasts.find((point) => point.month === selected.month)
+    : undefined;
 
   const axisMaximum = axisMaximumOf(points.map((point) => point.upperBound));
   const lastActual = points.filter((point) => !point.predicted).at(-1) ?? points[0];
@@ -304,6 +315,34 @@ export function SpendingForecastCard({ forecast }: SpendingForecastCardProps) {
           <Text style={styles.legendLabel}>예상 범위</Text>
         </View>
       </View>
+
+      {basis && explanation && selected ? (
+        // 서버가 평소 수준 + 추세 영향 + 계절 영향 = 예상이 원 단위로 맞도록 내려 준다. 화면에서 다시 계산하지 않는다.
+        <View style={styles.basis}>
+          <Text style={styles.basisTitle}>{`${selected.label} 예상 근거`}</Text>
+          <View style={styles.basisRow}>
+            <Text style={styles.basisLabel}>평소 한 달 소비</Text>
+            <Text style={styles.basisValue}>{`${formatNumber(explanation.level)}원`}</Text>
+          </View>
+          <View style={styles.basisRow}>
+            <Text style={styles.basisLabel}>
+              {basis.trendEffect >= 0 ? '늘어나는 추세' : '줄어드는 추세'}
+            </Text>
+            <Text style={styles.basisValue}>{signedWon(basis.trendEffect)}</Text>
+          </View>
+          {explanation.seasonalityApplied ? (
+            <View style={styles.basisRow}>
+              <Text style={styles.basisLabel}>{`${selected.label} 계절 영향`}</Text>
+              <Text style={styles.basisValue}>{signedWon(basis.seasonalEffect)}</Text>
+            </View>
+          ) : null}
+          {basis.lastYearAmount !== null ? (
+            <Text style={styles.basisCaption}>
+              {`작년 ${selected.label}에는 ${formatNumber(basis.lastYearAmount)}원을 썼어요.`}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
 
       <Text style={styles.note}>
         지금까지의 소비 흐름으로 계산한 예상치예요. 실제 소비는 달라질 수 있어요.

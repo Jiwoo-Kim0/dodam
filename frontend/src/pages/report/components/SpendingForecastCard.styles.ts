@@ -1,6 +1,6 @@
 import { StyleSheet } from 'react-native';
 
-import { colors, fontFamily, fontSize, spacing } from '@/styles';
+import { colors, fontFamily, fontSize, radius, spacing } from '@/styles';
 
 export const CHART_WIDTH = 320;
 export const CHART_HEIGHT = 190;
@@ -79,6 +79,41 @@ export const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontFamily: fontFamily.medium,
     fontSize: fontSize.detail,
+  },
+  basis: {
+    backgroundColor: colors.report.patternSurface,
+    borderRadius: radius.default,
+    gap: spacing[1],
+    marginTop: spacing[3],
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+  },
+  basisTitle: {
+    color: colors.textPrimary,
+    fontFamily: fontFamily.semiBold,
+    fontSize: fontSize.caption,
+    marginBottom: spacing[1],
+  },
+  basisRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  basisLabel: {
+    color: colors.textSecondary,
+    fontFamily: fontFamily.medium,
+    fontSize: fontSize.caption,
+  },
+  basisValue: {
+    color: colors.textPrimary,
+    fontFamily: fontFamily.semiBold,
+    fontSize: fontSize.caption,
+  },
+  basisCaption: {
+    color: colors.textTertiary,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.detail,
+    marginTop: spacing[1],
   },
   note: {
     color: colors.textTertiary,
