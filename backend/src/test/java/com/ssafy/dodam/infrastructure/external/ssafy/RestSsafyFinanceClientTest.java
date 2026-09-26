@@ -211,7 +211,7 @@ class RestSsafyFinanceClientTest {
     void depositTransferAndBalanceMethodsParseRecAndKeepAccountNumbersOutOfErrors() {
         String base = BASE_URL + "/ssafy/api/v1/edu/demandDeposit/";
         server.expect(requestTo(base + "updateDemandDepositAccountDeposit"))
-                .andExpect(jsonPath("$.transactionBalance").value(1000))
+                .andExpect(jsonPath("$.transactionBalance").value("1000"))
                 .andRespond(withSuccess("""
                         {"Header":{"responseCode":"H0000"},"REC":{"transactionUniqueNo":"D-1","transactionBalance":"1000"}}
                         """, MediaType.APPLICATION_JSON));
@@ -224,7 +224,7 @@ class RestSsafyFinanceClientTest {
         server.expect(requestTo(base + "updateDemandDepositAccountWithdrawal"))
                 .andExpect(jsonPath("$.Header.apiName").value("updateDemandDepositAccountWithdrawal"))
                 .andExpect(jsonPath("$.accountNo").value("1234567890123456"))
-                .andExpect(jsonPath("$.transactionBalance").value(500))
+                .andExpect(jsonPath("$.transactionBalance").value("500"))
                 .andRespond(withSuccess("""
                         {"Header":{"responseCode":"H0000"},"REC":{"transactionUniqueNo":"W-1","transactionBalance":"500"}}
                         """, MediaType.APPLICATION_JSON));
@@ -237,6 +237,7 @@ class RestSsafyFinanceClientTest {
         server.expect(requestTo(base + "updateDemandDepositAccountTransfer"))
                 .andExpect(jsonPath("$.withdrawalAccountNo").value("1234567890123456"))
                 .andExpect(jsonPath("$.depositAccountNo").value("1111222233334444"))
+                .andExpect(jsonPath("$.transactionBalance").value("1000"))
                 .andRespond(withSuccess("""
                         {"Header":{"responseCode":"H0000"},"REC":[
                           {"transactionUniqueNo":"OUT-1","transactionType":"2","transactionBalance":"1000"},

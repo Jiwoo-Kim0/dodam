@@ -584,9 +584,9 @@ class AccountApiIntegrationTest {
         jdbcTemplate.update("INSERT INTO safebox_account (user_id, account_id, account_type, created_at) "
                 + "VALUES (?, 17, 'DEMAND_DEPOSIT', ?)", userId, LocalDateTime.now());
         given(ssafyFinanceClient.depositToAccount(anyString(), eq(safeboxNo), eq(4_000_000L), anyString()))
-                .willReturn(new SsafyDepositResult("DEP-1", "20260926", "184500", 4_000_000L, 4_000_000L));
+                .willReturn(new SsafyDepositResult("DEP-1", "20260926", null, null, null));
         given(ssafyFinanceClient.withdrawFromAccount(anyString(), eq(safeboxNo), eq(1_000_000L), anyString()))
-                .willReturn(new SsafyDepositResult("WD-1", "20260926", "184600", 1_000_000L, 3_000_000L));
+                .willReturn(new SsafyDepositResult("WD-1", "20260926", null, null, null));
 
         mockMvc.perform(post("/api/v1/accounts/transfer").header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -747,7 +747,7 @@ class AccountApiIntegrationTest {
     void transferMovesBalancesAndWritesTwoSavingTransactionsOnlyOnce() throws Exception {
         prepareTransferAccounts();
         given(ssafyFinanceClient.transfer(anyString(), anyString(), anyString(), anyLong(), anyString(), anyString()))
-                .willReturn(transferEntries(100_000));
+                .willReturn(liveTransferEntries());
 
         mockMvc.perform(post("/api/v1/accounts/transfer").header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON).content(transferJson(100_000)))
@@ -766,6 +766,9 @@ class AccountApiIntegrationTest {
         org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM `transaction` WHERE transaction_id IN ('TEST-OUT', 'TEST-IN')", Integer.class))
                 .isEqualTo(2);
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT SUM(amount) FROM `transaction` WHERE transaction_id IN ('TEST-OUT', 'TEST-IN')", Long.class))
+                .isEqualTo(200_000L);
         org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject("""
                 SELECT COUNT(*) FROM `transaction` t JOIN transaction_category c ON c.category_id = t.category_id
                 WHERE t.transaction_id IN ('TEST-OUT', 'TEST-IN') AND c.code = 'SAVING'
@@ -897,6 +900,13 @@ class AccountApiIntegrationTest {
         return List.of(
                 new SsafyTransferEntry("TEST-OUT", "20260923", "103000", "2", amount, 1_750_000L, "출금"),
                 new SsafyTransferEntry("TEST-IN", "20260923", "103000", "1", amount, 420_000L, "입금"));
+    }
+
+    /** 실제 금융망 이체 응답(2026-09-26 확인). 시각·금액·잔액·적요가 없다. */
+    private static List<SsafyTransferEntry> liveTransferEntries() {
+        return List.of(
+                new SsafyTransferEntry("TEST-OUT", "20260923", null, "2", null, null, null),
+                new SsafyTransferEntry("TEST-IN", "20260923", null, "1", null, null, null));
     }
 
     private void signup(String email, String name) throws Exception {
