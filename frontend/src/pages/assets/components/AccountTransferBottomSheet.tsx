@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -14,6 +15,7 @@ import { styles } from '@/pages/goalDetail/components/GoalTransferBottomSheet.st
 import { colors } from '@/styles';
 import type { AccountApiResponse } from '@/types/assetApi.types';
 import { formatCurrency, formatNumber } from '@/utils/currency';
+import { getAccountLogo } from '@/utils/institution';
 
 const QUICK_AMOUNTS = [10_000, 50_000, 100_000] as const;
 
@@ -57,6 +59,11 @@ function AccountOptions({ accounts, selectedId, disabled, safeboxId, onSelect }:
               isSelected && styles.accountOptionSelected,
               pressed && styles.pressed,
             ]}>
+            <Image
+              accessibilityIgnoresInvertColors
+              source={getAccountLogo(account.bankCode, account.bankName, account.accountId === safeboxId)}
+              style={styles.logo}
+            />
             <View style={styles.accountText}>
               <Text numberOfLines={1} style={styles.accountName}>
                 {account.accountId === safeboxId ? '도담 계좌' : account.accountName}

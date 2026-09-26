@@ -1,14 +1,10 @@
 import { Image, Text, View } from 'react-native';
 
-import { FINANCIAL_INSTITUTIONS } from '@/mocks/financeConnection';
 import type { AssetItem } from '@/types/asset.types';
 import { formatCurrency } from '@/utils/currency';
+import { getInstitutionLogo } from '@/utils/institution';
 
 import { styles } from './AssetListItem.styles';
-
-const DEFAULT_INSTITUTION_LOGO = require(
-  '@/assets/icons/common/wallet.png',
-);
 
 interface AssetListItemProps {
   item: AssetItem;
@@ -16,10 +12,7 @@ interface AssetListItemProps {
 }
 
 export function AssetListItem({ item, isLast }: AssetListItemProps) {
-  const institution = FINANCIAL_INSTITUTIONS.find(
-    ({ id }) => id === item.institutionId,
-  );
-  const icon = institution?.logo ?? DEFAULT_INSTITUTION_LOGO;
+  const icon = getInstitutionLogo(item.institutionId);
 
   return (
     <View

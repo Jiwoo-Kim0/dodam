@@ -10,89 +10,11 @@ import type {
 } from '@/types/assetApi.types';
 import type { SafeboxAccountResponse } from '@/api/safeboxApi';
 import { formatCurrency } from '@/utils/currency';
+import { getInstitutionId, SAFEBOX_INSTITUTION_ID } from '@/utils/institution';
 import type {
   AssetItem,
   AssetSection,
 } from '@/types/asset.types';
-
-const INSTITUTION_ID_BY_CODE: Readonly<Record<string, string>> = {
-  '004': 'kookmin',
-  KB: 'kookmin',
-  KB_KOOKMIN: 'kookmin',
-  KB_CARD: 'kookmin',
-
-  '081': 'hana',
-  HANA: 'hana',
-  HANA_BANK: 'hana',
-  HANA_CARD: 'hana',
-
-  '088': 'shinhan',
-  SHINHAN: 'shinhan',
-  SHINHAN_BANK: 'shinhan',
-  SHINHAN_CARD: 'shinhan',
-
-  '011': 'nonghyup',
-  NH: 'nonghyup',
-  NH_BANK: 'nonghyup',
-  NH_CARD: 'nonghyup',
-
-  '020': 'woori',
-  WOORI: 'woori',
-  WOORI_BANK: 'woori',
-  WOORI_CARD: 'woori',
-
-  '090': 'kakaobank',
-  KAKAOBANK: 'kakaobank',
-  KAKAO_BANK: 'kakaobank',
-
-  '092': 'toss',
-  TOSS: 'toss',
-  TOSS_BANK: 'toss',
-
-  '089': 'kbank',
-  KBANK: 'kbank',
-  K_BANK: 'kbank',
-
-  '031': 'imbank',
-  IMBANK: 'imbank',
-  IM_BANK: 'imbank',
-  DGB: 'imbank',
-
-  '039': 'bnk',
-  BNK: 'bnk',
-  BNK_KYONGNAM: 'bnk',
-
-  '007': 'suhyup',
-  SUHYUP: 'suhyup',
-  SUHYUP_BANK: 'suhyup',
-
-  '027': 'citi',
-  CITI: 'citi',
-  CITI_BANK: 'citi',
-};
-
-function getInstitutionId(code: string, name: string): string {
-  const institutionId = INSTITUTION_ID_BY_CODE[code.toUpperCase()];
-
-  if (institutionId) {
-    return institutionId;
-  }
-
-  if (name.includes('국민')) return 'kookmin';
-  if (name.includes('하나')) return 'hana';
-  if (name.includes('신한')) return 'shinhan';
-  if (name.includes('농협')) return 'nonghyup';
-  if (name.includes('우리')) return 'woori';
-  if (name.includes('카카오')) return 'kakaobank';
-  if (name.includes('토스')) return 'toss';
-  if (name.includes('케이')) return 'kbank';
-  if (name.includes('iM') || name.includes('대구')) return 'imbank';
-  if (name.includes('경남') || name.includes('부산')) return 'bnk';
-  if (name.includes('수협')) return 'suhyup';
-  if (name.includes('씨티')) return 'citi';
-
-  return code.toLowerCase();
-}
 
 function formatMonthDay(date: string): string {
   const [, month, day] = date.split('-');
@@ -187,6 +109,7 @@ function mapSafeboxAccount(
 ): AssetItem {
   return {
     ...mapCheckingAccount(account),
+    institutionId: SAFEBOX_INSTITUTION_ID,
     description: `${safebox.accountNoMasked} · 목표에 담은 돈 ${formatCurrency(safebox.allocatedAmount)}`,
   };
 }

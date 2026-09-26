@@ -81,6 +81,11 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.primary.lightGreen,
     borderColor: colors.primary.green,
   },
+  logo: {
+    height: 28,
+    resizeMode: 'contain',
+    width: 28,
+  },
   accountText: {
     flex: 1,
     flexShrink: 1,
