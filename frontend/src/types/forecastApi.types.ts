@@ -14,6 +14,24 @@ export interface SpendingForecastPoint {
   predicted: number;
   lowerBound: number;
   upperBound: number;
+  /** 평소 수준에 더해진 추세분. `explanation.level + trendEffect + seasonalEffect === predicted` */
+  trendEffect: number;
+  /** 계절 계수로 더해진(빠진) 금액. 계절을 쓰지 않았으면 0 */
+  seasonalEffect: number;
+  /** 이 달의 계절 계수(소수 2자리). 계절을 쓰지 않았으면 null */
+  seasonalFactor: number | null;
+  /** 1년 전 같은 달 실적. 그 달에 거래가 없었으면 null */
+  lastYearAmount: number | null;
+}
+
+/** 예측 전체에 공통인 근거. 예측이 없으면 응답에서 null이다 */
+export interface SpendingForecastExplanation {
+  /** 계절을 뺀 최근 월 소비 수준 */
+  level: number;
+  /** 계절을 뺀 축의 월당 기울기 */
+  monthlyTrend: number;
+  /** 이력이 12개월 미만이면 false */
+  seasonalityApplied: boolean;
 }
 
 export interface SpendingForecast {
@@ -22,6 +40,7 @@ export interface SpendingForecast {
   horizonMonths: number;
   /** 축약 경로를 탔을 때만 값이 있다. 이력이 짧으면 `forecasts`가 비어 있다 */
   fallbackReason: string | null;
+  explanation: SpendingForecastExplanation | null;
   /** 최근 12개월 실적. 예측선과 이어 그린다 */
   history: SpendingForecastHistoryPoint[];
   forecasts: SpendingForecastPoint[];
