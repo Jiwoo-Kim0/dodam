@@ -155,6 +155,17 @@ public class RestSsafyFinanceClient implements SsafyFinanceClient {
     }
 
     @Override
+    public SsafyDepositResult withdrawFromAccount(String userKey, String accountNo, long amount, String summary) {
+        String path = DEPOSIT_BASE + "updateDemandDepositAccountWithdrawal";
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("accountNo", accountNo);
+        body.put("transactionBalance", amount);
+        body.put("transactionSummary", summary);
+        return convert(extractRec(post(path, "updateDemandDepositAccountWithdrawal", userKey, body), path, false),
+                SsafyDepositResult.class, path);
+    }
+
+    @Override
     public List<SsafyTransferEntry> transfer(String userKey, String withdrawalNo, String depositNo,
             long amount, String withdrawalSummary, String depositSummary) {
         String path = DEPOSIT_BASE + "updateDemandDepositAccountTransfer";

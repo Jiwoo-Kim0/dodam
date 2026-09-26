@@ -19,6 +19,7 @@ import com.ssafy.dodam.global.exception.ResourceNotFoundException;
 import com.ssafy.dodam.global.repository.UserWriteLock;
 import com.ssafy.dodam.global.repository.SafeboxOperationLock;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyApiException;
+import com.ssafy.dodam.infrastructure.external.ssafy.SsafyDepositResult;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyErrorCode;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyFinanceClient;
 import com.ssafy.dodam.infrastructure.external.ssafy.SsafyTransferEntry;
@@ -49,8 +50,8 @@ public class AccountTransferService {
     private static final Duration DUPLICATE_WINDOW = Duration.ofSeconds(10);
     private static final DateTimeFormatter FINANCE_DATE = DateTimeFormatter.BASIC_ISO_DATE;
     private static final DateTimeFormatter FINANCE_TIME = DateTimeFormatter.ofPattern("HHmmss");
-    private static final String WITHDRAWAL_SUMMARY = "목표 통장 이체";
-    private static final String DEPOSIT_SUMMARY = "목표 저축 입금";
+    private static final String WITHDRAWAL_SUMMARY = "계좌 이체";
+    private static final String DEPOSIT_SUMMARY = "계좌 이체 입금";
 
     private final AccountRepository accounts;
     private final FinanceConnectionService connections;
@@ -131,7 +132,6 @@ public class AccountTransferService {
                         - safeboxAllocations.totalAllocated(userId, withdrawal.getId())) {
             throw new BusinessException(ErrorCode.SAFEBOX_ALLOCATED_BALANCE);
         }
-        String userKey = connections.userKeyOf(connections.requireConnected(userId));
         TransferKey key = new TransferKey(userId, withdrawal.getId(), deposit.getId(), request.amount());
         LocalDateTime now = clock.now();
         recent.entrySet().removeIf(entry -> Duration.between(entry.getValue(), now).compareTo(DUPLICATE_WINDOW) >= 0);
@@ -140,11 +140,38 @@ public class AccountTransferService {
             throw new BusinessException(ErrorCode.TRANSFER_DUPLICATE_REQUEST);
         }
 
-        List<SsafyTransferEntry> entries;
+        boolean fromFinance = withdrawal.isFromFinance();
+        boolean toFinance = deposit.isFromFinance();
+        if (!fromFinance && !toFinance) {
+            // 두 계좌 모두 금융망에 없는 seed·수동 계좌면 도담 DB 안에서만 옮긴다.
+            return save(userId, request, List.of(localEntry("EXPENSE", request.amount(), now),
+                    localEntry("INCOME", request.amount(), now)));
+        }
+        String userKey = connections.userKeyOf(connections.requireConnected(userId));
         try {
-            entries = finance.transfer(userKey, cryptor.decrypt(withdrawal.getAccountNoEncrypted()),
-                    cryptor.decrypt(deposit.getAccountNoEncrypted()), request.amount(),
-                    WITHDRAWAL_SUMMARY, DEPOSIT_SUMMARY);
+            if (fromFinance && toFinance) {
+                List<SsafyTransferEntry> entries = finance.transfer(userKey,
+                        cryptor.decrypt(withdrawal.getAccountNoEncrypted()),
+                        cryptor.decrypt(deposit.getAccountNoEncrypted()), request.amount(),
+                        WITHDRAWAL_SUMMARY, DEPOSIT_SUMMARY);
+                financeSucceeded.set(true);
+                return save(userId, request, parseEntries(entries, request.amount()));
+            }
+            /*
+             * 한쪽만 금융망 계좌(예: seed 주거래 → 도담 계좌)면 금융망 이체(2.4.10)가 불가능하다. 금융망 쪽은 입금(2.4.9)
+             * 또는 출금(2.4.8)으로 실제로 움직이고, seed 쪽은 도담 DB에서만 반영한다. seed 계좌는 동기화가 덮지 않으므로
+             * 도담 DB 잔액이 기준이다(S15P21D105-705).
+             */
+            NewTransaction financeSide = fromFinance
+                    ? fromDepositResult(finance.withdrawFromAccount(userKey,
+                            cryptor.decrypt(withdrawal.getAccountNoEncrypted()), request.amount(), WITHDRAWAL_SUMMARY),
+                            "EXPENSE", request.amount())
+                    : fromDepositResult(finance.depositToAccount(userKey,
+                            cryptor.decrypt(deposit.getAccountNoEncrypted()), request.amount(), DEPOSIT_SUMMARY),
+                            "INCOME", request.amount());
+            financeSucceeded.set(true);
+            NewTransaction localSide = localEntry(fromFinance ? "INCOME" : "EXPENSE", request.amount(), now);
+            return save(userId, request, fromFinance ? List.of(financeSide, localSide) : List.of(localSide, financeSide));
         } catch (SsafyApiException exception) {
             recent.remove(key, now);
             if (exception.is(SsafyErrorCode.INSUFFICIENT_BALANCE)) {
@@ -161,10 +188,27 @@ public class AccountTransferService {
             log.warn("SSAFY transfer unavailable");
             throw new BusinessException(ErrorCode.FINANCE_API_UNAVAILABLE);
         }
+    }
 
-        financeSucceeded.set(true);
-        List<NewTransaction> parsed = parseEntries(entries, request.amount());
-        return save(userId, request, parsed);
+    /** 금융망을 거치지 않는 쪽의 거래. 금융망 거래번호와 겹치지 않게 접두어를 붙인다. */
+    private static NewTransaction localEntry(String type, long amount, LocalDateTime now) {
+        return new NewTransaction("LOCAL-" + java.util.UUID.randomUUID(), now.toLocalDate(),
+                now.toLocalTime().withNano(0), type, amount, null,
+                "EXPENSE".equals(type) ? WITHDRAWAL_SUMMARY : DEPOSIT_SUMMARY, null);
+    }
+
+    private static NewTransaction fromDepositResult(SsafyDepositResult result, String type, long amount) {
+        if (result == null || result.transactionUniqueNo() == null || result.transactionUniqueNo().isBlank()) {
+            throw new BusinessException(ErrorCode.FINANCE_API_UNAVAILABLE);
+        }
+        try {
+            return new NewTransaction(result.transactionUniqueNo(),
+                    LocalDate.parse(result.transactionDate(), FINANCE_DATE),
+                    LocalTime.parse(result.transactionTime(), FINANCE_TIME), type, amount,
+                    result.transactionAfterBalance(), "EXPENSE".equals(type) ? WITHDRAWAL_SUMMARY : DEPOSIT_SUMMARY, null);
+        } catch (DateTimeParseException | NullPointerException exception) {
+            throw new BusinessException(ErrorCode.FINANCE_API_UNAVAILABLE);
+        }
     }
 
     /** 금융망 이체 성공 뒤 로컬 저장이 실패한 계좌만 다음 계좌 조회에서 잔액을 대조한다. */
@@ -192,6 +236,10 @@ public class AccountTransferService {
         try {
             for (Long accountId : pending.accountIds()) {
                 Account account = ownedAccount(userId, accountId);
+                if (!account.isFromFinance()) {
+                    // seed·수동 계좌는 금융망에 없어 조회할 수 없고, 도담 DB 잔액이 기준이다.
+                    continue;
+                }
                 var response = finance.inquireAccountBalance(userKey, cryptor.decrypt(account.getAccountNoEncrypted()));
                 if (response == null || response.accountBalance() == null || response.accountBalance() < 0) {
                     throw new SsafyUnavailableException("SSAFY balance response invalid", null);
