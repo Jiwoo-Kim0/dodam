@@ -33,6 +33,17 @@ class CoachTemplateWriterChatTest {
     }
 
     @Test
+    void speaksTheNextMonthOfASpendingForecast() {
+        CoachFacts facts = chat(new Section("월 변동 소비 예측(서버 계산)", List.of(
+                new Fact("평소 한 달 변동 소비(계절 제외)", "500,000원"),
+                new Fact("2026년 10월 예상 변동 소비", "520,000원"),
+                new Fact("2026년 10월 계절 영향", "+10,000원"),
+                new Fact("2026년 12월 예상 변동 소비", "650,000원"))));
+
+        assertThat(writer.write(facts)).isEqualTo("2026년 10월 변동 소비는 520,000원으로 예상돼요.");
+    }
+
+    @Test
     void delayNotAchievableAndUnchangedAreSaidWithoutInventingDates() {
         CoachFacts facts = chat(new Section("시뮬레이션 결과(서버 계산)", List.of(
                 new Fact("현재 예상 달성일(비상금)", "2028-02-13"),

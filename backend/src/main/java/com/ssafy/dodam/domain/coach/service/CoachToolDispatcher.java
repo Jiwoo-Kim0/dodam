@@ -14,6 +14,8 @@ import com.ssafy.dodam.domain.diagnosis.entity.DiagnosisStatus;
 import com.ssafy.dodam.domain.diagnosis.entity.IssueSeverity;
 import com.ssafy.dodam.domain.diagnosis.repository.DiagnosisIssueRepository;
 import com.ssafy.dodam.domain.diagnosis.repository.DiagnosisRepository;
+import com.ssafy.dodam.domain.forecast.dto.response.SpendingForecastResponse;
+import com.ssafy.dodam.domain.forecast.service.SpendingForecastQueryService;
 import com.ssafy.dodam.domain.goal.dto.response.GoalForecastResponse;
 import com.ssafy.dodam.domain.goal.entity.Goal;
 import com.ssafy.dodam.domain.goal.entity.GoalStatus;
@@ -35,6 +37,7 @@ import com.ssafy.dodam.domain.simulation.service.SimulationRunner;
 import com.ssafy.dodam.global.exception.BusinessException;
 import com.ssafy.dodam.global.exception.InvalidRequestException;
 import com.ssafy.dodam.global.exception.ResourceNotFoundException;
+import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -74,13 +77,18 @@ public class CoachToolDispatcher {
     private final LoanRepository loans;
     private final DiagnosisRepository diagnoses;
     private final DiagnosisIssueRepository issues;
+    private final SpendingForecastQueryService spendingForecasts;
     private final CoachClock clock;
     private final ObjectMapper json;
+
+    /** 소비 예측 사실의 라벨 접미어. {@link CoachTemplateWriter}가 이 접미어로 예측 사실을 찾아 대체 문장을 만든다. */
+    static final String LABEL_FORECAST_SUFFIX = " 예상 변동 소비";
 
     public CoachToolDispatcher(CoachToolRegistry registry, SimulationInputResolver resolver, SimulationRunner runner,
             SimulationQueryService simulations, CoachSimulationFactFormatter formatter, GoalRepository goals,
             GoalCalculationService goalCalculation, LoanRepository loans, DiagnosisRepository diagnoses,
-            DiagnosisIssueRepository issues, CoachClock clock, ObjectMapper json) {
+            DiagnosisIssueRepository issues, SpendingForecastQueryService spendingForecasts, CoachClock clock,
+            ObjectMapper json) {
         this.registry = registry;
         this.resolver = resolver;
         this.runner = runner;
@@ -91,6 +99,7 @@ public class CoachToolDispatcher {
         this.loans = loans;
         this.diagnoses = diagnoses;
         this.issues = issues;
+        this.spendingForecasts = spendingForecasts;
         this.clock = clock;
         this.json = json;
     }
@@ -124,6 +133,7 @@ public class CoachToolDispatcher {
                 case CoachToolRegistry.SIMULATE_COMBINED -> simulate(userId, call, resolver.resolve(userId, combinedRequest(userId, arguments)));
                 case CoachToolRegistry.GET_GOAL_FORECAST -> goalForecast(userId, call, arguments);
                 case CoachToolRegistry.GET_LATEST_DIAGNOSIS -> latestDiagnosis(userId, call);
+                case CoachToolRegistry.GET_SPENDING_FORECAST -> spendingForecast(userId, call);
                 default -> CoachToolResult.error(call.id(), call.name(), UNKNOWN_TOOL);
             };
         } catch (CoachToolArgumentException | InvalidRequestException | ResourceNotFoundException | BusinessException rejected) {
@@ -267,6 +277,52 @@ public class CoachToolDispatcher {
         }
         return CoachToolResult.ok(call.id(), call.name(), null, null, List.of(new Section("최근 진단(서버 판정)", facts)),
                 List.of("문제 목록과 심각도는 서버 진단 규칙의 판정이다. 새 문제를 만들거나 심각도를 바꾸지 말 것."));
+    }
+
+    /**
+     * 리포트 "예상 소비" 카드와 같은 API 경로로 다음 3개월을 조회한다(707). 근거는 응답의 분해값을 그대로 옮긴다 —
+     * {@code 예상 = 평소 수준 + 추세 영향 + 계절 영향}이 서버에서 원 단위로 맞춰져 있으므로 모델이 더하거나 나눌 이유가 없다.
+     */
+    private CoachToolResult spendingForecast(Long userId, ToolCall call) {
+        SpendingForecastResponse forecast = spendingForecasts.forecast(userId, null);
+        if (forecast.forecasts().isEmpty() || forecast.explanation() == null) {
+            return CoachToolResult.error(call.id(), call.name(), "소비 기록이 3개월 이상 쌓여야 예측할 수 있어요.");
+        }
+        SpendingForecastResponse.Explanation explanation = forecast.explanation();
+        List<Fact> facts = new ArrayList<>();
+        facts.add(new Fact("평소 한 달 변동 소비(계절 제외)", CoachFormat.money(explanation.level())));
+        facts.add(new Fact("한 달 추세", signedMoney(explanation.monthlyTrend())));
+        for (SpendingForecastResponse.ForecastPoint point : forecast.forecasts()) {
+            String month = monthText(point.month());
+            facts.add(new Fact(month + LABEL_FORECAST_SUFFIX, CoachFormat.money(point.predicted())));
+            facts.add(new Fact(month + " 예상 범위", CoachFormat.money(point.lowerBound()) + " ~ " + CoachFormat.money(point.upperBound())));
+            facts.add(new Fact(month + " 추세 영향", signedMoney(point.trendEffect())));
+            if (explanation.seasonalityApplied()) {
+                facts.add(new Fact(month + " 계절 영향", signedMoney(point.seasonalEffect())));
+            }
+            if (point.lastYearAmount() != null) {
+                facts.add(new Fact(month + " 작년 같은 달 실적", CoachFormat.money(point.lastYearAmount())));
+            }
+        }
+        List<String> notes = new ArrayList<>();
+        notes.add("예측 대상은 고정비를 뺀 변동 소비다. 예상 범위는 정확도를 보장하는 값이 아니다.");
+        notes.add("각 달의 예상은 평소 수준에 추세 영향과 계절 영향을 더한 값이다. 금액을 새로 계산하거나 합치지 말고 적힌 값만 쓸 것.");
+        if (!explanation.seasonalityApplied()) {
+            notes.add("소비 기록이 12개월 미만이라 계절 영향은 반영하지 않았다.");
+        }
+        return CoachToolResult.ok(call.id(), call.name(), null, null,
+                List.of(new Section("월 변동 소비 예측(서버 계산)", facts)), notes);
+    }
+
+    /** {@code 2026-12} → {@code 2026년 12월}. 모델이 "12월"이라고 말해도 숫자 검사에 걸리지 않게 월 숫자를 라벨에 둔다. */
+    static String monthText(String yearMonth) {
+        YearMonth month = YearMonth.parse(yearMonth);
+        return month.getYear() + "년 " + month.getMonthValue() + "월";
+    }
+
+    /** 증감은 부호를 붙인다. {@link CoachFormat#money}는 음수에만 부호를 붙여 "늘어난 금액"과 "수준"이 같은 모양이 된다. */
+    static String signedMoney(long amount) {
+        return (amount > 0 ? "+" : "") + CoachFormat.money(amount);
     }
 
     /** 진단 판정 코드의 사용자용 표기. 영문 코드({@code RISK}, {@code HIGH})는 사실에 넣지 않는다 — 모델 입력이자 결과 카드 값이다. */

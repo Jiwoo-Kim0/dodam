@@ -65,6 +65,7 @@ public class CoachTemplateWriter {
         // 목표별 달성일 변화. 라벨의 괄호 안이 목표 이름이다: [0]=현재, [1]=실행 후, [2]=단축, [3]=지연
         LinkedHashMap<String, String[]> goals = new LinkedHashMap<>();
         String interestSaving = null;
+        String firstForecast = null;
         String firstFailure = null;
         boolean partialGoalScope = false;
         for (CoachFacts.Section section : facts.sections()) {
@@ -86,6 +87,10 @@ public class CoachTemplateWriter {
                     partialGoalScope = true;
                 } else if (LABEL_INTEREST_SAVING.equals(label) && interestSaving == null) {
                     interestSaving = fact.value();
+                } else if (label.endsWith(CoachToolDispatcher.LABEL_FORECAST_SUFFIX) && firstForecast == null) {
+                    // 소비 예측(707)은 첫 달만 말한다. 사실이 오래된 달부터 쌓이므로 첫 사실이 다음 달이다
+                    String month = label.substring(0, label.length() - CoachToolDispatcher.LABEL_FORECAST_SUFFIX.length());
+                    firstForecast = month + " 변동 소비는 " + fact.value() + "으로 예상돼요. ";
                 }
             }
         }
@@ -106,6 +111,9 @@ public class CoachTemplateWriter {
         }
         if (interestSaving != null) {
             text.append("만기까지 이자를 ").append(interestSaving).append(" 아낄 수 있어요. ");
+        }
+        if (firstForecast != null) {
+            text.append(firstForecast);
         }
         if (text.isEmpty() && firstFailure != null) {
             return "요청을 실행하지 못했어요. " + firstFailure;
