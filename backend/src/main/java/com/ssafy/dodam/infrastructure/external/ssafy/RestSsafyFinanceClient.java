@@ -148,7 +148,7 @@ public class RestSsafyFinanceClient implements SsafyFinanceClient {
         String path = DEPOSIT_BASE + "updateDemandDepositAccountDeposit";
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("accountNo", accountNo);
-        body.put("transactionBalance", amount);
+        body.put("transactionBalance", financeAmount(amount));
         body.put("transactionSummary", summary);
         return convert(extractRec(post(path, "updateDemandDepositAccountDeposit", userKey, body), path, false),
                 SsafyDepositResult.class, path);
@@ -159,7 +159,7 @@ public class RestSsafyFinanceClient implements SsafyFinanceClient {
         String path = DEPOSIT_BASE + "updateDemandDepositAccountWithdrawal";
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("accountNo", accountNo);
-        body.put("transactionBalance", amount);
+        body.put("transactionBalance", financeAmount(amount));
         body.put("transactionSummary", summary);
         return convert(extractRec(post(path, "updateDemandDepositAccountWithdrawal", userKey, body), path, false),
                 SsafyDepositResult.class, path);
@@ -172,7 +172,7 @@ public class RestSsafyFinanceClient implements SsafyFinanceClient {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("withdrawalAccountNo", withdrawalNo);
         body.put("depositAccountNo", depositNo);
-        body.put("transactionBalance", amount);
+        body.put("transactionBalance", financeAmount(amount));
         body.put("withdrawalTransactionSummary", withdrawalSummary);
         body.put("depositTransactionSummary", depositSummary);
         JsonNode rec = extractRec(post(path, "updateDemandDepositAccountTransfer", userKey, body), path, false);
@@ -184,6 +184,14 @@ public class RestSsafyFinanceClient implements SsafyFinanceClient {
         } catch (IOException exception) {
             throw new SsafyUnavailableException("SSAFY transfer REC could not be parsed", exception);
         }
+    }
+
+    /*
+     * 입금(2.4.9)·출금(2.4.8)·이체(2.4.10)는 금액을 JSON 숫자로 보내면 Q1001(요청 본문 형식 오류)로 거절하고
+     * 문자열만 받는다. 2026-09-26 실제 금융망 호출로 확인했다(S15P21D105-705).
+     */
+    private static String financeAmount(long amount) {
+        return Long.toString(amount);
     }
 
     @Override

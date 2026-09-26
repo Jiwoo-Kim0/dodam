@@ -174,7 +174,7 @@ def main() -> None:
     log(f"계좌 생성 {masked}")
 
     finance.call("updateDemandDepositAccountDeposit", user_key,
-                 {"accountNo": account_no, "transactionBalance": args.balance, "transactionSummary": "도담 시연 준비"})
+                 {"accountNo": account_no, "transactionBalance": str(args.balance), "transactionSummary": "도담 시연 준비"})
     balance = int(finance.call("inquireDemandDepositAccountBalance", user_key, {"accountNo": account_no})["accountBalance"])
     if balance != args.balance:
         sys.exit(f"입금 후 잔액 {balance} 이 기대값 {args.balance} 과 다릅니다. SQL을 출력하지 않습니다.")

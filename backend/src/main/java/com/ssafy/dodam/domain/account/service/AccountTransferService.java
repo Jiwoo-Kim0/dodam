@@ -155,21 +155,22 @@ public class AccountTransferService {
                         cryptor.decrypt(deposit.getAccountNoEncrypted()), request.amount(),
                         WITHDRAWAL_SUMMARY, DEPOSIT_SUMMARY);
                 financeSucceeded.set(true);
-                return save(userId, request, parseEntries(entries, request.amount()));
+                return save(userId, request, parseEntries(entries, request.amount(), now));
             }
             /*
              * 한쪽만 금융망 계좌(예: seed 주거래 → 도담 계좌)면 금융망 이체(2.4.10)가 불가능하다. 금융망 쪽은 입금(2.4.9)
              * 또는 출금(2.4.8)으로 실제로 움직이고, seed 쪽은 도담 DB에서만 반영한다. seed 계좌는 동기화가 덮지 않으므로
              * 도담 DB 잔액이 기준이다(S15P21D105-705).
              */
-            NewTransaction financeSide = fromFinance
-                    ? fromDepositResult(finance.withdrawFromAccount(userKey,
-                            cryptor.decrypt(withdrawal.getAccountNoEncrypted()), request.amount(), WITHDRAWAL_SUMMARY),
-                            "EXPENSE", request.amount())
-                    : fromDepositResult(finance.depositToAccount(userKey,
-                            cryptor.decrypt(deposit.getAccountNoEncrypted()), request.amount(), DEPOSIT_SUMMARY),
-                            "INCOME", request.amount());
+            SsafyDepositResult result = fromFinance
+                    ? finance.withdrawFromAccount(userKey,
+                            cryptor.decrypt(withdrawal.getAccountNoEncrypted()), request.amount(), WITHDRAWAL_SUMMARY)
+                    : finance.depositToAccount(userKey,
+                            cryptor.decrypt(deposit.getAccountNoEncrypted()), request.amount(), DEPOSIT_SUMMARY);
+            // 응답 해석이 실패해도 금융망에서는 이미 움직였으므로 잔액 대조 대상으로 남긴다.
             financeSucceeded.set(true);
+            NewTransaction financeSide = fromDepositResult(result, fromFinance ? "EXPENSE" : "INCOME",
+                    request.amount(), now);
             NewTransaction localSide = localEntry(fromFinance ? "INCOME" : "EXPENSE", request.amount(), now);
             return save(userId, request, fromFinance ? List.of(financeSide, localSide) : List.of(localSide, financeSide));
         } catch (SsafyApiException exception) {
@@ -197,17 +198,34 @@ public class AccountTransferService {
                 "EXPENSE".equals(type) ? WITHDRAWAL_SUMMARY : DEPOSIT_SUMMARY, null);
     }
 
-    private static NewTransaction fromDepositResult(SsafyDepositResult result, String type, long amount) {
+    /*
+     * 실제 금융망 성공 응답 REC는 입금·출금이 transactionUniqueNo·transactionDate뿐이고, 이체는 여기에 transactionType이
+     * 더해질 뿐 시각·금액·잔액이 없다(2026-09-26 실호출 확인). 거래번호만 필수로 보고, 금액은 요청값, 시각은 도담 시계로
+     * 채운다. 잔액은 save()가 도담 계좌 잔액으로 다시 쓴다.
+     */
+    private static NewTransaction fromDepositResult(SsafyDepositResult result, String type, long amount,
+            LocalDateTime now) {
         if (result == null || result.transactionUniqueNo() == null || result.transactionUniqueNo().isBlank()) {
             throw new BusinessException(ErrorCode.FINANCE_API_UNAVAILABLE);
         }
+        return new NewTransaction(result.transactionUniqueNo(), financeDate(result.transactionDate(), now),
+                financeTime(result.transactionTime(), now), type, amount, result.transactionAfterBalance(),
+                "EXPENSE".equals(type) ? WITHDRAWAL_SUMMARY : DEPOSIT_SUMMARY, null);
+    }
+
+    private static LocalDate financeDate(String value, LocalDateTime now) {
         try {
-            return new NewTransaction(result.transactionUniqueNo(),
-                    LocalDate.parse(result.transactionDate(), FINANCE_DATE),
-                    LocalTime.parse(result.transactionTime(), FINANCE_TIME), type, amount,
-                    result.transactionAfterBalance(), "EXPENSE".equals(type) ? WITHDRAWAL_SUMMARY : DEPOSIT_SUMMARY, null);
-        } catch (DateTimeParseException | NullPointerException exception) {
-            throw new BusinessException(ErrorCode.FINANCE_API_UNAVAILABLE);
+            return value == null || value.isBlank() ? now.toLocalDate() : LocalDate.parse(value, FINANCE_DATE);
+        } catch (DateTimeParseException exception) {
+            return now.toLocalDate();
+        }
+    }
+
+    private static LocalTime financeTime(String value, LocalDateTime now) {
+        try {
+            return value == null || value.isBlank() ? now.toLocalTime().withNano(0) : LocalTime.parse(value, FINANCE_TIME);
+        } catch (DateTimeParseException exception) {
+            return now.toLocalTime().withNano(0);
         }
     }
 
@@ -292,7 +310,7 @@ public class AccountTransferService {
                 categoryId, "NON_SPENDING");
     }
 
-    private List<NewTransaction> parseEntries(List<SsafyTransferEntry> entries, long amount) {
+    private List<NewTransaction> parseEntries(List<SsafyTransferEntry> entries, long amount, LocalDateTime now) {
         if (entries == null || entries.size() != 2 || entries.get(0) == null || entries.get(1) == null) {
             throw new BusinessException(ErrorCode.FINANCE_API_UNAVAILABLE);
         }
@@ -304,22 +322,25 @@ public class AccountTransferService {
                 || out.transactionUniqueNo() == null || in.transactionUniqueNo() == null
                 || out.transactionUniqueNo().isBlank() || in.transactionUniqueNo().isBlank()
                 || out.transactionUniqueNo().equals(in.transactionUniqueNo())
-                || !Long.valueOf(amount).equals(out.transactionBalance())
-                || !Long.valueOf(amount).equals(in.transactionBalance())) {
+                || !amountMatches(out.transactionBalance(), amount)
+                || !amountMatches(in.transactionBalance(), amount)) {
             throw new BusinessException(ErrorCode.FINANCE_API_UNAVAILABLE);
         }
-        try {
-            return List.of(toTransaction(out, "EXPENSE"), toTransaction(in, "INCOME"));
-        } catch (DateTimeParseException exception) {
-            throw new BusinessException(ErrorCode.FINANCE_API_UNAVAILABLE);
-        }
+        return List.of(toTransaction(out, "EXPENSE", amount, WITHDRAWAL_SUMMARY, now),
+                toTransaction(in, "INCOME", amount, DEPOSIT_SUMMARY, now));
     }
 
-    private static NewTransaction toTransaction(SsafyTransferEntry entry, String type) {
-        return new NewTransaction(entry.transactionUniqueNo(),
-                LocalDate.parse(entry.transactionDate(), FINANCE_DATE),
-                LocalTime.parse(entry.transactionTime(), FINANCE_TIME), type,
-                entry.transactionBalance(), entry.transactionAfterBalance(), entry.transactionSummary(), null);
+    /** 실제 응답에는 금액이 없다. 문서 예시처럼 금액이 올 때만 요청값과 대조한다. */
+    private static boolean amountMatches(Long responseAmount, long amount) {
+        return responseAmount == null || responseAmount == amount;
+    }
+
+    private static NewTransaction toTransaction(SsafyTransferEntry entry, String type, long amount,
+            String fallbackSummary, LocalDateTime now) {
+        String summary = entry.transactionSummary() == null || entry.transactionSummary().isBlank()
+                ? fallbackSummary : entry.transactionSummary();
+        return new NewTransaction(entry.transactionUniqueNo(), financeDate(entry.transactionDate(), now),
+                financeTime(entry.transactionTime(), now), type, amount, entry.transactionAfterBalance(), summary, null);
     }
 
     private Account ownedAccount(Long userId, Long accountId) {
