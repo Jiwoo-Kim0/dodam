@@ -74,7 +74,20 @@ public class SafeboxAccountService {
         if (refs.existsById(userId)) {
             return get(userId);
         }
-        String userKey = connections.userKeyOf(connections.requireConnected(userId));
+        String userKey;
+        try {
+            userKey = connections.userKeyOf(connections.requireConnected(userId));
+        } catch (BusinessException exception) {
+            if (exception.getErrorCode() != ErrorCode.FINANCE_NOT_CONNECTED) {
+                throw exception;
+            }
+            // 목표 생성 = 세이프박스 생성이므로 미연결 사용자는 여기서 연결한다. 연결 이벤트가 계좌를 먼저 열었으면 그대로 반환한다.
+            connections.connect(userId);
+            if (refs.existsById(userId)) {
+                return get(userId);
+            }
+            userKey = connections.userKeyOf(connections.requireConnected(userId));
+        }
         SsafyDemandDepositProduct selected;
         try {
             List<SsafyDemandDepositProduct> products = finance.inquireDemandDepositList();

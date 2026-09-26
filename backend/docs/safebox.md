@@ -44,6 +44,8 @@ V45는 사용자당 전용 계좌 1개를 강제하는 `safebox_account`와 목�
 
 이미 맞춰진 단계는 건너뛰므로 재기동해도 금융망 계좌가 늘지 않는다. 실패는 `Demo safebox bootstrap failed` 경고 로그만 남기고 기동은 계속된다. 확인: 기동 로그의 `Demo safebox bootstrap ready for user`, 앱에서 U0003 자산 목록에 도담 계좌가 보이고 주거래 마스킹 번호가 금융망 계좌로 바뀐다.
 
+**목표 생성 전 자동 연결.** `POST /api/v1/safebox/account`는 금융망 미연결 사용자를 그 자리에서 연결한 뒤 전용 계좌를 연다. seed 사용자(`@dodam.invalid`)는 RFC 2606 예약 도메인이라 금융망이 거절할 수 있어, 금융망 회원 ID에만 `@dodam-seed.com` 대체 도메인을 쓴다(`FinanceMemberService.memberEmailFor`, 로그인 이메일은 그대로). 기동 준비가 실패했거나 반영 전이어도 목표 생성이 연결·개설을 대신한다.
+
 **목표 생성 = 세이프박스 생성.** 모으기 목표를 만들면 `GoalService`가 도담 계좌에 0원 세이프박스 칸(`goal_account.contribution_amount = 0`)을 함께 만든다. 도담 계좌가 없는 사용자는 FE가 먼저 `POST /api/v1/safebox/account`로 연다.
 
 **수동(선택).** 카카오뱅크·신한 입출금을 보이려면 seed 19(`DODAM_DEMO_U0003_EXTRA_DEMAND_705_SEED.sql`)를 **배포 전에** 적재한다. 주거래 잔액을 15,460,000으로 낮추므로 기동 시 대응보다 먼저여야 금융망 입금액과 맞는다. 이미 대응된 뒤 적재하면 preflight는 통과하지만 금융망 주거래 잔액(대응 시점 값)과 DB 잔액이 달라진다.
