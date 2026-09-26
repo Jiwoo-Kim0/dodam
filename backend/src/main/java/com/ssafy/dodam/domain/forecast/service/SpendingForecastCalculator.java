@@ -50,8 +50,14 @@ public final class SpendingForecastCalculator {
     public record MonthlyPoint(YearMonth month, long variableSpending) {
     }
 
-    /** 한 달의 예측. 금액은 원 단위 정수다 */
-    public record MonthlyForecast(YearMonth month, long predicted, long lowerBound, long upperBound) {
+    /**
+     * 한 달의 예측. 금액은 원 단위 정수다.
+     *
+     * @param baseline       계절을 곱하기 전 값 = max(0, 수준 + 감쇠 추세). 예측 근거를 "수준·추세·계절"로 나눠 보여 줄 때 쓴다
+     * @param seasonalFactor 이 달에 곱한 계절 계수. 계절을 못 만들었으면 1이다
+     */
+    public record MonthlyForecast(YearMonth month, long predicted, long lowerBound, long upperBound, long baseline,
+            double seasonalFactor) {
     }
 
     /**
@@ -117,7 +123,9 @@ public final class SpendingForecastCalculator {
             out.add(new MonthlyForecast(target,
                     Math.round(base * f),
                     Math.round(Math.max(0, base - spread) * f),
-                    Math.round(Math.max(0, base + spread) * f)));
+                    Math.round(Math.max(0, base + spread) * f),
+                    Math.round(base),
+                    f));
         }
         return new Result(seasonal ? ForecastFallbackReason.NONE : ForecastFallbackReason.SEASONALITY_UNAVAILABLE,
                 out, index, level, trend);
