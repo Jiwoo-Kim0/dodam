@@ -16,11 +16,11 @@ class CoachToolRegistryTest {
     private final CoachToolRegistry registry = new CoachToolRegistry(json);
 
     @Test
-    void exposesSevenToolsWithoutIdentifierArguments() {
+    void exposesEightToolsWithoutIdentifierArguments() {
         List<ToolDefinition> tools = registry.definitions();
         assertThat(tools).extracting(ToolDefinition::name).containsExactly(
                 "simulate_spending_reduction", "simulate_saving_change", "simulate_loan_prepayment", "simulate_loan_refinance",
-                "simulate_combined", "get_goal_forecast", "get_latest_diagnosis");
+                "simulate_combined", "get_goal_forecast", "get_latest_diagnosis", "get_spending_forecast");
         for (ToolDefinition tool : tools) {
             assertThat(tool.description()).isNotBlank();
             assertThat(tool.parameters().get("type").asText()).isEqualTo("object");

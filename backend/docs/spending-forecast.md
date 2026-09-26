@@ -1,6 +1,6 @@
 # 소비 예측 조회 API (S15P21D105-706)
 
-작성일 2026-09-24. 설계 배경·결정 기록과 seed 작업은 [timeseries-forecast-plan.md](timeseries-forecast-plan.md)에 있다.
+작성일 2026-09-24, 예측 근거 분해 2026-09-26(S15P21D105-707). 설계 배경·결정 기록과 seed 작업은 [timeseries-forecast-plan.md](timeseries-forecast-plan.md)에 있다.
 이 문서는 **현재 구현된 계약**만 적는다. 계획서에 있으나 구현하지 않은 항목은 §7에 모았다.
 
 관련 문서: [pattern.md](pattern.md)(변동 소비 집계를 쓰는 다른 경로), [spending-aggregation.md](spending-aggregation.md).
@@ -28,8 +28,16 @@
 | `baseMonth` | `yyyy-MM` | 기준 달 = 오늘이 속한 달(Asia/Seoul). **예측은 그다음 달부터 시작한다** |
 | `horizonMonths` | int | 요청한(또는 기본) 예측 달 수 |
 | `fallbackReason` | string \| null | 축약 경로를 탔다면 그 사유. 전체 절차를 돌았으면 null |
+| `explanation` | object \| null | 예측 전체의 근거. 예측이 없으면(`forecasts`가 빈 배열) null |
+| `explanation.level` | long | 계절을 뺀 최근 월 변동 소비 수준(지수평활). 화면 문구는 "평소 한 달 소비" |
+| `explanation.monthlyTrend` | long | 계절을 뺀 축의 월당 기울기(Theil-Sen). 감쇠 전 값이다 |
+| `explanation.seasonalityApplied` | boolean | 계절 계수를 썼는지. 이력이 12개월 미만이면 false |
 | `history[]` | `{month, amount}` | 최근 12개월 실적. 오래된 순 |
-| `forecasts[]` | `{month, predicted, lowerBound, upperBound}` | `horizonMonths`개. 오래된 순 |
+| `forecasts[]` | `{month, predicted, lowerBound, upperBound, trendEffect, seasonalEffect, seasonalFactor, lastYearAmount}` | `horizonMonths`개. 오래된 순 |
+| `forecasts[].trendEffect` | long | 수준에 더해진 추세분 = 계절 적용 전 값 − `level`. 감쇠가 들어가 있어 먼 달일수록 `monthlyTrend × 개월 수`보다 작다 |
+| `forecasts[].seasonalEffect` | long | 계절 계수로 더해진(빠진) 금액 = `predicted` − 계절 적용 전 값. 계절을 쓰지 않았으면 0 |
+| `forecasts[].seasonalFactor` | decimal \| null | 이 달의 계절 계수(소수 2자리). 계절을 쓰지 않았으면 null |
+| `forecasts[].lastYearAmount` | long \| null | 1년 전 같은 달 실적. 추정 입력(24개월) 안에서 찾으므로 화면 창(12개월) 밖이어도 싣는다. 그 달에 거래가 없었으면 null |
 
 - 금액은 전부 **원 단위 정수**(`long`)다.
 - `history`에는 **거래가 있는 달만** 들어간다. 거래가 없던 달은 0이 아니라 목록에 없다. 0을 관측치로 넣으면
@@ -37,6 +45,9 @@
 - **기준 달은 `history`에도 `forecasts`에도 없다.** 아직 끝나지 않아 실적이 아니고, 예측 구간도 아니다.
   화면이 두 구간 사이에 "오늘" 선을 세울 때 이 빈 자리를 쓴다.
 - `lowerBound`·`upperBound`는 **정확도를 주장하는 값이 아니라 표시용**이다. 화면 문구도 "예상 범위"로 둔다.
+- **`level + trendEffect + seasonalEffect = predicted`가 원 단위로 정확히 성립한다**(707). 두 효과를 차이로 정의해
+  반올림 오차를 `seasonalEffect`가 흡수한다. 화면과 코치가 세 조각을 나란히 보여 줄 때 합이 예상액과 어긋나지 않게
+  하기 위해서다. 클라이언트는 이 값을 다시 계산하지 않는다.
 
 ## 3. 입력 데이터
 
@@ -107,6 +118,10 @@ COALESCE(entry.spending_type, category.default_spending_type, 'VARIABLE') = 'VAR
 - 기본으로 보여주는 달은 **첫 예측 달(다음 달)** 이다. 카드가 답하는 질문이 "다음 달에 얼마나 쓸까"라서다.
 - "오늘" 세로선은 **`baseMonth`** 위치에 선다. 마지막 실측 달에 세우면 이번 달이 이미 끝난 것처럼 읽힌다.
 - 조회 실패는 화면에서 null로 흡수해 카드만 빠진다. `forecasts`가 비어 오면 차트 대신 안내 문구를 보여준다.
+- 예측 달을 선택하면 차트 아래에 **"N월 예상 근거"**(평소 한 달 소비·늘어나는/줄어드는 추세·N월 계절 영향)와
+  "작년 N월에는 X원을 썼어요" 한 줄을 보여 준다(707). 계절 줄은 `seasonalityApplied`일 때만, 작년 줄은
+  `lastYearAmount`가 있을 때만 나온다. 실측 달을 고르면 근거 블록은 없다.
+- AI 코치의 `get_spending_forecast` 도구가 같은 서비스를 부른다([ai-coach.md](ai-coach.md) §13-2-1).
 
 ## 7. 현재 제한사항
 
