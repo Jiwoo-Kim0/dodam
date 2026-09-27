@@ -235,7 +235,7 @@ class CoachChatApiTest {
                 .andExpect(jsonPath("$.data.degradedReason").value("AI_DISABLED"))
                 .andExpect(jsonPath("$.data.model").isEmpty())
                 .andExpect(jsonPath("$.data.message").value(
-                        "비상금 500만 원 목표는 현재 2028-02-13에서 실행 후 2027-10-15로 121일 빨라질 것으로 예상돼요. 만기까지 이자를 384,000원 아낄 수 있어요."))
+                        "비상금 500만 원 목표는 현재 2028-02-13에서 실행 후 2027-10-15로 121일 빨라질 것으로 예상돼요. 만기까지 낼 이자가 384,000원 줄어들 것으로 예상돼요(중도상환수수료 제외)."))
                 .andExpect(jsonPath("$.data.toolResults[0].simulationId").value(88));
         verify(generator, never()).chat(anyList(), anyList(), any());
         verify(budget, never()).tryAcquire(any());
@@ -358,7 +358,7 @@ class CoachChatApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.source").value("TEMPLATE"))
                 .andExpect(jsonPath("$.data.degradedReason").value("SENSITIVE_DATA_BLOCKED"))
-                .andExpect(jsonPath("$.data.message").value("만기까지 이자를 120,000원 아낄 수 있어요."))
+                .andExpect(jsonPath("$.data.message").value("만기까지 낼 이자가 120,000원 줄어들 것으로 예상돼요(중도상환수수료 제외)."))
                 .andExpect(jsonPath("$.data.toolResults[0].simulationId").value(91));
         verify(generator, never()).chat(anyList(), anyList(), any());
         // 예산은 깎지 않는다 — 외부 호출이 없었다

@@ -39,6 +39,7 @@ import com.ssafy.dodam.global.exception.InvalidRequestException;
 import com.ssafy.dodam.global.exception.ResourceNotFoundException;
 import java.time.YearMonth;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -243,17 +244,17 @@ public class CoachToolDispatcher {
         String name = goals.findByIdAndUserIdAndDeletedAtIsNull(goalId, userId).map(Goal::getName).orElse("목표 " + goalId);
         List<Fact> facts = new ArrayList<>();
         facts.add(new Fact("목표", name));
-        facts.add(new Fact("목표 금액", CoachFormat.money(forecast.targetAmount())));
-        facts.add(new Fact("현재 모은 금액", CoachFormat.money(forecast.currentAmount())));
-        facts.add(new Fact("남은 금액", CoachFormat.money(forecast.remainingAmount())));
-        facts.add(new Fact("현재 월 저축 속도", CoachFormat.money(forecast.averageMonthlySaving())));
-        facts.add(new Fact("목표일", CoachFormat.date(forecast.targetDate())));
         facts.add(new Fact("예상 달성일(현재 속도)", forecast.expectedAchievementDate() == null ? "현재 속도로는 달성 불가"
                 : CoachFormat.date(forecast.expectedAchievementDate())));
         if (forecast.daysDifference() != null) {
             long days = forecast.daysDifference();
             facts.add(new Fact(days > 0 ? "목표일보다 늦음" : "목표일보다 빠름", CoachFormat.days((int) Math.abs(days))));
         }
+        facts.add(new Fact("목표 금액", CoachFormat.money(forecast.targetAmount())));
+        facts.add(new Fact("현재 모은 금액", CoachFormat.money(forecast.currentAmount())));
+        facts.add(new Fact("남은 금액", CoachFormat.money(forecast.remainingAmount())));
+        facts.add(new Fact("현재 월 저축 속도", CoachFormat.money(forecast.averageMonthlySaving())));
+        facts.add(new Fact("목표일", CoachFormat.date(forecast.targetDate())));
         return CoachToolResult.ok(call.id(), call.name(), null, null, List.of(new Section("목표 예상 달성일(서버 계산)", facts)),
                 List.of("예상 달성일은 서버가 현재 저축 속도로 계산한 값이다. 새 날짜를 만들지 말 것."));
     }
@@ -269,7 +270,9 @@ public class CoachToolDispatcher {
         facts.add(new Fact("종합 상태(서버 판정)", statusText(diagnosis.getOverallStatus())));
         facts.add(new Fact("문제 수", CoachFormat.count(diagnosis.getIssueCount())));
         int index = 1;
-        for (DiagnosisIssue issue : issues.findAllOwned(userId, diagnosis.getDiagnosisId())) {
+        // findAllOwned는 issueId 순서다. 답변에서 첫 문제를 강조하므로 심각도 순으로 다시 정렬한다.
+        for (DiagnosisIssue issue : issues.findAllOwned(userId, diagnosis.getDiagnosisId()).stream()
+                .sorted(Comparator.comparing(DiagnosisIssue::getSeverity, Comparator.nullsLast(Comparator.reverseOrder()))).toList()) {
             if (index > 5) {
                 break;
             }
@@ -291,14 +294,18 @@ public class CoachToolDispatcher {
         SpendingForecastResponse.Explanation explanation = forecast.explanation();
         List<Fact> facts = new ArrayList<>();
         facts.add(new Fact("평소 한 달 변동 소비(계절 제외)", CoachFormat.money(explanation.level())));
-        facts.add(new Fact("한 달 추세", signedMoney(explanation.monthlyTrend())));
         for (SpendingForecastResponse.ForecastPoint point : forecast.forecasts()) {
             String month = monthText(point.month());
             facts.add(new Fact(month + LABEL_FORECAST_SUFFIX, CoachFormat.money(point.predicted())));
             facts.add(new Fact(month + " 예상 범위", CoachFormat.money(point.lowerBound()) + " ~ " + CoachFormat.money(point.upperBound())));
-            facts.add(new Fact(month + " 추세 영향", signedMoney(point.trendEffect())));
-            if (explanation.seasonalityApplied()) {
-                facts.add(new Fact(month + " 계절 영향", signedMoney(point.seasonalEffect())));
+            if (point.trendEffect() != 0 || point.seasonalEffect() != 0) {
+                boolean seasonal = explanation.seasonalityApplied()
+                        && java.math.BigInteger.valueOf(point.seasonalEffect()).abs()
+                                .compareTo(java.math.BigInteger.valueOf(point.trendEffect()).abs()) > 0;
+                facts.add(new Fact(month + " 주요 변화 요인", (seasonal ? "계절 영향 " + signedMoney(point.seasonalEffect())
+                        : "추세 영향 " + signedMoney(point.trendEffect()))));
+            } else {
+                facts.add(new Fact(month + " 주요 변화 요인", "뚜렷한 추세·계절 변화 없음"));
             }
             if (point.lastYearAmount() != null) {
                 facts.add(new Fact(month + " 작년 같은 달 실적", CoachFormat.money(point.lastYearAmount())));
@@ -306,7 +313,7 @@ public class CoachToolDispatcher {
         }
         List<String> notes = new ArrayList<>();
         notes.add("예측 대상은 고정비를 뺀 변동 소비다. 예상 범위는 정확도를 보장하는 값이 아니다.");
-        notes.add("각 달의 예상은 평소 수준에 추세 영향과 계절 영향을 더한 값이다. 금액을 새로 계산하거나 합치지 말고 적힌 값만 쓸 것.");
+        notes.add("주요 변화 요인은 추세·계절 영향 중 절댓값이 큰 항목이다. 예상액과 다른 숫자를 새로 계산하거나 합치지 말 것.");
         if (!explanation.seasonalityApplied()) {
             notes.add("소비 기록이 12개월 미만이라 계절 영향은 반영하지 않았다.");
         }

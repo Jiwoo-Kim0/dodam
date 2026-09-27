@@ -135,6 +135,9 @@ public class LoanPrepaymentCalculator implements SimulationCalculator<LoanPrepay
         details.put("interestSaving", interestSaving);
         details.put("nextRepaymentBefore", rest.isEmpty() ? null : rest.get(0).amount());
         details.put("nextRepaymentAfter", recalculated.isEmpty() ? null : recalculated.get(0).amount());
+        details.put("nextRepaymentDate", recalculated.isEmpty() ? null : recalculated.get(0).repaymentDate());
+        details.put("nextRepaymentReduction", recalculated.isEmpty() ? null
+                : Math.subtractExact(rest.get(0).amount(), recalculated.get(0).amount()));
         details.put("comparisonTiming", List.of(
                 LoanScenarios.timing("INITIAL_CASH_CHANGE", base, LoanScenarios.BASIS_INITIAL_STATE),
                 LoanScenarios.timing("INITIAL_DEBT_CHANGE", base, LoanScenarios.BASIS_INITIAL_STATE),

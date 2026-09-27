@@ -4,6 +4,8 @@ import com.ssafy.dodam.domain.coach.dto.CoachFacts;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
 /**
@@ -44,6 +46,8 @@ public class CoachTemplateWriter {
     static final String LABEL_DELAYED = CoachSimulationFactFormatter.LABEL_DELAYED;
     static final String LABEL_GOAL_SCOPE = CoachSimulationFactFormatter.LABEL_GOAL_SCOPE;
     static final String LABEL_INTEREST_SAVING = CoachSimulationFactFormatter.LABEL_INTEREST_SAVING;
+    static final String LABEL_NEXT_REPAYMENT = CoachSimulationFactFormatter.LABEL_NEXT_REPAYMENT;
+    static final String LABEL_NEXT_REDUCTION = CoachSimulationFactFormatter.LABEL_NEXT_REDUCTION;
     /** 실패한 도구를 담는 섹션 제목. {@code CoachChatService}가 같은 제목으로 넣는다. */
     static final String FAILED_SECTION_TITLE = "실행하지 못한 요청";
 
@@ -52,6 +56,12 @@ public class CoachTemplateWriter {
     static final String CHAT_GOAL_SCOPE_PARTIAL = "목표 달성일은 소비 줄이기·저축 변경만 반영한 값이고, 대출 상환의 영향은 계산하지 않았어요.";
     /** 한 문장에 담는 목표 수. 목표가 더 많으면 나머지는 결과 카드가 보여준다. */
     private static final int CHAT_GOAL_LIMIT = 2;
+    private static final Pattern ASKED_YEAR_MONTH = Pattern.compile("(?<!\\d)(\\d{4})년\\s*(\\d{1,2})월");
+    private static final Pattern ASKED_MONTH = Pattern.compile("(?<!\\d)(\\d{1,2})월");
+
+    public String chat(CoachFacts facts, String question) {
+        return chatAnswer(facts, question);
+    }
 
     /**
      * 채팅 대체 문장(640 A-3). AI 없이도 "현재 A → 실행 후 B, N일 단축"을 서버 값으로 말한다 — 이것이 없으면
@@ -61,14 +71,34 @@ public class CoachTemplateWriter {
      * 사용자에게 뜻이 없다. '달성 불가'는 값이 있는 것이므로(그 속도로는 목표 금액에 이르지 못함) 그대로 말한다.
      */
     private static String chat(CoachFacts facts) {
+        return chatAnswer(facts, null);
+    }
+
+    private static String chatAnswer(CoachFacts facts, String question) {
         StringBuilder text = new StringBuilder();
         // 목표별 달성일 변화. 라벨의 괄호 안이 목표 이름이다: [0]=현재, [1]=실행 후, [2]=단축, [3]=지연
         LinkedHashMap<String, String[]> goals = new LinkedHashMap<>();
         String interestSaving = null;
         String firstForecast = null;
+        String forecastMonth = null;
+        String forecastReason = null;
         String firstFailure = null;
+        String nextRepayment = null;
+        String nextReduction = null;
+        String nextDate = null;
+        String noRepayment = null;
+        String goalForecast = null;
+        String goalForecastName = null;
+        String goalDifference = null;
+        boolean goalLate = false;
+        String diagnosisStatus = null;
+        String diagnosisIssueCount = null;
+        String firstIssue = null;
         boolean partialGoalScope = false;
+        boolean diagnosis = false;
+        String requestedMonth = requestedMonth(question);
         for (CoachFacts.Section section : facts.sections()) {
+            diagnosis |= section.title().startsWith("최근 진단");
             for (CoachFacts.Fact fact : section.facts()) {
                 String label = fact.label();
                 if (FAILED_SECTION_TITLE.equals(section.title())) {
@@ -87,12 +117,66 @@ public class CoachTemplateWriter {
                     partialGoalScope = true;
                 } else if (LABEL_INTEREST_SAVING.equals(label) && interestSaving == null) {
                     interestSaving = fact.value();
-                } else if (label.endsWith(CoachToolDispatcher.LABEL_FORECAST_SUFFIX) && firstForecast == null) {
-                    // 소비 예측(707)은 첫 달만 말한다. 사실이 오래된 달부터 쌓이므로 첫 사실이 다음 달이다
+                } else if (LABEL_NEXT_REPAYMENT.equals(label)) {
+                    nextRepayment = fact.value();
+                } else if (LABEL_NEXT_REDUCTION.equals(label)) {
+                    nextReduction = fact.value();
+                } else if ("다음 약정 상환일".equals(label)) {
+                    nextDate = fact.value();
+                } else if (CoachSimulationFactFormatter.LABEL_NO_REPAYMENT.equals(label)) {
+                    noRepayment = fact.value();
+                } else if ("예상 달성일(현재 속도)".equals(label)) {
+                    goalForecast = fact.value();
+                } else if ("목표".equals(label)) {
+                    goalForecastName = fact.value();
+                } else if ("목표일보다 늦음".equals(label) || "목표일보다 빠름".equals(label)) {
+                    goalDifference = fact.value();
+                    goalLate = "목표일보다 늦음".equals(label);
+                } else if ("종합 상태(서버 판정)".equals(label)) {
+                    diagnosisStatus = fact.value();
+                } else if ("문제 수".equals(label)) {
+                    diagnosisIssueCount = fact.value();
+                } else if (label.startsWith("문제 1 (")) {
+                    firstIssue = fact.value();
+                } else if (label.endsWith(CoachToolDispatcher.LABEL_FORECAST_SUFFIX)
+                        && (requestedMonth == null || (requestedMonth.contains("년")
+                                ? label.startsWith(requestedMonth + " ") : label.contains(" " + requestedMonth + "월")))
+                        && firstForecast == null) {
+                    // 월을 지정했다면 그 달을, 지정하지 않았다면 다음 달을 말한다.
                     String month = label.substring(0, label.length() - CoachToolDispatcher.LABEL_FORECAST_SUFFIX.length());
                     firstForecast = month + " 변동 소비는 " + fact.value() + "으로 예상돼요. ";
+                    forecastMonth = month;
+                } else if (forecastMonth != null && label.equals(forecastMonth + " 주요 변화 요인")) {
+                    forecastReason = fact.value();
                 }
             }
+        }
+        if (requestedMonth != null && firstForecast == null && facts.sections().stream()
+                .anyMatch(section -> section.title().startsWith("월 변동 소비 예측"))) {
+            return "요청하신 달의 예측은 제공되지 않아요. 현재는 다음 3개월을 확인할 수 있어요.";
+        }
+        boolean asksInterest = question != null && (question.contains("이자") || question.contains("절감"));
+        boolean asksMonthly = question != null && (question.contains("매달") || question.contains("월 납입")
+                || question.contains("월 상환") || question.contains("월 얼마"));
+        boolean asksMonthlyInterest = question != null && (question.contains("월 이자") || question.contains("월별 이자")
+                || question.contains("매달 이자") || question.contains("이자가 매달"));
+        if (asksMonthlyInterest && interestSaving != null) {
+            return "월별 이자 감소액은 이 결과에서 확인할 수 없어요. 만기까지 예상 이자 절감액은 "
+                    + interestSaving + "이에요(중도상환수수료 제외).";
+        }
+        if (asksMonthly && nextRepayment != null && nextReduction != null) {
+            return "다음 회차" + (nextDate == null ? "" : "(" + nextDate + ")") + " 예상 납입액은 " + nextRepayment + "으로 " + nextReduction
+                    + " 줄어들어요. 이후 회차의 금액은 월별로 다를 수 있어요.";
+        }
+        if (asksMonthly && noRepayment != null) {
+            return "전액 추가상환으로 이후 약정 납입 회차가 없어요. 중도상환수수료는 계산에 포함되지 않았어요.";
+        }
+        if (asksMonthly && interestSaving != null) {
+            return "다음 회차 납입액은 계산 결과에서 확인할 수 없어요. 만기까지 예상 이자 절감액은 "
+                    + interestSaving + "이에요(중도상환수수료 제외).";
+        }
+        if (asksInterest && interestSaving != null) {
+            return "만기까지 낼 이자가 " + interestSaving + " 줄어들 것으로 예상돼요. 중도상환수수료는 포함되지 않았어요.";
         }
         int written = 0;
         for (var entry : goals.entrySet()) {
@@ -110,10 +194,37 @@ public class CoachTemplateWriter {
             text.append(CHAT_GOAL_SCOPE_PARTIAL).append(' ');
         }
         if (interestSaving != null) {
-            text.append("만기까지 이자를 ").append(interestSaving).append(" 아낄 수 있어요. ");
+            text.append("만기까지 낼 이자가 ").append(interestSaving).append(" 줄어들 것으로 예상돼요(중도상환수수료 제외). ");
+        }
+        if (nextRepayment != null && interestSaving != null) {
+            text.append("다음 회차 예상 납입액은 ").append(nextRepayment).append("으로 바뀌어요. ");
         }
         if (firstForecast != null) {
             text.append(firstForecast);
+            if (forecastReason != null) {
+                text.append("가장 큰 변화 요인은 ").append(forecastReason).append("이에요.");
+            }
+        }
+        if (text.isEmpty() && goalForecast != null) {
+            text.append(goalForecastName == null ? "목표" : goalForecastName + " 목표");
+            if ("현재 속도로는 달성 불가".equals(goalForecast)) {
+                text.append("는 현재 저축 속도로 달성일을 예상하기 어려워요.");
+            } else {
+                text.append("의 예상 달성일은 ").append(goalForecast).append("로 예상돼요.");
+            }
+            if (goalDifference != null && !"현재 속도로는 달성 불가".equals(goalForecast)) {
+                text.append(" 목표일보다 ").append(goalDifference).append(goalLate ? " 늦어요." : " 빨라요.");
+            }
+        }
+        if (text.isEmpty() && diagnosis && diagnosisStatus != null) {
+            text.append("최근 진단의 종합 상태는 ").append(diagnosisStatus).append("로 나왔어요.");
+            if (firstIssue != null) {
+                text.append(" 우선 살펴볼 항목은 ").append(firstIssue).append("이에요.");
+            } else if ("0건".equals(diagnosisIssueCount)) {
+                text.append(" 발견된 문제는 없어요.");
+            } else if (diagnosisIssueCount != null) {
+                text.append(" 발견된 문제는 ").append(diagnosisIssueCount).append("이에요.");
+            }
         }
         if (text.isEmpty() && firstFailure != null) {
             return "요청을 실행하지 못했어요. " + firstFailure;
@@ -122,6 +233,18 @@ public class CoachTemplateWriter {
             return facts.sections().isEmpty() ? CHAT_NO_ANSWER : CHAT_SEE_FACTS;
         }
         return text.toString().strip();
+    }
+
+    private static String requestedMonth(String question) {
+        if (question == null) {
+            return null;
+        }
+        Matcher yearMonth = ASKED_YEAR_MONTH.matcher(question);
+        if (yearMonth.find()) {
+            return yearMonth.group(1) + "년 " + Integer.parseInt(yearMonth.group(2)) + "월";
+        }
+        Matcher matcher = ASKED_MONTH.matcher(question);
+        return matcher.find() ? Integer.toString(Integer.parseInt(matcher.group(1))) : null;
     }
 
     /** 목표 하나의 문장. 현재·실행 후 값이 모두 있어야 말한다. 없으면 null. */
