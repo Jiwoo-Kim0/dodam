@@ -219,7 +219,7 @@ public class CoachTemplateWriter {
         if (text.isEmpty() && diagnosis && diagnosisStatus != null) {
             text.append("최근 진단의 종합 상태는 ").append(diagnosisStatus).append("로 나왔어요.");
             if (firstIssue != null) {
-                text.append(" 우선 살펴볼 항목은 ").append(firstIssue).append("이에요.");
+                text.append(" 우선 살펴볼 항목은 ").append(firstIssue).append(copula(firstIssue));
             } else if ("0건".equals(diagnosisIssueCount)) {
                 text.append(" 발견된 문제는 없어요.");
             } else if (diagnosisIssueCount != null) {
@@ -290,5 +290,12 @@ public class CoachTemplateWriter {
             }
         }
         return highlights;
+    }
+
+    /** 이다의 해요체. 문제 제목이 받침 없이 끝나면 "증가이에요"가 되므로 "예요"로 바꾼다. */
+    private static String copula(String word) {
+        char last = word.isEmpty() ? 0 : word.charAt(word.length() - 1);
+        boolean finalConsonant = last >= 0xAC00 && last <= 0xD7A3 && (last - 0xAC00) % 28 != 0;
+        return finalConsonant ? "이에요." : "예요.";
     }
 }
