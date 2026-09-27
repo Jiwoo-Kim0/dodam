@@ -8,6 +8,8 @@ export type EfficiencyDimensionKey =
   | 'SAVING'
   | 'FIXED_EXPENSE'
   | 'CREDIT'
+  | 'DEBT_REPAYMENT'
+  /** efficiency-v3 이하로 굳힌 리포트에만 온다. */
   | 'CASHFLOW'
   | 'INEFFICIENCY';
 
@@ -47,7 +49,7 @@ export interface EfficiencyScoreApiResponse {
   calculationVersion: string;
   availableDimensionCount: number;
   unavailableReason?: string;
-  /** SPENDING, SAVING, FIXED_EXPENSE, CREDIT, CASHFLOW, INEFFICIENCY 순서로 고정이다. */
+  /** SPENDING, SAVING, FIXED_EXPENSE, CREDIT, DEBT_REPAYMENT 순서로 고정이다(v3 이하 저장본은 CASHFLOW, INEFFICIENCY까지 6개). */
   dimensions: EfficiencyDimensionApiResponse[];
 }
 
