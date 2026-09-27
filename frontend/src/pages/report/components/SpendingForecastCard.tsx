@@ -120,7 +120,7 @@ export function SpendingForecastCard({ forecast }: SpendingForecastCardProps) {
 
   if (points.length === 0 || forecasts.length === 0) {
     return (
-      <View style={screenStyles.card}>
+      <View style={[screenStyles.card, styles.forecastCard]}>
         <View style={styles.header}>
           <Text style={screenStyles.cardTitle}>예상 소비</Text>
         </View>
@@ -166,7 +166,7 @@ export function SpendingForecastCard({ forecast }: SpendingForecastCardProps) {
     .join(', ')}`;
 
   return (
-    <View style={screenStyles.card}>
+    <View style={[screenStyles.card, styles.forecastCard]}>
       <View style={styles.header}>
         <View style={styles.titleGroup}>
           <Text style={screenStyles.cardTitle}>예상 소비</Text>
