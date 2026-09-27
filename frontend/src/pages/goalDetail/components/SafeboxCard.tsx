@@ -13,11 +13,19 @@ interface SafeboxCardProps {
   account: SafeboxAccountResponse;
   allocation: SafeboxAllocationResponse;
   otherAccounts: readonly GoalAccountApiResponse[];
+  onManageDeposits: () => void;
   onTransfer: (direction: 'send' | 'withdraw') => void;
   onSetAmount: (amount: number) => Promise<void>;
 }
 
-export function SafeboxCard({ account, allocation, otherAccounts, onTransfer, onSetAmount }: SafeboxCardProps) {
+export function SafeboxCard({
+  account,
+  allocation,
+  otherAccounts,
+  onManageDeposits,
+  onTransfer,
+  onSetAmount,
+}: SafeboxCardProps) {
   const [direction, setDirection] = useState<Direction | null>(null);
   const [amountText, setAmountText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -78,17 +86,21 @@ export function SafeboxCard({ account, allocation, otherAccounts, onTransfer, on
         {account.shortfallAmount > 0 ? (
           <Text style={styles.warning}>계좌 잔액이 배정액보다 부족해요. 계좌를 확인해 주세요.</Text>
         ) : null}
-        {otherAccounts.length > 0 ? (
-          <View style={styles.otherAccounts}>
+        {/* 예·적금은 세이프박스와 별개로 목표에 연결된다. 연결 전에도 통로가 보이도록 늘 둔다. */}
+        <View style={styles.otherAccounts}>
+          <View style={styles.row}>
             <Text style={styles.label}>함께 연결된 예·적금</Text>
-            {otherAccounts.map((item) => (
-              <View key={item.accountId} style={styles.row}>
-                <Text style={styles.label}>{item.accountName}</Text>
-                <Text style={styles.value}>{formatCurrency(item.allocatedToThisGoal)}</Text>
-              </View>
-            ))}
+            <Pressable accessibilityRole="button" hitSlop={8} onPress={onManageDeposits} style={styles.linkButton}>
+              <Text style={styles.linkText}>{otherAccounts.length > 0 ? '관리' : '+ 연결하기'}</Text>
+            </Pressable>
           </View>
-        ) : null}
+          {otherAccounts.map((item) => (
+            <View key={item.accountId} style={styles.row}>
+              <Text style={styles.label}>{item.accountName}</Text>
+              <Text style={styles.value}>{formatCurrency(item.allocatedToThisGoal)}</Text>
+            </View>
+          ))}
+        </View>
         <View style={styles.actions}>
           <Pressable accessibilityRole="button" onPress={() => onTransfer('send')} style={styles.action}>
             <Text style={styles.actionText}>계좌에 보내기</Text>
@@ -138,6 +150,8 @@ const styles = StyleSheet.create({
   value: { ...typography.body2, fontFamily: fontFamily.semiBold, color: colors.textPrimary },
   warning: { ...typography.caption, color: colors.primary.orange },
   otherAccounts: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider, paddingTop: spacing[3], gap: spacing[2] },
+  linkButton: { paddingHorizontal: spacing[3], paddingVertical: spacing[2], backgroundColor: colors.primary.lightGreen, borderRadius: radius.default },
+  linkText: { ...typography.body2, color: colors.primary.green, fontFamily: fontFamily.semiBold },
   actions: { flexDirection: 'row', gap: spacing[1], marginTop: spacing[2] },
   action: { flex: 1, paddingVertical: spacing[3], alignItems: 'center', backgroundColor: colors.primary.lightGreen, borderRadius: radius.default },
   actionText: { ...typography.caption, color: colors.primary.green, fontFamily: fontFamily.semiBold },

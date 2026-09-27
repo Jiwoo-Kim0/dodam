@@ -170,11 +170,47 @@ class GoalSavingPaceReaderTest {
     void dedicatedAccountUsesGoalMovementInsteadOfWholeAccountCashflow() {
         given(safeboxAccounts.findById(USER)).willReturn(Optional.of(new SafeboxAccount(USER, 3L,
                 LocalDateTime.of(2026, 6, 1, 0, 0))));
+        given(movements.findFirstOccurredAt(USER, 1L)).willReturn(Optional.of(LocalDateTime.of(2026, 6, 3, 10, 0)));
         given(movements.sumDelta(eq(USER), eq(1L), any(), any())).willReturn(900_000L);
 
         assertThat(reader.monthlyPace(USER, allocation(sharedDemand(3L, 1_500_000L, 900_000L,
                 1_500_000L)), TODAY)).isEqualTo(300_000L);
+        verify(movements).sumDelta(USER, 1L, FROM.atStartOfDay(), TO.plusDays(1).atStartOfDay());
         verify(jdbc, never()).readNetCashflowByAccount(any(), anyCollection(), any(), any());
+    }
+
+    @Test
+    void safeboxGoalStartedLastMonthDividesByCoveredMonthsOnly() {
+        given(safeboxAccounts.findById(USER)).willReturn(Optional.of(new SafeboxAccount(USER, 3L,
+                LocalDateTime.of(2026, 6, 1, 0, 0))));
+        given(movements.findFirstOccurredAt(USER, 1L)).willReturn(Optional.of(LocalDateTime.of(2026, 8, 20, 9, 0)));
+        given(movements.sumDelta(eq(USER), eq(1L), any(), any())).willReturn(300_000L);
+
+        assertThat(reader.monthlyPace(USER, allocation(sharedDemand(3L, 1_000_000L, 300_000L,
+                1_000_000L)), TODAY)).isEqualTo(300_000L);
+    }
+
+    @Test
+    void safeboxGoalStartedThisMonthUsesThisMonthAsOneMonthOfPace() {
+        // 이번 달 만든 목표에 20만 원을 담았다. 완료 월이 없다고 0으로 두면 예상 달성일이 늘 "계산 불가"다
+        given(safeboxAccounts.findById(USER)).willReturn(Optional.of(new SafeboxAccount(USER, 3L,
+                LocalDateTime.of(2026, 6, 1, 0, 0))));
+        given(movements.findFirstOccurredAt(USER, 1L)).willReturn(Optional.of(LocalDateTime.of(2026, 9, 21, 15, 0)));
+        given(movements.sumDelta(USER, 1L, LocalDate.of(2026, 9, 1).atStartOfDay(),
+                TODAY.plusDays(1).atStartOfDay())).willReturn(200_000L);
+
+        assertThat(reader.monthlyPace(USER, allocation(sharedDemand(3L, 1_000_000L, 200_000L,
+                1_000_000L)), TODAY)).isEqualTo(200_000L);
+    }
+
+    @Test
+    void safeboxGoalWithoutMovementHasNoSafeboxPace() {
+        given(safeboxAccounts.findById(USER)).willReturn(Optional.of(new SafeboxAccount(USER, 3L,
+                LocalDateTime.of(2026, 6, 1, 0, 0))));
+
+        assertThat(reader.monthlyPace(USER, allocation(sharedDemand(3L, 1_000_000L, 0L,
+                1_000_000L)), TODAY)).isZero();
+        verify(movements, never()).sumDelta(any(), any(), any(), any());
     }
 
     @Test

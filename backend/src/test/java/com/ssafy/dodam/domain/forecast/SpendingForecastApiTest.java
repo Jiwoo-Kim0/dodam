@@ -1,5 +1,6 @@
 package com.ssafy.dodam.domain.forecast;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -10,7 +11,11 @@ import com.ssafy.dodam.domain.improvement.service.ImprovementClock;
 import com.ssafy.dodam.domain.report.service.ReportClock;
 import com.ssafy.dodam.domain.user.entity.User;
 import com.ssafy.dodam.domain.user.repository.UserRepository;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.Month;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.util.UUID;
@@ -92,7 +97,61 @@ class SpendingForecastApiTest {
                 // 24개월이 전부 같으면 계절 계수 1·추세 0·잔차 0이라 예측이 그 값 그대로 나오고 구간도 붙는다
                 .andExpect(jsonPath("$.data.forecasts[0].predicted").value(1_000_000))
                 .andExpect(jsonPath("$.data.forecasts[0].lowerBound").value(1_000_000))
-                .andExpect(jsonPath("$.data.forecasts[0].upperBound").value(1_000_000));
+                .andExpect(jsonPath("$.data.forecasts[0].upperBound").value(1_000_000))
+                // 근거 분해(707): 평탄한 이력이면 수준이 곧 예측이고 추세·계절 몫은 0이다
+                .andExpect(jsonPath("$.data.explanation.level").value(1_000_000))
+                .andExpect(jsonPath("$.data.explanation.monthlyTrend").value(0))
+                .andExpect(jsonPath("$.data.explanation.seasonalityApplied").value(true))
+                .andExpect(jsonPath("$.data.forecasts[0].trendEffect").value(0))
+                .andExpect(jsonPath("$.data.forecasts[0].seasonalEffect").value(0))
+                .andExpect(jsonPath("$.data.forecasts[0].seasonalFactor").value(1.0))
+                // 작년 같은 달은 화면 창(12개월) 밖이라도 추정 입력(24개월)에서 찾는다
+                .andExpect(jsonPath("$.data.forecasts[0].lastYearAmount").value(1_000_000));
+    }
+
+    @Test
+    @DisplayName("예측은 평소 수준 + 추세 영향 + 계절 영향으로 원 단위까지 맞아떨어진다")
+    void decompositionAddsUpToPrediction() throws Exception {
+        // 달마다 1만 원씩 늘고, 기준 달 다음 달과 같은 달력 월만 두 해 모두 크게 튄다
+        Month spike = base.plusMonths(1).getMonth();
+        for (int back = 1; back <= 24; back++) {
+            YearMonth month = base.minusMonths(back);
+            long amount = 800_000 + (24 - back) * 10_000L;
+            variableExpense(owner, month, month.getMonth() == spike ? amount * 13 / 10 : amount);
+        }
+
+        String body = mvc.perform(get(ENDPOINT).with(user(owner.toString())))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        JsonNode data = new ObjectMapper().readTree(body).get("data");
+        long level = data.at("/explanation/level").asLong();
+        assertThat(data.at("/explanation/monthlyTrend").asLong()).isPositive();
+        for (JsonNode point : data.get("forecasts")) {
+            assertThat(level + point.get("trendEffect").asLong() + point.get("seasonalEffect").asLong())
+                    .isEqualTo(point.get("predicted").asLong());
+        }
+        JsonNode first = data.get("forecasts").get(0);
+        assertThat(first.get("seasonalEffect").asLong()).isPositive();
+        assertThat(first.get("seasonalFactor").decimalValue()).isGreaterThan(BigDecimal.ONE);
+        // 다음 달의 1년 전 = 11개월 전(back = 11). 튀는 달이므로 1.3배다
+        assertThat(first.get("lastYearAmount").asLong()).isEqualTo((800_000 + 13 * 10_000L) * 13 / 10);
+    }
+
+    @Test
+    @DisplayName("이력이 12개월보다 짧으면 계절 계수를 싣지 않는다")
+    void omitsSeasonalFactorWithoutSeasonality() throws Exception {
+        for (int back = 1; back <= 6; back++) {
+            variableExpense(owner, base.minusMonths(back), 1_000_000);
+        }
+
+        mvc.perform(get(ENDPOINT).with(user(owner.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.fallbackReason").value("SEASONALITY_UNAVAILABLE"))
+                .andExpect(jsonPath("$.data.explanation.seasonalityApplied").value(false))
+                .andExpect(jsonPath("$.data.forecasts[0].seasonalFactor").value(nullValue()))
+                .andExpect(jsonPath("$.data.forecasts[0].seasonalEffect").value(0))
+                .andExpect(jsonPath("$.data.forecasts[0].lastYearAmount").value(nullValue()));
     }
 
     @Test
@@ -149,6 +208,7 @@ class SpendingForecastApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.history.length()").value(2))
                 .andExpect(jsonPath("$.data.forecasts").isEmpty())
+                .andExpect(jsonPath("$.data.explanation").value(nullValue()))
                 .andExpect(jsonPath("$.data.fallbackReason").value("USER_DATA_TOO_SHORT"));
     }
 

@@ -528,13 +528,13 @@ record ChatTurn(String content, List<ToolCall> toolCalls, String finishReason)
 
 | 클래스 | 역할 |
 | --- | --- |
-| `CoachToolRegistry` | 도구 7개의 OpenAI function 스키마(§13-2-1)와 시연 칩 3개의 고정 매핑(§13-2-2). 인자는 전부 enum·description으로 고정, 사용자 식별자·계좌번호·loanId·goalId는 스키마에 없다 |
+| `CoachToolRegistry` | 도구 8개의 OpenAI function 스키마(§13-2-1)와 시연 칩 3개의 고정 매핑(§13-2-2). 인자는 전부 enum·description으로 고정, 사용자 식별자·계좌번호·loanId·goalId는 스키마에 없다 |
 | `CoachToolArguments` | 모델이 만든 인자 JSON 검증. 금액(정수·"50,000원"·소수 정수부, 0 이하·1억 초과 거부), 개월(1~120), 코드(허용 집합 밖 거부 — "카페" 같은 한글 값), 배열 |
 | `CoachToolDispatcher` | 호출 → 실행. 한 턴 **3개**까지(초과는 미실행 사유), 검증 실패(400·404·시뮬레이션 규칙·인자 오류)는 예외가 아니라 결과 `error`로(2차 호출이 "카페 월평균 소비보다 큰 금액이에요"처럼 그대로 전달), 그 외 실패는 고정 문구. 로그는 도구 이름·인자 키·simulationId만 |
 | `CoachSimulationFactFormatter` | `SimulationResponse` → 사실 문자열. `goalImpacts[]`(현재/실행 후 달성일·단축/지연 일수), `comparison.items/costs`의 `INTEREST_SAVING`·`INTEREST_TOTAL`·`FINANCE_COST_EVALUATED`·`PREPAYMENT_AMOUNT`·`REFINANCE_AMOUNT`만, `after.assumptions` 최대 6개를 **한글 문장으로**(표에 없는 코드는 생략). 월별 상환액 행·스냅샷 전체·simulationId·유형 코드는 넘기지 않는다 — 사실은 모델 입력이면서 응답 `facts`로 FE 결과 카드에 그대로 그려지고 세션 이력에 남는다. **`NOT_COMPUTABLE` 목표는 달성일 줄을 만들지 않고** [주의]로만 알린다(대출 추가 상환·대환처럼 자금 출처를 모르는 유형, 그 유형이 섞인 복합). 복합에서 소비·저축 자식이 정확히 하나면 그 자식의 단독 결과(`after.details.children[].goalImpacts`)를 `달성일 계산 범위: 소비 줄이기·저축 변경만 반영(대출 상환·대환은 제외)` 사실과 함께 대신 쓴다. 날짜가 없는 것은 값으로 말한다: 현재 `현재 속도로는 달성 불가`, 실행 후 `실행 후에도 달성 불가`(`SAVING_PACE_ZERO` 포함). 변화 0일은 단축·지연 줄이 없다 |
 | `CoachToolResult` | 결과 1건(`toolCallId, tool, simulationId, created, sections, notes, error`). `toModelText()`가 2차 호출의 tool 메시지 본문("[제목]/- 라벨: 값/※ 주의")을 만든다 |
 
-#### 13-2-1. 도구 7개
+#### 13-2-1. 도구 8개
 
 | tool | 인자(모델) | 서버 매핑 | 되묻기(실행 안 함) |
 | --- | --- | --- | --- |
@@ -545,9 +545,15 @@ record ChatTurn(String content, List<ToolCall> toolCalls, String finishReason)
 | `simulate_combined` | `scenarios[]{type(SPENDING·SAVING·LOAN_PREPAYMENT·LOAN_REFINANCE) + 위 인자}` 2~10개 | 자식마다 단독 도구와 같은 해석 → 명세 17 복합 본문 `{type, parameters}`(`goalId`·`loanId`·`targetProductId`로 치환, `accountNo` 없음) | 2개 미만·10개 초과·유형 없음, 자식 오류는 전체 오류 |
 | `get_goal_forecast` | `goalName?` | `GoalCalculationService.getForecast` 3인자 | 목표 없음·여럿(되묻기) |
 | `get_latest_diagnosis` | — | 최신 완료 진단 + 문제 상위 5건(제목·심각도) | 완료 진단 없음 |
+| `get_spending_forecast` | — (707. 기간을 열면 서버 검증 문구 `horizonMonths는 1~12…`가 사용자에게 나가므로 인자를 두지 않는다) | `SpendingForecastQueryService.forecast(userId, null)` — 리포트 "예상 소비" 카드와 같은 경로, 다음 3개월 | 예측 없음(거래가 있는 달 3개 미만) → `소비 기록이 3개월 이상 쌓여야 예측할 수 있어요.` |
 
 시뮬레이션 도구의 사실: 목표별 `현재/실행 후 예상 달성일`·`단축/지연 N일`(엔진이 계산한 목표만), 복합에서 자식 결과를 대신 쓰면 `달성일 계산 범위`, `만기까지 이자 절감(수수료 제외)`, `만기까지 총 이자(현재 → 실행 후)`, 복합이면 `평가 기간 금융비용 변화`, `적용 가정(서버)`(한글 문장). 제목·simulationId는 사실에 없다(FE "자세히"는 `toolResults[].simulationId`).
+
+추가상환 답변 개선: 단일 `LOAN_PREPAYMENT`에는 추가상환일 이후 **첫 약정 회차**의 상환일·예상 납입액 전후·감소액을 사실로 보낸다. 감소액은 시뮬레이션 계산기의 `after.details.nextRepaymentReduction`으로 검증된 값이고, 월별 목록 전체를 모델에 보내지 않는다. 전액 상환이면 다음 회차 금액 대신 `추가상환 후 남은 납입 회차: 없음(전액 상환)`을 보낸다. `매달 얼마 줄어?`에는 첫 회차 변화라고 명시하고 모든 달에 같은 감소액이 적용된다고 말하지 않는다. 이자 절감은 중도상환수수료를 뺀 순절감액이 아닌 예상치다. 다른 질문도 첫 문장에 질문의 핵심 결론을 두도록 채팅 프롬프트와 템플릿을 조정했다. 템플릿은 목표 달성일 조회·최근 진단의 종합 상태와 첫 문제·소비 예측에서 지정한 달을 읽는다. 현재 FE 결과 카드는 사실을 그대로 나열하므로 질문 유형별 표시 우선순위와 상세 접기 구성은 후속 화면 작업이 필요하다.
+추가상환의 총이자 비교 라벨은 `만기까지 예상 잔여 이자(추가상환 전 → 추가상환 시)`로 표시한다. 시뮬레이션이 실제 상환을 처리했다는 뜻의 `실행 후` 표현을 사용하지 않는다.
+최근 진단의 첫 문제는 `findAllOwned`의 ID 순서가 아니라 심각도 높은 순으로 정렬한다(같은 심각도는 기존 ID 순서). 목표 달성일 조회도 예상일과 목표일 대비 차이를 사실 목록 앞에 둔다.
 notes: "달성일·절감액은 서버 시뮬레이션 엔진이 계산한 값이다. 새 숫자를 만들지 말 것." (+ 달성일을 계산하지 않은 목표가 있으면 "목표 달성일을 언급하거나 추정하지 말 것", 자식 결과를 대신 썼으면 "소비 줄이기·저축 변경 부분만 반영한 값", '달성 불가'가 있으면 날짜 추정 금지).
+`get_spending_forecast`의 사실(707): `평소 한 달 변동 소비(계절 제외)`와 달마다 `YYYY년 M월 예상 변동 소비`·`예상 범위`·`주요 변화 요인`·`작년 같은 달 실적`(있을 때만). 주요 변화 요인은 서버 분해값의 추세·계절 영향 중 절댓값이 큰 쪽이다(같으면 추세). 상세 분해값은 [spending-forecast.md](spending-forecast.md) §2의 예측 API에 남아 있다. 월 라벨에 숫자를 넣는 것은 모델이 "12월"이라고 말해도 `CoachNumberGuard`에 걸리지 않게 하기 위해서다. notes: 변동 소비만 대상·범위는 정확도 보장 아님·새 금액 금지, 계절 미적용이면 그 사유. 채팅은 물어본 달의 예상액과 주요 변화 요인을 먼저 말하고, 그 달이 향후 3개월 결과에 없으면 추정하지 않는다. 템플릿도 같은 규칙을 따른다.
 템플릿(`CoachTemplateWriter.chat`)도 같은 규칙이다: 달성일 사실이 없는 목표는 문장에 넣지 않는다("실행 후 계산 불가로 예상돼요"가 나가지 않는다). `get_latest_diagnosis`의 종합 상태·심각도도 코드(`RISK`·`HIGH`)가 아니라 `위험`·`심각도 높음`으로 넘긴다.
 
 #### 13-2-2. 시연 칩 (LLM 1차 호출 없음)
@@ -574,7 +580,7 @@ notes: "달성일·절감액은 서버 시뮬레이션 엔진이 계산한 값�
   "conversationId": "c_0123456789abcdef",
   "message": "둘 다 하면 비상금 500만 원 목표가 2028-02-13에서 2027-10-15로 121일 빨라지고, 만기까지 이자 384,000원을 아낄 수 있어요.",
   "facts": { "topic": "CHAT", "subject": "복합 시뮬레이션",
-             "sections": [ { "title": "시뮬레이션 결과(서버 계산)", "facts": [ { "label": "단축(비상금 500만 원)", "value": "121일" } ] } ],
+             "sections": [ { "title": "예상 결과", "facts": [ { "label": "단축(비상금 500만 원)", "value": "121일" } ] } ],
              "notes": ["달성일·절감액은 서버 시뮬레이션 엔진이 계산한 값이다. 새 숫자를 만들지 말 것."] },
   "toolResults": [ { "tool": "simulate_combined", "simulationId": 88, "created": true, "error": null } ],
   "suggestedQuestions": ["카페를 월 5만원 줄이면?", "대출 100만원 더 갚으면?"],
@@ -585,8 +591,8 @@ notes: "달성일·절감액은 서버 시뮬레이션 엔진이 계산한 값�
 | --- | --- |
 | 한 턴 (`CoachChatService`) | 세션 로드 → 턴 상한 → 사용자 문장 민감정보 검사 → `context` facts(`CoachFactAssembler.inefficiency`, 시스템 프롬프트 [화면 맥락]) → **자유 입력**: 1차 `chat(messages, tools, AUTO)`; tool_calls 없으면 그 답이 최종. **칩**: 1차 생략, `CoachToolRegistry.chip()` 고정 호출 → `CoachToolDispatcher.dispatch`(≤3) → facts → 2차 `chat(…, NONE)` → 숫자 검증 → 응답 |
 | 왕복 | 1회. 2차에 또 tool_calls → `TOOL_LOOP_EXCEEDED`(템플릿이 facts로 말한다). 칩은 AI가 꺼져 있어도 도구를 실행하고 템플릿으로 답한다 — 시연 중 GMS가 죽어도 결과 카드는 뜬다 |
-| 템플릿 (`CoachTemplateWriter` CHAT) | facts 라벨 `현재 예상 달성일(목표)`·`실행 후 예상 달성일(목표)`·`단축/지연(목표)`·`만기까지 이자 절감(수수료 제외)`에서 "비상금 500만 원 목표는 현재 2028-02-13에서 실행 후 2027-10-15로 121일 빨라질 것으로 예상돼요. 만기까지 이자를 384,000원 아낄 수 있어요." 목표 2개까지. 실패만 있으면 "요청을 실행하지 못했어요. {사유}", 결과 없음이면 고정 안내 |
-| 프롬프트 (`CoachPromptFactory.chatSystem`) | 공통 규칙 + 대화 규칙(도구 사용 조건, 금액 없으면 되묻기, `실행 실패:`는 그대로 전달, 무관 질문 거절 문구, 3문장·200자, 현재 → 실행 후 순서, 사용자 숫자 되풀이 허용) + 선택 [화면 맥락]. `VERSION` 640.1 |
+| 템플릿 (`CoachTemplateWriter` CHAT) | facts에서 질문이 요구한 값을 먼저 고른다. 추가상환 월 납입액·만기까지 이자 절감, 목표 변화·목표 예상일, 지정 월 소비 예측·주요 요인, 최근 진단 상태·첫 문제를 답한다. 목표 변화는 최대 2개까지 말하고 실패만 있으면 사유, 결과가 없으면 고정 안내를 쓴다 |
+| 프롬프트 (`CoachPromptFactory.chatSystem`) | 공통 규칙 + 대화 규칙(도구 사용 조건, 금액 없으면 되묻기, `실행 실패:`는 그대로 전달, 무관 질문 거절 문구, 3문장·200자, 질문의 결론 우선·추정 금지·사용자 숫자 되풀이 허용) + 선택 [화면 맥락]. `VERSION` 674.1 |
 | 숫자 검증 | `CoachNumberGuard.findUnverifiedNumber(text, facts, extraSources)` — 허용 = facts + **사용자 문장** + 화면 맥락 facts + 앞선 턴의 문장·facts. `5만원`·`100만`·`1.5억`·`3천원`은 단위를 곱한 값(50,000 …)도 허용한다(사용자가 "5만원"이라 말한 것을 모델이 "50,000원"으로 되풀이하는 것은 지어낸 숫자가 아니다) |
 | 민감정보 | (673: 외부 송신 직전 메시지 전체 재검사는 §13-4-3) `CoachSensitiveDataGuard.scan(사용자 문장)` — 계좌·카드번호가 있으면 외부 호출 없이 `SENSITIVE_DATA_BLOCKED` + "계좌번호·카드번호처럼 긴 숫자는 채팅에 적지 말아 주세요…". 이 문장은 세션에도 남기지 않는다. 칩 문구는 서버 문자열이라 검사하지 않는다 |
 | 세션 (`CoachChatSessionStore`, Redis `coach:chat:session:{userId}:{conversationId}`) | 사용자 문장 + facts 줄(≤8)만. **모델 응답 전문·프롬프트는 저장하지 않는다**(§6). 재생은 user/assistant 쌍이며 assistant 자리는 "(앞선 답변의 서버 계산값) 라벨: 값 · …". 최근 6턴, TTL 30분(저장마다 갱신), 세션당 10턴(`SESSION_TURN_LIMIT`, 이 응답은 세션을 늘리지 않는다). 없는/만료된 id는 같은 id로 새 대화 — FE가 id를 바꿀 필요 없다. 저장소 장애는 새 대화와 같다 |
@@ -641,6 +647,7 @@ notes: "달성일·절감액은 서버 시뮬레이션 엔진이 계산한 값�
 | "저축을 월 30만원으로 올리면 언제 모아?" | `simulate_saving_change` → 달성일 변화. 목표가 여럿이고 이름이 없으면 전체 배분 | 8 |
 | "대출 100만원 더 갚으면?" | `simulate_loan_prepayment` → 이자 절감만. 목표 달성일 문장 없음 | 4 |
 | "비상금 목표 언제 돼?" | `get_goal_forecast` → 현재 속도 기준 예상일·목표일 대비 | 조회 도구 |
+| "다음 달 얼마 쓸 것 같아?" / "연말에 왜 많이 나와?" | `get_spending_forecast` → 예상 금액 + 가장 큰 근거(추세 또는 계절) | 조회 도구(707). **실제 모델 호출로는 아직 확인하지 않았다** |
 | "안녕" / "이 앱 어떻게 써?" | 도구 없이 한두 문장 | 1의 예외(인사·사용법) |
 | "카페 줄이면?" (금액 없음) | 도구 없이 되묻기("얼마를 줄일지 알려 주시면…") | 프롬프트 "금액이 빠지면 되묻는다" |
 | "삼성전자 주식 사도 돼?" / "오늘 날씨 어때?" | 고정 문구 | 1 |

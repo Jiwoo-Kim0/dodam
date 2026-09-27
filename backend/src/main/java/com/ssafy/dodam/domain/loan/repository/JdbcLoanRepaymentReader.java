@@ -44,6 +44,16 @@ public class JdbcLoanRepaymentReader implements LoanRepaymentReader {
             """
             + WHERE_CLAUSE;
 
+    // 소유권은 loan.user_id로 건다. 상환 행에는 사용자 열이 없다.
+    private static final String SUM_PAID_SQL = """
+            SELECT COALESCE(SUM(repayment.amount), 0)
+            FROM loan_repayment repayment
+            JOIN loan ON loan.loan_id = repayment.loan_id
+            WHERE loan.user_id = :userId
+              AND repayment.status = 'PAID'
+              AND repayment.repayment_date BETWEEN :startDate AND :endDate
+            """;
+
     private final NamedParameterJdbcTemplate jdbcTemplate;
 
     public JdbcLoanRepaymentReader(NamedParameterJdbcTemplate jdbcTemplate) {
@@ -81,5 +91,12 @@ public class JdbcLoanRepaymentReader implements LoanRepaymentReader {
                 )
         );
         return new PageImpl<>(rows, pageable, total);
+    }
+
+    @Override
+    public long sumPaidAmount(Long userId, LocalDate startDate, LocalDate endDate) {
+        Long total = jdbcTemplate.queryForObject(SUM_PAID_SQL,
+                Map.of("userId", userId, "startDate", startDate, "endDate", endDate), Long.class);
+        return Objects.requireNonNullElse(total, 0L);
     }
 }

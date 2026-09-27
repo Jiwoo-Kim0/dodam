@@ -6,6 +6,17 @@ import { findInstitutionByBankName } from '@/utils/institution';
 
 import { styles } from './GoalAccountSelectionList.styles';
 
+/**
+ * 예금은 이미 모인 돈만 더하고 적금은 매달 납입액이 저축 속도로 잡혀 예상 달성일이 달라진다.
+ * 은행명·번호만으로는 둘을 구분할 수 없어 종류를 함께 보여준다.
+ */
+const ACCOUNT_TYPE_LABEL: Record<AccountApiResponse['accountType'], string> = {
+  DEMAND_DEPOSIT: '입출금',
+  MINUS: '마이너스',
+  DEPOSIT: '예금',
+  SAVINGS: '적금',
+};
+
 interface GoalAccountSelectionListProps {
   accounts: readonly AccountApiResponse[];
   disabled?: boolean;
@@ -44,6 +55,7 @@ export function GoalAccountSelectionList({
               account.balance,
               account.currency,
             );
+            const typeLabel = ACCOUNT_TYPE_LABEL[account.accountType];
 
             return (
               <Pressable
@@ -51,7 +63,7 @@ export function GoalAccountSelectionList({
                 onPress={() => onToggle(accountId)}
                 disabled={disabled}
                 accessibilityRole="checkbox"
-                accessibilityLabel={`${account.bankName} ${account.accountName} ${account.accountNoMasked}, 잔액 ${balanceText}`}
+                accessibilityLabel={`${account.bankName} ${typeLabel} ${account.accountName} ${account.accountNoMasked}, 잔액 ${balanceText}`}
                 accessibilityState={{ checked: isSelected, disabled }}
                 style={({ pressed }) => [
                   styles.accountCard,
@@ -79,9 +91,14 @@ export function GoalAccountSelectionList({
                 </View>
 
                 <View style={styles.accountInfo}>
-                  <Text numberOfLines={1} style={styles.bankName}>
-                    {account.bankName}
-                  </Text>
+                  <View style={styles.titleRow}>
+                    <Text numberOfLines={1} style={styles.bankName}>
+                      {account.bankName}
+                    </Text>
+                    <View style={styles.typeTag}>
+                      <Text style={styles.typeTagText}>{typeLabel}</Text>
+                    </View>
+                  </View>
                   {/* 계좌명은 은행명과 겹쳐 읽혀서 뺐다. 구분에 필요한 건 번호 쪽이다. */}
                   <Text style={styles.accountNumber}>
                     {account.accountNoMasked}

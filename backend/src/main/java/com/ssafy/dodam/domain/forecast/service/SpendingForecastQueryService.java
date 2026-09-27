@@ -46,7 +46,7 @@ public class SpendingForecastQueryService {
                 reader.readMonthlyVariableSpending(userId, base.minusMonths(HISTORY_MONTHS), base.minusMonths(1));
 
         SpendingForecastCalculator.Result result = SpendingForecastCalculator.forecast(history, base, horizon);
-        return SpendingForecastResponse.of(base, horizon, result, chartWindow(history, base));
+        return SpendingForecastResponse.of(base, horizon, result, history, chartWindow(history, base));
     }
 
     static int resolveHorizon(Integer requested) {

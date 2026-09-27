@@ -1,6 +1,8 @@
-import { forwardRef, useCallback, useMemo, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { usePathname, useRouter } from 'expo-router';
 import { TabList, TabSlot, Tabs, TabTrigger } from 'expo-router/ui';
+import type { Href } from 'expo-router';
 import type { TabTriggerSlotProps } from 'expo-router/ui';
 import type { GestureResponderEvent, ImageSourcePropType } from 'react-native';
 import { Animated, Image, Pressable, Text, View } from 'react-native';
@@ -15,7 +17,8 @@ type BottomNavigationItemProps = TabTriggerSlotProps & {
   activeIcon: ImageSourcePropType;
   inactiveIcon: ImageSourcePropType;
   label: string;
-  onFocusedPress?: () => void;
+  featured?: boolean;
+  onFocusedPress?: (event: GestureResponderEvent) => void;
 };
 
 const BottomNavigationItem = forwardRef<View, BottomNavigationItemProps>(
@@ -26,6 +29,7 @@ const BottomNavigationItem = forwardRef<View, BottomNavigationItemProps>(
       inactiveIcon,
       isFocused = false,
       label,
+      featured = false,
       onFocusedPress,
       onPress,
       ...pressableProps
@@ -102,7 +106,7 @@ const BottomNavigationItem = forwardRef<View, BottomNavigationItemProps>(
       playIconAnimation();
 
       if (isFocused) {
-        onFocusedPress?.();
+        onFocusedPress?.(event);
       }
 
       onPress?.(event);
@@ -118,10 +122,15 @@ const BottomNavigationItem = forwardRef<View, BottomNavigationItemProps>(
         ref={ref}
         style={styles.tab}>
         <Animated.View
-          style={[styles.iconContainer, { transform: [{ scale }, { rotate }] }]}>
-          <Image fadeDuration={0} resizeMode="contain" source={icon} style={styles.icon} />
+          style={[
+            styles.iconContainer,
+            featured && styles.featuredIconContainer,
+            isFocused && featured && styles.featuredIconContainerFocused,
+            { transform: [{ scale }, { rotate }] },
+          ]}>
+          <Image fadeDuration={0} resizeMode="contain" source={icon} style={featured ? styles.featuredIcon : styles.icon} />
         </Animated.View>
-        <Text style={[styles.label, isFocused && styles.selectedLabel]}>{label}</Text>
+        <Text style={[styles.label, isFocused && styles.selectedLabel, featured && styles.featuredLabel]}>{label}</Text>
       </Pressable>
     );
   },
@@ -129,6 +138,21 @@ const BottomNavigationItem = forwardRef<View, BottomNavigationItemProps>(
 
 export function BottomNavigation() {
   const insets = useSafeAreaInsets();
+  const pathname = usePathname();
+  const router = useRouter();
+  const previousPath = useRef<string>(routes.home);
+
+  useEffect(() => {
+    const restorableTabs = [routes.home, routes.ledger, routes.assets, routes.discovery, routes.report];
+    if (restorableTabs.some((route) => pathname === route || pathname.startsWith(`${route}/`))) {
+      previousPath.current = pathname;
+    }
+  }, [pathname]);
+
+  const closeCoach = useCallback((event: GestureResponderEvent) => {
+    event.preventDefault();
+    router.navigate(previousPath.current as Href);
+  }, [router]);
 
   return (
     <Tabs options={{ backBehavior: 'history' }} style={styles.container}>
@@ -159,6 +183,16 @@ export function BottomNavigation() {
             />
           </TabTrigger>
 
+          <TabTrigger asChild href={routes.coach as Href} name="coach">
+            <BottomNavigationItem
+              activeIcon={require('@/assets/characters/tori/tori_chat.png')}
+              featured
+              inactiveIcon={require('@/assets/characters/tori/tori_chat.png')}
+              label="토리"
+              onFocusedPress={closeCoach}
+            />
+          </TabTrigger>
+
           <TabTrigger asChild href={routes.assets} name="assets">
             <BottomNavigationItem
               activeIcon={require('@/assets/icons/navigation/assets_active_tab.png')}
@@ -174,14 +208,8 @@ export function BottomNavigation() {
               label="발견"
             />
           </TabTrigger>
-
-          <TabTrigger asChild href={routes.report} name="report">
-            <BottomNavigationItem
-              activeIcon={require('@/assets/icons/navigation/report_active_tab.png')}
-              inactiveIcon={require('@/assets/icons/navigation/report_inactive_tab.png')}
-              label="리포트"
-            />
-          </TabTrigger>
+          {/* 홈에서 여는 리포트 화면도 탭 내비게이터에 등록해 둔다. */}
+          <TabTrigger href={routes.report} name="report" style={{ display: 'none' }} />
       </TabList>
     </Tabs>
   );

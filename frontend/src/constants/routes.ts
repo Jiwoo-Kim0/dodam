@@ -11,6 +11,7 @@ export const routes = {
   notifications: '/home/notifications',
   subscriptions: '/home/subscriptions',
   ledger: '/ledger',
+  coach: '/coach',
   /** 가계부를 해당 거래의 달로 연 뒤 그 거래 상세를 바로 펼친다. `date`는 YYYY-MM-DD다. */
   ledgerTransaction: (transactionId: string, date: string) => ({
     pathname: '/ledger' as const,

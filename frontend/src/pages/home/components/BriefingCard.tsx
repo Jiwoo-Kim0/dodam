@@ -56,9 +56,22 @@ export function BriefingCard({
                 style={styles.calendarIcon}
                 tintColor={colors.primary.brown}
               />
-              <Text adjustsFontSizeToFit minimumFontScale={0.65} numberOfLines={1} style={styles.messageText}>
-                {briefing.message}
-              </Text>
+              {briefing.nextOutflow ? (
+                <View style={styles.outflowContent}>
+                  <Text numberOfLines={1} style={styles.outflowLabel}>
+                    {briefing.nextOutflow.daysLeft === 0 ? '오늘' : `D-${briefing.nextOutflow.daysLeft}`}
+                    {' · '}
+                    {briefing.nextOutflow.name}
+                  </Text>
+                  <Text adjustsFontSizeToFit minimumFontScale={0.8} numberOfLines={1} style={styles.outflowAmount}>
+                    {formatCurrency(briefing.nextOutflow.amount)}
+                  </Text>
+                </View>
+              ) : (
+                <Text adjustsFontSizeToFit minimumFontScale={0.65} numberOfLines={1} style={styles.messageText}>
+                  {briefing.message}
+                </Text>
+              )}
             </View>
           </>
         ) : (

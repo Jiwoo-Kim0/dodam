@@ -28,6 +28,7 @@ public class CoachToolRegistry {
     public static final String SIMULATE_COMBINED = "simulate_combined";
     public static final String GET_GOAL_FORECAST = "get_goal_forecast";
     public static final String GET_LATEST_DIAGNOSIS = "get_latest_diagnosis";
+    public static final String GET_SPENDING_FORECAST = "get_spending_forecast";
 
     /** 소비 감소 시뮬레이션이 받는 카테고리 코드(V6 변동 소비 11종). 저축·수입·이체·고정비는 대상이 아니다. */
     public static final List<String> SPENDING_CATEGORY_CODES = List.of(
@@ -52,7 +53,7 @@ public class CoachToolRegistry {
     public CoachToolRegistry(ObjectMapper json) {
         this.json = json;
         this.definitions = List.of(spendingReduction(), savingChange(), loanPrepayment(), loanRefinance(), combined(), goalForecast(),
-                latestDiagnosis());
+                latestDiagnosis(), spendingForecast());
     }
 
     public List<ToolDefinition> definitions() {
@@ -114,6 +115,7 @@ public class CoachToolRegistry {
             case SIMULATE_COMBINED -> "복합 시뮬레이션";
             case GET_GOAL_FORECAST -> "목표 달성 예측";
             case GET_LATEST_DIAGNOSIS -> "최근 진단";
+            case GET_SPENDING_FORECAST -> "소비 예측";
             default -> tool;
         };
     }
@@ -199,6 +201,15 @@ public class CoachToolRegistry {
         schema.putObject("properties");
         return new ToolDefinition(GET_LATEST_DIAGNOSIS,
                 "가장 최근 완료된 금융 진단의 문제 목록(비효율)을 조회한다. '내 문제가 뭐야', '뭘 고쳐야 해' 같은 질문.", schema);
+    }
+
+    /** 인자가 없다. 기간을 열어 두면 서버 검증 문구(1~12개월)가 그대로 사용자에게 나가고, 시연 질문은 다음 3개월로 충분하다(707). */
+    private ToolDefinition spendingForecast() {
+        ObjectNode schema = object();
+        schema.putObject("properties");
+        return new ToolDefinition(GET_SPENDING_FORECAST,
+                "지난 거래로 서버가 예측한 앞으로 3개월의 월 변동 소비와 그 근거(평소 수준·증가 추세·계절 영향·작년 같은 달)를 조회한다. "
+                        + "'다음 달 얼마 쓸 것 같아?', '연말에 왜 많이 나와?' 같은 질문.", schema);
     }
 
     private ObjectNode object() {

@@ -263,7 +263,7 @@ public class CoachChatService {
             return respond(next, CoachSource.AI, null, generator.modelName(), aiAnswer, facts, results, chipId, context);
         }
         // 첫 조언은 facts가 없어 템플릿이 "답변을 만들 수 없어요"가 된다. 대화를 여는 자리라 안내 문장으로 대신한다
-        String fallback = OPENING_USER_TEXT.equals(userText) ? OPENING_TEMPLATE_MESSAGE : template.write(facts);
+        String fallback = OPENING_USER_TEXT.equals(userText) ? OPENING_TEMPLATE_MESSAGE : template.chat(facts, userText);
         return respond(next, CoachSource.TEMPLATE, reason, null, fallback, facts, results, chipId, context);
     }
 

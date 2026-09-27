@@ -20,6 +20,8 @@ import com.ssafy.dodam.domain.diagnosis.entity.DiagnosisStatus;
 import com.ssafy.dodam.domain.diagnosis.entity.IssueSeverity;
 import com.ssafy.dodam.domain.diagnosis.repository.DiagnosisIssueRepository;
 import com.ssafy.dodam.domain.diagnosis.repository.DiagnosisRepository;
+import com.ssafy.dodam.domain.forecast.dto.response.SpendingForecastResponse;
+import com.ssafy.dodam.domain.forecast.service.SpendingForecastQueryService;
 import com.ssafy.dodam.domain.goal.dto.response.GoalForecastResponse;
 import com.ssafy.dodam.domain.goal.entity.Goal;
 import com.ssafy.dodam.domain.goal.entity.GoalType;
@@ -45,6 +47,7 @@ import com.ssafy.dodam.domain.simulation.service.SimulationInputResolver;
 import com.ssafy.dodam.domain.simulation.service.SimulationQueryService;
 import com.ssafy.dodam.domain.simulation.service.SimulationRunner;
 import com.ssafy.dodam.global.exception.InvalidRequestException;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -74,6 +77,7 @@ class CoachToolDispatcherTest {
     private final LoanRepository loans = mock(LoanRepository.class);
     private final DiagnosisRepository diagnoses = mock(DiagnosisRepository.class);
     private final DiagnosisIssueRepository issues = mock(DiagnosisIssueRepository.class);
+    private final SpendingForecastQueryService spendingForecasts = mock(SpendingForecastQueryService.class);
     private final CoachClock clock = mock(CoachClock.class);
     private final SpendingReductionInput spendingInput = new SpendingReductionInput("CAFE", 50_000L, 12);
     private final LoanPrepaymentInput prepaymentInput = new LoanPrepaymentInput(31L, 1_000_000L, null);
@@ -91,7 +95,55 @@ class CoachToolDispatcherTest {
         given(runner.run(eq(USER), any())).willReturn(new SimulationRunner.Outcome(simulation, true));
         given(simulations.toResponse(eq(USER), eq(simulation))).willReturn(response(88L, SimulationType.SPENDING));
         dispatcher = new CoachToolDispatcher(registry, resolver, runner, simulations, new CoachSimulationFactFormatter(), goals,
-                goalCalculation, loans, diagnoses, issues, clock, json);
+                goalCalculation, loans, diagnoses, issues, spendingForecasts, clock, json);
+    }
+
+    @Test
+    void spendingForecastCarriesTheServerDecompositionAsFacts() {
+        given(spendingForecasts.forecast(USER, null)).willReturn(new SpendingForecastResponse("2026-09", 3, null,
+                new SpendingForecastResponse.Explanation(500_000L, 12_000L, true), List.of(),
+                List.of(new SpendingForecastResponse.ForecastPoint("2026-10", 520_000L, 450_000L, 590_000L, 10_000L, 10_000L,
+                                new BigDecimal("1.02"), 480_000L),
+                        new SpendingForecastResponse.ForecastPoint("2026-12", 650_000L, 560_000L, 740_000L, 25_000L, 125_000L,
+                                new BigDecimal("1.24"), null))));
+
+        CoachToolResult result = dispatcher.dispatch(USER, List.of(new ToolCall("c1", "get_spending_forecast", "{}"))).get(0);
+
+        assertThat(result.succeeded()).isTrue();
+        assertThat(result.sections().get(0).facts()).containsExactly(
+                new Fact("평소 한 달 변동 소비(계절 제외)", "500,000원"),
+                new Fact("2026년 10월 예상 변동 소비", "520,000원"),
+                new Fact("2026년 10월 예상 범위", "450,000원 ~ 590,000원"),
+                new Fact("2026년 10월 주요 변화 요인", "추세 영향 +10,000원"),
+                new Fact("2026년 10월 작년 같은 달 실적", "480,000원"),
+                new Fact("2026년 12월 예상 변동 소비", "650,000원"),
+                new Fact("2026년 12월 예상 범위", "560,000원 ~ 740,000원"),
+                new Fact("2026년 12월 주요 변화 요인", "계절 영향 +125,000원"));
+        verify(runner, never()).run(anyLong(), any());
+    }
+
+    @Test
+    void spendingForecastWithoutSeasonalityOmitsSeasonalFactsAndSaysWhy() {
+        given(spendingForecasts.forecast(USER, null)).willReturn(new SpendingForecastResponse("2026-09", 3, "SEASONALITY_UNAVAILABLE",
+                new SpendingForecastResponse.Explanation(500_000L, -3_000L, false), List.of(),
+                List.of(new SpendingForecastResponse.ForecastPoint("2026-10", 497_000L, 450_000L, 544_000L, -3_000L, 0L, null, null))));
+
+        CoachToolResult result = dispatcher.dispatch(USER, List.of(new ToolCall("c1", "get_spending_forecast", "{}"))).get(0);
+
+        assertThat(result.sections().get(0).facts()).extracting(Fact::label).noneMatch(label -> label.contains("계절 영향"));
+        assertThat(result.sections().get(0).facts()).contains(new Fact("2026년 10월 주요 변화 요인", "추세 영향 -3,000원"));
+        assertThat(result.notes()).anyMatch(note -> note.contains("12개월 미만"));
+    }
+
+    @Test
+    void spendingForecastWithoutPredictionsIsAToolError() {
+        given(spendingForecasts.forecast(USER, null)).willReturn(new SpendingForecastResponse("2026-09", 3, "USER_DATA_TOO_SHORT",
+                null, List.of(), List.of()));
+
+        CoachToolResult result = dispatcher.dispatch(USER, List.of(new ToolCall("c1", "get_spending_forecast", "{}"))).get(0);
+
+        assertThat(result.succeeded()).isFalse();
+        assertThat(result.error()).contains("3개월");
     }
 
     @Test
@@ -258,12 +310,12 @@ class CoachToolDispatcherTest {
         diagnosis.complete(2, 1, DiagnosisStatus.RISK, "v7-cluster-hybrid", null, NOW);
         given(diagnoses.findFirstByUserIdAndCompletedAtIsNotNullOrderByCompletedAtDescDiagnosisIdDesc(USER)).willReturn(Optional.of(diagnosis));
         given(issues.findAllOwned(USER, 500L)).willReturn(List.of(
-                DiagnosisIssue.ofRule(500L, "SPENDING", "CATEGORY_SPENDING_INCREASE", IssueSeverity.HIGH, "식비 소비가 2개월째 늘고 있어요", "d", null, null, null, NOW),
+                DiagnosisIssue.ofRule(500L, "SPENDING", "CATEGORY_SPENDING_INCREASE", IssueSeverity.LOW, "식비 소비가 2개월째 늘고 있어요", "d", null, null, null, NOW),
                 DiagnosisIssue.ofRule(500L, "LOAN", "HIGH_INTEREST_RATE", IssueSeverity.HIGH, "금리가 높아요", "d", null, null, null, NOW)));
         CoachToolResult latest = dispatcher.dispatch(USER, List.of(new ToolCall("c3", "get_latest_diagnosis", "{}"))).get(0);
         // 판정 코드(RISK·HIGH)는 사실에 넣지 않는다 — 모델 입력이자 결과 카드 값이다
         assertThat(latest.sections().get(0).facts()).contains(new Fact("종합 상태(서버 판정)", "위험"), new Fact("문제 수", "2건"),
-                new Fact("문제 1 (심각도 높음)", "식비 소비가 2개월째 늘고 있어요"));
+                new Fact("문제 1 (심각도 높음)", "금리가 높아요"));
     }
 
     // ---------- fixtures ----------

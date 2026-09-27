@@ -17,6 +17,11 @@
 출금은 `EXPENSE`, 입금은 `INCOME`이며 양쪽 모두 `SAVING` 카테고리와 `NON_SPENDING`을 쓴다.
 동기화 경로의 카테고리와 소비 유형 기본값은 기존처럼 NULL이다. 거래 ID는 금융망의 서로 다른
 `transactionUniqueNo`를 그대로 사용한다. `last_transaction_date`는 저장 시점의 서비스 날짜로 갱신한다.
+
+금융망 요청의 금액 `transactionBalance`는 문자열로 보낸다. JSON 숫자로 보내면 입금·출금·이체 모두
+`Q1001`(요청 본문 형식 오류)로 거절된다. 실제 성공 응답 REC에는 `transactionUniqueNo`·`transactionDate`
+(이체는 `transactionType` 추가)만 있고 시각·금액·잔액·적요가 없으므로, 거래 시각은 서비스 시계, 금액은
+요청값, 적요는 도담 기본 문구로 채운다. 응답에 금액이 오면 요청값과 대조한다. 2026-09-26 실제 호출로 확인했다.
 거래 목록은 별도 조회 API의 정렬과 페이지 정책을 따른다.
 
 동일 사용자·출금계좌·입금계좌·금액의 요청은 프로세스 메모리에서 10초 동안 409

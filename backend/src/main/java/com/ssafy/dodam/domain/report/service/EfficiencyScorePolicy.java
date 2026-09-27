@@ -4,7 +4,6 @@ import com.ssafy.dodam.domain.report.dto.EfficiencyScoreResponse;
 import com.ssafy.dodam.domain.report.dto.EfficiencyScoreResponse.Dimension;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -17,7 +16,10 @@ import java.util.Map;
  *
  * <p>버전 이력: {@code efficiency-v1}(635) → {@code efficiency-v2}(680, CREDIT 입력을 A~E 등급에서 예상 신용점수 우선으로)
  * → {@code efficiency-v3}(694: FIXED_EXPENSE 임계값 0.3/0.7 → 0.4/0.8, CASHFLOW·INEFFICIENCY 입력을 "그 달 안"에서
- * "그 달 말일까지 완료된 최신, 없으면 리포트 생성 시점 최신"으로 완화. {@link EfficiencyScoreCalculator} 참고).
+ * "그 달 말일까지 완료된 최신, 없으면 리포트 생성 시점 최신"으로 완화. {@link EfficiencyScoreCalculator} 참고)
+ * → {@code efficiency-v4}(712: CASHFLOW·INEFFICIENCY를 빼고 DEBT_REPAYMENT를 넣음. 두 항목은 사용자가 현금흐름 예측이나
+ * 발견 분석을 먼저 실행해야 입력이 생겨, 실행 전에 처음 연 리포트에는 "계산 불가"로 굳었다. 새 항목은 지출·저축처럼 그 달
+ * 원천 데이터만으로 늘 계산된다).
  *
  * <table>
  *   <caption>항목별 산식(0~100, 선형 보간 후 반올림)</caption>
@@ -26,8 +28,7 @@ import java.util.Map;
  *   <tr><td>SAVING 저축</td><td>저축성 지출 / 소득</td><td>≥ 0.3</td><td>0</td></tr>
  *   <tr><td>FIXED_EXPENSE 고정지출</td><td>고정지출 / 소비</td><td>≤ 0.4</td><td>≥ 0.8</td></tr>
  *   <tr><td>CREDIT 신용 관리</td><td>개인신용점수</td><td>1,000점</td><td>1점</td></tr>
- *   <tr><td>CASHFLOW 현금흐름</td><td>그 달 말일 기준 마지막 예측(없으면 생성 시점 최신)의 위험</td><td colspan="2">100 − Σ(CRITICAL 40, HIGH 30, MEDIUM 15, LOW 5), 하한 0</td></tr>
- *   <tr><td>INEFFICIENCY 비효율 관리</td><td>그 달 말일 기준 최신 완료 진단(없으면 생성 시점 최신)의 문제(GOAL 제외)</td><td colspan="2">100 − Σ(CRITICAL 30, HIGH 25, MEDIUM 15, LOW 10), 하한 0</td></tr>
+ *   <tr><td>DEBT_REPAYMENT 부채 상환</td><td>그 달 대출 상환액(PAID) / 소득</td><td>≤ 0.1</td><td>≥ 0.4</td></tr>
  * </table>
  *
  * <p>상태는 GOOD ≥ 70, NORMAL 40~69, CHECK &lt; 40. 전체 점수는 계산된 항목의 단순 평균(반올림)이며 계산된 항목이
@@ -35,15 +36,14 @@ import java.util.Map;
  */
 public final class EfficiencyScorePolicy {
 
-    public static final String VERSION = "efficiency-v3";
+    public static final String VERSION = "efficiency-v4";
     public static final int MINIMUM_DIMENSIONS = 3;
 
     public static final String KEY_SPENDING = "SPENDING";
     public static final String KEY_SAVING = "SAVING";
     public static final String KEY_FIXED_EXPENSE = "FIXED_EXPENSE";
     public static final String KEY_CREDIT = "CREDIT";
-    public static final String KEY_CASHFLOW = "CASHFLOW";
-    public static final String KEY_INEFFICIENCY = "INEFFICIENCY";
+    public static final String KEY_DEBT_REPAYMENT = "DEBT_REPAYMENT";
 
     public static final String STATUS_GOOD = "GOOD";
     public static final String STATUS_NORMAL = "NORMAL";
@@ -53,11 +53,8 @@ public final class EfficiencyScorePolicy {
     public static final String REASON_INCOME_MISSING = "INCOME_MISSING";
     public static final String REASON_NO_SPENDING = "NO_SPENDING";
     public static final String REASON_CREDIT_SCORE_MISSING = "CREDIT_SCORE_MISSING";
-    public static final String REASON_FORECAST_NOT_FOUND = "FORECAST_NOT_FOUND";
-    public static final String REASON_DIAGNOSIS_NOT_FOUND = "DIAGNOSIS_NOT_FOUND";
 
     static final String VALUE_RATIO = "RATIO";
-    static final String VALUE_COUNT = "COUNT";
     static final String VALUE_GRADE = "GRADE";
     static final String VALUE_SCORE = "SCORE";
 
@@ -65,12 +62,10 @@ public final class EfficiencyScorePolicy {
     static final int NORMAL_THRESHOLD = 40;
 
     private static final Map<String, Integer> CREDIT_GRADE_SCORES = Map.of("A", 100, "B", 85, "C", 70, "D", 50, "E", 30);
-    private static final Map<String, Integer> CASHFLOW_PENALTIES = Map.of("CRITICAL", 40, "HIGH", 30, "MEDIUM", 15, "LOW", 5);
-    private static final Map<String, Integer> ISSUE_PENALTIES = Map.of("CRITICAL", 30, "HIGH", 25, "MEDIUM", 15, "LOW", 10);
 
     private static final Map<String, String> LABELS = Map.of(
             KEY_SPENDING, "지출 관리", KEY_SAVING, "저축", KEY_FIXED_EXPENSE, "고정지출",
-            KEY_CREDIT, "신용 관리", KEY_CASHFLOW, "현금흐름", KEY_INEFFICIENCY, "비효율 관리");
+            KEY_CREDIT, "신용 관리", KEY_DEBT_REPAYMENT, "부채 상환");
 
     private EfficiencyScorePolicy() {
     }
@@ -134,45 +129,24 @@ public final class EfficiencyScorePolicy {
     }
 
     /**
-     * 그 달 말일 기준 마지막 현금흐름 예측(없으면 리포트 생성 시점 최신)의 위험. 예측이 하나도 없으면 FORECAST_NOT_FOUND.
+     * 그 달 대출 상환액(PAID) / 소득. 소득이 0이면 INCOME_MISSING. 대출이 없거나 그 달 상환이 없으면 0%라 100점이다.
      *
-     * @param afterMonthEnd  그 달 말일까지 예측이 없어 그 뒤 실행한 최신 예측을 썼는지. 근거 문장에 밝힌다
-     * @param riskSeverities 위험별 심각도 이름(LOW/MEDIUM/HIGH/CRITICAL). 위험이 없으면 빈 목록
+     * <p>임계값 0.1/0.4(v4). 0.4는 은행권 DSR 규제선이라 그 이상을 0점으로 두고, 소득의 10% 이하는 부담이 없다고 본다.
+     * 사이는 다른 비율 항목과 같이 선형이다(시연 계정 8월 13.6% → 88점).
      */
-    public static Dimension cashflow(boolean forecastFound, boolean afterMonthEnd, List<String> riskSeverities) {
-        if (!forecastFound) {
-            return unavailable(KEY_CASHFLOW, REASON_FORECAST_NOT_FOUND, "실행한 현금흐름 예측이 없어 계산하지 못했어요.");
+    public static Dimension debtRepayment(long paidRepayment, long totalIncome) {
+        if (totalIncome <= 0) {
+            return unavailable(KEY_DEBT_REPAYMENT, REASON_INCOME_MISSING, "이 달 수입이 없어 대출 상환 부담을 계산하지 못했어요.");
         }
-        int penalty = riskSeverities.stream().mapToInt(s -> CASHFLOW_PENALTIES.getOrDefault(s, 0)).sum();
-        int score = clamp(EfficiencyScoreResponse.MAX_SCORE - penalty);
-        int count = riskSeverities.size();
-        String description = (afterMonthEnd ? "가장 최근 예측 기준으로 " : "")
-                + (count == 0 ? "예정된 잔액 위험이 없어요." : "예정 잔액 위험 " + count + "건이 있어요.");
-        return available(KEY_CASHFLOW, score, description, (double) count, VALUE_COUNT, null);
-    }
-
-    /**
-     * 그 달 말일 기준 최신 완료 진단(없으면 리포트 생성 시점 최신)의 문제(GOAL 도메인 제외 — 607에서 목표 위험은 발견 대상이
-     * 아니다). 진단이 하나도 없으면 DIAGNOSIS_NOT_FOUND.
-     *
-     * @param afterMonthEnd   그 달 말일까지 진단이 없어 그 뒤 완료한 최신 진단을 썼는지. 근거 문장에 밝힌다
-     * @param issueSeverities 문제별 심각도 이름. 문제가 없으면 빈 목록
-     */
-    public static Dimension inefficiency(boolean diagnosisFound, boolean afterMonthEnd, List<String> issueSeverities) {
-        if (!diagnosisFound) {
-            return unavailable(KEY_INEFFICIENCY, REASON_DIAGNOSIS_NOT_FOUND, "완료한 진단이 없어 계산하지 못했어요.");
-        }
-        int penalty = issueSeverities.stream().mapToInt(s -> ISSUE_PENALTIES.getOrDefault(s, 0)).sum();
-        int score = clamp(EfficiencyScoreResponse.MAX_SCORE - penalty);
-        int count = issueSeverities.size();
-        String description = (afterMonthEnd ? "가장 최근 진단 기준으로 " : "")
-                + (count == 0 ? "점검이 필요한 항목이 없어요." : "점검이 필요한 항목이 " + count + "건 있어요.");
-        return available(KEY_INEFFICIENCY, score, description, (double) count, VALUE_COUNT, null);
+        double ratio = ratio(paidRepayment, totalIncome);
+        int score = linearDown(ratio, 0.1, 0.4);
+        String description = paidRepayment <= 0 ? "대출 상환액이 없어요." : "소득의 " + percent(ratio) + "%를 대출 상환에 썼어요.";
+        return available(KEY_DEBT_REPAYMENT, score, description, ratio, VALUE_RATIO, null);
     }
 
     // ---------- 전체 ----------
 
-    /** 6개 항목으로 전체 점수·요약을 만든다. 전월 차이는 호출자가 {@code withPreviousMonthDifference}로 붙인다. */
+    /** 항목들로 전체 점수·요약을 만든다. 전월 차이는 호출자가 {@code withPreviousMonthDifference}로 붙인다. */
     public static EfficiencyScoreResponse overall(List<Dimension> dimensions) {
         List<Dimension> scored = dimensions.stream().filter(d -> d.score() != null).toList();
         Integer score = null;
@@ -265,10 +239,6 @@ public final class EfficiencyScorePolicy {
         return (int) Math.round((value - zero) / (full - zero) * EfficiencyScoreResponse.MAX_SCORE);
     }
 
-    private static int clamp(int score) {
-        return Math.max(0, Math.min(EfficiencyScoreResponse.MAX_SCORE, score));
-    }
-
     /** 0~1 소수 4자리(리포트 소비패턴 비율과 같은 규칙). */
     static double ratio(long amount, long total) {
         return BigDecimal.valueOf(amount).divide(BigDecimal.valueOf(total), 4, RoundingMode.HALF_UP).doubleValue();
@@ -286,16 +256,9 @@ public final class EfficiencyScorePolicy {
         return CREDIT_GRADE_SCORES.containsKey(grade) ? grade : null;
     }
 
-    /** 항목 순서를 고정한다(육각형 꼭짓점 순서). */
+    /** 항목 순서를 고정한다(효율 점수 화면의 목록 순서). */
     public static List<Dimension> ordered(Dimension spending, Dimension saving, Dimension fixedExpense, Dimension credit,
-            Dimension cashflow, Dimension inefficiency) {
-        List<Dimension> list = new ArrayList<>(6);
-        list.add(spending);
-        list.add(saving);
-        list.add(fixedExpense);
-        list.add(credit);
-        list.add(cashflow);
-        list.add(inefficiency);
-        return list;
+            Dimension debtRepayment) {
+        return List.of(spending, saving, fixedExpense, credit, debtRepayment);
     }
 }

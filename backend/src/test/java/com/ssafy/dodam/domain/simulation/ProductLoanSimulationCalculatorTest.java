@@ -199,6 +199,9 @@ class ProductLoanSimulationCalculatorTest {
         assertThat(section(result.comparison().debts(), "INITIAL_DEBT_CHANGE").after()).isEqualTo(-200_000L);
         assertThat(section(result.comparison().assets(), "PREPAYMENT_CASH_CHANGE").after()).isEqualTo(-200_000L);
         assertThat(item(result, "MONTHLY_REPAYMENT_2026_02")).isEqualTo(Item.amount("MONTHLY_REPAYMENT_2026_02", "2026-02 월 상환액", 12_000L, 10_000L));
+        assertThat(result.details()).containsEntry("nextRepaymentDate", LocalDate.of(2026, 2, 1))
+                .containsEntry("nextRepaymentBefore", 12_000L).containsEntry("nextRepaymentAfter", 10_000L)
+                .containsEntry("nextRepaymentReduction", 2_000L);
         assertThat(result.goalImpactDetails().get(0).reasons()).containsExactly(SimulationAssumptions.FUNDING_SOURCE_UNKNOWN);
         assertThat(result.assumptions()).contains(SimulationAssumptions.NO_ACCRUED_INTEREST_SETTLEMENT,
                 SimulationAssumptions.MONTHLY_RATE_NOT_DAILY_PRORATED, SimulationAssumptions.MATURITY_KEPT_PAYMENT_RECALCULATED);
@@ -207,6 +210,7 @@ class ProductLoanSimulationCalculatorTest {
         SimulationResult full = prepayment.calculate(baseline(JAN_1), new LoanPrepaymentInput(7L, 1_200_000L, JAN_1).withLoan(bulletLoan(LoanStatus.ACTIVE)));
         assertThat(item(full, "INTEREST_TOTAL").after()).isEqualTo(0L);
         assertThat(item(full, "BALANCE_AT_PAYMENT_DATE").after()).isEqualTo(0L);
+        assertThat(full.details()).containsEntry("nextRepaymentDate", null).containsEntry("nextRepaymentReduction", null);
         assertThat(full.cashflow().months().get(1).cumulative()).isEqualTo(24_000L);
     }
 
@@ -217,6 +221,9 @@ class ProductLoanSimulationCalculatorTest {
                 new LoanPrepaymentInput(7L, 200_000L, LocalDate.of(2026, 2, 1)).withLoan(bulletLoan(LoanStatus.ACTIVE)));
         assertThat(item(result, "INTEREST_TOTAL").after()).isEqualTo(22_000L);
         assertThat(item(result, "MONTHLY_REPAYMENT_2026_02").after()).isEqualTo(12_000L);
+        assertThat(result.details()).containsEntry("nextRepaymentDate", LocalDate.of(2026, 3, 1))
+                .containsEntry("nextRepaymentBefore", 1_212_000L).containsEntry("nextRepaymentAfter", 1_010_000L)
+                .containsEntry("nextRepaymentReduction", 202_000L);
         // 최초 변화 0, 행동일 변화 -200,000·effectiveDate 2/1, 1월 cashflow 0, 2월에 한 번만
         assertThat(section(result.comparison().assets(), "INITIAL_CASH_CHANGE").after()).isEqualTo(0L);
         assertThat(section(result.comparison().debts(), "INITIAL_DEBT_CHANGE").after()).isEqualTo(0L);
