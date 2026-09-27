@@ -18,13 +18,9 @@ export const styles = StyleSheet.create({
   scroll: {
     backgroundColor: colors.background,
   },
-  /**
-   * 아래 여백은 떠 있는 토리 버튼이 차지하는 높이(바닥에서 20 + 64)를 비켜 준다.
-   * 그렇지 않으면 맨 아래까지 내렸을 때 마지막 카드가 버튼에 가린다.
-   */
   scrollContent: {
     backgroundColor: colors.background,
-    paddingBottom: spacing[24],
+    paddingBottom: spacing[8],
   },
   goalSection: {
     overflow: 'hidden',
@@ -61,6 +57,45 @@ export const styles = StyleSheet.create({
     gap: spacing[4],
     paddingHorizontal: semanticSpacing.screenMargin,
     paddingTop: spacing[4],
+  },
+  reportEntryCard: {
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderRadius: radius.card,
+    flexDirection: 'row',
+    minHeight: 76,
+    paddingHorizontal: spacing[4],
+  },
+  reportEntryCardPressed: {
+    opacity: 0.82,
+  },
+  reportEntryIcon: {
+    alignItems: 'center',
+    backgroundColor: colors.primary.lightGreen,
+    borderRadius: radius.default,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
+  reportEntryCopy: {
+    flex: 1,
+    marginLeft: spacing[3],
+  },
+  reportEntryTitle: {
+    color: colors.textPrimary,
+    fontFamily: fontFamily.semiBold,
+    fontSize: fontSize.body1,
+  },
+  reportEntryDescription: {
+    color: colors.textSecondary,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.caption,
+    marginTop: spacing[1],
+  },
+  reportEntryArrow: {
+    color: colors.textSecondary,
+    fontFamily: fontFamily.regular,
+    fontSize: 28,
   },
   retryBanner: {
     alignItems: 'center',
