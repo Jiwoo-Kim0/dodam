@@ -9,8 +9,17 @@ import { formatCurrency } from '@/utils/currency';
 import { calculateProgressPercent } from '@/utils/goal';
 import { shiftDateKey, toDateKey } from '@/utils/date';
 
+export interface HomeBriefingOutflow {
+  name: string;
+  amount: number;
+  /** 오늘이면 0이다. */
+  daysLeft: number;
+}
+
 export interface HomeBriefing {
   yesterdaySpentAmount: number;
+  /** 14일 안의 가장 가까운 출금 예정이다. 없으면 `message`로 대신 안내한다. */
+  nextOutflow: HomeBriefingOutflow | null;
   message: string;
 }
 
@@ -135,23 +144,28 @@ async function loadBriefing(): Promise<HomeBriefing> {
   const nextOutflow = eventsResult?.events
     .filter((event) => event.direction === 'OUTFLOW' && event.eventDate >= today)
     .sort((left, right) => left.eventDate.localeCompare(right.eventDate))[0];
-  let message = eventsResult
+  const message = eventsResult
     ? '예정된 출금이 없어요.'
     : '현금흐름 예측 데이터가 아직 없어요.';
 
-  if (nextOutflow) {
-    const days = Math.max(
-      0,
-      Math.round(
-        (new Date(`${nextOutflow.eventDate}T00:00:00`).getTime() -
-          new Date(`${today}T00:00:00`).getTime()) /
-          86_400_000,
-      ),
-    );
-    message = `${days === 0 ? '오늘' : `${days}일 뒤`} ${nextOutflow.name} ${formatCurrency(nextOutflow.amount)}이 출금돼요.`;
-  }
-
-  return { yesterdaySpentAmount: daily.totalSpending, message };
+  return {
+    yesterdaySpentAmount: daily.totalSpending,
+    nextOutflow: nextOutflow
+      ? {
+          name: nextOutflow.name,
+          amount: nextOutflow.amount,
+          daysLeft: Math.max(
+            0,
+            Math.round(
+              (new Date(`${nextOutflow.eventDate}T00:00:00`).getTime() -
+                new Date(`${today}T00:00:00`).getTime()) /
+                86_400_000,
+            ),
+          ),
+        }
+      : null,
+    message,
+  };
 }
 
 async function loadTopSpending(yearMonth: string, previousYearMonth: string) {

@@ -56,17 +56,33 @@ export const styles = StyleSheet.create({
   messageBubble: {
     alignItems: 'center',
     backgroundColor: colors.white,
-    borderRadius: radius.card,
+    borderRadius: 16,
     flex: 1,
     flexDirection: 'row',
     gap: spacing[2],
     maxWidth: '62%',
     minHeight: 28,
-    paddingHorizontal: spacing[2],
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
   },
   calendarIcon: {
-    height: 14,
-    width: 14,
+    height: 18,
+    width: 18,
+  },
+  outflowContent: {
+    flex: 1,
+  },
+  outflowLabel: {
+    color: colors.textSecondary,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.caption,
+    lineHeight: 16,
+  },
+  outflowAmount: {
+    color: colors.textPrimary,
+    fontFamily: fontFamily.bold,
+    fontSize: fontSize.buttonSmall,
+    lineHeight: 20,
   },
   messageText: {
     color: colors.textPrimary,
