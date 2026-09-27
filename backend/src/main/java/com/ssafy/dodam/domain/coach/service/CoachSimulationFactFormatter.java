@@ -5,10 +5,12 @@ import com.ssafy.dodam.domain.coach.dto.CoachFacts.Fact;
 import com.ssafy.dodam.domain.coach.dto.CoachFacts.Section;
 import com.ssafy.dodam.domain.simulation.dto.response.SimulationGoalImpactResponse;
 import com.ssafy.dodam.domain.simulation.dto.response.SimulationResponse;
+import com.ssafy.dodam.domain.simulation.entity.SimulationType;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,7 +19,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * {@link SimulationResponse} → 코치 사실(640 A-2, 계획 §1-4 마지막 단락). 정해진 필드만 옮긴다:
- * {@code before/after.goals[].expectedAchievementDate}, {@code goalImpacts[].differenceDays}, {@code comparison.items/costs}의 이자 항목.
+ * {@code goalImpacts[].differenceDays}, {@code comparison.items/costs}의 이자 항목, 단일 추가상환의 다음 회차 납입액.
  * 값은 서버가 포맷한 문자열(천단위·ISO 날짜)이며 그 문자열이 그대로 {@code CoachNumberGuard}의 허용 숫자가 된다(ai-coach.md §4).
  *
  * <p>자유 JSON(스냅샷 전체)을 모델에 넘기지 않는다. 계좌번호 원문은 DTO에 없지만, 넘기는 필드를 화이트리스트로 두어야 도메인에 컬럼이
@@ -35,7 +37,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class CoachSimulationFactFormatter {
-    static final String RESULT_TITLE = "시뮬레이션 결과(서버 계산)";
+    static final String RESULT_TITLE = "예상 결과";
     static final String ASSUMPTIONS_TITLE = "적용 가정(서버)";
     static final String NOTE_SERVER_NUMBERS = "달성일·절감액은 서버 시뮬레이션 엔진이 계산한 값이다. 새 숫자를 만들지 말 것.";
     /** 달성일 줄이 하나도 없을 때. 모델이 목표 이야기를 꾸며 내지 않게 한다. */
@@ -54,6 +56,9 @@ public class CoachSimulationFactFormatter {
     static final String LABEL_DELAYED = "지연(";
     static final String LABEL_GOAL_SCOPE = "달성일 계산 범위";
     static final String LABEL_INTEREST_SAVING = "만기까지 이자 절감(수수료 제외)";
+    static final String LABEL_NEXT_REPAYMENT = "다음 회차 예상 납입액";
+    static final String LABEL_NEXT_REDUCTION = "다음 회차 납입액 감소";
+    static final String LABEL_NO_REPAYMENT = "추가상환 후 남은 납입 회차";
     static final String BEFORE_NOT_ACHIEVABLE = "현재 속도로는 달성 불가";
     static final String AFTER_NOT_ACHIEVABLE = "실행 후에도 달성 불가";
     static final String GOAL_SCOPE_PARTIAL = "소비 줄이기·저축 변경만 반영(대출 상환·대환은 제외)";
@@ -120,7 +125,11 @@ public class CoachSimulationFactFormatter {
         if (notAchievable) {
             notes.add(NOTE_NOT_ACHIEVABLE);
         }
-        addComparison(facts, simulation.comparison());
+        addComparison(facts, simulation.comparison(), simulation.type());
+        if (simulation.type() == SimulationType.LOAN_PREPAYMENT) {
+            addNextRepayment(facts, simulation.after());
+            facts.sort(Comparator.comparingInt(CoachSimulationFactFormatter::prepaymentFactOrder));
+        }
 
         List<Section> sections = new ArrayList<>();
         sections.add(new Section(RESULT_TITLE, facts));
@@ -197,7 +206,7 @@ public class CoachSimulationFactFormatter {
     }
 
     /** 이자 관련 비교 항목만 옮긴다. 월별 상환액 행(MONTHLY_REPAYMENT_yyyy_MM)은 수십 개라 넘기지 않는다. */
-    private static void addComparison(List<Fact> facts, JsonNode comparison) {
+    private static void addComparison(List<Fact> facts, JsonNode comparison, SimulationType type) {
         if (comparison == null) {
             return;
         }
@@ -208,7 +217,8 @@ public class CoachSimulationFactFormatter {
                     case "INTEREST_SAVING" -> facts.add(new Fact(LABEL_INTEREST_SAVING, CoachFormat.money(longOf(item, "after"))));
                     case "INTEREST_TOTAL" -> {
                         if ("costs".equals(section)) {
-                            facts.add(new Fact("만기까지 총 이자(현재 → 실행 후)",
+                            facts.add(new Fact(type == SimulationType.LOAN_PREPAYMENT
+                                    ? "만기까지 예상 잔여 이자(추가상환 전 → 추가상환 시)" : "만기까지 총 이자(현재 → 실행 후)",
                                     CoachFormat.money(longOf(item, "before")) + " → " + CoachFormat.money(longOf(item, "after"))));
                         }
                     }
@@ -220,6 +230,42 @@ public class CoachSimulationFactFormatter {
                 }
             }
         }
+    }
+
+    /** 추가상환 이후 첫 약정 회차만 전한다. 월별 비교 행 전체를 넘기면 답변과 결과 카드가 지나치게 길어진다. */
+    private static void addNextRepayment(List<Fact> facts, JsonNode after) {
+        if (after == null) {
+            return;
+        }
+        JsonNode details = after.path("details");
+        Long balance = longOf(details, "balanceAfterPrepayment");
+        if (balance != null && balance == 0L) {
+            facts.add(new Fact(LABEL_NO_REPAYMENT, "없음(전액 상환)"));
+            return;
+        }
+        Long before = longOf(details, "nextRepaymentBefore");
+        Long next = longOf(details, "nextRepaymentAfter");
+        Long reduction = longOf(details, "nextRepaymentReduction");
+        LocalDate date = dateOf(details.get("nextRepaymentDate"));
+        if (before == null || next == null || reduction == null || date == null
+                || before < 0 || next < 0 || reduction < 0 || before - next != reduction) {
+            return;
+        }
+        facts.add(new Fact("다음 약정 상환일", CoachFormat.date(date)));
+        facts.add(new Fact(LABEL_NEXT_REPAYMENT,
+                CoachFormat.money(before) + " → " + CoachFormat.money(next)));
+        facts.add(new Fact(LABEL_NEXT_REDUCTION, CoachFormat.money(reduction)));
+    }
+
+    private static int prepaymentFactOrder(Fact fact) {
+        return switch (fact.label()) {
+            case LABEL_INTEREST_SAVING -> 0;
+            case "다음 약정 상환일" -> 1;
+            case LABEL_NEXT_REPAYMENT -> 2;
+            case LABEL_NEXT_REDUCTION -> 3;
+            case "추가 상환액" -> 4;
+            default -> 5;
+        };
     }
 
     /**

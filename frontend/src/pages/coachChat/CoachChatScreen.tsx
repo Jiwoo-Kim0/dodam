@@ -1,8 +1,10 @@
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import { Fragment, useCallback, useEffect, useRef } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Animated,
+  Easing,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -29,12 +31,28 @@ import { useCoachChat } from './hooks/useCoachChat';
 type CoachChatScreenProps = {
   /** 발견 상세에서 열면 그 문제를 화면 맥락으로 넘긴다. */
   context?: CoachChatContext;
+  inTab?: boolean;
 };
 
-export function CoachChatScreen({ context }: CoachChatScreenProps) {
+export function CoachChatScreen({ context, inTab = false }: CoachChatScreenProps) {
   const router = useRouter();
   const scrollRef = useRef<ScrollView>(null);
+  const [reveal] = useState(() => new Animated.Value(inTab ? 0 : 1));
   const { user } = useCurrentUser();
+  useFocusEffect(useCallback(() => {
+    if (!inTab) return;
+
+    // 가운데 탭에서 열린 화면만 버튼 자리에서 올라오는 느낌으로 보여 준다.
+    reveal.setValue(0);
+    const animation = Animated.timing(reveal, {
+      duration: 360,
+      easing: Easing.out(Easing.cubic),
+      toValue: 1,
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [inTab, reveal]));
   /*
    * 말풍선이 남는 폭을 다 쓰면 한 줄이 너무 길어 읽기 어렵다. 화면 폭에 비례해 잘라 둔다.
    * 퍼센트 상한은 부모 폭이 정해지기 전에 계산돼 제한이 걸리지 않아 실제 값으로 준다.
@@ -78,7 +96,17 @@ export function CoachChatScreen({ context }: CoachChatScreenProps) {
   const canReset = turns.length > 0 && !isSending;
 
   return (
-    <SafeAreaLayout edges={['top', 'bottom', 'left', 'right']} style={styles.screen}>
+    <Animated.View style={[
+      styles.revealSurface,
+      inTab && {
+        opacity: reveal,
+        transform: [
+          { scale: reveal.interpolate({ inputRange: [0, 1], outputRange: [0.68, 1] }) },
+          { translateY: reveal.interpolate({ inputRange: [0, 1], outputRange: [160, 0] }) },
+        ],
+      },
+    ]}>
+    <SafeAreaLayout edges={inTab ? ['top', 'left', 'right'] : ['top', 'bottom', 'left', 'right']} style={styles.screen}>
       <AppHeader
         onBackPress={handleBackPress}
         right={
@@ -99,7 +127,7 @@ export function CoachChatScreen({ context }: CoachChatScreenProps) {
             />
           </Pressable>
         }
-        showBackButton
+        showBackButton={!inTab}
         title="토리에게 묻기"
       />
 
@@ -288,5 +316,6 @@ export function CoachChatScreen({ context }: CoachChatScreenProps) {
         />
       </KeyboardAvoidingView>
     </SafeAreaLayout>
+    </Animated.View>
   );
 }

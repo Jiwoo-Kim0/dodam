@@ -16,6 +16,7 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     height: 64,
     paddingHorizontal: spacing[2],
+    overflow: 'visible',
   },
   tab: {
     alignItems: 'center',
@@ -32,6 +33,27 @@ export const styles = StyleSheet.create({
   icon: {
     height: 24,
     width: 24,
+  },
+  featuredIconContainer: {
+    backgroundColor: colors.primary.lightGreen,
+    borderColor: colors.white,
+    borderRadius: 28,
+    borderWidth: 3,
+    height: 56,
+    marginTop: -18,
+    width: 56,
+  },
+  featuredIconContainerFocused: {
+    backgroundColor: colors.primary.yellow,
+  },
+  featuredIcon: {
+    height: 38,
+    width: 38,
+  },
+  featuredLabel: {
+    color: colors.primary.brown,
+    fontFamily: fontFamily.semiBold,
+    marginTop: -7,
   },
   label: {
     color: colors.textSecondary,

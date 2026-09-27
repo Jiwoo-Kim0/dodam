@@ -13,6 +13,10 @@ export const PLOT_BOTTOM = 140;
 export const GRID_LINE_COUNT = 5;
 
 export const styles = StyleSheet.create({
+  forecastCard: {
+    paddingBottom: spacing[4],
+    paddingHorizontal: spacing[4],
+  },
   header: {
     alignItems: 'center',
     flexDirection: 'row',

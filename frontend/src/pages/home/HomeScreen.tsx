@@ -1,5 +1,6 @@
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
+import { SymbolView } from 'expo-symbols';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Pressable, Text, View } from 'react-native';
@@ -19,7 +20,6 @@ import { getFinanceErrorMessage } from '@/utils/financeErrorMessage';
 
 import { AssetSummaryCard } from './components/AssetSummaryCard';
 import { BriefingCard } from './components/BriefingCard';
-import { CoachChatFloatingButton } from './components/CoachChatFloatingButton';
 import { ExpenseSummaryCard } from './components/ExpenseSummaryCard';
 import { GoalCarousel } from './components/GoalCarousel';
 import { HomeHeader } from './components/HomeHeader';
@@ -212,6 +212,24 @@ export function HomeScreen() {
             isLoading={isSummaryLoading}
             onDetailPress={() => router.push(routes.dailyBriefing)}
           />
+          <Pressable
+            accessibilityLabel="내 금융 리포트 보기"
+            accessibilityRole="button"
+            onPress={() => router.push(routes.report)}
+            style={({ pressed }) => [styles.reportEntryCard, pressed && styles.reportEntryCardPressed]}>
+            <View style={styles.reportEntryIcon}>
+              <SymbolView
+                name={{ android: 'bar_chart', ios: 'chart.bar.fill', web: 'bar_chart' }}
+                size={24}
+                tintColor={colors.primary.green}
+              />
+            </View>
+            <View style={styles.reportEntryCopy}>
+              <Text style={styles.reportEntryTitle}>내 금융 리포트</Text>
+              <Text style={styles.reportEntryDescription}>지난달 금융생활을 한눈에 확인해요</Text>
+            </View>
+            <Text style={styles.reportEntryArrow}>›</Text>
+          </Pressable>
           <AssetSummaryCard
             hasError={sectionErrors.assetOverview}
             isLoading={isSummaryLoading}
@@ -226,9 +244,6 @@ export function HomeScreen() {
           />
         </View>
       </BouncyScrollView>
-
-      {/* 스크롤뷰 뒤에 두어야 목록 위에 뜬다. */}
-      <CoachChatFloatingButton onPress={() => router.push(routes.coachChat)} />
 
       <HomeMenuBottomSheet
         isConnected={user?.financeConnectionStatus === 'CONNECTED'}

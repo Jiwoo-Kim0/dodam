@@ -11,6 +11,9 @@ import {
 } from '@/styles';
 
 export const styles = StyleSheet.create({
+  revealSurface: {
+    flex: 1,
+  },
   screen: {
     backgroundColor: colors.background,
   },

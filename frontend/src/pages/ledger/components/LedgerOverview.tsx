@@ -161,13 +161,19 @@ export function LedgerOverview({
         : new Date(year, month, 0).getDate();
     return toDateKeyFromParts(year, month, focusDay);
   });
+  const activeSelectedDate = selectedDate.startsWith(`${year}-${String(month).padStart(2, '0')}-`)
+    ? selectedDate
+    : toDateKeyFromParts(year, month,
+        year === new Date().getFullYear() && month === new Date().getMonth() + 1
+          ? new Date().getDate()
+          : new Date(year, month, 0).getDate());
   const displayedCalendarDays = useMemo(() => {
     if (isCalendarExpanded) return calendarDays;
 
-    const selectedIndex = calendarDays.findIndex((day) => day.dateKey === selectedDate);
+    const selectedIndex = calendarDays.findIndex((day) => day.dateKey === activeSelectedDate);
     const weekStart = Math.max(0, Math.floor(selectedIndex / 7) * 7);
     return calendarDays.slice(weekStart, weekStart + 7);
-  }, [calendarDays, isCalendarExpanded, selectedDate]);
+  }, [activeSelectedDate, calendarDays, isCalendarExpanded]);
   /** 날짜별로 묶은 전체 거래. 정렬과 그룹핑이 이 화면에서 가장 무거워 한 번만 돈다. */
   const allGroups = useMemo(() => {
     const query = searchQuery.trim().toLocaleLowerCase('ko-KR');
@@ -444,7 +450,7 @@ export function LedgerOverview({
             <View style={styles.calendarGrid}>
               {displayedCalendarDays.map((day) => {
                 const total = totalsByDate.get(day.dateKey);
-                const isSelected = day.dateKey === selectedDate;
+                const isSelected = day.dateKey === activeSelectedDate;
                 const hasTransactions = datesWithTransactions.has(day.dateKey);
                 return (
                   <View key={day.dateKey} style={styles.overviewCalendarCell}>
@@ -551,7 +557,7 @@ export function LedgerOverview({
           <View style={styles.calendarGrid}>
             {displayedCalendarDays.map((day) => {
               const total = totalsByDate.get(day.dateKey);
-              const isSelected = day.dateKey === selectedDate;
+              const isSelected = day.dateKey === activeSelectedDate;
               const hasTransactions = datesWithTransactions.has(day.dateKey);
               return (
                 <View key={day.dateKey} style={styles.overviewCalendarCell}>

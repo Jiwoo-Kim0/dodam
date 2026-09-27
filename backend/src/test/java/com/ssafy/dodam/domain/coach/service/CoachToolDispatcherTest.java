@@ -112,16 +112,13 @@ class CoachToolDispatcherTest {
         assertThat(result.succeeded()).isTrue();
         assertThat(result.sections().get(0).facts()).containsExactly(
                 new Fact("평소 한 달 변동 소비(계절 제외)", "500,000원"),
-                new Fact("한 달 추세", "+12,000원"),
                 new Fact("2026년 10월 예상 변동 소비", "520,000원"),
                 new Fact("2026년 10월 예상 범위", "450,000원 ~ 590,000원"),
-                new Fact("2026년 10월 추세 영향", "+10,000원"),
-                new Fact("2026년 10월 계절 영향", "+10,000원"),
+                new Fact("2026년 10월 주요 변화 요인", "추세 영향 +10,000원"),
                 new Fact("2026년 10월 작년 같은 달 실적", "480,000원"),
                 new Fact("2026년 12월 예상 변동 소비", "650,000원"),
                 new Fact("2026년 12월 예상 범위", "560,000원 ~ 740,000원"),
-                new Fact("2026년 12월 추세 영향", "+25,000원"),
-                new Fact("2026년 12월 계절 영향", "+125,000원"));
+                new Fact("2026년 12월 주요 변화 요인", "계절 영향 +125,000원"));
         verify(runner, never()).run(anyLong(), any());
     }
 
@@ -134,7 +131,7 @@ class CoachToolDispatcherTest {
         CoachToolResult result = dispatcher.dispatch(USER, List.of(new ToolCall("c1", "get_spending_forecast", "{}"))).get(0);
 
         assertThat(result.sections().get(0).facts()).extracting(Fact::label).noneMatch(label -> label.contains("계절 영향"));
-        assertThat(result.sections().get(0).facts()).contains(new Fact("한 달 추세", "-3,000원"));
+        assertThat(result.sections().get(0).facts()).contains(new Fact("2026년 10월 주요 변화 요인", "추세 영향 -3,000원"));
         assertThat(result.notes()).anyMatch(note -> note.contains("12개월 미만"));
     }
 
@@ -313,12 +310,12 @@ class CoachToolDispatcherTest {
         diagnosis.complete(2, 1, DiagnosisStatus.RISK, "v7-cluster-hybrid", null, NOW);
         given(diagnoses.findFirstByUserIdAndCompletedAtIsNotNullOrderByCompletedAtDescDiagnosisIdDesc(USER)).willReturn(Optional.of(diagnosis));
         given(issues.findAllOwned(USER, 500L)).willReturn(List.of(
-                DiagnosisIssue.ofRule(500L, "SPENDING", "CATEGORY_SPENDING_INCREASE", IssueSeverity.HIGH, "식비 소비가 2개월째 늘고 있어요", "d", null, null, null, NOW),
+                DiagnosisIssue.ofRule(500L, "SPENDING", "CATEGORY_SPENDING_INCREASE", IssueSeverity.LOW, "식비 소비가 2개월째 늘고 있어요", "d", null, null, null, NOW),
                 DiagnosisIssue.ofRule(500L, "LOAN", "HIGH_INTEREST_RATE", IssueSeverity.HIGH, "금리가 높아요", "d", null, null, null, NOW)));
         CoachToolResult latest = dispatcher.dispatch(USER, List.of(new ToolCall("c3", "get_latest_diagnosis", "{}"))).get(0);
         // 판정 코드(RISK·HIGH)는 사실에 넣지 않는다 — 모델 입력이자 결과 카드 값이다
         assertThat(latest.sections().get(0).facts()).contains(new Fact("종합 상태(서버 판정)", "위험"), new Fact("문제 수", "2건"),
-                new Fact("문제 1 (심각도 높음)", "식비 소비가 2개월째 늘고 있어요"));
+                new Fact("문제 1 (심각도 높음)", "금리가 높아요"));
     }
 
     // ---------- fixtures ----------

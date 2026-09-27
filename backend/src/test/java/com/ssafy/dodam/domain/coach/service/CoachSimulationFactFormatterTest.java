@@ -26,6 +26,44 @@ class CoachSimulationFactFormatterTest {
     private final CoachSimulationFactFormatter formatter = new CoachSimulationFactFormatter();
 
     @Test
+    void prepaymentShowsOnlyTheNextScheduledPaymentAndItsVerifiedReduction() {
+        ObjectNode after = json.createObjectNode();
+        ObjectNode details = after.putObject("details");
+        details.put("balanceAfterPrepayment", 1_000_000);
+        details.put("nextRepaymentDate", "2026-10-27");
+        details.put("nextRepaymentBefore", 410_000);
+        details.put("nextRepaymentAfter", 380_000);
+        details.put("nextRepaymentReduction", 30_000);
+        ObjectNode comparison = json.createObjectNode();
+        comparison.putArray("items").addObject().put("key", "INTEREST_SAVING").put("after", 136_436);
+        comparison.putArray("costs").addObject().put("key", "INTEREST_TOTAL").put("before", 1_773_405).put("after", 1_636_969);
+        SimulationResponse response = new SimulationResponse(91L, SimulationType.LOAN_PREPAYMENT, null, null, SimulationStatus.COMPLETED,
+                null, null, null, List.of(), json.createObjectNode(), after, comparison, null, List.of());
+
+        assertThat(formatter.sections(response).get(0).facts()).containsExactly(
+                new Fact("만기까지 이자 절감(수수료 제외)", "136,436원"),
+                new Fact("다음 약정 상환일", "2026-10-27"),
+                new Fact("다음 회차 예상 납입액", "410,000원 → 380,000원"),
+                new Fact("다음 회차 납입액 감소", "30,000원"),
+                new Fact("만기까지 예상 잔여 이자(추가상환 전 → 추가상환 시)", "1,773,405원 → 1,636,969원"));
+
+        details.put("nextRepaymentReduction", 31_000);
+        assertThat(formatter.sections(response).get(0).facts()).containsExactly(
+                new Fact("만기까지 이자 절감(수수료 제외)", "136,436원"),
+                new Fact("만기까지 예상 잔여 이자(추가상환 전 → 추가상환 시)", "1,773,405원 → 1,636,969원"));
+    }
+
+    @Test
+    void fullPrepaymentDoesNotInventANextPayment() {
+        ObjectNode after = json.createObjectNode();
+        after.putObject("details").put("balanceAfterPrepayment", 0);
+        SimulationResponse response = new SimulationResponse(91L, SimulationType.LOAN_PREPAYMENT, null, null, SimulationStatus.COMPLETED,
+                null, null, null, List.of(), json.createObjectNode(), after, null, null, List.of());
+
+        assertThat(formatter.sections(response).get(0).facts()).containsExactly(new Fact("추가상환 후 남은 납입 회차", "없음(전액 상환)"));
+    }
+
+    @Test
     void combinedResultCarriesGoalDatesDaysAndInterestOnly() {
         ObjectNode before = json.createObjectNode();
         before.putArray("goals").addObject().put("goalId", 5).put("name", "비상금 500만 원").put("expectedAchievementDate", "2028-02-13");
@@ -46,7 +84,7 @@ class CoachSimulationFactFormatterTest {
 
         assertThat(sections).hasSize(2);
         Section result = sections.get(0);
-        assertThat(result.title()).isEqualTo("시뮬레이션 결과(서버 계산)");
+        assertThat(result.title()).isEqualTo("예상 결과");
         assertThat(result.facts()).containsExactly(
                 new Fact("현재 예상 달성일(비상금 500만 원)", "2028-02-13"),
                 new Fact("실행 후 예상 달성일(비상금 500만 원)", "2027-10-15"),

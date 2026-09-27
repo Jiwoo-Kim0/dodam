@@ -21,16 +21,22 @@ const DIMENSION_LABELS: Record<string, string> = {
   SAVING: '저축 관리 점수',
   FIXED_EXPENSE: '고정지출 관리 점수',
   CREDIT: '신용 관리 점수',
+  DEBT_REPAYMENT: '부채 상환 관리 점수',
   CASHFLOW: '현금흐름 관리 점수',
   INEFFICIENCY: '비효율 관리 점수',
 };
 
 /**
- * 기준 달을 설명 앞에 붙일 항목. 이 세 가지만 그 달의 수입·소비로 계산한 비율을 말한다.
+ * 기준 달을 설명 앞에 붙일 항목. 이 네 가지만 그 달의 수입·소비·상환으로 계산한 비율을 말한다.
  * 신용은 시점 등급이고, 현금흐름·비효율은 서버 문장이 "가장 최근 … 기준으로"를 이미 달고 나와
  * 달을 덧붙이면 기간이 두 번 적히거나 틀린 말이 된다.
  */
-const MONTH_SCOPED_KEYS: ReadonlySet<string> = new Set(['SPENDING', 'SAVING', 'FIXED_EXPENSE']);
+const MONTH_SCOPED_KEYS: ReadonlySet<string> = new Set([
+  'SPENDING',
+  'SAVING',
+  'FIXED_EXPENSE',
+  'DEBT_REPAYMENT',
+]);
 
 /**
  * 서버 요약의 "관리" 중복을 지운다.
