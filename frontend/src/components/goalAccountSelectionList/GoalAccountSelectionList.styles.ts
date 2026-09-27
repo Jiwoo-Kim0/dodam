@@ -86,11 +86,31 @@ export const styles = StyleSheet.create({
     minWidth: 0,
     gap: spacing[1],
   },
-  /** 은행명이 길면 줄임표로 자른다. 폭은 부모(`accountInfo`)가 잡는다. */
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+  },
+  /** 은행명이 길면 줄임표로 자른다. 종류 태그는 줄지 않아 항상 보인다. */
   bankName: {
+    flexShrink: 1,
     ...typography.body1,
     fontFamily: fontFamily.medium,
     color: colors.textPrimary,
+  },
+  typeTag: {
+    flexShrink: 0,
+    borderRadius: radius.round,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.divider,
+    paddingHorizontal: spacing[2],
+    paddingVertical: 2,
+  },
+  typeTagText: {
+    ...typography.caption,
+    fontFamily: fontFamily.medium,
+    color: colors.textSecondary,
   },
   /** 카드에서 가장 먼저 읽히는 값이라 또렷하게 둔다. 줄지 않아 항상 끝까지 보인다. */
   balance: {
