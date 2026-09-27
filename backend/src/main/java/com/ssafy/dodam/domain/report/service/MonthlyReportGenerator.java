@@ -90,7 +90,7 @@ public class MonthlyReportGenerator {
 
         Optional<Diagnosis> diagnosis = latestDiagnosis(userId, month);
         Long diagnosisId = diagnosis.map(Diagnosis::getDiagnosisId).orElse(null);
-        EfficiencyScoreResponse score = efficiencyWithDifference(userId, month, totals, diagnosis.orElse(null), comparable);
+        EfficiencyScoreResponse score = efficiencyWithDifference(userId, month, totals, comparable);
         MonthlyReportMetricsResponse keyMetrics = metrics.assemble(userId, month, totals, comparable ? previous : null,
                 card.current(), card.previous(), card.difference(), diagnosisId);
 
@@ -118,8 +118,7 @@ public class MonthlyReportGenerator {
                 : cardSpending(userId, month, comparable);
         MonthAmounts totals = new MonthAmounts(stored.totalIncome(), stored.totalExpense(), stored.totalSpending(),
                 stored.totalSaving());
-        Diagnosis diagnosis = diagnosisId == null ? null : diagnoses.findByDiagnosisIdAndUserId(diagnosisId, userId).orElse(null);
-        EfficiencyScoreResponse score = efficiencyWithDifference(userId, month, totals, diagnosis, comparable);
+        EfficiencyScoreResponse score = efficiencyWithDifference(userId, month, totals, comparable);
         MonthlyReportMetricsResponse keyMetrics = metrics.assemble(userId, month, totals, stored.previousMonth(),
                 card.current(), card.previous(), card.difference(), diagnosisId);
         return new Supplement(json.toJson(stored.withCardSpending(card.current(), card.previous(), card.difference())),
@@ -144,8 +143,7 @@ public class MonthlyReportGenerator {
 
     /**
      * 그 달 말일까지 완료된 가장 최근 진단, 없으면 생성 시점의 최신 완료 진단(694). 리포트의 {@code diagnosisId}·
-     * {@code overallStatus}와 효율 점수 비효율 항목이 같은 진단을 본다. 폴백 여부는 {@code EfficiencyScoreCalculator}가
-     * 완료 시각으로 판정한다.
+     * {@code overallStatus}와 주요 지표가 같은 진단을 본다.
      */
     private Optional<Diagnosis> latestDiagnosis(Long userId, YearMonth month) {
         return diagnoses.findFirstByUserIdAndCompletedAtLessThanEqualOrderByCompletedAtDescDiagnosisIdDesc(
@@ -154,8 +152,8 @@ public class MonthlyReportGenerator {
     }
 
     private EfficiencyScoreResponse efficiencyWithDifference(Long userId, YearMonth month, MonthAmounts totals,
-            Diagnosis diagnosis, boolean comparable) {
-        EfficiencyScoreResponse score = efficiency.calculate(userId, month, totals, diagnosis);
+            boolean comparable) {
+        EfficiencyScoreResponse score = efficiency.calculate(userId, month, totals);
         if (!comparable || score.score() == null) {
             return score;
         }
@@ -179,8 +177,7 @@ public class MonthlyReportGenerator {
             return stored.get().score();
         }
         MonthAmounts totals = amounts.read(userId, previousMonth.atDay(1), previousMonth.atEndOfMonth());
-        Diagnosis diagnosis = latestDiagnosis(userId, previousMonth).orElse(null);
-        return efficiency.calculate(userId, previousMonth, totals, diagnosis).score();
+        return efficiency.calculate(userId, previousMonth, totals).score();
     }
 
     private record CardSpending(long current, Long previous, Long difference) {
