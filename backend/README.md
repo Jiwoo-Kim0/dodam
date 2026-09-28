@@ -1,368 +1,260 @@
-# 도담 백엔드
+# 도담 Backend
 
-도담 백엔드의 Spring Boot 프로젝트입니다. 공통 응답, 예외 처리, Security, CORS,
-Profile, MySQL, Redis 및 Health Check 기반과 금융회사·상품 조회 API를 제공합니다.
+도담은 사용자의 자산과 소비 흐름을 분석하고, 목표 달성을 방해하는 금융 비효율을 발견해 다음 행동을 제안하는 청년 금융 코치 앱입니다.
+
+백엔드는 **Java 21 · Spring Boot 3.5 기반 REST API 서버**입니다. SSAFY 금융망에서 받은 금융 데이터를 저장·분석해 목표 관리, 소비 패턴·예측, 금융 진단과 추천, AI 코치 "토리"의 답변 근거를 제공합니다.
+
+## 주요 기능
+
+### 인증과 사용자
+
+- 이메일 회원가입·로그인, JWT Access Token과 Refresh Token 회전
+- Google·Kakao 소셜 로그인 (앱이 받은 토큰을 서버가 공급자에 검증)
+- 회원 정보·설정·재무 프로필 관리와 회원 탈퇴
+
+### 금융 데이터
+
+- SSAFY 금융망 사용자 연결, 동기화, 신용등급 조회
+- 계좌·거래·카드·청구서·할부·대출·마이너스통장·예적금 조회
+- 계좌 이체 (금융망 실제 이체)
+- 마이너스통장 상환·이자 납부 (`Idempotency-Key`로 재전송 방지)
+- 구독(정기결제) 목록과 결제 이력
+- 금융회사·예금·적금·대출·카드 상품 조회
+
+### 목표
+
+- 모으기·줄이기 목표 생성, 수정, 삭제와 진행 이력
+- 목표별 연결 계좌와 예상 달성일 계산
+- **세이프박스**: 사용자당 도담 전용 계좌 1개에 목표별 금액을 나눠 담고 꺼냄
+
+### 분석과 리포트
+
+- 카테고리별 소비 집계와 현금흐름(일별 잔액, 예정 이벤트, 부족 위험)
+- 소비 패턴 분석: K-Means 군집과 같은 성별·나이대 또래 비교
+- 소비 예측: 24개월 거래 기반 시계열 예측과 근거 분해(수준·추세·계절)
+- 월간 리포트와 금융 효율 점수
+
+### 진단, 추천, 시뮬레이션
+
+- 소비 증가, 고금리 대출, 목표 지연 등 금융 비효율 진단
+- 대환대출·예적금·카드 상품 추천과 예상 절약액
+- 저축·소비·대출 상환 시뮬레이션과 개선 행동 제안
+
+### AI 코치 "토리"
+
+- 서버가 계산한 진단·추천·예측 수치를 도구로 조회해 문장으로 설명
+- 답변 속 숫자를 서버 계산값과 대조하는 가드(`CoachNumberGuard`)
+- Redis 응답 캐시와 사용자별 호출 상한
+
+### 알림
+
+- FCM 푸시와 알림함
+- 결제·상환 예정, 현금흐름 위험, 목표, 추천, 리포트, 데일리 브리핑 이벤트 스케줄
 
 ## 기술 스택
 
-- Java 21
-- Spring Boot 3.5.16
-- Gradle 8.14.3
-- Spring Web
-- Spring Data JPA
-- Spring Data Redis
-- Spring Security
-- Spring Validation
-- Spring Boot Actuator
-- OAuth2 Client
-- MySQL 8.x
-- Flyway
-- H2: 초기 테스트 전용
-- JUnit 5
-
-OAuth2 Client는 계획된 Kakao/Google 로그인 확장을 위해 포함했지만 현재 로그인과 Client Registration은 활성화하지 않았습니다.
+| 구분 | 기술 |
+| --- | --- |
+| Language | Java 21 |
+| Framework | Spring Boot 3.5.16 (Web, Data JPA, Data Redis, Security, Validation, Actuator) |
+| Build | Gradle 8.14.3 (Wrapper) |
+| Database | MySQL 8.0, Flyway |
+| Cache | Redis (AI 코치 캐시·대화 세션·호출 상한, 재전송 방지) |
+| Auth | JJWT 0.12.6 (HS256), Nimbus JOSE (구글 ID token JWK 검증) |
+| Push | Firebase Admin SDK 9.4.3 |
+| Monitoring | Micrometer Prometheus |
+| ML | Python(scikit-learn)으로 학습한 K-Means 모델 아티팩트 (`ml/spending-kmeans-v2.json`) |
+| Test | JUnit 5, Spring Security Test, H2 |
 
 ## 프로젝트 구조
 
-    backend/
-    ├── database/
-    │   └── finance_products/
-    ├── docs/
-    ├── gradle/
-    │   └── wrapper/
-    ├── src/
-    │   ├── main/
-    │   │   ├── java/com/ssafy/dodam/
-    │   │   │   ├── global/
-    │   │   │   │   ├── config/
-    │   │   │   │   ├── exception/
-    │   │   │   │   ├── health/
-    │   │   │   │   ├── response/
-    │   │   │   │   └── security/
-    │   │   │   ├── domain/
-    │   │   │   │   └── product/
-    │   │   │   └── infrastructure/
-    │   │   └── resources/
-    │   │       ├── db/migration/
-    │   │       ├── application.yml
-    │   │       ├── application-local.yml
-    │   │       └── application-prod.yml
-    │   └── test/
-    │       ├── java/com/ssafy/dodam/
-    │       └── resources/application-test.yml
-    ├── build.gradle
-    └── settings.gradle
+```text
+backend/
+├─ database/seeds/           시연용 seed SQL (Flyway가 실행하지 않음)
+├─ docs/                     도메인별 구현 기준 문서
+├─ ml/pattern/               K-Means 학습 스크립트
+├─ scripts/                  seed fixture 생성기, 서버 점검 스크립트
+├─ src/main/java/com/ssafy/dodam/
+│  ├─ domain/                도메인별 controller·service·repository·entity·dto
+│  ├─ global/                공통 설정·보안·암호화·예외·응답·정책
+│  └─ infrastructure/
+│     ├─ external/           SSAFY 금융망(ssafy), AI(ai), 소셜 로그인(social) 어댑터
+│     ├─ cache/              Redis 기반 코치 캐시·대화 세션
+│     └─ ratelimit/          코치 호출 상한
+├─ src/main/resources/
+│  ├─ db/migration/          Flyway 마이그레이션 V1~V46
+│  ├─ ml/                    K-Means 모델 아티팩트
+│  └─ application*.yml       공통·local·prod 설정
+└─ src/test/                 단위·통합 테스트
+```
 
-database 아래의 금융상품 SQL은 시연용 데이터이며 Flyway Migration으로 자동 실행하지 않습니다.
+### 도메인 패키지
 
-도메인 기능은 구현 시점에 domain/{domain-name} 아래에서 controller, service, repository, entity, dto 단위로 확장합니다. SSAFY 금융망, 금융상품한눈에, 생성형 AI처럼 여러 도메인이 공유하는 외부 어댑터는 infrastructure/external 아래에 배치합니다.
+| 패키지 | 내용 | 문서 |
+| --- | --- | --- |
+| `auth`, `user` | 인증, 소셜 로그인, 회원·설정·재무 프로필 | [auth-social](docs/auth-social.md), [user-profile](docs/user-profile.md) |
+| `finance` | 금융망 연결·동기화·요약·신용등급 | [finance-data](docs/finance-data.md) |
+| `account`, `transaction` | 계좌 조회·이체, 거래 조회, 소비 집계 | [account-query](docs/account-query.md), [account-transfer](docs/account-transfer.md), [transaction-query](docs/transaction-query.md), [spending-aggregation](docs/spending-aggregation.md) |
+| `card`, `installment` | 카드·청구서·결제 설정, 할부 | [card-basic-query](docs/card-basic-query.md), [card-payment-query](docs/card-payment-query.md), [installment-query](docs/installment-query.md) |
+| `loan`, `minusaccount` | 대출 조회·분석·금리 우선순위, 마이너스통장 | [loan-query](docs/loan-query.md), [loan-analysis](docs/loan-analysis.md), [minus-account](docs/minus-account.md) |
+| `deposit`, `savings`, `depositsaving` | 예금·적금 상세, 예상금액, 공통 조회 | [deposit-detail](docs/deposit-detail.md), [savings](docs/savings.md), [deposit-savings](docs/deposit-savings.md) |
+| `goal` | 목표, 세이프박스 | [goal](docs/goal.md), [safebox](docs/safebox.md) |
+| `cashflow` | 현금흐름, 일별 잔액, 이벤트, 위험 | [cashflow](docs/cashflow.md), [cashflow-risk](docs/cashflow-risk.md) |
+| `pattern` | 소비 패턴, 또래 비교 | [pattern](docs/pattern.md) |
+| `forecast` | 소비 예측 | [spending-forecast](docs/spending-forecast.md) |
+| `report`, `improvement` | 월간 리포트, 효율 점수, 개선 행동 | [improvement-report-contract](docs/improvement-report-contract.md) |
+| `diagnosis`, `recommendation`, `simulation` | 진단, 상품 추천, 시뮬레이션 | [diagnosis](docs/diagnosis.md), [recommendation](docs/recommendation.md), [simulation](docs/simulation.md) |
+| `coach` | AI 코치 토리 | [ai-coach](docs/ai-coach.md) |
+| `notification` | 푸시, 알림함, 이벤트 스케줄 | [notification](docs/notification.md) |
+| `subscription` | 구독 | [subscription](docs/subscription.md) |
+| `product` | 금융회사·상품 조회 | [product-comparison-card-recommendation](docs/product-comparison-card-recommendation.md) |
 
-## 실행 전제조건
+## 공통 규약
+
+### 응답 형식
+
+모든 API는 `ApiResponse`로 감싸 응답합니다. 목록은 `PageResponse`를 사용합니다.
+
+```json
+{ "success": true, "data": {}, "message": null }
+```
+
+```json
+{ "success": false, "data": null, "message": "요청 값이 올바르지 않습니다.", "code": "VALIDATION_ERROR" }
+```
+
+오류는 `ErrorCode`와 전역 예외 처리기로 변환합니다. 페이지 번호는 0부터 시작하고 기본 크기 20, 최대 100입니다.
+
+### 보안
+
+| 항목 | 정책 |
+| --- | --- |
+| 공개 경로 | `GET /api/health`, `GET /actuator/health`, `POST /api/v1/auth/{signup,login,refresh}`, `POST /api/v1/auth/social/*` |
+| 관리자 경로 | `/api/v1/admin/**`는 `ADMIN` 권한 필요 |
+| 그 외 `/api/v1/**` | 인증 필요. 토큰이 없거나 만료되면 401 (`UNAUTHORIZED`, `TOKEN_EXPIRED`, `INVALID_TOKEN`) |
+| 세션 | STATELESS, CSRF 비활성화 (네이티브 앱이 Bearer 토큰만 사용) |
+| Access Token | JWT HS256, 30분. Claim: `sub`(userId), `sid`(세션), `role` |
+| Refresh Token | 256bit 난수, DB에는 SHA-256 해시만 저장. 14일, 재발급마다 교체 |
+| 소유권 | 모든 사용자 리소스는 인증 사용자 조건으로 조회. 타인 리소스는 존재 여부를 숨겨 `RESOURCE_NOT_FOUND` |
+
+### 민감정보
+
+- 계좌·카드번호, 금융망 `userKey`, 이메일 원문은 AES-256-GCM 암호문(`*_encrypted`)으로 저장합니다.
+- 조회용 해시(`*_hash`)는 HMAC-SHA-256이고, 응답에는 마스킹 값(`*_masked`)만 담습니다.
+- 금액은 원 단위 `long`, 금리·비율은 `BigDecimal`로 계산합니다.
+
+## 외부 연동
+
+| 서비스 | 용도 | 어댑터 |
+| --- | --- | --- |
+| SSAFY 금융망 (`finopenapi.ssafy.io`) | 사용자·계좌·카드·대출·예적금·이체·신용등급 | `infrastructure/external/ssafy` |
+| SSAFY GMS (OpenAI 중계) | 토리 문장 생성 (`gpt-5.4-mini`) | `infrastructure/external/ai` |
+| Google, Kakao | 소셜 로그인 토큰 검증 | `infrastructure/external/social` |
+| Firebase Cloud Messaging | 푸시 알림 | `domain/notification` |
+
+가입·발급 절차는 [exec/외부서비스.md](../exec/외부서비스.md)에 정리되어 있습니다.
+
+## 실행 환경
 
 - JDK 21
-- MySQL 8.x
+- MySQL 8.0
 - Redis
+- (선택) Python 3.11 + `cryptography`: seed fixture 생성 시
 
-Gradle은 별도 설치하지 않고 Wrapper를 사용합니다.
+Gradle은 설치하지 않고 Wrapper(`gradlew`)를 사용합니다. 명령은 `backend/`에서 실행합니다.
 
 ## 환경변수
 
-local 또는 prod Profile 실행 전 다음 값을 설정해야 합니다.
+Spring Boot는 `.env`를 자동으로 읽지 않습니다. 실행 환경이나 IDE에서 주입합니다. 운영 서버는 `infra/.env`의 값을 `docker-compose.yml`이 컨테이너에 전달하며, 키 이름과 설명은 `infra/.env.example`에 있습니다.
 
-| 환경변수 | 설명 |
-| --- | --- |
-| DB_URL | MySQL JDBC URL |
-| DB_USERNAME | MySQL 사용자 |
-| DB_PASSWORD | MySQL 비밀번호 |
-| REDIS_HOST | Redis 호스트 |
-| REDIS_PORT | Redis 포트 |
-| REDIS_PASSWORD | Redis 비밀번호 |
-| CORS_ALLOWED_ORIGINS | 쉼표로 구분한 허용 Origin 목록 |
-| JWT_SECRET | Access Token(HS256) 서명키. 32바이트 이상, 비어 있으면 기동 실패 |
-| DATA_ENCRYPTION_KEY | 민감 컬럼(`*_encrypted`) AES-256-GCM 키. Base64 32바이트 (`openssl rand -base64 32`). **잃으면 복구 불가** |
-| DATA_HASH_KEY | 조회용 해시(`*_hash`) HMAC-SHA-256 키. Base64 32바이트 |
-| SSAFY_FINANCE_API_KEY | SSAFY 금융망 앱 관리자 API Key. 금융망 사용자 생성·조회, 신용등급 조회 등 모든 금융망 호출에 사용 |
-| OPENAI_API_KEY | **선택.** API 21 AI 코치용. 비우면 외부 호출 없이 템플릿 응답으로 동작하므로 로컬 실행에는 없어도 된다 ([ai-coach.md](docs/ai-coach.md)) |
-
-.env.example에는 키만 제공하며 Spring Boot가 .env 파일을 자동으로 읽지는 않습니다. 실행 환경이나 IDE에서 환경변수를 주입하세요.
-
-OAuth Client 정보와 Firebase 서비스 계정은 아직 필요하지 않습니다.
+| 환경변수 | 설명 | 필수 |
+| --- | --- | --- |
+| `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | MySQL 접속 정보 | 필수 |
+| `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` | Redis 접속 정보 | 필수 |
+| `CORS_ALLOWED_ORIGINS` | 허용 Origin, 쉼표 구분 | 필수 |
+| `JWT_SECRET` | Access Token 서명키. 32바이트 미만이면 기동 실패 | 필수 |
+| `DATA_ENCRYPTION_KEY` | `*_encrypted` AES-256-GCM 키. Base64 32바이트. **잃으면 복구 불가** | 필수 |
+| `DATA_HASH_KEY` | 이메일·`userKey` 등 암호화 컬럼의 조회용 HMAC 키. Base64 32바이트 | 필수 |
+| `NUMBER_HASH_KEY` | 계좌·카드번호 `*_hash` HMAC 키. 바뀌면 기존 해시와 매칭이 깨짐 | 필수 |
+| `SSAFY_FINANCE_API_KEY` | SSAFY 금융망 API Key | 필수 |
+| `OPENAI_API_KEY` | SSAFY GMS 토큰. 비우면 토리가 템플릿 문장으로 응답 | local 선택, prod 필수 |
+| `GOOGLE_CLIENT_ID` | 구글 ID token `aud`로 허용할 클라이언트 ID. 비우면 구글 로그인 503 | 선택 |
+| `KAKAO_APP_ID` | 카카오 앱 ID. 비우면 앱 ID 대조만 생략 | 선택 |
+| `FCM_SERVICE_ACCOUNT_PATH` | Firebase 서비스 계정 JSON 경로 | prod 필수 |
 
 ## Profile
 
-### 공통
+| Profile | 용도 | 특징 |
+| --- | --- | --- |
+| `local` | 로컬 개발 | 환경변수로 MySQL·Redis 연결, `ddl-auto: validate`, Flyway `out-of-order: true` |
+| `prod` | 운영 (EC2 Docker) | local과 같은 DB 정책, FCM 발송 켬, 시연 계정 부트스트랩, K-Means는 커밋된 아티팩트만 사용 |
+| `test` | 테스트 | H2 인메모리, Flyway 끔, `ddl-auto: create-drop`, 외부 API는 Mock |
 
-application.yml에는 애플리케이션 이름, Open Session in View 비활성화 및 Actuator Health 노출 정책만 있습니다.
-
-### local
-
-application-local.yml은 환경변수로 MySQL과 Redis에 연결합니다. JPA ddl-auto는 validate이며 Flyway가 활성화됩니다.
-
-### prod
-
-application-prod.yml도 환경변수만 사용합니다. 데이터 손실 위험이 있는 create, create-drop, update 설정은 사용하지 않습니다.
-
-### test
-
-application-test.yml은 H2를 사용하는 통합 테스트 전용 Profile입니다. 외부 MySQL과 Redis에 연결하지 않으며 Redis Health Indicator를 비활성화합니다. Flyway DDL이 MySQL 전용이므로 테스트에서는 Flyway를 끄고 JPA `ddl-auto: create-drop`으로 엔티티 기준 스키마를 만듭니다.
-
-MySQL 전용 JSON, TINYINT 및 CHECK 제약조건 검증은 Testcontainers MySQL 기반 통합 테스트로 전환해 Flyway 마이그레이션 기준으로 수행해야 합니다.
-
-## 로컬 실행
-
-환경변수를 설정한 다음 backend 디렉터리에서 실행합니다.
+## 실행
 
 Unix 계열:
 
-    ./gradlew bootRun --args='--spring.profiles.active=local'
+```bash
+./gradlew bootRun --args='--spring.profiles.active=local'
+```
 
 Windows PowerShell:
 
-    .\gradlew.bat bootRun --args='--spring.profiles.active=local'
+```powershell
+.\gradlew.bat bootRun --args='--spring.profiles.active=local'
+```
 
-## 테스트 및 빌드
+## 데이터베이스
 
-Unix 계열:
+### 마이그레이션
 
-    ./gradlew test
-    ./gradlew clean build
+Flyway 마이그레이션은 `src/main/resources/db/migration`에 있으며 V1~V46입니다. 번호 구간을 담당 영역별로 나눠 써서 `out-of-order: true`로 운영합니다.
 
-Windows PowerShell:
+> **빈 DB에 번호순으로 적용하면 V6에서 멈춥니다.** V6의 `transaction.card_id`가 V11의 `card`를 참조하기 때문입니다. 빈 DB에는 V1~V5, V7~V11을 먼저 적용한 뒤 `out-of-order`로 V6과 V12 이후를 적용하거나, 아래 DB 덤프로 시작합니다.
 
-    .\gradlew.bat test
-    .\gradlew.bat clean build
+### 시연 데이터
 
-모든 Spring 통합 테스트는 ActiveProfiles("test")를 사용하므로 외부 MySQL, Redis, OAuth Provider 또는 외부 API 없이 실행됩니다.
+- `database/seeds/`의 SQL은 합성 사용자 4,000명과 24개월 거래를 만드는 시연용 데이터입니다. Flyway가 실행하지 않습니다.
+- 적재 순서와 선행 조건은 [database/seeds/README.md](database/seeds/README.md)에 있습니다.
+- 운영 서버 적재는 `infra/scripts/seed-load.sh`를 사용합니다.
+- 계좌·카드번호 fixture는 `scripts/make_seed_fixtures.py` 등이 실제 키로 암호문·해시를 만들어 넣습니다. seed 파일에는 번호 원문이 없습니다.
 
-## Health Check
+### DB 덤프
 
-### 애플리케이션 Health
+마이그레이션과 seed 적재가 끝난 상태의 덤프가 [exec/dodam_dump.sql.gz](../exec/dodam_dump.sql.gz)에 있습니다.
 
-    GET /api/health
+```bash
+mysql -u<user> -p -e "CREATE DATABASE dodam CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+gunzip -c exec/dodam_dump.sql.gz | mysql --default-character-set=utf8mb4 -u<user> -p dodam
+```
 
-공통 ApiResponse 형식으로 애플리케이션이 HTTP 요청에 응답할 수 있는지만 확인합니다. DB, Redis 및 외부 API를 호출하지 않습니다.
+덤프의 암호화 컬럼은 덤프 전용 키로 만들었습니다. 다른 키로 서버를 띄우면 계좌·카드번호 복호화와 번호 해시 조회만 실패하고 나머지 기능은 정상입니다. 현금흐름 예측, 패턴 분석, 진단 같은 파생 데이터는 덤프에 없으므로 앱에서 한 번씩 생성합니다.
 
-### 인프라 Health
+## 테스트와 빌드
 
-    GET /actuator/health
+```bash
+./gradlew test
+./gradlew clean build
+```
 
-Docker 또는 프로세스 Health Check 용도입니다. Actuator 표준 응답을 사용하며 ApiResponse로 감싸지 않습니다. 노출되는 Actuator Endpoint는 health뿐이고 상세정보는 외부에 공개하지 않습니다.
+Windows PowerShell에서는 `.\gradlew.bat test`, `.\gradlew.bat clean build`를 사용합니다.
 
-local과 prod에서는 DataSource와 Redis Health를 포함합니다. test에서는 외부 Redis 없이 검증할 수 있도록 Redis Health Indicator를 비활성화합니다.
+- 테스트는 `test` Profile(H2)로 외부 MySQL·Redis·외부 API 없이 실행됩니다.
+- 통합 테스트 컨텍스트가 많아 테스트 JVM 힙을 2GB, 컨텍스트 캐시 상한을 64로 설정했습니다 (`build.gradle`).
+- MySQL 전용 SQL을 검증하는 `*MySqlIntegrationTest`는 `*_MYSQL_TEST_URL` 환경변수가 있을 때만 실행됩니다. H2 통과만으로 MySQL 제약조건까지 검증된 것으로 보지 않습니다.
 
-## Security 정책
+## Health Check와 모니터링
 
-현재 공개 경로:
-
-- GET /api/health
-- GET /actuator/health
-- POST /api/v1/auth/signup
-- POST /api/v1/auth/login
-- POST /api/v1/auth/refresh
-- CORS Preflight
-
-/api/v1/admin/**는 ADMIN 권한(`user.role`)이 필요하고, 나머지 /api/v1/**는 인증이 필요합니다. 보호 경로에 토큰이 없으면 JSON 형식의 401(`UNAUTHORIZED`)을 반환합니다.
-
-formLogin, httpBasic, OAuth2 Login은 비활성화되어 있습니다. 클라이언트가 네이티브 앱(APK)이고 Bearer 토큰만 사용하므로 CSRF는 비활성화, SessionCreationPolicy는 STATELESS입니다.
-
-### 인증 구조 (Auth API)
-
-| 항목 | 결정 |
+| 경로 | 용도 |
 | --- | --- |
-| Access Token | JWT HS256. Claim: `sub`=userId, `sid`=auth_session.session_id, `role`. 기본 30분(`app.auth.jwt.access-token-validity`) |
-| Refresh Token | JWT가 아닌 256bit 난수(Base64URL). DB `auth_session`에는 SHA-256 해시만 저장. 기본 14일 |
-| 전달 방식 | 둘 다 응답 Body. 앱은 SecureStore 등 안전한 저장소에 보관 |
-| 서명키 | `JWT_SECRET` 환경변수 (`app.auth.jwt.secret`), 32바이트 미만이면 기동 실패 |
-| 세션 검증 | Access Token은 만료 전까지 DB를 다시 보지 않음. 세션 폐기는 `GET /api/v1/auth/session`과 재발급 시점에 반영 |
-| Token Rotation | 재발급마다 Refresh Token을 교체(이전 값 즉시 무효). 세션 절대 만료(14일)는 연장하지 않음 |
+| `GET /api/health` | 애플리케이션 응답 여부. DB·Redis·외부 API를 호출하지 않음 |
+| `GET /actuator/health` | 컨테이너 Health Check. DataSource·Redis 포함, 상세 비공개 |
+| `GET /actuator/prometheus` | Prometheus 지표. 외부에서는 nginx가 차단하고 컨테이너 네트워크 안에서만 수집 |
 
-`JwtAuthenticationFilter`는 토큰 오류 시 바로 응답하지 않고 오류 코드만 request attribute에 남깁니다. 공개 경로는 오래된 헤더가 있어도 정상 동작하고, 보호 경로는 `RestAuthenticationEntryPoint`가 `TOKEN_EXPIRED` / `INVALID_TOKEN`으로 구분해 401을 반환합니다.
+## 관련 문서
 
-구현된 엔드포인트 (API 명세 1. Auth):
-
-| Method | Endpoint | 인증 | 응답 |
-| --- | --- | --- | --- |
-| POST | /api/v1/auth/signup | X | 201, `{ user: { userId, email, name, role }, financeConnectionStatus, createdAt }` |
-| POST | /api/v1/auth/login | X | 200, `{ tokenType, accessToken, accessTokenExpiresAt, refreshToken, refreshTokenExpiresAt, user }` |
-| POST | /api/v1/auth/refresh | X | 200, 로그인과 같은 형태 (Body: `{ refreshToken }`) |
-| POST | /api/v1/auth/logout | O | 200, 현재 세션만 폐기. 멱등 |
-| GET | /api/v1/auth/session | O | 200, `{ user, sessionId, sessionCreatedAt, lastAccessedAt, sessionExpiresAt }` |
-| DELETE | /api/v1/auth/session | O | 200, `{ revokedCount }`. `?sessionId=` 지정 시 그 세션만(소유권 확인), 없으면 본인 활성 세션 전체 |
-
-주요 오류 코드: `EMAIL_ALREADY_EXISTS`(409), `FINANCE_EMAIL_ALREADY_REGISTERED`(409), `INVALID_CREDENTIALS`(401, 이메일 존재 여부를 노출하지 않음), `INVALID_REFRESH_TOKEN`(401), `SESSION_EXPIRED`(401, 세션 폐기·만료·탈퇴 계정), `SESSION_NOT_FOUND`(404), `TOKEN_EXPIRED` / `INVALID_TOKEN`(401).
-
-비밀번호는 BCrypt로 저장하며 8~72자, 영문·숫자 포함, 공백 불가입니다. 이메일은 trim + 소문자로 정규화해 저장합니다.
-
-### 회원가입과 SSAFY 금융망 연동
-
-회원가입은 **자체 회원 + SSAFY 금융망 사용자**를 함께 만듭니다 (API 문서 2.2.1 사용자 계정 생성 / 2.2.2 사용자 계정 조회).
-
-1. 금융망 호출은 DB 트랜잭션 **밖에서** 먼저 수행합니다 (외부 응답을 기다리며 커넥션을 붙잡지 않기 위해).
-2. 생성 성공 → `finance_connection.status = CONNECTED`, userKey는 AES-GCM 암호문 + HMAC 해시로 저장.
-3. `E4002`(이미 존재) → 조회 API로 userKey 회수. 조회도 `E4003`이면 다른 서비스가 선점한 이메일이므로 **가입 거절(409 `FINANCE_EMAIL_ALREADY_REGISTERED`)**.
-4. 그 외 금융망 오류·네트워크 장애 → 가입은 진행하고 `status = FAILED`. 응답의 `financeConnectionStatus`로 확인할 수 있으며, `POST /api/v1/finance-data/connection`으로 다시 연결합니다.
-5. 같은 트랜잭션에서 `user`, `user_setting`(기본값), `financial_profile`(빈 값), `finance_connection`을 함께 생성합니다.
-
-금융망 클라이언트는 `infrastructure/external/ssafy`에 있고, 도메인은 `SsafyFinanceClient` 인터페이스에만 의존합니다(테스트에서는 `@MockitoBean`으로 대체). 거래 API 공통 `Header`(기관거래고유번호 채번 등)는 `SsafyHeaderFactory`가 만들며 자세한 규칙은 [docs/finance-data.md](docs/finance-data.md)에 있습니다.
-
-### User API (API 명세 2. User)
-
-모든 엔드포인트는 인증 필수이며 토큰의 본인 리소스만 다룹니다.
-
-| Method | Endpoint | 설명 |
-| --- | --- | --- |
-| GET | /api/v1/users/me | `{ userId, email, name, role, financeConnectionStatus, createdAt, updatedAt }` |
-| PATCH | /api/v1/users/me | Body `{ name? }`. 이메일은 금융망 계정 키라 변경 불가, 비밀번호 변경은 별도 API 예정 |
-| DELETE | /api/v1/users/me | 회원 탈퇴: soft delete(`deleted_at`) + 비밀번호 해시 삭제 + 모든 세션 폐기 + 금융망 연결 `DISCONNECTED`. 이메일은 UNIQUE 제약상 남으므로 같은 이메일로 재가입 불가 |
-| GET / PATCH | /api/v1/users/me/settings | `notificationEnabled?, dailyBriefingEnabled?, monthlyReportEnabled?, dailyBriefingTime?(HH:mm), timezone?(IANA)` |
-| GET / PATCH | /api/v1/users/me/financial-profile | `monthlyIncome?, annualIncome?, payday?(1~31), fixedExpense?, emergencyFundTarget?` (원 단위 정수, ERD CHECK와 동일 제약) |
-
-PATCH는 null인 항목을 건드리지 않으며, 바꿀 항목이 하나도 없으면 400 `NO_FIELDS_TO_UPDATE`, 알 수 없는 타임존은 400 `INVALID_TIMEZONE`입니다. 설정·프로필 행은 회원가입 때 만들지만 없으면(Seed 사용자 등) 조회 시점에 기본값으로 생성합니다.
-
-### Finance Data API (API 명세 4. Finance Data)
-
-금융망 연결 관리·동기화·통합 요약·신용등급 조회 10개 엔드포인트입니다. 구현 계약과 상태 전이, 집계 기준은 [docs/finance-data.md](docs/finance-data.md)를 기준으로 합니다.
-
-| Method | Endpoint | 설명 |
-| --- | --- | --- |
-| GET / POST / DELETE | /api/v1/finance-data/connection | 연결 상태 조회 / 금융망 사용자 등록·재연결(201) / 연동 해제. 이미 연결이면 409 `FINANCE_ALREADY_CONNECTED` |
-| GET | /api/v1/finance-data/member | 금융망 사용자 계정 조회 (userKey는 응답에 포함하지 않음) |
-| POST | /api/v1/finance-data/sync | Body `{ scope?: ALL\|ACCOUNT\|CARD\|LOAN\|SAVING }`. 사용자별 동시 실행 방지, scope별 결과를 응답 |
-| GET | /api/v1/finance-data/sync/status, /sync/latest | 최근 동기화·진행 여부 / 마지막 반영 시각·마지막 성공 이력 |
-| GET | /api/v1/finance-data/summary | 로컬 DB 집계: 계좌·카드·대출 잔액과 순자산 |
-| GET | /api/v1/finance-data/credit-rating, /credit-rating/criteria | 금융망 실시간 내 신용등급(A~E, userKey 필요) / 등급별 자산 구간 기준표(앱 단위, 연결 불필요) |
-
-금융망 호출이 필요한 API는 연결이 CONNECTED가 아니면 409 `FINANCE_NOT_CONNECTED`, 금융망 오류 응답은 502 `FINANCE_API_ERROR`, 도달 불가는 503 `FINANCE_API_UNAVAILABLE`입니다. 도메인별 동기화 구현(`FinanceSyncScopeHandler`)은 아직 등록된 것이 없어 모든 scope가 SKIPPED로 보고됩니다.
-
-### 민감 컬럼 암호화
-
-`global/crypto/FieldCryptor`가 ERD의 `*_encrypted` / `*_hash` / `*_masked` 규칙을 구현합니다. 암호문은 `[12바이트 IV][AES-256-GCM 암호문+태그]`, 해시는 HMAC-SHA-256 hex(64자), 마스킹은 `do***@example.com` 형태입니다. 키는 `DATA_ENCRYPTION_KEY` / `DATA_HASH_KEY`이며 키 순환은 아직 구현하지 않았습니다.
-
-## 공통 응답과 예외
-
-성공 응답:
-
-    {
-      "success": true,
-      "data": {},
-      "message": null
-    }
-
-실패 응답:
-
-    {
-      "success": false,
-      "data": null,
-      "message": "요청 값이 올바르지 않습니다.",
-      "code": "VALIDATION_ERROR"
-    }
-
-code와 errors는 null일 때만 생략하고 data와 message는 null이어도 항상 직렬화합니다. Validation, 잘못된 요청, 404, 401, 403 및 예상하지 못한 500 오류에 공통 JSON 응답을 사용합니다.
-
-## 금융회사 및 상품 조회
-
-이미 상품 DB에 적재된 스냅샷을 조회하며 외부 금융상품 API를 실시간으로 호출하지 않습니다.
-모든 경로는 인증이 필요합니다.
-
-| 대상 | 목록 | 상세 | 목록 필터 |
-| --- | --- | --- | --- |
-| 금융회사 | `GET /api/v1/products/companies` | - | `name`, `page`, `size` |
-| 정기예금 | `GET /api/v1/products/deposits` | `GET /api/v1/products/deposits/{productId}` | `companyId`, `term`, `minRate`, `page`, `size` |
-| 적금 | `GET /api/v1/products/savings` | `GET /api/v1/products/savings/{productId}` | `companyId`, `term`, `minRate`, `savingType`, `page`, `size` |
-| 개인신용대출 | `GET /api/v1/products/loans/personal` | `GET /api/v1/products/loans/{productId}` | `companyId`, `rateType`, `minRate`, `maxRate`, `page`, `size` |
-| 주택담보대출 | `GET /api/v1/products/loans/mortgage` | `GET /api/v1/products/loans/{productId}` | `companyId`, `mortgageType`, `repaymentType`, `page`, `size` |
-| 전세자금대출 | `GET /api/v1/products/loans/jeonse` | `GET /api/v1/products/loans/{productId}` | `companyId`, `repaymentType`, `page`, `size` |
-| 카드 | `GET /api/v1/products/cards` | `GET /api/v1/products/cards/{productId}` | `issuerCode`, `category`, `page`, `size` |
-
-목록 API의 기본 페이지는 0, 기본 크기는 20이며 크기는 최대 100입니다. 상세 경로와
-실제 상품 유형이 다르거나 상품이 없으면 `RESOURCE_NOT_FOUND`를 반환합니다.
-
-## 예·적금 공통 조회
-
-535번은 로컬 시연 DB에서 보유 예·적금 목록, 원금 잔액 요약, 만기 예정과 월 소득 대비
-적금 납입률을 조회합니다. 모든 경로는 인증이 필요하며 본인 데이터만 반환합니다.
-
-| Method | 경로 | 기능 |
-| --- | --- | --- |
-| GET | /api/v1/deposit-savings | type/status 필터와 페이지 조회 |
-| GET | /api/v1/deposit-savings/summary | 보유 예금·적금 개수와 원금 잔액 |
-| GET | /api/v1/deposit-savings/maturities | withinDays 이내 만기 예정 |
-| GET | /api/v1/deposit-savings/rate | yearMonth의 PAID 적금 납입액 / 현재 등록 월 소득 |
-
-V15가 예·적금 상세·납입 테이블을 추가합니다. 기존 524번 seed는 별도 적재하며 SSAFY를
-호출하지 않습니다. 입력 기본값, 계산 가정과 검증은 [구현 문서](docs/deposit-savings.md)를 참고하세요.
-
-## 예금 상세와 예상금액
-
-536번은 예금 한 건의 상세, 시장금리 비교, 중도해지·만기 예상금액을 제공합니다. 모든 경로는
-인증이 필요하고 경로의 계좌번호는 HMAC 해시로만 본인 예금을 찾습니다. 응답에는 마스킹된
-계좌번호만 담습니다.
-
-| Method | 경로 | 기능 |
-| --- | --- | --- |
-| GET | /api/v1/deposits/{accountNo} | 계약 조건과 연결 상품 |
-| GET | /api/v1/deposits/{accountNo}/rate-comparison | term/industry/topN 기준 공시금리 비교 |
-| GET | /api/v1/deposits/{accountNo}/early-termination | 중도해지이율 기준 예상 수령액 |
-| GET | /api/v1/deposits/{accountNo}/maturity-forecast | 계약이율 기준 만기 예상 수령액 |
-
-없는 계좌, 타인 계좌, 예금이 아닌 계좌는 계좌 존재 여부를 숨기기 위해 모두 같은
-`RESOURCE_NOT_FOUND`를 반환합니다. 새 마이그레이션 없이 V3·V10·V15를 읽으며 SSAFY를
-호출하지 않습니다.
-
-이자는 단리·ACT/365로 계산하고 이자소득세 15.4%를 원천징수합니다. **중도해지이율 구간표는
-공시 자료가 없어 시중은행 관행으로 정한 서비스 추정치이며** 응답의 `ratePolicy`·`rateTier`와
-`ESTIMATED_EARLY_TERMINATION_RATE` 가정 코드로 드러냅니다. 금리비교의 `rateDifference`는
-예금이라 **양수가 유리**하며 부호 해석이 대출과 반대입니다(`comparisonDirection`).
-계산식, 사유 코드와 검증은 [구현 문서](docs/deposit-detail.md)를 참고하세요.
-
-## 적금 상세·납입·예상금액·현금흐름
-
-537번은 적금 한 건의 상세·납입내역·금리비교·예상금액과 사용자 단위의 납입 예정·월 저축액·현금흐름
-부담·가용금액을 제공합니다. 모든 경로는 인증이 필요하고 경로의 계좌번호는 HMAC 해시로만 본인 적금을
-찾습니다.
-
-| Method | 경로 | 기능 |
-| --- | --- | --- |
-| GET | /api/v1/savings/{accountNo} | 계약 조건과 납입 약정 |
-| GET | /api/v1/savings/{accountNo}/payments | 기간·페이지 납입내역 |
-| GET | /api/v1/savings/{accountNo}/rate-comparison | term/industry/topN 기준 공시금리 비교 |
-| GET | /api/v1/savings/{accountNo}/early-termination | 중도해지이율 기준 예상 수령액 |
-| GET | /api/v1/savings/{accountNo}/maturity-forecast | 계약이율 기준 만기 예상 수령액 |
-| GET | /api/v1/savings/payment-schedules | 기간 내 납입 예정 |
-| GET | /api/v1/savings/monthly-amount | 조회 월의 저축액 |
-| GET | /api/v1/savings/cashflow-burden | 소득 대비 저축·총 부담률 |
-| GET | /api/v1/savings/disposable-balance | 저축 후 가용금액 |
-
-없는 계좌, 타인 계좌, 적금이 아닌 계좌는 모두 같은 `RESOURCE_NOT_FOUND`를 반환합니다. 새 마이그레이션
-없이 V3·V10·V13·V15를 읽으며 SSAFY를 호출하지 않습니다.
-
-**같은 달에 저장된 회차가 있으면 월 약정액을 보충하지 않습니다.** 명세의 "예정 이벤트 중복 반영 금지"를
-이렇게 해석했고 월 저축액·현금흐름이 같은 계산을 재사용합니다. 예상금액은 회차마다 실제 예치일수를
-적용한 단리이며 **세금·수수료를 반영하지 않습니다**(예금 536은 세후를 반환하므로 나란히 비교할 때
-주의하세요). 중도해지이율 구간표는 공시 자료가 없어 정한 **서비스 추정치**이며 응답의
-`ratePolicy`·`rateTier`로 드러냅니다. 계산식과 사유 코드는 [구현 문서](docs/savings.md)를 참고하세요.
-
-## 아직 결정되거나 구현되어야 할 항목
-
-- 도메인별 금융 데이터 동기화 구현(`FinanceSyncScopeHandler`) — 시연 데이터를 로컬 DB에서 읽는 현재 방식과 금융망 실시간 동기화의 역할 분담
-- 회원가입 시 금융망 계정 자동 생성 유지 여부 (현재 유지, `POST /finance-data/connection`은 재연결 용도)
-- 탈퇴한 이메일의 재가입 허용 여부 (현재는 UNIQUE 제약으로 불가)
-- 비밀번호 변경 API
-- 실제 대출 실행 제외 원칙과 마이너스통장 상환·이자 납부 API의 충돌
-- 암호화 키 순환(rotation) 절차
-- ERD의 `UserOAuthAccount`를 사용하는 OAuth 인증 Endpoint와 계정 연결 정책
-- ERD의 `UserDevice`를 사용하는 FCM Device Token 등록·폐기 API
-- Redis의 캐시, 세션, Refresh Token 저장소 및 분산 락 적용 범위
-
-## 향후 작업
-
-- Kakao/Google OAuth
-- API 명세의 금융 도메인
-- SSAFY 금융망 및 금융상품한눈에 연동
-- Redis 적용 범위 확정 및 구현
-- FCM 알림
-- 생성형 AI 연동
-- ERD 나머지 테이블의 Flyway Migration (BE-A 구간 V1~V4 적용: `user`, `auth_session`, `user_setting`, `financial_profile`, `finance_connection`, `account`, `finance_sync`)
-- Testcontainers MySQL 통합 테스트
-- Prometheus Metrics 연동
-- Docker와 CI/CD는 infra 작업 범위에서 진행
+- 도메인별 구현 기준: [docs/](docs/)
+- 남은 작업과 알려진 제한: [docs/remaining-work.md](docs/remaining-work.md)
+- 시연 흐름: [exec/시연시나리오.md](../exec/시연시나리오.md)
+- 배포와 인프라: [infra/README.md](../infra/README.md)
+- API 명세·ERD·기획안: [docs/](../docs/)
