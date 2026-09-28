@@ -95,12 +95,49 @@ class EfficiencyScorePolicyTest {
     }
 
     @Test
+    void cashflowAndInefficiencyDeductPerSeverityAndTellMissingApart() {
+        Dimension noRisk = EfficiencyScorePolicy.cashflow(List.of(), false);
+        assertThat(noRisk.score()).isEqualTo(100);
+        assertThat(noRisk.description()).isEqualTo("예측 기간에 잔액 부족 위험이 없어요.");
+        assertThat(noRisk.valueType()).isEqualTo("COUNT");
+        assertThat(EfficiencyScorePolicy.cashflow(List.of("HIGH", "MEDIUM"), false).score()).isEqualTo(55);
+        assertThat(EfficiencyScorePolicy.cashflow(List.of("CRITICAL", "CRITICAL", "HIGH"), false).score()).isEqualTo(0);
+        assertThat(EfficiencyScorePolicy.cashflow(List.of("LOW"), true).description())
+                .isEqualTo("가장 최근 예측 기준으로 예측 기간에 잔액 부족 위험이 1건 있어요.");
+        assertThat(EfficiencyScorePolicy.cashflow(null, false).unavailableReason()).isEqualTo("FORECAST_NOT_FOUND");
+
+        Dimension issues = EfficiencyScorePolicy.inefficiency(List.of("HIGH", "MEDIUM", "LOW"), false);
+        assertThat(issues.score()).isEqualTo(50); // 100 - 25 - 15 - 10
+        assertThat(issues.value()).isEqualTo(3.0);
+        assertThat(issues.description()).isEqualTo("발견된 금융 비효율이 3건 있어요.");
+        assertThat(EfficiencyScorePolicy.inefficiency(List.of(), true).description())
+                .isEqualTo("가장 최근 진단 기준으로 발견된 금융 비효율이 없어요.");
+        assertThat(EfficiencyScorePolicy.inefficiency(null, false).unavailableReason()).isEqualTo("DIAGNOSIS_NOT_FOUND");
+    }
+
+    @Test
+    void onlyCurrentVersionScoresFrozenWithoutForecastOrDiagnosisAreRecalculated() {
+        EfficiencyScoreResponse missing = EfficiencyScorePolicy.overall(List.of(
+                EfficiencyScorePolicy.spending(1_000_000, 3_200_000), EfficiencyScorePolicy.cashflow(null, false)));
+        assertThat(EfficiencyScorePolicy.needsRecalculation(missing)).isTrue();
+        EfficiencyScoreResponse filled = EfficiencyScorePolicy.overall(List.of(
+                EfficiencyScorePolicy.cashflow(List.of(), false), EfficiencyScorePolicy.inefficiency(List.of(), false)));
+        assertThat(EfficiencyScorePolicy.needsRecalculation(filled)).isFalse();
+        EfficiencyScoreResponse v3 = new EfficiencyScoreResponse(null, 100, null, "", "efficiency-v3", 0, null,
+                missing.dimensions());
+        assertThat(EfficiencyScorePolicy.needsRecalculation(v3)).isFalse();
+        assertThat(EfficiencyScorePolicy.needsRecalculation(null)).isFalse();
+    }
+
+    @Test
     void overallAveragesOnlyScoredDimensionsAndKeepsOrder() {
         List<Dimension> dimensions = EfficiencyScorePolicy.ordered(
                 EfficiencyScorePolicy.spending(1_450_000, 3_200_000),   // 100
                 EfficiencyScorePolicy.saving(400_000, 3_200_000),       // 42
                 EfficiencyScorePolicy.fixedExpense(900_000, 1_450_000), // 45
                 EfficiencyScorePolicy.credit(null, null),               // unavailable
+                EfficiencyScorePolicy.cashflow(null, false),            // unavailable
+                EfficiencyScorePolicy.inefficiency(null, false),        // unavailable
                 EfficiencyScorePolicy.debtRepayment(0, 0));             // unavailable
         EfficiencyScoreResponse overall = EfficiencyScorePolicy.overall(dimensions);
         assertThat(overall.score()).isEqualTo(62); // (100 + 42 + 45) / 3 = 62.3 → 62
@@ -108,9 +145,9 @@ class EfficiencyScorePolicyTest {
         assertThat(overall.availableDimensionCount()).isEqualTo(3);
         assertThat(overall.unavailableReason()).isNull();
         assertThat(overall.previousMonthDifference()).isNull();
-        assertThat(overall.calculationVersion()).isEqualTo("efficiency-v4");
+        assertThat(overall.calculationVersion()).isEqualTo("efficiency-v5");
         assertThat(overall.dimensions()).extracting(Dimension::key)
-                .containsExactly("SPENDING", "SAVING", "FIXED_EXPENSE", "CREDIT", "DEBT_REPAYMENT");
+                .containsExactly("SPENDING", "SAVING", "FIXED_EXPENSE", "CREDIT", "CASHFLOW", "INEFFICIENCY", "DEBT_REPAYMENT");
         assertThat(overall.summary()).isEqualTo("지출 관리는 안정적이에요. 저축을 조금 더 챙겨 보세요.");
     }
 
@@ -121,6 +158,8 @@ class EfficiencyScorePolicyTest {
                 EfficiencyScorePolicy.saving(0, 0),
                 EfficiencyScorePolicy.fixedExpense(0, 0),
                 EfficiencyScorePolicy.credit(1000, null),
+                EfficiencyScorePolicy.cashflow(null, false),
+                EfficiencyScorePolicy.inefficiency(null, false),
                 EfficiencyScorePolicy.debtRepayment(0, 0));
         EfficiencyScoreResponse overall = EfficiencyScorePolicy.overall(dimensions);
         assertThat(overall.score()).isNull();
@@ -134,12 +173,14 @@ class EfficiencyScorePolicyTest {
         List<Dimension> allGood = EfficiencyScorePolicy.ordered(
                 EfficiencyScorePolicy.spending(1_000_000, 3_200_000), EfficiencyScorePolicy.saving(1_000_000, 3_200_000),
                 EfficiencyScorePolicy.fixedExpense(200_000, 1_000_000), EfficiencyScorePolicy.credit(1000, null),
+                EfficiencyScorePolicy.cashflow(List.of(), false), EfficiencyScorePolicy.inefficiency(List.of(), false),
                 EfficiencyScorePolicy.debtRepayment(0, 3_200_000));
         assertThat(EfficiencyScorePolicy.overall(allGood).summary()).isEqualTo("전반적으로 금융 생활이 안정적이에요.");
 
         List<Dimension> oneNormal = EfficiencyScorePolicy.ordered(
                 EfficiencyScorePolicy.spending(1_000_000, 3_200_000), EfficiencyScorePolicy.saving(1_000_000, 3_200_000),
                 EfficiencyScorePolicy.fixedExpense(200_000, 1_000_000), EfficiencyScorePolicy.credit(1000, null),
+                EfficiencyScorePolicy.cashflow(List.of(), false), EfficiencyScorePolicy.inefficiency(List.of(), false),
                 EfficiencyScorePolicy.debtRepayment(640_000, 3_200_000)); // 0.2 → 67
         assertThat(EfficiencyScorePolicy.overall(oneNormal).summary()).isEqualTo("지출 관리는 안정적이에요. 부채 상환을 조금 더 챙겨 보세요.");
     }

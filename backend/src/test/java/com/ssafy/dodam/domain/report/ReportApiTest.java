@@ -135,8 +135,8 @@ class ReportApiTest {
     // ---------- 635 금융 효율 점수 · 카드 사용액 ----------
 
     @Test
-    void monthlyReportScoresFiveDimensionsFromStoredInputs() throws Exception {
-        // 신용등급 B, 대출 없음. 예측·진단은 효율 점수가 아니라 리포트 진단 참조와 697 패턴의 입력이다(712 v4에서 두 항목 제거)
+    void monthlyReportScoresSevenDimensionsFromStoredInputs() throws Exception {
+        // 신용등급 B, 대출 없음. 예측·진단은 효율 점수 현금흐름·비효율(v5 복원)과 리포트 진단 참조·697 패턴의 입력이다
         jdbc.update("UPDATE `user` SET credit_rating = 'B', credit_rating_updated_at = ? WHERE user_id = ?", NOW, owner);
         CashflowForecast forecast = forecasts.save(CashflowForecast.start(owner, LocalDate.of(2026, 8, 20), 30, "v1", null,
                 LocalDateTime.of(2026, 8, 20, 9, 0)));
@@ -158,10 +158,10 @@ class ReportApiTest {
                 .andExpect(jsonPath("$.data.cardSpending").value(1_450_000))
                 .andExpect(jsonPath("$.data.cardSpendingPreviousMonth").value(1_560_000))
                 .andExpect(jsonPath("$.data.cardSpendingDifferenceFromPreviousMonth").value(-110_000))
-                .andExpect(jsonPath("$.data.efficiency.calculationVersion").value("efficiency-v4"))
+                .andExpect(jsonPath("$.data.efficiency.calculationVersion").value("efficiency-v5"))
                 .andExpect(jsonPath("$.data.efficiency.maxScore").value(100))
-                .andExpect(jsonPath("$.data.efficiency.availableDimensionCount").value(5))
-                .andExpect(jsonPath("$.data.efficiency.dimensions.length()").value(5))
+                .andExpect(jsonPath("$.data.efficiency.availableDimensionCount").value(7))
+                .andExpect(jsonPath("$.data.efficiency.dimensions.length()").value(7))
                 // 소비 1,450,000 / 소득 3,200,000 = 0.4531 → 100
                 .andExpect(jsonPath("$.data.efficiency.dimensions[0].key").value("SPENDING"))
                 .andExpect(jsonPath("$.data.efficiency.dimensions[0].score").value(100))
@@ -178,14 +178,22 @@ class ReportApiTest {
                 .andExpect(jsonPath("$.data.efficiency.dimensions[3].key").value("CREDIT"))
                 .andExpect(jsonPath("$.data.efficiency.dimensions[3].score").value(85))
                 .andExpect(jsonPath("$.data.efficiency.dimensions[3].grade").value("B"))
+                // 8월 20일 예측의 HIGH 위험 1건 → 100 − 30 = 70
+                .andExpect(jsonPath("$.data.efficiency.dimensions[4].key").value("CASHFLOW"))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[4].score").value(70))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[4].description").value("예측 기간에 잔액 부족 위험이 1건 있어요."))
+                // 8월 21일 진단: LOAN HIGH 1건(GOAL 문제는 제외) → 100 − 25 = 75
+                .andExpect(jsonPath("$.data.efficiency.dimensions[5].key").value("INEFFICIENCY"))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[5].score").value(75))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[5].value").value(1.0))
                 // 대출 상환 없음 → 0% → 100
-                .andExpect(jsonPath("$.data.efficiency.dimensions[4].key").value("DEBT_REPAYMENT"))
-                .andExpect(jsonPath("$.data.efficiency.dimensions[4].score").value(100))
-                .andExpect(jsonPath("$.data.efficiency.dimensions[4].description").value("대출 상환액이 없어요."))
-                // 전체 = (100 + 42 + 45 + 85 + 100) / 5 = 74.4 → 74
+                .andExpect(jsonPath("$.data.efficiency.dimensions[6].key").value("DEBT_REPAYMENT"))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[6].score").value(100))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[6].description").value("대출 상환액이 없어요."))
+                // 전체 = (100 + 42 + 45 + 85 + 70 + 75 + 100) / 7 = 73.9 → 74
                 .andExpect(jsonPath("$.data.efficiency.score").value(74))
-                // 7월: 100 · 36 · 100(고정지출 0) · 85 · 100 → 84.2 → 84 → 74 − 84
-                .andExpect(jsonPath("$.data.efficiency.previousMonthDifference").value(-10))
+                // 7월: 100 · 36 · 100(고정지출 0) · 85 · 70 · 75(7월 말까지 예측·진단이 없어 최신으로 폴백) · 100 → 80.9 → 81 → 74 − 81
+                .andExpect(jsonPath("$.data.efficiency.previousMonthDifference").value(-7))
                 .andExpect(jsonPath("$.data.efficiency.summary").value("지출 관리는 안정적이에요. 저축을 조금 더 챙겨 보세요."))
                 .andExpect(jsonPath("$.data.diagnosisId").value(diagnosis.getDiagnosisId()))
                 // 697 주요 지표: 효율 점수와 같은 입력. 저축률 0.125(7월 0.1094), 고정지출 비중 0.6207(7월 0), 카드 사용액, 대출 잔액(현재 값·이력 없음)
@@ -242,6 +250,9 @@ class ReportApiTest {
                 .andExpect(jsonPath("$.data.efficiency.dimensions[3].grade").doesNotExist())
                 .andExpect(jsonPath("$.data.efficiency.dimensions[3].status").value("UNAVAILABLE"))
                 .andExpect(jsonPath("$.data.efficiency.dimensions[3].unavailableReason").value("CREDIT_SCORE_MISSING"))
+                // 예측·진단을 실행한 적이 없으면 현금흐름·비효율도 0점이 아니라 계산 불가다
+                .andExpect(jsonPath("$.data.efficiency.dimensions[4].unavailableReason").value("FORECAST_NOT_FOUND"))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[5].unavailableReason").value("DIAGNOSIS_NOT_FOUND"))
                 // 7월은 4개 계산(100·36·100·100) → 84 → 72 − 84
                 .andExpect(jsonPath("$.data.efficiency.previousMonthDifference").value(-12))
                 // 697 패턴: 자료 없음은 "위험 없음"이 아니다
@@ -312,11 +323,40 @@ class ReportApiTest {
 
         mvc.perform(get("/api/v1/reports/monthly").with(user(owner.toString())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.efficiency.dimensions[4].key").value("DEBT_REPAYMENT"))
-                .andExpect(jsonPath("$.data.efficiency.dimensions[4].value").value(0.15))
-                .andExpect(jsonPath("$.data.efficiency.dimensions[4].score").value(83))
-                .andExpect(jsonPath("$.data.efficiency.dimensions[4].status").value("GOOD"))
-                .andExpect(jsonPath("$.data.efficiency.dimensions[4].description").value("소득의 15%를 대출 상환에 썼어요."));
+                .andExpect(jsonPath("$.data.efficiency.dimensions[6].key").value("DEBT_REPAYMENT"))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[6].value").value(0.15))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[6].score").value(83))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[6].status").value("GOOD"))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[6].description").value("소득의 15%를 대출 상환에 썼어요."));
+    }
+
+    @Test
+    void scoreFrozenBeforeForecastAndDiagnosisIsFilledOnceTheyRun() throws Exception {
+        // 예측·발견 분석 전에 처음 연 리포트: 두 항목이 계산 불가로 저장된다
+        String first = mvc.perform(get("/api/v1/reports/monthly").with(user(owner.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.efficiency.dimensions[4].unavailableReason").value("FORECAST_NOT_FOUND"))
+                .andReturn().getResponse().getContentAsString();
+
+        // 9월에 실행한 예측·진단(8월 말일 뒤) → 다음 조회에서 "가장 최근" 기준으로 채워진다
+        CashflowForecast forecast = forecasts.save(CashflowForecast.start(owner, LocalDate.of(2026, 9, 10), 30, "v1", null,
+                LocalDateTime.of(2026, 9, 10, 9, 0)));
+        forecast.complete(500_000L, 300_000L, 100_000L, null, LocalDateTime.of(2026, 9, 10, 9, 1));
+        forecasts.save(forecast);
+        Diagnosis diagnosis = diagnoses.save(Diagnosis.start(owner, null, LocalDateTime.of(2026, 9, 11, 9, 0)));
+        diagnosis.complete(0, 0, DiagnosisStatus.HEALTHY, "v6-last-month-vs-3m", null, LocalDateTime.of(2026, 9, 11, 9, 1));
+        diagnoses.save(diagnosis);
+
+        String second = mvc.perform(get("/api/v1/reports/monthly").with(user(owner.toString())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.efficiency.dimensions[4].score").value(100))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[4].description").value("가장 최근 예측 기준으로 예측 기간에 잔액 부족 위험이 없어요."))
+                .andExpect(jsonPath("$.data.efficiency.dimensions[5].score").value(100))
+                .andExpect(jsonPath("$.data.efficiency.availableDimensionCount").value(6))
+                .andReturn().getResponse().getContentAsString();
+        // 합계·생성 시각은 그대로다
+        assertThat(json.readTree(second).at("/data/generatedAt")).isEqualTo(json.readTree(first).at("/data/generatedAt"));
+        assertThat(json.readTree(second).at("/data/totalExpense")).isEqualTo(json.readTree(first).at("/data/totalExpense"));
     }
 
     @Test

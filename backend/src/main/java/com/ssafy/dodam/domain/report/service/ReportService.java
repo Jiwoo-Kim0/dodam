@@ -214,11 +214,17 @@ public class ReportService {
 
     /**
      * 635·697 이전에 굳힌 READY 리포트에 카드 사용액·효율 점수·주요 지표/패턴이 없으면 그 값만 채운다. 합계·생성 시각은 그대로다.
+     * 현재 산식으로 만들었지만 예측·진단이 없어 현금흐름·비효율이 계산 불가로 굳은 효율 점수도 다시 계산한다(v5).
      * 저장 형식을 읽지 못한 리포트({@code financial == null})는 건드리지 않는다 — {@code INSUFFICIENT_DATA}로 응답한다.
      */
     private void supplementIfMissing(Long userId, YearMonth month, MonthlyReport stored) {
         Financial financial = json.fromJson(stored.getFinancialSummary(), Financial.class);
-        if (financial == null || (financial.hasCardSpending() && stored.hasEfficiencySummary() && stored.hasMetricsSummary())) {
+        if (financial == null) {
+            return;
+        }
+        boolean complete = financial.hasCardSpending() && stored.hasEfficiencySummary() && stored.hasMetricsSummary();
+        if (complete && !EfficiencyScorePolicy.needsRecalculation(
+                json.fromJson(stored.getEfficiencySummary(), EfficiencyScoreResponse.class))) {
             return;
         }
         MonthlyReportGenerator.Supplement supplement =

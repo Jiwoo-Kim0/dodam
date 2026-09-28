@@ -19,7 +19,9 @@ import java.util.Map;
  * "그 달 말일까지 완료된 최신, 없으면 리포트 생성 시점 최신"으로 완화. {@link EfficiencyScoreCalculator} 참고)
  * → {@code efficiency-v4}(712: CASHFLOW·INEFFICIENCY를 빼고 DEBT_REPAYMENT를 넣음. 두 항목은 사용자가 현금흐름 예측이나
  * 발견 분석을 먼저 실행해야 입력이 생겨, 실행 전에 처음 연 리포트에는 "계산 불가"로 굳었다. 새 항목은 지출·저축처럼 그 달
- * 원천 데이터만으로 늘 계산된다).
+ * 원천 데이터만으로 늘 계산된다)
+ * → {@code efficiency-v5}(712 시연 QA: CASHFLOW·INEFFICIENCY를 v3 산식 그대로 되살려 7개 항목. 입력이 없어 계산 불가로 굳은
+ * 리포트는 입력이 생긴 뒤 다음 조회 때 다시 계산한다 — {@link #needsRecalculation}).
  *
  * <table>
  *   <caption>항목별 산식(0~100, 선형 보간 후 반올림)</caption>
@@ -28,6 +30,8 @@ import java.util.Map;
  *   <tr><td>SAVING 저축</td><td>저축성 지출 / 소득</td><td>≥ 0.3</td><td>0</td></tr>
  *   <tr><td>FIXED_EXPENSE 고정지출</td><td>고정지출 / 소비</td><td>≤ 0.4</td><td>≥ 0.8</td></tr>
  *   <tr><td>CREDIT 신용 관리</td><td>개인신용점수</td><td>1,000점</td><td>1점</td></tr>
+ *   <tr><td>CASHFLOW 현금흐름</td><td>말일 이전 마지막 완료 예측(없으면 최신)의 위험</td><td>위험 없음</td><td>100 − Σ(CRITICAL 40, HIGH 30, MEDIUM 15, LOW 5)</td></tr>
+ *   <tr><td>INEFFICIENCY 비효율 관리</td><td>말일까지 완료된 최신 진단(없으면 최신)의 문제(GOAL 제외)</td><td>문제 없음</td><td>100 − Σ(CRITICAL 30, HIGH 25, MEDIUM 15, LOW 10)</td></tr>
  *   <tr><td>DEBT_REPAYMENT 부채 상환</td><td>그 달 대출 상환액(PAID) / 소득</td><td>≤ 0.1</td><td>≥ 0.4</td></tr>
  * </table>
  *
@@ -36,13 +40,15 @@ import java.util.Map;
  */
 public final class EfficiencyScorePolicy {
 
-    public static final String VERSION = "efficiency-v4";
+    public static final String VERSION = "efficiency-v5";
     public static final int MINIMUM_DIMENSIONS = 3;
 
     public static final String KEY_SPENDING = "SPENDING";
     public static final String KEY_SAVING = "SAVING";
     public static final String KEY_FIXED_EXPENSE = "FIXED_EXPENSE";
     public static final String KEY_CREDIT = "CREDIT";
+    public static final String KEY_CASHFLOW = "CASHFLOW";
+    public static final String KEY_INEFFICIENCY = "INEFFICIENCY";
     public static final String KEY_DEBT_REPAYMENT = "DEBT_REPAYMENT";
 
     public static final String STATUS_GOOD = "GOOD";
@@ -53,19 +59,27 @@ public final class EfficiencyScorePolicy {
     public static final String REASON_INCOME_MISSING = "INCOME_MISSING";
     public static final String REASON_NO_SPENDING = "NO_SPENDING";
     public static final String REASON_CREDIT_SCORE_MISSING = "CREDIT_SCORE_MISSING";
+    public static final String REASON_FORECAST_NOT_FOUND = "FORECAST_NOT_FOUND";
+    public static final String REASON_DIAGNOSIS_NOT_FOUND = "DIAGNOSIS_NOT_FOUND";
 
     static final String VALUE_RATIO = "RATIO";
     static final String VALUE_GRADE = "GRADE";
     static final String VALUE_SCORE = "SCORE";
+    static final String VALUE_COUNT = "COUNT";
 
     static final int GOOD_THRESHOLD = 70;
     static final int NORMAL_THRESHOLD = 40;
 
     private static final Map<String, Integer> CREDIT_GRADE_SCORES = Map.of("A", 100, "B", 85, "C", 70, "D", 50, "E", 30);
 
+    /** 위험·문제 1건당 감점. 심각도 코드(LOW~CRITICAL)는 cashflow·diagnosis 두 도메인이 같은 문자열을 쓴다. */
+    private static final Map<String, Integer> CASHFLOW_PENALTIES = Map.of("CRITICAL", 40, "HIGH", 30, "MEDIUM", 15, "LOW", 5);
+    private static final Map<String, Integer> INEFFICIENCY_PENALTIES = Map.of("CRITICAL", 30, "HIGH", 25, "MEDIUM", 15, "LOW", 10);
+
     private static final Map<String, String> LABELS = Map.of(
             KEY_SPENDING, "지출 관리", KEY_SAVING, "저축", KEY_FIXED_EXPENSE, "고정지출",
-            KEY_CREDIT, "신용 관리", KEY_DEBT_REPAYMENT, "부채 상환");
+            KEY_CREDIT, "신용 관리", KEY_CASHFLOW, "현금흐름", KEY_INEFFICIENCY, "비효율 관리",
+            KEY_DEBT_REPAYMENT, "부채 상환");
 
     private EfficiencyScorePolicy() {
     }
@@ -142,6 +156,56 @@ public final class EfficiencyScorePolicy {
         int score = linearDown(ratio, 0.1, 0.4);
         String description = paidRepayment <= 0 ? "대출 상환액이 없어요." : "소득의 " + percent(ratio) + "%를 대출 상환에 썼어요.";
         return available(KEY_DEBT_REPAYMENT, score, description, ratio, VALUE_RATIO, null);
+    }
+
+    /**
+     * 현금흐름 예측의 위험 심각도 목록으로 감점한다. 예측이 없으면({@code severities == null}) FORECAST_NOT_FOUND.
+     *
+     * @param latestFallback 그 달 말일 이전 예측이 없어 생성 시점 최신 예측을 썼는지. 참이면 문장 앞에 기준을 밝힌다
+     */
+    public static Dimension cashflow(List<String> severities, boolean latestFallback) {
+        if (severities == null) {
+            return unavailable(KEY_CASHFLOW, REASON_FORECAST_NOT_FOUND, "완료한 현금흐름 예측이 없어 계산하지 못했어요.");
+        }
+        int score = penalized(severities, CASHFLOW_PENALTIES);
+        String prefix = latestFallback ? "가장 최근 예측 기준으로 " : "";
+        String description = severities.isEmpty() ? prefix + "예측 기간에 잔액 부족 위험이 없어요."
+                : prefix + "예측 기간에 잔액 부족 위험이 " + severities.size() + "건 있어요.";
+        return available(KEY_CASHFLOW, score, description, (double) severities.size(), VALUE_COUNT, null);
+    }
+
+    /**
+     * 진단 문제(GOAL 제외)의 심각도 목록으로 감점한다. 진단이 없으면({@code severities == null}) DIAGNOSIS_NOT_FOUND.
+     *
+     * @param latestFallback 그 달 말일까지 완료된 진단이 없어 생성 시점 최신 진단을 썼는지
+     */
+    public static Dimension inefficiency(List<String> severities, boolean latestFallback) {
+        if (severities == null) {
+            return unavailable(KEY_INEFFICIENCY, REASON_DIAGNOSIS_NOT_FOUND, "완료한 발견 분석이 없어 계산하지 못했어요.");
+        }
+        int score = penalized(severities, INEFFICIENCY_PENALTIES);
+        String prefix = latestFallback ? "가장 최근 진단 기준으로 " : "";
+        String description = severities.isEmpty() ? prefix + "발견된 금융 비효율이 없어요."
+                : prefix + "발견된 금융 비효율이 " + severities.size() + "건 있어요.";
+        return available(KEY_INEFFICIENCY, score, description, (double) severities.size(), VALUE_COUNT, null);
+    }
+
+    /**
+     * 저장된 점수를 다시 계산해야 하는가. 현재 버전으로 만들었는데 예측·진단이 없어 CASHFLOW·INEFFICIENCY가 계산 불가로 굳은 경우다.
+     * 두 항목은 사용자가 예측·발견 분석을 실행해야 입력이 생기므로, 실행 전에 처음 연 리포트도 실행 뒤 조회에서 채워지게 한다.
+     * 다른 버전 저장본은 건드리지 않는다(과거 점수 유지).
+     */
+    public static boolean needsRecalculation(EfficiencyScoreResponse stored) {
+        if (stored == null || !VERSION.equals(stored.calculationVersion())) {
+            return false;
+        }
+        return stored.dimensions().stream().anyMatch(d -> REASON_FORECAST_NOT_FOUND.equals(d.unavailableReason())
+                || REASON_DIAGNOSIS_NOT_FOUND.equals(d.unavailableReason()));
+    }
+
+    private static int penalized(List<String> severities, Map<String, Integer> penalties) {
+        int penalty = severities.stream().mapToInt(severity -> penalties.getOrDefault(severity, 0)).sum();
+        return Math.max(0, EfficiencyScoreResponse.MAX_SCORE - penalty);
     }
 
     // ---------- 전체 ----------
@@ -258,7 +322,7 @@ public final class EfficiencyScorePolicy {
 
     /** 항목 순서를 고정한다(효율 점수 화면의 목록 순서). */
     public static List<Dimension> ordered(Dimension spending, Dimension saving, Dimension fixedExpense, Dimension credit,
-            Dimension debtRepayment) {
-        return List.of(spending, saving, fixedExpense, credit, debtRepayment);
+            Dimension cashflow, Dimension inefficiency, Dimension debtRepayment) {
+        return List.of(spending, saving, fixedExpense, credit, cashflow, inefficiency, debtRepayment);
     }
 }
