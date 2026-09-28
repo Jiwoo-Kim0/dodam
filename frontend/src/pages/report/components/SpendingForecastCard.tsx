@@ -63,6 +63,37 @@ function signedWon(amount: number) {
   return `${sign}${formatNumber(Math.abs(amount))}원`;
 }
 
+/** 예상 범위처럼 대략을 말하는 금액. 만원 단위로 반올림하고, 1만원이 안 되면 원 단위 그대로 둔다 */
+function roughWon(amount: number) {
+  const manwon = Math.round(amount / 10_000);
+  return manwon >= 1 ? `${formatNumber(manwon)}만원` : `${formatNumber(amount)}원`;
+}
+
+/** 작년 같은 달과 비교한 한 줄. 차이가 작년의 5% 이내면 "비슷해요"로 묶는다 — 몇 천 원 차이를 늘었다고 말하지 않는다 */
+function lastYearComparison(monthLabelText: string, predicted: number, lastYear: number) {
+  const base = `작년 ${monthLabelText}(${formatNumber(lastYear)}원)`;
+  const difference = predicted - lastYear;
+  if (Math.abs(difference) <= lastYear * 0.05) {
+    return `${base}과 비슷하게 쓸 것 같아요.`;
+  }
+  return `${base}보다 ${formatNumber(Math.abs(difference))}원 ${difference > 0 ? '더' : '덜'} 쓸 것 같아요.`;
+}
+
+/** 추세분 설명. `trendEffect`는 매달 값이 아니라 그 달까지 쌓인 몫이다(서버 = 계절 적용 전 값 − 수준, 감쇠 포함) */
+function trendHint(trendEffect: number) {
+  if (trendEffect > 0) return '최근 소비가 조금씩 늘고 있어 그만큼 더했어요';
+  if (trendEffect < 0) return '최근 소비가 조금씩 줄고 있어 그만큼 뺐어요';
+  return '뚜렷하게 늘거나 줄지 않고 있어요';
+}
+
+/** 계절 계수 설명. 0.90이면 "평소보다 약 10% 덜 쓰는 달" */
+function seasonalHint(monthLabelText: string, factor: number | null) {
+  if (factor === null) return `${monthLabelText}은 평소와 비슷하게 쓰는 달이에요`;
+  const percent = Math.round(Math.abs(factor - 1) * 100);
+  if (percent === 0) return `${monthLabelText}은 평소와 비슷하게 쓰는 달이에요`;
+  return `${monthLabelText}은 평소보다 약 ${percent}% ${factor > 1 ? '더' : '덜'} 쓰는 달이에요`;
+}
+
 /** `2026-09` -> 연속된 월 번호. x좌표를 배열 순서가 아니라 시간으로 잡는 데 쓴다 */
 function monthOrdinal(month: string) {
   return Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7));
@@ -320,25 +351,42 @@ export function SpendingForecastCard({ forecast }: SpendingForecastCardProps) {
         // 서버가 평소 수준 + 추세 영향 + 계절 영향 = 예상이 원 단위로 맞도록 내려 준다. 화면에서 다시 계산하지 않는다.
         <View style={styles.basis}>
           <Text style={styles.basisTitle}>{`${selected.label} 예상 근거`}</Text>
-          <View style={styles.basisRow}>
-            <Text style={styles.basisLabel}>평소 한 달 소비</Text>
-            <Text style={styles.basisValue}>{`${formatNumber(explanation.level)}원`}</Text>
+          <View style={styles.basisItem}>
+            <View style={styles.basisRow}>
+              <Text style={styles.basisLabel}>평소 한 달 소비</Text>
+              <Text style={styles.basisValue}>{`${formatNumber(explanation.level)}원`}</Text>
+            </View>
+            <Text style={styles.basisHint}>계절 영향을 뺀 최근 소비 수준이에요</Text>
           </View>
-          <View style={styles.basisRow}>
-            <Text style={styles.basisLabel}>
-              {basis.trendEffect >= 0 ? '늘어나는 추세' : '줄어드는 추세'}
-            </Text>
-            <Text style={styles.basisValue}>{signedWon(basis.trendEffect)}</Text>
+          <View style={styles.basisItem}>
+            <View style={styles.basisRow}>
+              <Text style={styles.basisLabel}>소비 추세</Text>
+              <Text style={styles.basisValue}>{signedWon(basis.trendEffect)}</Text>
+            </View>
+            <Text style={styles.basisHint}>{trendHint(basis.trendEffect)}</Text>
           </View>
           {explanation.seasonalityApplied ? (
-            <View style={styles.basisRow}>
-              <Text style={styles.basisLabel}>{`${selected.label} 계절 영향`}</Text>
-              <Text style={styles.basisValue}>{signedWon(basis.seasonalEffect)}</Text>
+            <View style={styles.basisItem}>
+              <View style={styles.basisRow}>
+                <Text style={styles.basisLabel}>{`${selected.label} 계절 영향`}</Text>
+                <Text style={styles.basisValue}>{signedWon(basis.seasonalEffect)}</Text>
+              </View>
+              <Text style={styles.basisHint}>{seasonalHint(selected.label, basis.seasonalFactor)}</Text>
             </View>
           ) : null}
+          <View style={styles.basisDivider} />
+          <View style={styles.basisItem}>
+            <View style={styles.basisRow}>
+              <Text style={styles.basisTotalLabel}>{`${selected.label} 예상`}</Text>
+              <Text style={styles.basisTotalValue}>{`${formatNumber(basis.predicted)}원`}</Text>
+            </View>
+            <Text style={styles.basisHint}>
+              {`예상 범위는 ${roughWon(basis.lowerBound)} ~ ${roughWon(basis.upperBound)}이에요`}
+            </Text>
+          </View>
           {basis.lastYearAmount !== null ? (
             <Text style={styles.basisCaption}>
-              {`작년 ${selected.label}에는 ${formatNumber(basis.lastYearAmount)}원을 썼어요.`}
+              {lastYearComparison(selected.label, basis.predicted, basis.lastYearAmount)}
             </Text>
           ) : null}
         </View>

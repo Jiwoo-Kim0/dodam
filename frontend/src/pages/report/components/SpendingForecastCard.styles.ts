@@ -113,6 +113,29 @@ export const styles = StyleSheet.create({
     fontFamily: fontFamily.semiBold,
     fontSize: fontSize.caption,
   },
+  basisItem: {
+    gap: 2,
+  },
+  basisHint: {
+    color: colors.textTertiary,
+    fontFamily: fontFamily.regular,
+    fontSize: fontSize.detail,
+  },
+  basisDivider: {
+    backgroundColor: colors.divider,
+    height: 1,
+    marginVertical: spacing[1],
+  },
+  basisTotalLabel: {
+    color: colors.textPrimary,
+    fontFamily: fontFamily.semiBold,
+    fontSize: fontSize.caption,
+  },
+  basisTotalValue: {
+    color: colors.report.scoreStrong,
+    fontFamily: fontFamily.semiBold,
+    fontSize: fontSize.body2,
+  },
   basisCaption: {
     color: colors.textTertiary,
     fontFamily: fontFamily.regular,
