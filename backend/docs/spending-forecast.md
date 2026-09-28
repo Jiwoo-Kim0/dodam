@@ -1,0 +1,137 @@
+# 소비 예측 조회 API (S15P21D105-706)
+
+작성일 2026-09-24, 예측 근거 분해 2026-09-26(S15P21D105-707). 설계 배경·결정 기록과 seed 작업은 [timeseries-forecast-plan.md](timeseries-forecast-plan.md)에 있다.
+이 문서는 **현재 구현된 계약**만 적는다. 계획서에 있으나 구현하지 않은 항목은 §7에 모았다.
+
+관련 문서: [pattern.md](pattern.md)(변동 소비 집계를 쓰는 다른 경로), [spending-aggregation.md](spending-aggregation.md).
+
+## 1. 엔드포인트
+
+`GET /api/v1/spending-forecasts`
+
+| 항목 | 값 |
+| --- | --- |
+| 인증 | 필요. 없으면 401 |
+| 사용자 식별 | `AuthenticatedUserIdResolver`. userId가 조회 조건에 들어가므로 타인의 거래는 애초에 읽히지 않는다 |
+| 쿼리 파라미터 | `horizonMonths`(선택) — 예측할 달 수 |
+| 기본값 | 3 |
+| 범위 | 1~12. 벗어나면 400 `INVALID_REQUEST` |
+| 응답 | 200 `ApiResponse<SpendingForecastResponse>` |
+
+**경로에 `/latest`를 붙이지 않았다.** 저장된 최신 결과를 돌려주는 것이 아니라 요청할 때 계산하기 때문이다.
+결과를 저장하는 실행 API가 생기면 그때 `/latest`를 따로 둔다. 복합어 경로는 `/api/v1/deposit-savings` 전례를 따른다.
+
+## 2. 응답
+
+| 필드 | 타입 | 설명 |
+| --- | --- | --- |
+| `baseMonth` | `yyyy-MM` | 기준 달 = 오늘이 속한 달(Asia/Seoul). **예측은 그다음 달부터 시작한다** |
+| `horizonMonths` | int | 요청한(또는 기본) 예측 달 수 |
+| `fallbackReason` | string \| null | 축약 경로를 탔다면 그 사유. 전체 절차를 돌았으면 null |
+| `explanation` | object \| null | 예측 전체의 근거. 예측이 없으면(`forecasts`가 빈 배열) null |
+| `explanation.level` | long | 계절을 뺀 최근 월 변동 소비 수준(지수평활). 화면 문구는 "평소 한 달 소비" |
+| `explanation.monthlyTrend` | long | 계절을 뺀 축의 월당 기울기(Theil-Sen). 감쇠 전 값이다 |
+| `explanation.seasonalityApplied` | boolean | 계절 계수를 썼는지. 이력이 12개월 미만이면 false |
+| `history[]` | `{month, amount}` | 최근 12개월 실적. 오래된 순 |
+| `forecasts[]` | `{month, predicted, lowerBound, upperBound, trendEffect, seasonalEffect, seasonalFactor, lastYearAmount}` | `horizonMonths`개. 오래된 순 |
+| `forecasts[].trendEffect` | long | 수준에 더해진 추세분 = 계절 적용 전 값 − `level`. 감쇠가 들어가 있어 먼 달일수록 `monthlyTrend × 개월 수`보다 작다 |
+| `forecasts[].seasonalEffect` | long | 계절 계수로 더해진(빠진) 금액 = `predicted` − 계절 적용 전 값. 계절을 쓰지 않았으면 0 |
+| `forecasts[].seasonalFactor` | decimal \| null | 이 달의 계절 계수(소수 2자리). 계절을 쓰지 않았으면 null |
+| `forecasts[].lastYearAmount` | long \| null | 1년 전 같은 달 실적. 추정 입력(24개월) 안에서 찾으므로 화면 창(12개월) 밖이어도 싣는다. 그 달에 거래가 없었으면 null |
+
+- 금액은 전부 **원 단위 정수**(`long`)다.
+- `history`에는 **거래가 있는 달만** 들어간다. 거래가 없던 달은 0이 아니라 목록에 없다. 0을 관측치로 넣으면
+  수준이 끌려 내려가 휴면 구간이 있는 사용자의 예측이 실제의 절반 이하가 된다.
+- **기준 달은 `history`에도 `forecasts`에도 없다.** 아직 끝나지 않아 실적이 아니고, 예측 구간도 아니다.
+  화면이 두 구간 사이에 "오늘" 선을 세울 때 이 빈 자리를 쓴다.
+- `lowerBound`·`upperBound`는 **정확도를 주장하는 값이 아니라 표시용**이다. 화면 문구도 "예상 범위"로 둔다.
+- **`level + trendEffect + seasonalEffect = predicted`가 원 단위로 정확히 성립한다**(707). 두 효과를 차이로 정의해
+  반올림 오차를 `seasonalEffect`가 흡수한다. 화면과 코치가 세 조각을 나란히 보여 줄 때 합이 예상액과 어긋나지 않게
+  하기 위해서다. 클라이언트는 이 값을 다시 계산하지 않는다.
+
+## 3. 입력 데이터
+
+추정 입력은 **완료된 달 24개**(`baseMonth − 24` ~ `baseMonth − 1`)다. 오늘이 속한 달은 아직 끝나지 않아 합계가
+실제보다 작으므로 넣지 않는다. 넣으면 월초에 조회할수록 수준이 내려가 예측이 매일 달라진다.
+
+응답에 싣는 `history`는 그중 **최근 12개월**이다(`baseMonth − 12` ~ `baseMonth − 1`). 24개월을 전부 그리면
+폰 화면에서 뭉갠다.
+
+변동 소비 판정은 `JdbcSpendingForecastReader`의 한 줄이다.
+
+```sql
+COALESCE(entry.spending_type, category.default_spending_type, 'VARIABLE') = 'VARIABLE'
+```
+
+- 거래의 `spending_type`이 NULL이면 카테고리 기본값으로 해석하고, 카테고리가 없으면 `VARIABLE`로 본다.
+- 카테고리가 `HOUSING`·`INSURANCE`처럼 기본값이 `FIXED`인데 거래 값이 NULL이면 예측 대상에서 빠진다.
+- `transaction_type = 'EXPENSE'`만 센다.
+
+**패턴 쪽 `JdbcPatternFeatureReader.readUserMonthly()`를 쓰지 않는다.** 그 쿼리는 `spending_type = 'VARIABLE'`
+명시값만 세어 NULL 잔여만큼 과소 집계된다. 거기에 해석 규칙을 넣으면 `fixedExpenseShare`·`discretionaryShare`가
+같이 움직여 K-Means 특징과 저장된 `pattern_analysis`로 번지는데, 700의 캐시 무효화는 거래 지문 비교라
+**SQL 규칙 변경을 감지하지 못한다.** 그래서 패턴 쪽은 그대로 두고 예측 전용 리더를 따로 뒀다.
+
+## 4. 계산
+
+`SpendingForecastCalculator`. 계절 계수·수준·추세를 모두 **그 사용자의 이력만으로** 추정한다.
+순서는 계절 추정 → 계절 제거 → 이상치 클리핑 → 지수평활(수준) → Theil-Sen(추세) → 감쇠 투영 → 구간이다.
+
+| 상수 | 값 | 뜻 |
+| --- | --- | --- |
+| `ALPHA` | 0.5 | 지수평활 계수. 1에 가까울수록 최근 달을 더 믿는다 |
+| `DAMPING` | 0.85 | 추세 감쇠. 누적 감쇠 D(h)가 φ/(1−φ)로 수렴해 먼 달의 추세가 발산하지 않는다 |
+| `Z` | 1.28 | 80% 양측 구간 |
+| `MAD_TO_SIGMA` | 1.4826 | MAD를 정규분포 표준편차로 환산 |
+| `CLIP_K` | 3 | 클리핑 폭(MAD 배수) |
+| `MIN_MONTHS` | 3 | 이보다 짧으면 예측하지 않는다 |
+| `MIN_MONTHS_FOR_SEASONALITY` | 12 | 이보다 짧으면 계절 계수를 만들지 않는다 |
+
+- 추세는 위치가 아니라 **첫 달로부터의 개월 수**로 잰다. 위치로 재면 결측이 있는 사용자의 기울기가 실제보다 가팔라진다.
+- 계절 계수는 각 달의 관측치를 전체 평균으로 나눈 비율의 중앙값이며 기하평균이 1이 되게 맞춘다.
+  관측이 1회뿐인 달은 1로 둔다 — 한 번 본 값을 그 달의 성질로 확정하면 우연한 한 달이 매년 반복되는 계절로 굳는다.
+- **결과를 저장하지 않는다.** 결과 테이블·요청 해시·사용자 락·진행 중 만료는 전부 "결과를 저장하고 재사용"하기 위한
+  장치인데, 한 사용자가 한 번 조회하는 데는 필요 없다. 저장이 필요해지면 별도 이슈로 붙인다.
+
+## 5. 빈 결과와 경계
+
+이력이 모자라도 **404·400이 아니라 200에 사유를 싣는다.** 예측 카드 하나 때문에 리포트 화면 전체가 비면 안 된다.
+
+| 거래가 있는 달 수 | `fallbackReason` | `forecasts` |
+| --- | --- | --- |
+| 0~1 | `FEATURES_UNAVAILABLE` | 빈 배열 |
+| 2 | `USER_DATA_TOO_SHORT` | 빈 배열 |
+| 3~11 | `SEASONALITY_UNAVAILABLE` | 정상(계절 계수 없이 수준·추세만) |
+| 12 이상 | null | 정상 |
+
+`history`는 어느 경우에도 읽은 대로 싣는다. `horizonMonths`가 1~12 밖이면 계산 전에 400이다.
+
+같은 모델이 **데이터 양에 따라 다른 경로를 탄다**는 점에 주의한다. 이력이 12개월 미만이면 계절 계수를 만들지
+않으므로, 계절로 흡수됐을 큰 달이 클리핑에 실제로 걸린다. 6개월만 적재된 DB와 24개월이 적재된 DB에서 같은
+사용자의 예측이 다르게 나오는 이유가 이것이다(계획서 §7.1).
+
+## 6. 화면 계약
+
+리포트 화면의 "예상 소비" 카드(`frontend/src/pages/report/components/SpendingForecastCard.tsx`)가 이 API를 쓴다.
+
+- 과거 12개월 실선 + 예측 점선 + 예상 범위 띠를 **한 선으로** 잇는다.
+- 기본으로 보여주는 달은 **첫 예측 달(다음 달)** 이다. 카드가 답하는 질문이 "다음 달에 얼마나 쓸까"라서다.
+- "오늘" 세로선은 **`baseMonth`** 위치에 선다. 마지막 실측 달에 세우면 이번 달이 이미 끝난 것처럼 읽힌다.
+- 조회 실패는 화면에서 null로 흡수해 카드만 빠진다. `forecasts`가 비어 오면 차트 대신 안내 문구를 보여준다.
+- 예측 달을 선택하면 차트 아래에 **"N월 예상 근거"**(평소 한 달 소비·늘어나는/줄어드는 추세·N월 계절 영향)와
+  "작년 N월에는 X원을 썼어요" 한 줄을 보여 준다(707). 계절 줄은 `seasonalityApplied`일 때만, 작년 줄은
+  `lastYearAmount`가 있을 때만 나온다. 실측 달을 고르면 근거 블록은 없다.
+- AI 코치의 `get_spending_forecast` 도구가 같은 서비스를 부른다([ai-coach.md](ai-coach.md) §13-2-1).
+
+## 7. 현재 제한사항
+
+- **결과를 저장하지 않는다.** 실행 API(`POST`), 결과 테이블(`V45` 3종), 동시성 제어(사용자 락·진행 중 만료),
+  cashflow 합성 이벤트 연동, 목표 저축 속도 배율은 이 이슈 범위 밖이다(계획서 부록 A).
+- **카테고리별 분해를 내려주지 않는다.** 예측 대상은 월 변동 소비 합계 하나다.
+- **`predicted_total`(고정비 포함 총 소비)을 싣지 않는다**(2026-09-24 결정). 고정비 펼침 오차가 검증 절차에서
+  측정되지 않아, 서버가 합계를 내면 측정 안 된 오차가 응답 숫자로 드러난다.
+- **예측 성능은 검증된 바 없다.** 현재 데이터는 시연용 합성 데이터이고, 계획서 §7.1의 대조는 모델 성능이 아니라
+  "추정 로직이 seed 생성 규칙을 역산하는가"를 재는 것이다. 운영 성능 근거로 인용할 수 없다.
+- **사용자 단위 계절 추정은 실거래에서 흔들린다.** 계수 12개를 2주기로 추정하는 구조라 합성 데이터에서만 안정적이다.
+  실제 거래가 쌓이면 인구 단위 학습으로 되돌려야 한다.
+- **루트 `docs/API명세서/`에 이 엔드포인트가 아직 없다**(2026-09-24). 루트 문서는 별도 합의 후 갱신한다.

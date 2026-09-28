@@ -1,0 +1,77 @@
+spring:
+  config:
+    activate:
+      on-profile: test
+  datasource:
+    url: jdbc:h2:mem:dodam;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  data:
+    redis:
+      repositories:
+        enabled: false
+  jpa:
+    hibernate:
+      # H2 스모크 테스트용. Flyway DDL은 MySQL 전용이므로 테스트에서는 엔티티 기준으로 스키마를 만든다.
+      # MySQL 제약(CHECK, TINYINT 등) 검증은 Testcontainers 전환 시 Flyway 기준으로 바꾼다.
+      ddl-auto: create-drop
+  flyway:
+    enabled: false
+
+management:
+  health:
+    redis:
+      enabled: false
+
+app:
+  security:
+    number-hash-key: dodam-test-number-hash-key
+  cors:
+    allowed-origins:
+      - http://localhost:3000
+    allow-credentials: true
+  auth:
+    jwt:
+      # 테스트 전용 고정 키. 실제 환경에서는 JWT_SECRET 환경변수를 사용한다.
+      secret: test-only-jwt-secret-key-must-be-at-least-32-bytes-long
+  crypto:
+    # 테스트 전용 32바이트 0x00 키 (Base64). 실제 환경에서는 DATA_ENCRYPTION_KEY / DATA_HASH_KEY 환경변수를 사용한다.
+    data-key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+    hash-key: AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=
+  ssafy-finance:
+    # 테스트에서는 SsafyFinanceClient를 Mock으로 대체하므로 실제 호출은 일어나지 않는다.
+    api-key: test-only-api-key
+  social:
+    # 통합 테스트는 Kakao/GoogleIdentityClient를 Mock으로 대체한다. 단위 테스트가 이 값을 aud 대조에 쓴다.
+    google:
+      client-ids: test-google-client-id.apps.googleusercontent.com
+  ai:
+    # 테스트는 외부 AI를 호출하지 않는다. 기본 경로는 템플릿이며, AI 경로는 CoachTextGenerator를 Mock으로
+    # 대체해 검증한다(호출 실패·지어낸 숫자 시나리오 포함).
+    enabled: false
+  redis:
+    startup-check:
+      # 테스트에는 Redis가 없다. 기동 PING을 남겨두면 모든 @SpringBootTest가 연결 타임아웃만큼 느려진다.
+      enabled: false
+  coach:
+    # 테스트에는 Redis가 없다. 캐시 동작은 CoachAnswerCache를 Mock으로 대체해 검증하고,
+    # Redis 구현은 RedisCoachAnswerCacheTest가 따로 본다(연결 시도가 테스트를 느리게 하지 않도록 끈다).
+    cache-enabled: false
+    rate-limit:
+      # 같은 이유로 끈다. 한도 동작은 RedisCoachCallRateLimiterTest가, 한도 초과 응답은
+      # CoachApiTest가 CoachCallRateLimiter를 Mock으로 대체해 본다.
+      enabled: false
+    chat:
+      # 채팅 예산도 끈다. 세션 저장소·예산은 CoachChatApiTest가 Mock으로 대체하고 Redis 구현은 단위 테스트가 본다.
+      max-turns-per-session: 3
+      rate-limit:
+        enabled: false
+  pattern:
+    # H2 테스트는 인프로세스 학습을 검증한다. 아티팩트 로딩은 ClusterModelArtifactLoaderTest가 따로 본다.
+    model-location: ""
+  notification:
+    push:
+      enabled: false
+    events:
+      enabled: false            # 스케줄은 끄고 NotificationEventService를 테스트가 직접 호출한다

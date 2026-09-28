@@ -1,0 +1,4 @@
+# 실제 계정 파일과 k6 결과 산출물은 커밋하지 않는다. 계정 형식은 data/users.example.json 참고.
+data/users.json
+results/
+*.json.summary

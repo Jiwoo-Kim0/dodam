@@ -1,0 +1,42 @@
+{
+  "cli": {
+    "version": ">= 24.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "environment": "development",
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://j15D105.p.ssafy.io/api",
+        "EXPO_PUBLIC_ENABLE_DEMO_LOGIN": "true"
+      }
+    },
+    "preview": {
+      "environment": "preview",
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://j15D105.p.ssafy.io/api",
+        "EXPO_PUBLIC_ENABLE_DEMO_LOGIN": "true"
+      }
+    },
+    "production": {
+      "environment": "production",
+      "autoIncrement": true,
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://j15D105.p.ssafy.io/api",
+        "EXPO_PUBLIC_ENABLE_DEMO_LOGIN": "false"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

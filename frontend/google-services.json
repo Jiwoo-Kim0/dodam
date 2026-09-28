@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "184017850372",
+    "project_id": "dodam-45631",
+    "storage_bucket": "dodam-45631.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:184017850372:android:a9d9e11eb5e87463a02551",
+        "android_client_info": {
+          "package_name": "com.ssafy.d105.dodam"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAhkck_fC2oRCKnFoib3tA4oZQgW1tBOaY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

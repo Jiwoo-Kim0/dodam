@@ -1,0 +1,78 @@
+import { Image, Pressable, Text, View } from 'react-native';
+
+import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
+import type { LedgerCategory } from '@/types/ledger.types';
+import { formatCurrency } from '@/utils/currency';
+
+import { styles } from '../LedgerScreen.styles';
+import { LedgerHeader, TransactionCategoryIcon } from './LedgerShared';
+
+interface CategorySelectionProps {
+  categories: readonly LedgerCategory[];
+  selectedCategoryId: string | null;
+  amount: number;
+  merchantName: string;
+  transactionType: 'expense' | 'income';
+  onBackPress: () => void;
+  onSelect: (categoryId: string) => void;
+}
+
+export function CategorySelection({
+  categories,
+  selectedCategoryId,
+  amount,
+  merchantName,
+  transactionType,
+  onBackPress,
+  onSelect,
+}: CategorySelectionProps) {
+  const selectedCategory = categories.find((category) => category.id === selectedCategoryId);
+
+  return (
+    <View style={styles.fill}>
+      <LedgerHeader onBackPress={onBackPress} title="카테고리" />
+
+      <RefreshableBouncyScrollView contentContainerStyle={styles.categoryScreenContent}>
+        <View style={styles.categoryTransactionPreview}>
+          <TransactionCategoryIcon
+            categoryCode={selectedCategoryId}
+            categoryLabel={selectedCategory?.label}
+          />
+          <View style={styles.categoryPreviewCopy}>
+            <Text style={styles.categoryPreviewAmount}>
+              {amount === 0
+                ? formatCurrency(0)
+                : `${transactionType === 'expense' ? '-' : '+'}${formatCurrency(amount)}`}
+            </Text>
+            <Text style={styles.categoryPreviewMerchant}>
+              {merchantName || '새 거래 내역'}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.categoryList}>
+          {categories.map((category) => {
+            const isSelected = category.id === selectedCategoryId;
+
+            return (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ selected: isSelected }}
+                key={category.id}
+                onPress={() => onSelect(category.id)}
+                style={({ pressed }) => [
+                  styles.categoryRow,
+                  isSelected && styles.categoryRowSelected,
+                  pressed && styles.rowPressed,
+                ]}>
+                <Image resizeMode="contain" source={category.icon} style={styles.categoryIcon} />
+                <Text style={styles.categoryLabel}>{category.label}</Text>
+                {isSelected ? <Text style={styles.categoryCheck}>✓</Text> : null}
+              </Pressable>
+            );
+          })}
+        </View>
+      </RefreshableBouncyScrollView>
+    </View>
+  );
+}

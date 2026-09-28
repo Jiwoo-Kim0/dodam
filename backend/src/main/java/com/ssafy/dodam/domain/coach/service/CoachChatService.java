@@ -1,0 +1,491 @@
+package com.ssafy.dodam.domain.coach.service;
+
+import com.ssafy.dodam.domain.coach.dto.CoachFacts;
+import com.ssafy.dodam.domain.coach.dto.CoachFacts.Fact;
+import com.ssafy.dodam.domain.coach.dto.CoachFacts.Section;
+import com.ssafy.dodam.domain.coach.dto.CoachTopic;
+import com.ssafy.dodam.domain.coach.dto.request.CoachChatRequest;
+import com.ssafy.dodam.domain.coach.dto.response.CoachChatResponse;
+import com.ssafy.dodam.domain.coach.dto.response.CoachDegradedReason;
+import com.ssafy.dodam.domain.coach.dto.response.CoachMessageResponse;
+import com.ssafy.dodam.domain.coach.dto.response.CoachSource;
+import com.ssafy.dodam.domain.coach.service.CoachTextGenerator.ChatMessage;
+import com.ssafy.dodam.domain.coach.service.CoachTextGenerator.ChatTurn;
+import com.ssafy.dodam.domain.coach.service.CoachTextGenerator.ToolCall;
+import com.ssafy.dodam.domain.coach.service.CoachTextGenerator.ToolChoice;
+import com.ssafy.dodam.domain.coach.service.CoachTextGenerator.ToolDefinition;
+import com.ssafy.dodam.global.exception.InvalidRequestException;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+/**
+ * 토리에게 묻기 — 대화형 시뮬레이션 에이전트(S15P21D105-640 A-3, 계획 §1-2).
+ *
+ * <p>한 턴의 흐름:
+ * <ol>
+ *   <li>세션 로드(사용자별·conversationId, 최근 N턴). 턴 상한이면 새 대화를 안내한다.</li>
+ *   <li>사용자 문장에 {@link CoachSensitiveDataGuard} — 계좌·카드번호가 있으면 외부로 보내지 않는다.</li>
+ *   <li>자유 입력: 1차 호출(messages + tools, {@code tool_choice=auto}). tool_calls가 없으면 그 답이 최종.
+ *       칩({@code chipId}): 1차 호출을 건너뛰고 서버 고정 매핑으로 도구를 바로 실행한다.</li>
+ *   <li>{@link CoachToolDispatcher}가 도구를 실행한다(최대 3개). 결과는 서버 포맷 문자열({@link CoachFacts})이다.</li>
+ *   <li>2차 호출({@code tool_choice=none}) → 문장. 또 tool_calls가 오면 {@code TOOL_LOOP_EXCEEDED}.</li>
+ *   <li>{@link CoachNumberGuard} — 허용 숫자 = facts + 사용자 문장 + 화면 맥락 + 앞선 턴의 facts.</li>
+ * </ol>
+ * 어느 단계에서 막혀도 HTTP 200 + {@code source=TEMPLATE}이며, 이미 실행한 도구의 facts는 그대로 내려간다 —
+ * 시뮬레이션은 서버가 계산했으므로 문장이 없어도 결과 카드는 그릴 수 있다.
+ *
+ * <p>3종 코치({@link CoachService})와 다른 점: 응답을 <b>캐시하지 않는다</b>(같은 문장도 대화 맥락이 다르다),
+ * 예산은 별도 키({@link CoachChatRateLimiter})로 호출 1회마다 센다, 세션에 사용자 문장과 facts만 남긴다.
+ */
+@Service
+public class CoachChatService {
+
+    private static final Logger log = LoggerFactory.getLogger(CoachChatService.class);
+
+    static final String SUBJECT_DEFAULT = "토리에게 묻기";
+    /** 외부로 나가는 메시지에서 식별자 형태가 발견됐을 때. 정상 흐름에서는 나지 않으며, 나면 조립기·포매터 회귀다(§6). */
+    static final String OUTBOUND_BLOCKED_LOG = "Coach chat outbound payload blocked before the external call: userId={} role={} violations={}";
+    static final String MESSAGE_REQUIRED = "질문, chipId, context 중 하나가 필요합니다.";
+    static final String CONTEXT_INVALID = "context에는 diagnosisId·issueId 쌍 또는 recommendationId 하나가 필요합니다.";
+    /**
+     * 첫 조언(674)에서 사용자 문장 자리에 넣는 서버 문장. 세션에도 이 문장으로 남아 다음 턴에 user 메시지로 재생된다.
+     * 서버 문자열이라 민감정보 검사 대상이 아니다.
+     */
+    public static final String OPENING_USER_TEXT = "이 항목에 대해 지금 무엇을 해 볼 수 있는지 알려줘";
+    /** 첫 조언을 만들 수 없을 때(AI 꺼짐·실패·예산). facts가 없으니 템플릿 대신 대화를 여는 안내를 준다. */
+    public static final String OPENING_TEMPLATE_MESSAGE = "이 항목에 대해 궁금한 점을 물어봐 주세요. 아래 질문을 눌러도 좋아요.";
+    public static final String SENSITIVE_MESSAGE =
+            "계좌번호·카드번호처럼 긴 숫자는 채팅에 적지 말아 주세요. 번호를 빼고 다시 물어봐 주시면 도와드릴게요.";
+    public static final String TURN_LIMIT_MESSAGE = "이 대화에서 나눌 수 있는 질문 수를 다 썼어요. 새 대화를 시작해 주세요.";
+    /** 앞선 턴을 재생할 때 assistant 자리에 넣는 머리말. 모델 응답 전문은 저장하지 않으므로 facts 요약으로 대신한다. */
+    public static final String HISTORY_ASSISTANT_PREFIX = "(앞선 답변의 서버 계산값) ";
+    static final String HISTORY_ASSISTANT_EMPTY = "(앞선 답변은 계산 없이 안내만 했다)";
+
+    private final CoachTextGenerator generator;
+    private final CoachToolRegistry registry;
+    private final CoachToolDispatcher dispatcher;
+    private final CoachPromptFactory prompts;
+    private final CoachTemplateWriter template;
+    private final CoachNumberGuard numbers;
+    private final CoachSensitiveDataGuard sensitive;
+    private final CoachChatRateLimiter rateLimiter;
+    private final CoachChatSessionStore sessions;
+    private final CoachFactAssembler assembler;
+    private final CoachChatProperties properties;
+    private final CoachClock clock;
+
+    public CoachChatService(CoachTextGenerator generator, CoachToolRegistry registry, CoachToolDispatcher dispatcher,
+            CoachPromptFactory prompts, CoachTemplateWriter template, CoachNumberGuard numbers,
+            CoachSensitiveDataGuard sensitive, CoachChatRateLimiter rateLimiter, CoachChatSessionStore sessions,
+            CoachFactAssembler assembler, CoachChatProperties properties, CoachClock clock) {
+        this.generator = generator;
+        this.registry = registry;
+        this.dispatcher = dispatcher;
+        this.prompts = prompts;
+        this.template = template;
+        this.numbers = numbers;
+        this.sensitive = sensitive;
+        this.rateLimiter = rateLimiter;
+        this.sessions = sessions;
+        this.assembler = assembler;
+        this.properties = properties;
+        this.clock = clock;
+    }
+
+    public CoachChatResponse chat(Long userId, CoachChatRequest request) {
+        String chipId = blankToNull(request.chipId());
+        String message = blankToNull(request.message());
+        CoachChatRequest.Context requested = request.context();
+        if (requested != null && !requested.isValid()) {
+            throw new InvalidRequestException(CONTEXT_INVALID);
+        }
+        // 674: 문장·칩 없이 맥락만 오면 첫 조언이다 — 사용자가 묻기 전에 그 항목에 대한 첫 문장을 서버가 만든다(도구 없음)
+        boolean opening = chipId == null && message == null && requested != null;
+        if (chipId == null && message == null && !opening) {
+            throw new InvalidRequestException(MESSAGE_REQUIRED);
+        }
+        if (message != null && message.length() > properties.maxMessageLength()) {
+            throw new InvalidRequestException("질문은 " + properties.maxMessageLength() + "자 이내로 적어 주세요.");
+        }
+        List<ToolCall> chipCalls = null;
+        if (chipId != null) {
+            chipCalls = registry.chip(chipId)
+                    .orElseThrow(() -> new InvalidRequestException("알 수 없는 chipId입니다: " + chipId));
+        }
+        // 칩이면 세션·프롬프트에는 칩 표시 문구를, 첫 조언이면 서버 고정 문장을 사용자 문장으로 쓴다(둘 다 서버 문자열이라 민감정보 검사가 필요 없다)
+        String userText = opening ? OPENING_USER_TEXT
+                : chipId != null ? CoachToolRegistry.chipLabel(chipId).orElse(message == null ? chipId : message) : message;
+
+        CoachChatSession session = load(userId, request.conversationId(), requested == null ? null : requested.key());
+        if (session.exhausted(properties.maxTurnsPerSession())) {
+            log.info("Coach chat refused by the session turn cap: userId={} turns={}", userId, session.turnCount());
+            return respond(session, CoachSource.TEMPLATE, CoachDegradedReason.SESSION_TURN_LIMIT, null,
+                    TURN_LIMIT_MESSAGE, emptyFacts(), List.of(), chipId, null);
+        }
+        if (chipId == null && !opening) {
+            List<String> violations = sensitive.scan(userText);
+            if (!violations.isEmpty()) {
+                // 사용자가 적은 번호다. 외부로 보내지 않고, 문장도 남기지 않는다(세션 저장 없음)
+                log.info("Coach chat message blocked before the external call: userId={} violations={}", userId, violations);
+                return respond(session, CoachSource.TEMPLATE, CoachDegradedReason.SENSITIVE_DATA_BLOCKED, null,
+                        SENSITIVE_MESSAGE, emptyFacts(), List.of(), chipId, null);
+            }
+        }
+        CoachFacts context = contextFacts(userId, requested);
+        return run(userId, session, userText, chipCalls, context, chipId, opening);
+    }
+
+    // ---------- 턴 실행 ----------
+
+    private CoachChatResponse run(Long userId, CoachChatSession session, String userText, List<ToolCall> chipCalls,
+            CoachFacts context, String chipId, boolean opening) {
+        List<ChatMessage> messages = new ArrayList<>();
+        messages.add(ChatMessage.system(prompts.chatSystem(context, opening)));
+        replay(messages, session);
+        messages.add(ChatMessage.user(userText));
+        List<ToolDefinition> tools = registry.definitions();
+        List<String> extraNumberSources = extraNumberSources(userText, context, session);
+
+        List<ToolCall> calls;
+        String directAnswer = null;
+        if (chipCalls != null) {
+            calls = chipCalls;
+        } else {
+            if (!generator.isAvailable()) {
+                return finish(userId, session, userText, chipId, context, CoachDegradedReason.AI_DISABLED, emptyFacts(), List.of(), null);
+            }
+            // 673: 시스템 프롬프트([화면 맥락] facts 포함)·재생 턴을 외부로 보내기 직전에 한 번 더 본다. 사용자 문장은 이미 봤지만
+            // 맥락 facts는 진단 JSON에서 온 값이라 조립기 필터를 새 키가 통과할 수 있다. 예산을 깎기 전에 검사한다
+            if (blockOutbound(userId, messages)) {
+                return finish(userId, session, userText, chipId, context, CoachDegradedReason.SENSITIVE_DATA_BLOCKED, emptyFacts(), List.of(), null);
+            }
+            if (!rateLimiter.tryAcquire(userId)) {
+                log.warn("Coach chat call refused by the per-user budget: userId={}", userId);
+                return finish(userId, session, userText, chipId, context, CoachDegradedReason.RATE_LIMITED, emptyFacts(), List.of(), null);
+            }
+            ChatTurn first;
+            try {
+                // 첫 조언(674)은 도구 없이 문장만 받는다(1차 범위). 도구는 사용자가 이어서 물을 때 부른다
+                first = generator.chat(messages, tools, opening ? ToolChoice.none() : ToolChoice.auto());
+            } catch (CoachGenerationException exception) {
+                log.warn("Coach chat first call failed, falling back to template: reason={}", exception.getMessage());
+                return finish(userId, session, userText, chipId, context, CoachDegradedReason.AI_UNAVAILABLE, emptyFacts(), List.of(), null);
+            }
+            if (!opening && first.hasToolCalls()) {
+                calls = first.toolCalls();
+            } else {
+                calls = List.of();
+                directAnswer = first.content();
+            }
+        }
+
+        List<CoachToolResult> results = calls.isEmpty() ? List.of() : dispatcher.dispatch(userId, calls);
+        CoachFacts facts = facts(results);
+
+        String answer;
+        if (directAnswer != null) {
+            answer = directAnswer;
+        } else {
+            if (!generator.isAvailable()) {
+                return finish(userId, session, userText, chipId, context, CoachDegradedReason.AI_DISABLED, facts, results, null);
+            }
+            messages.add(ChatMessage.assistant(null, calls));
+            results.forEach(result -> messages.add(ChatMessage.tool(result.toolCallId(), result.toModelText())));
+            // 673: 도구 결과에는 목표 이름·대출 계좌명처럼 사용자가 적은 문자열이 섞인다. 서버 포맷 숫자(천단위 구분)는 걸리지 않고
+            // 식별자 형태만 걸린다. 걸리면 외부로 보내지 않고 템플릿이 facts로 말한다 — 계산 결과는 사용자 본인 것이라 화면에는 나간다
+            if (blockOutbound(userId, messages)) {
+                return finish(userId, session, userText, chipId, context, CoachDegradedReason.SENSITIVE_DATA_BLOCKED, facts, results, null);
+            }
+            if (!rateLimiter.tryAcquire(userId)) {
+                log.warn("Coach chat second call refused by the per-user budget: userId={}", userId);
+                return finish(userId, session, userText, chipId, context, CoachDegradedReason.RATE_LIMITED, facts, results, null);
+            }
+            ChatTurn second;
+            try {
+                second = generator.chat(messages, tools, ToolChoice.none());
+            } catch (CoachGenerationException exception) {
+                log.warn("Coach chat second call failed, falling back to template: reason={}", exception.getMessage());
+                return finish(userId, session, userText, chipId, context, CoachDegradedReason.AI_UNAVAILABLE, facts, results, null);
+            }
+            if (second.hasToolCalls()) {
+                // 왕복은 1회다. 도구를 더 부르려 하면 문장 없이 끝난 것이므로 템플릿이 facts로 말한다
+                log.warn("Coach chat model asked for tools again after the tool round: tools={}",
+                        second.toolCalls().stream().map(ToolCall::name).toList());
+                return finish(userId, session, userText, chipId, context, CoachDegradedReason.TOOL_LOOP_EXCEEDED, facts, results, null);
+            }
+            answer = second.content();
+        }
+
+        if (answer == null || answer.isBlank()) {
+            log.warn("Coach chat returned an empty body: tools={}", results.size());
+            return finish(userId, session, userText, chipId, context, CoachDegradedReason.AI_EMPTY_RESPONSE, facts, results, null);
+        }
+        Optional<String> unverified = numbers.findUnverifiedNumber(answer, facts, extraNumberSources);
+        if (unverified.isPresent()) {
+            log.warn("Coach chat answer contains a number that was not provided: token={}", unverified.get());
+            return finish(userId, session, userText, chipId, context, CoachDegradedReason.AI_UNVERIFIED_NUMBER, facts, results, null);
+        }
+        String trimmed = answer.trim();
+        int limit = prompts.maxMessageLength(CoachTopic.CHAT);
+        if (trimmed.length() > limit) {
+            log.warn("Coach chat answer is longer than the prompt asked: length={} limit={}", trimmed.length(), limit);
+        }
+        return finish(userId, session, userText, chipId, context, null, facts, results, trimmed);
+    }
+
+    /**
+     * 외부로 나갈 메시지 전체(시스템 프롬프트·재생 턴·사용자 문장·도구 결과)에 식별자 형태가 있으면 true. 3종 코치가 프롬프트 직전에
+     * 하는 검사({@code CoachService})와 같은 규칙이며, 채팅은 재료가 요청마다 달라(맥락 facts·도구 결과) 두 번 본다.
+     * 정상 흐름에서는 걸리지 않으므로 ERROR로 남긴다 — 걸렸다면 어느 조립기·포매터가 새 값을 흘린 것이다. 내용은 남기지 않는다.
+     */
+    private boolean blockOutbound(Long userId, List<ChatMessage> messages) {
+        for (ChatMessage message : messages) {
+            List<String> violations = sensitive.scan(message.content());
+            if (!violations.isEmpty()) {
+                log.error(OUTBOUND_BLOCKED_LOG, userId, message.role(), violations);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 턴을 세션에 남기고 응답을 만든다. {@code aiAnswer}가 null이면 템플릿 경로다. */
+    private CoachChatResponse finish(Long userId, CoachChatSession session, String userText, String chipId, CoachFacts context,
+            CoachDegradedReason reason, CoachFacts facts, List<CoachToolResult> results, String aiAnswer) {
+        CoachChatSession next = session.append(new CoachChatSession.Turn(userText, factLines(facts)), properties.historyTurns());
+        sessions.save(userId, next);
+        if (aiAnswer != null) {
+            return respond(next, CoachSource.AI, null, generator.modelName(), aiAnswer, facts, results, chipId, context);
+        }
+        // 첫 조언은 facts가 없어 템플릿이 "답변을 만들 수 없어요"가 된다. 대화를 여는 자리라 안내 문장으로 대신한다
+        String fallback = OPENING_USER_TEXT.equals(userText) ? OPENING_TEMPLATE_MESSAGE : template.chat(facts, userText);
+        return respond(next, CoachSource.TEMPLATE, reason, null, fallback, facts, results, chipId, context);
+    }
+
+    private CoachChatResponse respond(CoachChatSession session, CoachSource source, CoachDegradedReason reason, String model,
+            String message, CoachFacts facts, List<CoachToolResult> results, String chipId, CoachFacts context) {
+        List<CoachChatResponse.ToolResult> toolResults = results.stream()
+                .map(result -> new CoachChatResponse.ToolResult(result.tool(), result.simulationId(), result.created(), result.error()))
+                .toList();
+        return new CoachChatResponse(CoachTopic.CHAT, source, reason, model, clock.now(), session.conversationId(), message,
+                facts, toolResults, suggestedQuestions(chipId, context), CoachMessageResponse.DISCLAIMER);
+    }
+
+    // ---------- 세션 ----------
+
+    /**
+     * @param contextKey 요청의 화면 맥락 키(없으면 null). 이어 가려는 대화가 다른 맥락에서 시작된 것이면 <b>새 대화</b>를 시작해
+     *                   새 id를 돌려준다(674) — 문제 A에서 나눈 턴이 문제 B의 [화면 맥락] 프롬프트에 재생되면 조언이 섞인다.
+     *                   FE는 응답 conversationId가 보낸 것과 다르면 화면 대화를 비운다
+     */
+    private CoachChatSession load(Long userId, String conversationId, String contextKey) {
+        if (conversationId == null || conversationId.isBlank()) {
+            return CoachChatSession.start(CoachChatSession.newId(), contextKey);
+        }
+        // 형식은 요청 검증이 봤다. 만료됐거나 저장소가 없으면 같은 id로 새 대화를 시작한다 — FE는 id를 바꿀 필요가 없다
+        CoachChatSession session = sessions.find(userId, conversationId).orElseGet(() -> CoachChatSession.start(conversationId, contextKey));
+        if (session.hasContext(contextKey)) {
+            return session;
+        }
+        if (session.turnCount() == 0) {
+            return CoachChatSession.start(session.conversationId(), contextKey);
+        }
+        log.info("Coach chat context changed, starting a new conversation: userId={} turns={}", userId, session.turnCount());
+        return CoachChatSession.start(CoachChatSession.newId(), contextKey);
+    }
+
+    /** 앞선 턴을 user/assistant 쌍으로 재생한다. assistant 자리는 저장해 둔 facts 요약이다(응답 전문은 저장하지 않는다). */
+    private static void replay(List<ChatMessage> messages, CoachChatSession session) {
+        for (CoachChatSession.Turn turn : session.turns()) {
+            messages.add(ChatMessage.user(turn.userMessage()));
+            messages.add(ChatMessage.assistant(turn.facts().isEmpty() ? HISTORY_ASSISTANT_EMPTY
+                    : HISTORY_ASSISTANT_PREFIX + String.join(" · ", turn.facts()), List.of()));
+        }
+    }
+
+    private static List<String> factLines(CoachFacts facts) {
+        List<String> lines = new ArrayList<>();
+        for (Section section : facts.sections()) {
+            for (Fact fact : section.facts()) {
+                if (lines.size() >= CoachChatSession.FACT_LINES_PER_TURN) {
+                    return lines;
+                }
+                lines.add(fact.label() + ": " + fact.value());
+            }
+        }
+        return lines;
+    }
+
+    // ---------- facts ----------
+
+    /** 본인 것이 아니면 여기서 404다(3종 코치와 같은 조립기·같은 규칙). 유효성은 {@code chat}이 먼저 봤다. */
+    private CoachFacts contextFacts(Long userId, CoachChatRequest.Context context) {
+        if (context == null) {
+            return null;
+        }
+        if (context.isRecommendation()) {
+            return assembler.recommendation(userId, context.recommendationId());
+        }
+        return assembler.inefficiency(userId, context.diagnosisId(), context.issueId());
+    }
+
+    /** 도구 결과를 하나의 facts로 합친다. 실패한 도구는 별도 섹션에 사용자용 도구 이름과 사유로 남긴다. */
+    static CoachFacts facts(List<CoachToolResult> results) {
+        List<Section> sections = new ArrayList<>();
+        LinkedHashSet<String> notes = new LinkedHashSet<>();
+        List<Fact> failures = new ArrayList<>();
+        String subject = null;
+        for (CoachToolResult result : results) {
+            if (result.succeeded()) {
+                sections.addAll(result.sections());
+                notes.addAll(result.notes());
+                if (subject == null) {
+                    subject = CoachToolRegistry.displayName(result.tool());
+                }
+            } else {
+                failures.add(new Fact(CoachToolRegistry.displayName(result.tool()), result.error()));
+            }
+        }
+        if (!failures.isEmpty()) {
+            sections.add(new Section(CoachTemplateWriter.FAILED_SECTION_TITLE, failures));
+        }
+        return new CoachFacts(CoachTopic.CHAT, subject == null ? SUBJECT_DEFAULT : subject, sections, List.copyOf(notes));
+    }
+
+    private static CoachFacts emptyFacts() {
+        return new CoachFacts(CoachTopic.CHAT, SUBJECT_DEFAULT, List.of(), List.of());
+    }
+
+    /** 숫자 검증의 추가 허용 출처: 사용자 문장, 화면 맥락 facts, 앞선 턴의 사용자 문장·facts. */
+    private static List<String> extraNumberSources(String userText, CoachFacts context, CoachChatSession session) {
+        List<String> sources = new ArrayList<>();
+        sources.add(userText);
+        if (context != null) {
+            sources.add(context.subject());
+            sources.addAll(context.notes());
+            context.sections().forEach(section -> section.facts().forEach(fact -> {
+                sources.add(fact.label());
+                sources.add(fact.value());
+            }));
+        }
+        for (CoachChatSession.Turn turn : session.turns()) {
+            sources.add(turn.userMessage());
+            sources.addAll(turn.facts());
+        }
+        return sources;
+    }
+
+    /**
+     * 맥락이 없을 때의 기본 칩(시연 칩 3개). 맥락이 있으면 영역별 질문으로 바꾼다(674). 라벨 {@code 영역}은 두 조립기가 같은 이름으로 넣는다.
+     *
+     * <p>소비 영역의 첫 칩은 맥락의 <b>항목 카테고리·증가액</b>으로 만든다(S15P21D105-701, FE 669 요청). 영역 단위 고정 표라 식비 문제에서도 "카페를 월 5만원 줄이면?"이
+     * 나가 첫 조언("식비 어디에 많이 썼는지…")과 겉돌았다. 카테고리는 진단 문제 {@code currentValue.categoryName}(또는 추천 근거의 {@code categoryCode})에서,
+     * 금액은 {@code increaseAmount}(진단이 잡은 지난달 증가분)를 만원 단위로 반올림해 쓴다 — 조언이 말하는 "늘어난 만큼"과 같은 크기라 시뮬레이션 결과가
+     * 조언과 이어진다. 시뮬레이션 대상이 아닌 카테고리(고정비·구독 등)이거나 카테고리를 찾지 못하면 종전 칩 그대로다.
+     */
+    static final String DOMAIN_LABEL = "영역";
+    static final String CATEGORY_NAME_KEY = "categoryName";
+    static final String CATEGORY_CODE_KEY = "categoryCode";
+    static final String INCREASE_AMOUNT_KEY = "increaseAmount";
+    static final long DEFAULT_REDUCTION_MAN_WON = 5;
+    public static final String SUGGESTED_SAVING = "저축을 월 30만원으로 올리면?";
+    public static final String SUGGESTED_GOAL_DATE = "목표는 언제 달성해?";
+    public static final List<String> SUGGESTED_FOR_SPENDING = List.of("카페를 월 5만원 줄이면?", SUGGESTED_SAVING, SUGGESTED_GOAL_DATE);
+    public static final List<String> SUGGESTED_FOR_LOAN = List.of("대출 100만원 더 갚으면?", "대환하면 이자를 얼마나 아껴?", "둘 다 하면?");
+    public static final List<String> SUGGESTED_FOR_GOAL = List.of(SUGGESTED_GOAL_DATE, SUGGESTED_SAVING, "카페를 월 5만원 줄이면?");
+
+    static List<String> suggestedQuestions(String chipId, CoachFacts context) {
+        String domain = domainOf(context);
+        if (domain != null) {
+            List<String> tailored = switch (domain) {
+                case "SPENDING", "SUBSCRIPTION", "CARD" -> categoryQuestion(context)
+                        .map(first -> List.of(first, SUGGESTED_SAVING, SUGGESTED_GOAL_DATE))
+                        .orElse(SUGGESTED_FOR_SPENDING);
+                case "LOAN" -> SUGGESTED_FOR_LOAN;
+                case "GOAL", "SAVING", "CASHFLOW" -> SUGGESTED_FOR_GOAL;
+                default -> null;
+            };
+            if (tailored != null) {
+                return tailored;
+            }
+        }
+        String used = chipId == null ? null : CoachToolRegistry.chipLabel(chipId).orElse(null);
+        return CoachToolRegistry.chipLabels().stream().filter(label -> !label.equals(used)).toList();
+    }
+
+    /** "식비를 월 18만원 줄이면?" — 맥락에 시뮬레이션 가능한 카테고리가 있을 때만. 금액이 없으면 5만원. */
+    public static Optional<String> categoryQuestion(CoachFacts context) {
+        String code = factEndingWith(context, CATEGORY_CODE_KEY);
+        String name = factEndingWith(context, CATEGORY_NAME_KEY);
+        if (code != null && !CoachToolRegistry.SPENDING_CATEGORY_CODE_SET.contains(code)) {
+            return Optional.empty();
+        }
+        if (name == null) {
+            name = code == null ? null : CoachToolRegistry.SPENDING_CATEGORY_NAMES.get(code);
+        }
+        if (name == null || name.isBlank()) {
+            return Optional.empty();
+        }
+        long manWon = DEFAULT_REDUCTION_MAN_WON;
+        String amount = factEndingWith(context, INCREASE_AMOUNT_KEY);
+        if (amount != null) {
+            String digits = amount.replaceAll("[^0-9]", "");
+            if (!digits.isEmpty() && digits.length() <= 12) {
+                manWon = Math.max(1L, Math.round(Long.parseLong(digits) / 10_000.0));
+            }
+        }
+        return Optional.of(name + objectParticle(name) + " 월 " + manWon + "만원 줄이면?");
+    }
+
+    /** 맥락 facts에서 라벨이 {@code key} 또는 {@code *.key}인 첫 값. 진단 문제는 라벨이 키 그대로, 추천 근거는 {@code 근거코드.키}다. */
+    private static String factEndingWith(CoachFacts context, String key) {
+        if (context == null) {
+            return null;
+        }
+        for (Section section : context.sections()) {
+            for (Fact fact : section.facts()) {
+                String label = fact.label();
+                if (label != null && (label.equals(key) || label.endsWith("." + key))) {
+                    return fact.value();
+                }
+            }
+        }
+        return null;
+    }
+
+    /** 마지막 글자에 받침이 있으면 "을", 없으면 "를". 한글이 아니면 "를". */
+    public static String objectParticle(String word) {
+        char last = word.charAt(word.length() - 1);
+        if (last < 0xAC00 || last > 0xD7A3) {
+            return "를";
+        }
+        return (last - 0xAC00) % 28 == 0 ? "를" : "을";
+    }
+
+    private static String domainOf(CoachFacts context) {
+        if (context == null) {
+            return null;
+        }
+        for (Section section : context.sections()) {
+            for (Fact fact : section.facts()) {
+                if (DOMAIN_LABEL.equals(fact.label())) {
+                    return fact.value();
+                }
+            }
+        }
+        return null;
+    }
+
+    private static String blankToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.strip();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+}

@@ -1,0 +1,226 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+import { diagnosisApi, isApiError, recommendationApi } from '@/api';
+import type { PageResponse } from '@/api/api.types';
+import type {
+  DiagnosisApiResponse,
+  DiagnosisIssueApiResponse,
+  RecommendationApiResponse,
+  RecommendationDiscoverySummaryApiResponse,
+} from '@/types/discoveryApi.types';
+
+import { toDiscoveryInsights, type DiscoveryInsight } from '../discoveryModel';
+import { diagnosisCooldown } from '../diagnosisCooldown';
+import { useDiagnosisCooldown } from './useDiagnosisCooldown';
+
+export async function loadAllPages<T>(fetchPage: (page: number) => Promise<PageResponse<T>>) {
+  const first = await fetchPage(0);
+  if (first.totalPages <= 1) return first.content;
+  const rest = await Promise.all(
+    Array.from({ length: first.totalPages - 1 }, (_, index) =>
+      fetchPage(index + 1),
+    ),
+  );
+  return [first, ...rest].flatMap((page) => page.content);
+}
+
+export function useDiscoveryData() {
+  const [diagnosis, setDiagnosis] = useState<DiagnosisApiResponse | null>(null);
+  const [insights, setInsights] = useState<DiscoveryInsight[]>([]);
+  const [summary, setSummary] = useState<RecommendationDiscoverySummaryApiResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isRunningAnalysis, setIsRunningAnalysis] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pendingRecommendationDiagnosisId, setPendingRecommendationDiagnosisId] = useState<number | null>(null);
+  const requestIdRef = useRef(0);
+  const operationIdRef = useRef(0);
+  const loadInFlightRef = useRef(false);
+  const runningRef = useRef(false);
+  const isMountedRef = useRef(true);
+  const cooldown = useDiagnosisCooldown(diagnosis);
+
+  /**
+   * 당겨서 새로고침일 때는 이미 보고 있는 진단 결과를 그대로 두고 조용히 다시 읽는다.
+   * 진단은 쿨다운 때문에 하루 한 번만 새로 만들 수 있어서, 같은 결과를 다시 받는 사이
+   * 화면이 "확인하고 있어요"로 바뀌거나 건수가 사라지면 값이 날아간 것처럼 보인다.
+   */
+  const load = useCallback(async (refreshing = false) => {
+    if (loadInFlightRef.current) return;
+
+    loadInFlightRef.current = true;
+    const requestId = ++requestIdRef.current;
+    if (refreshing) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
+    setError(null);
+    try {
+      let latest: DiagnosisApiResponse | null;
+      try {
+        latest = await diagnosisApi.getLatest();
+      } catch (loadError) {
+        if (!isApiError(loadError) || loadError.status !== 404) throw loadError;
+        latest = null;
+      }
+      if (!latest) {
+        if (requestId === requestIdRef.current) {
+          setDiagnosis(null);
+          setInsights([]);
+          setSummary(null);
+          setPendingRecommendationDiagnosisId(null);
+        }
+        return;
+      }
+      if (requestId === requestIdRef.current) setDiagnosis(latest);
+
+      const [issues, recommendations, recommendationSummary] = await Promise.all([
+        loadAllPages<DiagnosisIssueApiResponse>((page) =>
+          diagnosisApi.getIssues(latest.diagnosisId, page),
+        ),
+        loadAllPages<RecommendationApiResponse>((page) =>
+          recommendationApi.getRecommendations(page),
+        ),
+        recommendationApi.getSummary(),
+      ]);
+      if (requestId !== requestIdRef.current) return;
+      setDiagnosis(latest);
+      setSummary(
+        recommendationSummary.discovery?.diagnosisId === latest.diagnosisId
+          ? recommendationSummary.discovery
+          : null,
+      );
+      // 순위는 연 절감액 내림차순이다. 서버 목록 순서(심각도·생성순)와 다르므로 여기서 다시 세운다.
+      // 절감액을 산정하지 못한 문제는 뒤로 보낸다.
+      setInsights(
+        toDiscoveryInsights(issues, recommendations)
+          .sort(
+            (left, right) =>
+              (right.annualSavingAmount ?? -1) - (left.annualSavingAmount ?? -1),
+          )
+          .map((insight, index) => ({ ...insight, rank: index + 1 })),
+      );
+    } catch {
+      if (requestId === requestIdRef.current) {
+        // 새로고침이 실패했다고 이미 받아 둔 결과까지 지우지 않는다. 안내만 띄운다.
+        if (!refreshing) {
+          setDiagnosis(null);
+          setInsights([]);
+          setSummary(null);
+        }
+        setError('발견 결과를 불러오지 못했어요. 다시 시도해 주세요.');
+      }
+    } finally {
+      if (requestId === requestIdRef.current) {
+        loadInFlightRef.current = false;
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    // `.then(load)`로 넘기면 resolve 값이 첫 인자로 들어가므로 최초 로딩으로 명시해 부른다.
+    void Promise.resolve().then(() => load());
+    return () => {
+      isMountedRef.current = false;
+      requestIdRef.current += 1;
+      operationIdRef.current += 1;
+      loadInFlightRef.current = false;
+      runningRef.current = false;
+    };
+  }, [load]);
+
+  const runAnalysis = useCallback(async (forceRefresh = false) => {
+    if (runningRef.current) return;
+    if (forceRefresh && !diagnosisCooldown(diagnosis, Date.now()).canRun) return;
+    const operationId = ++operationIdRef.current;
+    runningRef.current = true;
+    setIsRunningAnalysis(true);
+    setIsLoading(true);
+    setError(null);
+    try {
+      if (forceRefresh) {
+        let latest: DiagnosisApiResponse | null;
+        try {
+          latest = await diagnosisApi.getLatest();
+        } catch (latestError) {
+          if (!isApiError(latestError) || latestError.status !== 404) throw latestError;
+          latest = null;
+        }
+        if (!isMountedRef.current || operationId !== operationIdRef.current) return;
+        if (latest && !diagnosisCooldown(latest, Date.now()).canRun) {
+          setDiagnosis(latest);
+          await load();
+          return;
+        }
+      }
+      const result = await diagnosisApi.run(forceRefresh);
+      if (!isMountedRef.current || operationId !== operationIdRef.current) return;
+      setDiagnosis(result.diagnosis);
+      try {
+        await recommendationApi.generate(result.diagnosis.diagnosisId);
+        if (!isMountedRef.current || operationId !== operationIdRef.current) return;
+        setPendingRecommendationDiagnosisId(null);
+      } catch {
+        if (!isMountedRef.current || operationId !== operationIdRef.current) return;
+        setPendingRecommendationDiagnosisId(result.diagnosis.diagnosisId);
+        setError('진단은 완료됐지만 추천 생성에 실패했어요. 추천만 다시 시도해 주세요.');
+        setIsLoading(false);
+        return;
+      }
+      await load();
+    } catch {
+      if (!isMountedRef.current || operationId !== operationIdRef.current) return;
+      setError('진단을 완료하지 못했어요. 잠시 후 다시 시도해 주세요.');
+      setIsLoading(false);
+    } finally {
+      if (operationId === operationIdRef.current) {
+        runningRef.current = false;
+        if (isMountedRef.current) setIsRunningAnalysis(false);
+      }
+    }
+  }, [diagnosis, load]);
+
+  const retryRecommendationGeneration = useCallback(async () => {
+    if (!pendingRecommendationDiagnosisId || runningRef.current) return;
+    const operationId = ++operationIdRef.current;
+    runningRef.current = true;
+    setIsRunningAnalysis(true);
+    setIsLoading(true);
+    setError(null);
+    try {
+      await recommendationApi.generate(pendingRecommendationDiagnosisId);
+      if (!isMountedRef.current || operationId !== operationIdRef.current) return;
+      setPendingRecommendationDiagnosisId(null);
+      await load();
+    } catch {
+      if (!isMountedRef.current || operationId !== operationIdRef.current) return;
+      setError('추천을 생성하지 못했어요. 잠시 후 다시 시도해 주세요.');
+      setIsLoading(false);
+    } finally {
+      if (operationId === operationIdRef.current) {
+        runningRef.current = false;
+        if (isMountedRef.current) setIsRunningAnalysis(false);
+      }
+    }
+  }, [load, pendingRecommendationDiagnosisId]);
+
+  return {
+    diagnosis,
+    insights,
+    summary,
+    isLoading,
+    isRefreshing,
+    isRunningAnalysis,
+    error,
+    cooldown,
+    canRetryRecommendations: pendingRecommendationDiagnosisId !== null,
+    refetch: useCallback(() => load(true), [load]),
+    load,
+    runAnalysis,
+    retryRecommendationGeneration,
+  };
+}

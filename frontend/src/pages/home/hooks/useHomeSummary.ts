@@ -1,0 +1,305 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+import { assetApi, cashflowApi, goalApi, isApiError, ledgerApi } from '@/api';
+import type { AssetOverview } from '@/types/asset.types';
+import type { HomeGoal } from '@/types/goal.types';
+import type { GoalApiResponse } from '@/types/goalApi.types';
+import { mapOwnedAssetOverview } from '@/utils/assetOverview';
+import { formatCurrency } from '@/utils/currency';
+import { calculateProgressPercent } from '@/utils/goal';
+import { shiftDateKey, toDateKey } from '@/utils/date';
+
+export interface HomeBriefingOutflow {
+  name: string;
+  amount: number;
+  /** 오늘이면 0이다. */
+  daysLeft: number;
+}
+
+export interface HomeBriefing {
+  yesterdaySpentAmount: number;
+  /** 14일 안의 가장 가까운 출금 예정이다. 없으면 `message`로 대신 안내한다. */
+  nextOutflow: HomeBriefingOutflow | null;
+  message: string;
+}
+
+export interface HomeSpendingCategory {
+  rank: number;
+  /** 카테고리 아이콘을 고르는 데 쓰는 서버 코드다. */
+  code: string;
+  label: string;
+  amount: number;
+  changePercent: number;
+  /** 지난달과 금액이 같으면 `none`이며, 이때 증감 화살표를 그리지 않는다. */
+  direction: 'up' | 'down' | 'none';
+}
+
+interface HomeSummaryData {
+  monthLabel: string;
+  monthlyExpense: number | null;
+  assetOverview: AssetOverview | null;
+  goals: HomeGoal[];
+  briefing: HomeBriefing | null;
+  topSpending: HomeSpendingCategory[];
+}
+
+export interface HomeSummaryErrors {
+  assetOverview: boolean;
+  briefing: boolean;
+  goals: boolean;
+  monthlyExpense: boolean;
+  topSpending: boolean;
+}
+
+const EMPTY_SUMMARY_ERRORS: HomeSummaryErrors = {
+  assetOverview: false,
+  briefing: false,
+  goals: false,
+  monthlyExpense: false,
+  topSpending: false,
+};
+
+function monthInfo(offsetFromCurrent: number) {
+  const today = new Date();
+  const date = new Date(today.getFullYear(), today.getMonth() + offsetFromCurrent, 1);
+  const month = date.getMonth() + 1;
+  return {
+    monthLabel: `${month}월`,
+    yearMonth: `${date.getFullYear()}-${String(month).padStart(2, '0')}`,
+  };
+}
+
+function mapSavingGoal(goal: GoalApiResponse): HomeGoal {
+  const progress = calculateProgressPercent(
+    goal.currentAmount,
+    goal.targetAmount ?? 0,
+  );
+  return {
+    id: String(goal.goalId),
+    type: 'saving',
+    title: goal.name,
+    dueDateLabel: goal.targetDate ? `${goal.targetDate.replaceAll('-', '.')}까지` : '기한 없음',
+    dDay: Math.max(0, goal.daysRemaining ?? 0),
+    currentAmount: goal.currentAmount,
+    targetAmount: goal.targetAmount ?? 0,
+    message: progress >= 100 ? '목표를 달성했어요!' : `현재 목표의 ${progress}%를 모았어요.`,
+    characterImage: require('@/assets/characters/dori/dori_saving_home.png'),
+  };
+}
+
+async function mapSpendingGoal(goal: GoalApiResponse): Promise<HomeGoal> {
+  const progress = await goalApi.getSpendingProgress(goal.goalId);
+  const isExceeded = progress.remainingBudget < 0;
+  return {
+    id: String(goal.goalId),
+    type: 'reducing',
+    title: goal.name,
+    dueDateLabel: `${Number(progress.yearMonth.slice(5))}월 소비 목표`,
+    dDay: progress.daysLeft,
+    currentAmount: progress.spent,
+    targetAmount: progress.monthlyBudget,
+    message: isExceeded
+      ? `목표보다 ${formatCurrency(Math.abs(progress.remainingBudget))} 더 썼어요.`
+      : `이번 달 ${formatCurrency(progress.remainingBudget)} 더 쓸 수 있어요.`,
+    characterImage: require('@/assets/characters/tori/tori_reducing_home.png'),
+  };
+}
+
+async function loadGoals() {
+  const response = await goalApi.getGoals({ status: 'ACTIVE', size: 20 });
+  const uniqueGoals = Array.from(
+    new Map(response.content.map((goal) => [goal.goalId, goal])).values(),
+  );
+  let hasSpendingGoal = false;
+  const homeGoals = uniqueGoals.filter((goal) => {
+    if (goal.type !== 'SPENDING') return true;
+    if (hasSpendingGoal) return false;
+    hasSpendingGoal = true;
+    return true;
+  });
+
+  return Promise.all(
+    homeGoals.map((goal) =>
+      goal.type === 'SPENDING' ? mapSpendingGoal(goal) : mapSavingGoal(goal),
+    ),
+  );
+}
+
+async function loadOptionalCashflowEvents(startDate: string, endDate: string) {
+  try {
+    return await cashflowApi.getEvents({ startDate, endDate });
+  } catch (error) {
+    if (isApiError(error) && error.status === 404) return null;
+    throw error;
+  }
+}
+
+async function loadBriefing(): Promise<HomeBriefing> {
+  const today = toDateKey(new Date());
+  const yesterday = shiftDateKey(today, -1);
+  const [daily, eventsResult] = await Promise.all([
+    ledgerApi.getDailySpending({ startDate: yesterday, endDate: yesterday }),
+    loadOptionalCashflowEvents(today, shiftDateKey(today, 14)),
+  ]);
+  const nextOutflow = eventsResult?.events
+    .filter((event) => event.direction === 'OUTFLOW' && event.eventDate >= today)
+    .sort((left, right) => left.eventDate.localeCompare(right.eventDate))[0];
+  const message = eventsResult
+    ? '예정된 출금이 없어요.'
+    : '현금흐름 예측 데이터가 아직 없어요.';
+
+  return {
+    yesterdaySpentAmount: daily.totalSpending,
+    nextOutflow: nextOutflow
+      ? {
+          name: nextOutflow.name,
+          amount: nextOutflow.amount,
+          daysLeft: Math.max(
+            0,
+            Math.round(
+              (new Date(`${nextOutflow.eventDate}T00:00:00`).getTime() -
+                new Date(`${today}T00:00:00`).getTime()) /
+                86_400_000,
+            ),
+          ),
+        }
+      : null,
+    message,
+  };
+}
+
+async function loadTopSpending(yearMonth: string, previousYearMonth: string) {
+  const [current, previous] = await Promise.all([
+    ledgerApi.getCategorySpending(yearMonth),
+    ledgerApi.getCategorySpending(previousYearMonth),
+  ]);
+  const previousByCode = new Map(
+    previous.categories.map((category) => [category.code, category.totalSpending]),
+  );
+
+  return current.categories.slice(0, 3).map((category, index) => {
+    const previousAmount = previousByCode.get(category.code) ?? 0;
+    const difference = category.totalSpending - previousAmount;
+    const changePercent = previousAmount === 0
+      ? category.totalSpending === 0 ? 0 : 100
+      : Math.round((Math.abs(difference) / previousAmount) * 100);
+    return {
+      rank: index + 1,
+      code: category.code,
+      label: category.name,
+      amount: category.totalSpending,
+      changePercent,
+      // 변화가 없는 달을 `down`으로 묶으면 그대로인데도 줄어든 것처럼 보인다.
+      direction:
+        difference === 0
+          ? ('none' as const)
+          : difference > 0
+            ? ('up' as const)
+            : ('down' as const),
+    };
+  });
+}
+
+export function useHomeSummary() {
+  const currentMonth = monthInfo(0);
+  const [data, setData] = useState<HomeSummaryData>({
+    monthLabel: currentMonth.monthLabel,
+    monthlyExpense: null,
+    assetOverview: null,
+    goals: [],
+    briefing: null,
+    topSpending: [],
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const [sectionErrors, setSectionErrors] = useState<HomeSummaryErrors>(
+    EMPTY_SUMMARY_ERRORS,
+  );
+  const requestIdRef = useRef(0);
+  const requestInFlightRef = useRef(false);
+
+  const loadSummary = useCallback(async (refreshing = false) => {
+    if (requestInFlightRef.current) return;
+
+    requestInFlightRef.current = true;
+    const requestId = ++requestIdRef.current;
+    if (refreshing) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+      setError(null);
+      setSectionErrors(EMPTY_SUMMARY_ERRORS);
+    }
+
+    try {
+      // 홈은 이번 달을 보여준다. 목표 카드가 쓰는 이번 달 예산과 기준이 맞는다.
+      const month = monthInfo(0);
+      const previousMonth = monthInfo(-1);
+      const results = await Promise.allSettled([
+        ledgerApi.getMonthlySummary(month.yearMonth),
+        assetApi.getAccountSummary(),
+        assetApi.getLoanSummary(),
+        loadGoals(),
+        loadBriefing(),
+        loadTopSpending(month.yearMonth, previousMonth.yearMonth),
+      ]);
+      if (requestId !== requestIdRef.current) return;
+
+      const [monthlyResult, assetResult, loanResult, goalsResult, briefingResult, topResult] = results;
+      const failed = results.find((result) => result.status === 'rejected');
+      setSectionErrors({
+        assetOverview: assetResult.status === 'rejected',
+        briefing: briefingResult.status === 'rejected',
+        goals: goalsResult.status === 'rejected',
+        monthlyExpense: monthlyResult.status === 'rejected',
+        topSpending: topResult.status === 'rejected',
+      });
+      setData({
+        monthLabel: month.monthLabel,
+        monthlyExpense: monthlyResult.status === 'fulfilled' ? monthlyResult.value.totalSpending : null,
+        assetOverview: assetResult.status === 'fulfilled'
+          ? mapOwnedAssetOverview(
+              assetResult.value,
+              // 대출 조회만 실패하면 계좌 잔액 도넛은 그대로 두고 대출 조각만 뺀다.
+              loanResult.status === 'fulfilled' ? Math.abs(loanResult.value.totalBalance) : null,
+            )
+          : null,
+        goals: goalsResult.status === 'fulfilled' ? goalsResult.value : [],
+        briefing: briefingResult.status === 'fulfilled' ? briefingResult.value : null,
+        topSpending: topResult.status === 'fulfilled' ? topResult.value : [],
+      });
+      setError(
+        failed?.status === 'rejected'
+          ? failed.reason instanceof Error
+            ? failed.reason
+            : new Error('홈 요약 일부를 불러오지 못했어요.')
+          : null,
+      );
+    } finally {
+      requestInFlightRef.current = false;
+      if (requestId === requestIdRef.current) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => void loadSummary(), 0);
+    return () => {
+      clearTimeout(timeout);
+      requestIdRef.current += 1;
+      requestInFlightRef.current = false;
+    };
+  }, [loadSummary]);
+
+  return {
+    ...data,
+    error,
+    sectionErrors,
+    isLoading,
+    isRefreshing,
+    refetch: useCallback(() => loadSummary(true), [loadSummary]),
+  };
+}

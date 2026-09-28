@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "owner": "d105-dodam",
+    "name": "도담",
+    "slug": "dodam",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "dodam",
+    "userInterfaceStyle": "automatic",
+    "android": {
+      "package": "com.ssafy.d105.dodam",
+      "googleServicesFile": "./google-services.json",
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-notifications",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#FFFFFF",
+          "android": {
+            "drawable": {
+              "icon": "./assets/splash/transparent_splash.xml"
+            }
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "83d2404b-583c-48a1-9e3c-16616161f2aa"
+      }
+    }
+  }
+}

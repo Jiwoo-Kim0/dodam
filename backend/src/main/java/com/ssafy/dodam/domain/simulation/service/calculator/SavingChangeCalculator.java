@@ -1,0 +1,131 @@
+package com.ssafy.dodam.domain.simulation.service.calculator;
+
+import com.ssafy.dodam.domain.simulation.dto.SavingChangeInput;
+import com.ssafy.dodam.domain.simulation.dto.ScenarioComputation;
+import com.ssafy.dodam.domain.simulation.dto.ScenarioLedger;
+import com.ssafy.dodam.domain.simulation.dto.SimulationBaseline;
+import com.ssafy.dodam.domain.simulation.dto.SimulationResult;
+import com.ssafy.dodam.domain.simulation.dto.SimulationResult.Comparison;
+import com.ssafy.dodam.domain.simulation.dto.SimulationResult.GoalImpact;
+import com.ssafy.dodam.domain.simulation.dto.SimulationResult.Item;
+import com.ssafy.dodam.domain.simulation.dto.SimulationResult.Snapshot;
+import com.ssafy.dodam.domain.simulation.entity.SimulationType;
+import com.ssafy.dodam.domain.simulation.service.SimulationCalculator;
+import com.ssafy.dodam.global.exception.BusinessException;
+import com.ssafy.dodam.global.exception.ErrorCode;
+import com.ssafy.dodam.global.exception.InvalidRequestException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Predicate;
+import org.springframework.stereotype.Component;
+
+/**
+ * 저축액 변경(POST /simulations/saving). {@code monthlySavingAmount}는 변경 후 월 저축액(절대값)이며 현재 속도보다 작아도 된다 —
+ * 저축을 줄이면 달성이 늦어지는 것도 보여준다.
+ *
+ * <p>목표를 지정했거나(619 {@code goalId}), 계좌를 지정했고 그 계좌가 어떤 모으기 목표에 연결돼 있으면 그 목표만 새 금액을 받고
+ * 나머지는 기존 속도를 유지한다. 목표 미지정 시 기존 배분 규칙을 유지하며, 지정한 목표가 기준선에 없으면 거부한다.
+ * 소득이 등록돼 있으면 새 월 저축액이 소득을 넘을 수 없다. 이자는 계산하지 않는다({@code INTEREST_NOT_APPLIED}).
+ */
+@Component
+public class SavingChangeCalculator implements SimulationCalculator<SavingChangeInput> {
+    static final String ACCOUNT_NOT_LINKED_TO_GOAL = "ACCOUNT_NOT_LINKED_TO_GOAL";
+
+    @Override
+    public SimulationType type() {
+        return SimulationType.SAVING;
+    }
+
+    @Override
+    public Class<SavingChangeInput> inputType() {
+        return SavingChangeInput.class;
+    }
+
+    @Override
+    public ScenarioComputation compute(SimulationBaseline baseline, SavingChangeInput input) {
+        if (baseline.monthlyIncome() != null && input.monthlySavingAmount() > baseline.monthlyIncome()) {
+            throw new BusinessException(ErrorCode.SIMULATION_SAVING_EXCEEDS_INCOME);
+        }
+        List<String> assumptions = new ArrayList<>(List.of(SimulationScenarios.INTEREST_NOT_APPLIED));
+        Predicate<SimulationBaseline.SavingGoal> eligible = eligibleGoals(baseline, input);
+        String targetMiss = targetMissAssumption(baseline, input);
+        if (targetMiss != null) {
+            assumptions.add(targetMiss);
+        }
+        long currentSaving = baseline.averageMonthlySaving();
+        Map<Long, Long> beforePaces = SimulationScenarios.currentPaces(baseline);
+        Map<Long, Long> afterPaces = SimulationScenarios.replaceDistributed(baseline, eligible, input.monthlySavingAmount());
+        // 대상 목표에 배분한 금액 + 대상이 아닌 목표의 기존 속도 = 변경 후 월 저축 합
+        long afterSaving = afterPaces.values().stream().mapToLong(Long::longValue).sum();
+        if (baseline.savingGoals().isEmpty()) {
+            afterSaving = input.monthlySavingAmount();
+        }
+        Snapshot before = SimulationScenarios.snapshot(baseline, baseline.averageMonthlySpending(), currentSaving, beforePaces);
+        Snapshot after = SimulationScenarios.snapshot(baseline, baseline.averageMonthlySpending(), afterSaving, afterPaces);
+        long delta = afterSaving - currentSaving;
+
+        List<Item> items = new ArrayList<>();
+        items.add(Item.amount("MONTHLY_SAVING", "월 저축액", currentSaving, afterSaving));
+        items.add(Item.amount("MONTHLY_AVAILABLE_FUNDS", "월 가용자금", before.monthlyAvailableFunds(), after.monthlyAvailableFunds()));
+        items.addAll(SimulationScenarios.goalItems(before, after));
+        List<Item> assets = List.of(Item.amount("SAVING_CUMULATIVE", input.durationMonths() + "개월 누적 저축액",
+                currentSaving * input.durationMonths(), afterSaving * input.durationMonths()));
+        List<GoalImpact> impacts = SimulationScenarios.goalImpacts(before, after);
+        if (baseline.savingGoals().stream().filter(eligible).count() > 1) {
+            assumptions.add(SimulationScenarios.SPLIT_BY_REMAINING);
+        }
+        String title = "월 저축액 " + SimulationScenarios.won(currentSaving) + " → " + SimulationScenarios.won(afterSaving);
+        SimulationResult result = new SimulationResult(title, summary(delta, before, after), before, after,
+                new Comparison(items, assets, List.of(), List.of()),
+                SimulationScenarios.cashflow(before, after, input.durationMonths(), -delta), impacts, assumptions);
+        return new ScenarioComputation(result, ScenarioLedger.noCost(baseline.baseDate().plusMonths(input.durationMonths())));
+    }
+
+    /** 지정한 대상(목표 id 또는 계좌가 연결된 목표)이 기준선의 모으기 목표에 있는지. 복합 목표 투영도 같은 대상 선택 규칙을 쓴다. */
+    static boolean isTargeted(SimulationBaseline baseline, SavingChangeInput input) {
+        return baseline.savingGoals().stream().anyMatch(targetMatcher(input));
+    }
+
+    /** 명시한 목표는 반드시 기준선에 있어야 한다. 목표 미지정일 때만 기존 계좌·전체 배분 규칙을 쓴다. */
+    static Predicate<SimulationBaseline.SavingGoal> eligibleGoals(SimulationBaseline baseline, SavingChangeInput input) {
+        if (input.goalId() != null && !isTargeted(baseline, input)) {
+            // 검증 이후 상태 변경이나 상세 행 누락이 있어도 다른 목표로 적용 범위를 넓히지 않는다.
+            throw new InvalidRequestException("지정한 목표의 저축 시뮬레이션 기준 정보를 찾을 수 없습니다.");
+        }
+        return isTargeted(baseline, input) ? targetMatcher(input) : g -> true;
+    }
+
+    /** 지정 계좌에 연결된 목표가 없어 전체 배분할 때 남길 가정 코드. */
+    static String targetMissAssumption(SimulationBaseline baseline, SavingChangeInput input) {
+        if (input.goalId() == null && input.accountId() == null) {
+            return null;
+        }
+        if (isTargeted(baseline, input)) {
+            return null;
+        }
+        return input.accountId() != null ? ACCOUNT_NOT_LINKED_TO_GOAL : null;
+    }
+
+    private static Predicate<SimulationBaseline.SavingGoal> targetMatcher(SavingChangeInput input) {
+        if (input.goalId() != null) {
+            return g -> input.goalId().equals(g.goalId());
+        }
+        if (input.accountId() != null) {
+            return g -> g.linkedAccountIds().contains(input.accountId());
+        }
+        return g -> false;
+    }
+
+    private static String summary(long delta, Snapshot before, Snapshot after) {
+        StringBuilder text = new StringBuilder("월 가용자금 ").append(delta > 0 ? "-" : "+")
+                .append(SimulationScenarios.won(Math.abs(delta)));
+        if (!before.goals().isEmpty()) {
+            var b = before.goals().get(0);
+            var a = after.goals().get(0);
+            text.append(", ").append(b.name()).append(" 예상 달성일 ").append(SimulationScenarios.dateText(b.expectedAchievementDate()))
+                    .append(" → ").append(SimulationScenarios.dateText(a.expectedAchievementDate()));
+        }
+        return text.toString();
+    }
+}

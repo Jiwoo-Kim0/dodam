@@ -1,0 +1,457 @@
+networks:
+  app-net:
+    driver: bridge
+
+volumes:
+  jenkins_home:
+  mysql_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+  loki_data:
+
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: nginx
+    restart: unless-stopped
+    # 하드닝 (infra/todo/security.md R3)
+    #   no-new-privileges: setuid 바이너리로 권한을 올리는 경로를 차단한다.
+    #   mem_limit: 한 서비스가 폭주해도 다른 서비스를 굶기지 않도록 상한을 둔다.
+    #     (한도 초과 시 해당 컨테이너만 OOM으로 종료되고 restart 정책이 되살린다)
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/certbot/conf:/etc/letsencrypt:ro
+      - ./nginx/certbot/www:/var/www/certbot:ro
+    networks:
+      - app-net
+    # jenkins에 depends_on을 걸지 않는다.
+    # 걸어두면 배포(`compose up nginx`)가 의존성으로 jenkins까지 재생성하는데,
+    # 배포 자체가 Jenkins 컨테이너 안에서 실행되므로 자기 자신을 죽이게 된다.
+    # (2026-09-07 실제로 이 사고가 발생 — jiw/day-03.md 참고)
+    # 대신 nginx는 resolver + 변수 proxy_pass로 업스트림을 요청 시점에 해석하므로,
+    # jenkins/backend가 내려가 있어도 정상 기동한다.
+    # 인증서 갱신을 반영하기 위해 6시간마다 reload
+    command: >-
+      /bin/sh -c "while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g 'daemon off;'"
+
+  jenkins:
+    build: ./jenkins
+    container_name: jenkins
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 2g
+    environment:
+      - JENKINS_OPTS=--prefix=/jenkins
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=true
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+      # 배포 대상 체크아웃을 호스트와 "같은 경로"로 마운트한다.
+      # DooD에서 compose의 bind mount(./nginx/conf.d 등)는 호스트 기준으로 해석되므로,
+      # 경로가 일치해야 Jenkins가 돌린 compose가 정상 동작한다.
+      - ${APP_DIR:-/home/ubuntu/app}:${APP_DIR:-/home/ubuntu/app}
+    group_add:
+      - "${DOCKER_GID}"
+    networks:
+      - app-net
+    # Jenkins는 docker.sock 접근권을 가지므로 UI를 외부에 노출하지 않는다.
+    # 루프백에만 바인딩하고 SSH 터널로만 접근한다:
+    #   ssh -L 8080:127.0.0.1:8080 ssafy-ec2  →  http://localhost:8080/jenkins/
+    # 외부에는 nginx가 /jenkins/project/ (웹훅)만 열어준다. 상세: infra/todo/security.md R1
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: certbot
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    volumes:
+      - ./nginx/certbot/conf:/etc/letsencrypt
+      - ./nginx/certbot/www:/var/www/certbot
+    networks:
+      - app-net
+    # 12시간마다 갱신 시도 (만료 30일 전부터 실제 갱신됨).
+    # nginx는 자체 reload 루프로 새 인증서를 집어간다 — certbot에 docker 권한을 주지 않기 위함.
+    entrypoint: >-
+      /bin/sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"
+
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 3g
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      # 기본값 128MB는 너무 작다. 호스트 RAM 16GB 중 2GB를 할당한다.
+      # (백엔드 JVM, Jenkins, Day 6 모니터링 스택 몫을 남긴 값)
+      - --innodb-buffer-pool-size=2G
+      # 느린 쿼리 로그. 기본 임계값 10초는 사실상 아무것도 안 잡히므로 1초로 낮춘다.
+      # 파일명에 컨테이너 호스트명이 들어가면 재생성마다 바뀌므로 고정한다.
+      - --slow-query-log=ON
+      - --long-query-time=1
+      - --slow-query-log-file=/var/lib/mysql/slow.log
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      TZ: Asia/Seoul
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - app-net
+    # 외부 포트 미노출 — 컨테이너 네트워크 안에서만 접근
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 768m
+    # 사용 범위 판단 근거 (2026-09-08, 코드 확인):
+    #   Java 코드에 RedisTemplate/@Cacheable/Redis 리포지토리 사용처가 하나도 없고,
+    #   로그인 세션은 MySQL의 auth_session 테이블(JPA)에 저장된다.
+    #   즉 Redis는 접속 설정만 있고 실제 사용처는 아직 없으며, 향후 캐시 용도가 유력하다.
+    # 따라서 캐시로 전제하고 상한과 축출 정책을 건다.
+    #   - maxmemory 없이 noeviction이면, 캐시를 쓰기 시작했을 때 상한 없이 증가하다
+    #     호스트 메모리를 잠식한다 (OOM 위험)
+    #   - AOF는 유지한다. 캐시라면 불필요하지만 비용이 미미하고,
+    #     팀이 캐시 외 용도로 쓰기 시작했을 때 재시작으로 조용히 데이터를 잃는 편이 더 나쁘다.
+    # 세션·분산 락 등 축출되면 안 되는 용도로 쓰게 되면 정책을 재검토할 것.
+    command:
+      - redis-server
+      - --requirepass
+      - ${REDIS_PASSWORD}
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - 512mb
+      - --maxmemory-policy
+      - allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - app-net
+    # 외부 포트 미노출
+
+  backend:
+    build:
+      context: ../backend
+    container_name: backend
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    # backend만 cap_drop을 전부 적용한다.
+    # 이미 비루트(uid 10001)로 실행되고 8080 바인딩에 특권이 필요 없어 떨궈도 안전하다.
+    # nginx(80/443 바인딩), mysql(파일 소유권 변경) 등은 필요한 capability가 있어
+    # 일괄 적용하면 기동이 깨지므로 제외했다.
+    cap_drop:
+      - ALL
+    mem_limit: 1536m
+    environment:
+      # Spring Security Observation 비활성화(693).
+      # JFR 프로파일링(#6)에서 Micrometer가 전체 CPU의 5.6%를 썼고 그중 46.5%가
+      # ObservationFilterChainDecorator였다 — Spring Security 6은 필터마다 Observation을
+      # 만든다. 우리는 이 지표(spring_security_*)를 대시보드에서 쓰지 않는다.
+      # application.yml이 아니라 환경변수로 두는 이유: yml은 jar 안에 들어가 이미지
+      # 재빌드가 필요하지만, 환경변수는 컨테이너 재생성만으로 반영돼 측정을 바로 이어갈 수 있다.
+      MANAGEMENT_OBSERVATIONS_ENABLE_SPRING_SECURITY: "false"
+      # 프로파일링(693). 평소에는 비어 있어 아무 영향이 없다.
+      # infra/.env 에 JFR_OPTS를 넣고 재배포하면 그 배포에서만 JFR이 켜진다.
+      # 이미지를 JDK로 바꾸는 방법도 있으나(jcmd 사용 가능) 런타임 이미지가 267MB 커지고
+      # 컨테이너 안에 디버깅 도구가 상주하게 되어, 환경변수 방식을 택했다.
+      # 사용법은 infra/docs/profiling.md 참고.
+      JAVA_TOOL_OPTIONS: ${JFR_OPTS:-}
+      SPRING_PROFILES_ACTIVE: prod
+      # PreparedStatement 캐시(693). JFR 프로파일링(#6)에서 MySQL 드라이버의 SQL 문자열
+      # 파싱이 전체 CPU의 10.2%를 차지했다(StringInspector.indexOfNextChar 4.1% 등).
+      # cachePrepStmts는 기본값이 false라 같은 SQL을 매 실행마다 다시 파싱하고 있었다.
+      # 값은 HikariCP가 권장하는 조합이다. 커넥션 10개 × 캐시 250 = 2,500으로
+      # MySQL max_prepared_stmt_count(16,382)에 여유가 있다.
+      DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true
+      DB_USERNAME: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      # Auth(S15P21D105-494)부터 필수. 비어 있으면 백엔드가 기동 시점에 실패한다.
+      #   JWT_SECRET: 32바이트 이상 임의 문자열
+      #   DATA_ENCRYPTION_KEY / DATA_HASH_KEY: Base64 32바이트 (openssl rand -base64 32)
+      #     → 잃으면 암호화 컬럼 복구 불가. DB 백업과 별도 장소에 백업 필수 (security.md R5)
+      #   SSAFY_FINANCE_API_KEY: SSAFY 금융망 앱 관리자 API Key
+      #
+      # ⚠️ 이 4줄은 2026-09-08 develop 병합 과정에서 유실되어 백엔드가 기동하지 못했다
+      #    (app.auth.jwt.secret must be at least 32 bytes). 인프라 파일을 여러 MR이
+      #    동시에 건드릴 때 충돌 해소로 사라지기 쉬우므로, 병합 시 이 블록 보존 여부를 확인할 것.
+      JWT_SECRET: ${JWT_SECRET}
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY}
+      DATA_HASH_KEY: ${DATA_HASH_KEY}
+      SSAFY_FINANCE_API_KEY: ${SSAFY_FINANCE_API_KEY}
+      # NUMBER_HASH_KEY: 계좌·카드번호 HMAC-SHA256 해시 키 (app.security.number-hash-key)
+      #   코드가 문자열을 그대로 키 재료로 쓴다(getBytes(UTF_8)) — base64 디코드하지 않음
+      #   ★ 키가 바뀌면 기존 *_hash 값과 매칭이 깨지므로 한번 정하면 고정할 것
+      NUMBER_HASH_KEY: ${NUMBER_HASH_KEY}
+      # ── FCM (2026-09-10 활성화) ─────────────────────────────────────
+      # Firebase 서비스 계정 키. .env가 아니라 파일로 다루는 이유:
+      # JSON 전체를 환경변수에 넣으면 줄바꿈/따옴표로 깨지기 쉽고,
+      # 프로세스 목록·로그에 통째로 노출될 위험이 크다.
+      # 발급·교체 절차: infra/secrets/README.md
+      FCM_SERVICE_ACCOUNT_PATH: /run/secrets/fcm-service-account.json
+      # ───────────────────────────────────────────────────────────────────
+      # ── 소셜 로그인 (2026-09-16 추가) ───────────────────────────────
+      # backend/docs/auth-social.md (S15P21D105-611). 앱이 공급자 SDK로 로그인하고
+      # 서버는 받은 토큰을 공급자에 검증만 한다 → client secret은 쓰지 않는다.
+      #
+      # ★ 이 두 줄은 application.yml(-prod가 아니다)이 참조한다.
+      #   check-env.sh의 앱↔compose 대조는 application-prod.yml만 읽으므로
+      #   여기서 빠져도 잡아내지 못한다. 병합 중 유실되지 않도록 주의할 것.
+      #
+      # `:-` 기본값을 둔 이유: 개발자 콘솔 앱이 아직 없어 값이 비어 있다.
+      #   비어 있을 때 KAKAO_APP_ID는 "우리 앱에서 발급된 토큰인지" 검사만 생략되지만,
+      #   GOOGLE_CLIENT_ID가 비면 구글 로그인이 런타임 503(SOCIAL_PROVIDER_UNAVAILABLE)다.
+      #   기동은 성공하므로 겉보기에는 정상이다. 키를 발급받으면 .env에 채울 것.
+      KAKAO_APP_ID: ${KAKAO_APP_ID:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      # ───────────────────────────────────────────────────────────────────
+      # ── AI 코치 (2026-09-16 추가, S15P21D105-589) ──────────────────
+      # 키는 Day 5에 발급해 .env에 넣어 뒀지만 여기서 전달하지 않아
+      # 컨테이너 안에서는 없는 것과 같았다. API 21이 실제로 쓰기 시작하면서 추가한다.
+      # (backend 컨테이너 → api.openai.com 연결성은 Day 7에 401로 확인됨)
+      #
+      # `:-` 기본값을 둔 이유: 값이 비어도 백엔드는 정상 기동하고 코치만
+      #   템플릿 응답(기획안 11-3의 대체 방법)으로 내려간다. 배포를 막을 사안이 아니다.
+      #   대신 application-prod.yml이 ${OPENAI_API_KEY}를 참조하므로
+      #   check-env.sh 3-1이 "이 줄이 사라졌는지"는 계속 감시한다.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # ───────────────────────────────────────────────────────────────────
+      # [해소됨] 2026-09-16 — `SPRING_JPA_HIBERNATE_DDL_AUTO: none` 제거
+      #
+      # 2026-09-08에 상품 엔티티를 만드는 Flyway 마이그레이션이 없어 Hibernate `validate`가
+      # 실패했고(재시작 루프 → 외부 502, 빌드 #14·#15 FAILURE), 임시로 여기서 `none`으로
+      # 덮어쓰고 있었다. 마이그레이션이 모두 들어와 조건이 해소되어 제거했다.
+      # → 이제 application-prod.yml의 `ddl-auto: validate`가 그대로 적용된다.
+      #
+      # 제거 전 검증: 운영 DB flyway_schema_history 25건 전부 success, 최신 V35이며
+      # 레포 마이그레이션 25개와 일치. 운영 DB에 일회용 컨테이너로 SPRING_FLYWAY_ENABLED=false
+      # + validate 드라이런을 돌려 schema-validation 오류 0건·정상 기동을 확인했다.
+      # 경위: infra/todo/jiw/day-04.md(발생), day-08.md 24절(해소)
+      # ───────────────────────────────────────────────────────────────────
+      TZ: Asia/Seoul
+    volumes:
+      # 읽기 전용 마운트. 호스트 파일이 없으면 Docker가 이 경로에 디렉터리를 만들어버리므로
+      # 키를 제거할 때는 이 줄과 위 FCM_SERVICE_ACCOUNT_PATH를 함께 주석 처리할 것.
+      - ./secrets/fcm-service-account.json:/run/secrets/fcm-service-account.json:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - app-net
+    # 외부 포트 미노출 — nginx의 /api/ 를 통해서만 접근
+
+# ── 모니터링 (Day 6) ──────────────────────────────────────────────────
+  # 전부 컨테이너 네트워크 안에서만 통신한다.
+  # 외부에 열리는 것은 nginx의 /grafana/ 하나뿐이고,
+  # Prometheus·Loki·exporter의 UI/포트는 호스트에도 바인딩하지 않는다.
+  # (Jenkins와 같은 원칙 — 노출면을 줄인다. infra/todo/security.md R1)
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: prometheus
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+    user: "65534:65534"          # nobody — 비루트 실행
+    volumes:
+      # 파일 하나가 아니라 디렉터리를 마운트한다.
+      # 단일 파일 마운트는 컨테이너가 기동 시점의 inode를 잡고 있어서, deploy.sh의
+      # `git reset --hard`가 파일을 새로 만들면(= inode 교체) 컨테이너는 옛 내용을 계속 본다.
+      # 2026-09-22에 exporter 잡을 추가했는데 리로드가 성공했는데도 반영되지 않았다(day-13 17-2).
+      # 디렉터리 마운트는 경로를 매번 다시 찾으므로 리로드만으로 반영된다.
+      - ./monitoring/prometheus:/etc/prometheus:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # 보관 기간을 제한하지 않으면 디스크를 계속 먹는다.
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    networks:
+      - app-net
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: node-exporter
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    # 호스트의 실제 CPU/메모리/디스크를 읽어야 하므로 호스트 네임스페이스와 파일시스템이 필요하다.
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    command:
+      - --path.rootfs=/host
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|var/lib/docker/.+)($$|/)
+    networks:
+      - app-net
+
+  # ── 부하 테스트용 DB·캐시 서버 지표 (2026-09-22 추가, S15P21D105-693) ──────
+  # backend의 micrometer는 "앱이 보는" DB·캐시(커넥션 풀, 명령 지연)만 안다.
+  # 병목이 서버 내부(슬로우 쿼리, InnoDB 락 대기, Redis eviction)에 있으면 그것으로는 원인을
+  # 짚을 수 없어 별도 exporter를 둔다. 둘 다 외부 포트를 열지 않는다(app-net 안에서만).
+  mysqld-exporter:
+    image: prom/mysqld-exporter:v0.16.0
+    container_name: mysqld-exporter
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    # 앱 계정(MYSQL_USER)을 쓰지 않는다. 지표 수집에 필요한 권한만 가진 전용 계정이며
+    # 만드는 SQL은 infra/docs/monitoring.md에 있다(PROCESS, REPLICATION CLIENT, performance_schema SELECT).
+    environment:
+      MYSQLD_EXPORTER_PASSWORD: ${MYSQL_EXPORTER_PASSWORD}
+    command:
+      - --mysqld.address=mysql:3306
+      - --mysqld.username=exporter
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - app-net
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.67.0
+    container_name: redis-exporter
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - app-net
+
+  # ── 컨테이너별 자원 지표 (2026-09-23 추가, S15P21D105-693) ────────────────
+  # node-exporter는 호스트 전체만 본다. EC2 한 대에 MySQL·Redis·백엔드·Jenkins·Grafana가
+  # 모두 같이 살아서, 부하 중 CPU가 치솟아도 "누가 먹는지" 구분할 수 없었다.
+  #
+  # ⚠️ docker.sock을 **의도적으로 마운트하지 않는다.** 두 가지 이유다.
+  #   1) 이 호스트는 Docker 29 + containerd 이미지 스토어(Storage Driver: overlayfs)라
+  #      /var/lib/docker/image/<driver>/layerdb 가 없다. cAdvisor의 Docker 핸들러가 컨테이너를
+  #      가로챈 뒤 RW 레이어를 못 찾아 **전부 건너뛴다**(day-13 24절에서 겪음).
+  #      소켓을 빼면 raw cgroup 핸들러로 떨어져 정상 수집된다.
+  #   2) docker.sock은 사실상 호스트 root 권한이다(infra/todo/security.md). 안 쓰는 편이 낫다.
+  #
+  # 대가: 컨테이너 **이름을 모른다.** cgroup 경로의 12자리 짧은 ID만 남으며,
+  #       prometheus.yml의 metric_relabel_configs가 이를 `container_id` 라벨로 뽑는다.
+  #       `docker ps`의 CONTAINER ID와 같은 값이라 대조할 수 있다.
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    container_name: cadvisor
+    restart: unless-stopped
+    mem_limit: 256m
+    # 수집기가 측정 대상을 방해하면 안 된다(mysqld-exporter의 MAX_USER_CONNECTIONS 3과 같은 원칙).
+    # 기본 1초 간격과 전체 지표는 부하 중 CPU를 눈에 띄게 먹는다.
+    # 실측(2026-09-23): 이 설정에서 CPU 0.25~0.9%, 메모리 15MB.
+    command:
+      - --housekeeping_interval=10s
+      - --store_container_labels=false
+      - --disable_metrics=percpu,sched,tcp,udp,advtcp,process,hugetlb,referenced_memory,cpu_topology,resctrl
+    volumes:
+      - /:/rootfs:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - app-net
+
+  loki:
+    image: grafana/loki:3.3.2
+    container_name: loki
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 768m
+    user: "10001:10001"
+    volumes:
+      - ./monitoring/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - app-net
+
+  promtail:
+    image: grafana/promtail:3.3.2
+    container_name: promtail
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    volumes:
+      - ./monitoring/loki/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - app-net
+
+  grafana:
+    image: grafana/grafana:11.5.1
+    container_name: grafana
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    environment:
+      # nginx의 /grafana/ 서브패스 뒤에서 동작하도록 알려준다.
+      GF_SERVER_ROOT_URL: https://j15D105.p.ssafy.io/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      # 익명 접근과 가입을 막는다.
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      # 알림 채널 프로비저닝이 $__env{} 로 읽는다. 파일에 URL을 직접 쓰지 않기 위함.
+      MATTERMOST_WEBHOOK_URL: ${MATTERMOST_WEBHOOK_URL}
+      TZ: Asia/Seoul
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - app-net
+

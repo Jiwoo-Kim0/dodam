@@ -1,0 +1,53 @@
+spring:
+  config:
+    activate:
+      on-profile: prod
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      password: ${REDIS_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    # 마이그레이션 번호를 담당 영역별 구간(V1~V9 BE-A, V10~ BE-B)으로 나눠 쓰므로, 이미 V13이 적용된 DB에
+    # 나중에 V4가 추가되는 일이 정상이다. 이 옵션이 없으면 Flyway가 "resolved migration not applied"로 기동을 막는다.
+    out-of-order: true
+
+app:
+  security:
+    number-hash-key: ${NUMBER_HASH_KEY}
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS}
+    allow-credentials: true
+  auth:
+    jwt:
+      secret: ${JWT_SECRET}
+  crypto:
+    data-key: ${DATA_ENCRYPTION_KEY}
+    hash-key: ${DATA_HASH_KEY}
+  ssafy-finance:
+    api-key: ${SSAFY_FINANCE_API_KEY}
+  ai:
+    # OPENAI_API_KEY는 infra/.env에 있고 docker-compose.yml이 backend로 전달한다.
+    # 여기(-prod)에 두는 이유: check-env.sh의 앱↔compose 대조가 application-prod.yml만 읽으므로,
+    # 병합 중 compose의 전달 줄이 유실되면 배포 전에 잡힌다(소셜 로그인 2줄이 겪은 사고의 반대 경우).
+    # 값이 비어도 기동은 성공하고 코치만 템플릿 응답으로 내려간다.
+    api-key: ${OPENAI_API_KEY}
+  demo:
+    # 기동 직후 금융망 연결·도담 전용 계좌·주거래 실계좌 대응을 맞출 시연 계정(SafeboxDemoBootstrap, S15P21D105-705).
+    # 이미 맞춰진 단계는 건너뛴다. 환경변수로 두지 않는 이유: check-env.sh가 이 파일의 ${...}를 compose와 대조한다.
+    bootstrap-user-emails: seed.kmeans.u0003@dodam.invalid
+  pattern:
+    # 군집 모델은 커밋된 Python 학습 아티팩트(classpath:ml/spending-kmeans-v2.json)만 쓴다. 아티팩트가 없으면 Java가 임의 학습하지 않고 RULE_ONLY(MODEL_NOT_AVAILABLE)로 전환한다.
+    train-in-process: false
+  notification:
+    push:
+      enabled: true
+      service-account-path: ${FCM_SERVICE_ACCOUNT_PATH}

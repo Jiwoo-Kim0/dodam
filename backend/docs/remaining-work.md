@@ -1,0 +1,1421 @@
+# 백엔드 남은 작업
+
+## S15P21D105-705 — 도담 전용 계좌 1개와 목표별 세이프박스
+
+- [x] 사용자당 전용 금융망 계좌 지정, 목표별 절대값 배정·이동 원장, 이체 출금 잔액 보호.
+- [x] 가입·금융망 재연결 시 전용 계좌 자동 개설, 목표 생성 전 보충(`POST /api/v1/safebox/account`).
+- [x] V45 MySQL 8.0 적용(로컬 Docker, FK·CHECK 포함).
+- [ ] 실제 금융망 계좌 개설과 배정·이체 동시성 실측.
+- [ ] 시연 계정 준비(safebox.md §시연 계정 준비): seed 19, 금융 연결, 주거래 실계좌 대응.
+- [ ] 금융망 호출 중 DB 트랜잭션·사용자 행 잠금 유지(이체·동기화) 범위 축소 검토.
+
+
+마지막 갱신: 2026-09-26
+
+백엔드 작업 중 확인한 미완료 항목을 이 파일에 계속 기록한다. 현재 등록 범위는 S15P21D105-499, 500, 530, 532, 533, 535, 536, 537, 538, 542와 501~514, 516~521, 540~551, 580~581, 629, 632, 587, 589, 611, 627, 628, 633, 635, 636, 640·641, 675, 696, 701, 702, 703, 706이다.
+
+## S15P21D105-706 — 시계열 예측 seed 24개월 확장·조회 API·예상 소비 화면
+
+계약: [spending-forecast.md](spending-forecast.md), 설계와 결정 기록은 [timeseries-forecast-plan.md](timeseries-forecast-plan.md).
+
+### 데이터에 남긴 한계
+
+- [ ] **492 격월 인공물.** VOLATILE 코호트가 `variable 70% on odd months / 20% on even months` 규칙 때문에 격월로 **3.50배** 교대한다(2,938,282 ↔ 839,581). 나머지 세 코호트는 1.00이다. 이 데이터의 월 변동성이 사실상 전부 여기서 나오고 인구 평균으로도 격월 ±20%가 흔들리므로, U0003 말고 다른 계정으로 예측을 돌리면 추정기가 이 교대를 계절로 읽는다. 706 범위 밖이라 실측만 남겼다(계획서 §6.4). 데이터의 현실성을 주장하려면 먼저 정리해야 한다 — **별도 이슈**.
+- [x] **대출 실행금 거래는 넣지 않는다**(2026-09-24 결정). 창이 2024-09로 늘면서 U0003의 대출 개시일 2024-09-10이 안으로 들어왔지만, 1천만 원 이상 거래가 전체 seed에 0건이고 창 안에서 개시되는 대출이 1,456건이라 U0003에만 넣으면 혼자만 다른 사람이 된다. 예측은 변동 소비만 보므로 영향이 없고 자산·현금흐름 화면에서만 드러난다(계획서 §10 위험 6).
+- [ ] **과거 저축이 월 100,000뿐이다.** 2024-09~2025-10 구간은 주택청약만 거래로 남아 소득 2,900,000 대비 3.4%로 보인다. 실제로는 목돈적금 500,000이 함께 나가고 있었고 그 이력은 `savings_payment`에 있다. **24개월을 보는 지표는 U0003을 "저축을 거의 안 하는 사람"으로 읽으므로, 저축률을 쓰는 화면을 만들 때 조회 창을 확인한다**(계획서 §10 위험 7).
+- [ ] **625 preflight와 655가 충돌한다.** 625는 시연 4명의 구독이 6개일 것을 요구하는데 655가 23개로 바꿔 놓고, 그 preflight 테이블에 `CHECK (ready = 1)`이 걸려 있어 `ERROR 3819`로 적재가 멈춘다. 706 이전부터 있던 문제지만 706이 재적재를 요구하면서 실제로 부딪혔다. 625는 다른 사람 파일이자 팀 계약이라 이 이슈에서 고치지 않았다. **계획서 §6.6이 적어 둔 선택지 중 "11번(625)을 건너뛴다"는 성립하지 않는다**(2026-09-24 인프라 실측): 15번(655) preflight가 `SEED-SEP-...-INC-` 행 4명분을 요구하고 그 행은 625만 만들어서, 625를 건너뛰면 15번·17번이 연쇄로 막힌다. 실제 재적재는 빈 DB에 1~18번을 전부 돌려 우회했다 — **별도 이슈**.
+
+### 검증
+
+- [x] **MySQL 검증 완료**(2026-09-24, `JdbcSpendingForecastReaderMySqlIntegrationTest`). 환경변수 `SPENDING_FORECAST_MYSQL_TEST_URL` 게이트이며 24개월 seed가 적재된 MySQL 8.0에서 3건 통과했다. `YEAR()`·`MONTH()` 별칭 GROUP BY, `COALESCE` 해석 규칙, 달 경계 포함을 본다. 같이 확인한 것: 리더의 SQL을 U0003에 그대로 돌려 24개월 합계가 seed plan 표와 **한 달도 어긋나지 않았다**(2024-09 830,000 ~ 2026-08 994,000).
+- [ ] **`COALESCE` 분기는 seed 데이터로 타지 않는다.** 적재된 139만 행의 `spending_type` NULL이 0건, `category_id` NULL이 0건이라 실제 데이터는 첫 인자에서 끝난다. 규칙이 바뀌면 통합 테스트만 깨지고 시연 화면은 그대로이므로, 규칙을 손댈 때는 테스트를 근거로 삼는다.
+- [ ] **로컬 검증 DB(`dodam_706_test`)의 스키마가 뒤처져 있다.** seed 적재 시점에 멈춰 있어 `monthly_report.metrics_summary`와 `user.credit_score`(680 V42)가 없다. 그래서 위 테스트는 `ddl-auto=none`으로 돌고 사용자 행을 새로 만들지 않는다. 시연 서버는 전체 재적재로 최신이라 해당 없음.
+- [x] 컨트롤러 계층을 덮었다(2026-09-24, `SpendingForecastApiTest`). 인증 없는 호출 401, 소유권 격리, `horizonMonths` 1~12 경계, 이력 부족 시 200 + 사유, `spending_type` NULL 해석, 결측 월 제외까지 일곱 가지.
+
+### 시연 서버
+
+- [x] **재적재 완료**(2026-09-24, 인프라 담당). 빈 DB에 1~18번을 전부 적재하는 방식으로 돌았고 `DODAM_TRANSACTION_VERIFY.sql` 9개 검사가 지문 499687287까지 기대값과 일치했다. 과정과 실패 2건은 `infra/todo/jiw/day-13.md` 2026-09-24 절, 693 커밋 `e1bd422`에 있다. 앱에서 예상 소비 차트가 24개월 이력으로 그려지는 것을 확인했다(Android).
+- [ ] **파생 리셋 seed(MR 6)는 만들지 않는다**(2026-09-24 판단). 2026-03~08이 한 행도 바뀌지 않았고 저장되는 파생 결과는 전부 최근 6개월 창을 쓴다. 24개월을 볼 수 있는 것은 680 신용점수뿐이고 그것은 재적재 체인 마지막에 돈다. **다만 재적재 뒤 U0003 리포트 숫자와 예측 차트의 앞뒤가 맞는지는 아직 눈으로 대조하지 않았다** — 어긋나면 699 절차(`DODAM_DEMO_U0003_DERIVED_RESET_699.sql` → `forceRefresh`)로 처리한다.
+
+### 범위 밖 (별도 이슈)
+
+- [ ] 결과 저장(`V45` 3테이블)·실행 API·동시성 제어, cashflow 합성 이벤트 연동, 목표 저축 속도 배율. 상세 설계는 계획서 부록 A와 커밋 `9c5e519`(rev.17)에 있다.
+- [ ] 루트 `docs/API명세서/`에 `GET /api/v1/spending-forecasts`가 없다(2026-09-24 확인). 루트 문서는 별도 합의 후 갱신한다.
+- [ ] 카테고리별 예측 분해와 `predicted_total`(고정비 포함 총 소비)은 응답에 싣지 않는다. 이유는 [spending-forecast.md](spending-forecast.md) §7.
+
+## S15P21D105-703 — [BE] 저축속도 목표별 안분·예상 달성일 상한 (세이프박스 1단계)
+
+계약: [goal.md](goal.md) §저축속도 정의, 계획은 [safebox-allocation-plan.md](safebox-allocation-plan.md) §3-1(MR-A).
+
+- [x] 같은 입출금 계좌를 여러 목표에 담았을 때 그 계좌 순현금흐름에 `이 목표 기여액 / 계좌 총 할당액`을 곱한다(`GoalSavingPaceReader.shareOf`). 626이 확보액에서 막은 중복이 저축속도에는 없어 두 목표가 같은 증가분을 각자 전액 세고 있었다. 담은 금액이 없으면 몫이 `1/연결 목표 수`(균등 분할), 총 할당액 0이거나 단독이면 전액(702까지와 같은 값).
+- [x] `JdbcGoalPaceReader.readNetCashflow` → `readNetCashflowByAccount`(계좌별 Map). 귀속 식을 파생 테이블에서 한 번만 계산한다 — SELECT와 GROUP BY에 같은 식을 두 번 쓰면 `:accountIds`가 다른 파라미터로 펼쳐져 H2가 같은 식으로 보지 않는다.
+- [x] 문서 부채 3건 정정: goal.md의 694 이전 속도 정의 문장, 마이그레이션 README의 "한 Account는 하나의 Goal에만" 규칙(V35가 뒤집음), 구간표 "다음은 V44"(V44는 697 사용 → V45).
+- [ ] **시연 서버**: 현재 U0001~U0004 모두 SAVING 목표 1개이고 공유 입출금 0건이라 속도·예상일이 바뀌지 않아야 한다. 배포 뒤 `GET /goals/{id}/forecast`의 `averageMonthlySaving`으로 확인한다.
+- [x] MySQL 검증: `JdbcGoalPaceReaderMySqlIntegrationTest`(환경변수 `GOAL_PACE_MYSQL_TEST_URL` 게이트)로 MySQL 8.0에서 같은 값을 확인했다. 준비는 빈 `dodam_703_test`에 마이그레이션을 **V6을 V11 뒤로 옮겨** 올리고(그대로면 `Failed to open the referenced table 'card'`) Flyway는 끈 채 실행한다. JDBC URL에 `characterEncoding=UTF-8`이 없으면 한글 리터럴이 깨진다.
+- [x] 예상 달성일 상한(`GoalCalculationService.beyondForecastHorizon`): 예상일이 목표일을 목표 기간(`totalDays`)만큼 더 넘어서면 `expectedAchievementDate`·`monthsToAchieve`·`daysDifference`를 null로 둔다. 속도가 분모라 작아질수록 결과가 폭발하는데(남은 1,790만 ÷ 월 10만 = 179개월) 3개월 표본으로 잰 속도를 하루 단위 날짜로 단정할 근거가 없다. 공유 식 `GoalForecastFormula`가 아니라 파생값 조립 단계에 둔다 — 식에 넣으면 시뮬레이션 before/after 일치 보장이 흔들린다.
+- [ ] FE 인계(114): `daysDifference`/`expectedAchievementDate`가 null인 경우가 늘어난다. 목표 상세의 `getSavingAccent(null)` 문구가 '달성일을 계산 중이에요'인데 실제 의미는 "현재 속도로는 목표일까지 어려워요"다. 발견 상세 지연 배너(`goalDelay.ts`)는 null이면 뜨지 않는다.
+- [x] 후속 MR 3·4 **착수하지 않는다**(2026-09-23 세이프박스 중단 결정). 가상 세이프박스가 "담아둔 돈은 빠져나가지 않는다"를 보장할 수 없어 제품에서 뺐다. 근거는 [safebox-allocation-plan.md](safebox-allocation-plan.md) 상단 중단 기록. V45 선점도 불필요하다.
+
+### MR 2 — 담기·꺼내기 API (§4-1·§4-2)
+
+- [x] `PUT /goals/{goalId}/allocations/{accountId}` 절대값 담기·꺼내기. 0은 할당 해제. 검증은 `amount ≤ max(0, balance) − 다른 살아 있는 목표의 할당 합` 하나이고, 종료 목표는 증가만 409 `GOAL_NOT_EDITABLE`로 막는다(담은 돈을 되찾을 길을 막지 않기 위해 감소·0은 허용).
+- [x] `PUT /goals/{goalId}/accounts`를 예·적금 한정으로 좁혔다. 빈 배열은 예·적금만 해제하고 입출금 할당은 건드리지 않는다.
+- [x] 같은 사용자의 연결·할당 변경을 사용자 행 비관적 잠금(`GoalAllocationUserLock`)으로 직렬화한다. 계좌·목표 수와 무관하게 잠금 순서가 일정해 교착이 없다.
+- [x] **담은 뒤에는 잔액 변화가 확보액에 반영되지 않는다**(담은 금액이 절대값이라). 이 때문에 `GoalCalculationApiIntegrationTest`·`GoalHistoryApiIntegrationTest`의 "연결 후 잔액 동기화" 시나리오가 입출금 기준으로는 성립하지 않아 예·적금 계좌로 옮겼다. `AMOUNT_UPDATED`는 이제 예·적금과 담기 이력이 없는 입출금 행에서만 난다([goal.md](goal.md) §확보액 정의).
+- [x] 병합 완료(`389f544`, 2026-09-23). Jenkins 자동 배포.
+- [ ] MySQL 미검증: 동시 담기 409는 H2로만 확인했다. 사용자 행 잠금과 V35 조건부 UNIQUE의 실제 동작은 MySQL 8.0에서 다시 본다(H2에 조건부 UNIQUE가 없다). **담기 화면을 만들지 않기로 해 우선순위는 낮다.**
+- [ ] **FE 회귀 수정(필수)**: `PUT /accounts`가 예·적금 한정이 됐는데 목표 만들기·목표 상세의 계좌 선택이 입출금을 그대로 보낸다. 목표 만들기는 연결 실패 시 롤백이 `deleteGoal`을 호출해 **목표 생성 자체가 실패**한다. 요청 문서는 [../../docs/safebox-frontend-request.md](../../docs/safebox-frontend-request.md).
+- [ ] 명세 12 변경 보고: `PUT /accounts` 예·적금 한정, `PUT /allocations` 신설. 루트 `docs/` 수정은 명시 요청 시에만.
+
+## S15P21D105-702 — [BE] 저축속도 연결 계좌 한정·소비 증가 추천 단축 일수 목표일 검사
+
+계약: [goal.md](goal.md) §저축속도, [recommendation-api.md](recommendation-api.md) §2 `CATEGORY_SPENDING_INCREASE`(버전 `702.1`), [discovery-report-metrics-675.md](discovery-report-metrics-675.md) §3.
+
+- [x] 모으기 목표 저축속도의 입출금 부분을 사용자 전체 순현금흐름에서 **목표에 연결된 입출금 계좌의 순현금흐름**으로 한정(`JdbcGoalPaceReader`). 연결 계좌의 거래(`account_id`)와 그 계좌에서 대금이 빠지는 카드의 승인(`card.withdrawal_account_id`)을 센다 — 시연 seed는 변동 지출의 70%가 카드(`account_id NULL`)라 카드를 빼면 속도가 부풀려진다(09-22 정현진 결정). 카드 대금 결제는 `card_billing_statement`에만 있어 이중 계산 없음. 연결 입출금이 없으면 조회하지 않는다. 511 이력·546 goal-impact·시뮬레이션 기준선이 같은 정의를 쓴다. H2 SQL 검증 `JdbcGoalPaceReaderIntegrationTest`.
+- [x] `REDUCE_CATEGORY_SPENDING` 생성기 `702.1`: 개선 예상일이 스냅샷 `forecast.targetDate` 이내일 때만 `advancedDays`를 낸다. 목표일을 넘으면 날짜는 유지하고 `advancedDays = null`, 근거 evidence `goalImpactStatus = TARGET_DATE_NOT_MET`, 문구 "…이지만 목표일 …보다 늦어요." 요약 `expectedGoalAdvanceDays`도 그만큼 줄어든다.
+- [x] 통합 테스트 fixture(`Simulation*ApiTest` 3개, `GoalHistoryApiIntegrationTest`)의 수입 행에 연결 계좌 `account_id`를 넣도록 갱신. fixture의 지출 행은 계좌도 카드도 없어 속도에 들어가지 않으므로 `SimulationApiTest`의 수입을 933,333 → 333,333으로 바꿔 예상일(2027-03-14)을 유지했다.
+- [ ] 서비스 초기값 — 카드 귀속은 카드의 `withdrawal_account_id`만 본다. `card_id`도 `account_id`도 없는 거래(수동 입력 등)는 어느 목표에도 들어가지 않는다. 해지 카드의 과거 승인은 상태로 걸러내지 않는다.
+- [ ] 702 이전과의 차이: 연결하지 않은 계좌·카드의 거래가 빠지므로 입출금 계좌를 여러 개 가진 사용자는 속도가 달라진다. 시연 seed는 주거래 계좌 하나에 카드도 그 계좌라 BALANCED 코호트(U0001)의 속도는 702 이전과 같아야 한다 — 배포 뒤 실측으로 확인.
+- [ ] **시연 서버**: U0003은 678 seed가 적금 3개만 연결(입출금 미연결)해 속도가 바뀌지 않는다. U0001(입출금 연결)의 `GET /goals/{id}/forecast` 속도·예상일이 유지되는지 배포 뒤 실측하고, 진단 `forceRefresh` → 추천 재생성으로 `702.1` 추천을 만든다(696.1 추천은 남는다).
+- [ ] FE 인계(114): 발견 요약 "목표 N일 단축"이 `GOAL_ADVANCE_UNAVAILABLE`로 비는 경우가 늘 수 있다. 근거 `GOAL_FORECAST_ADVANCE.evidence.goalImpactStatus`로 "개선해도 목표일을 넘어요" 문구를 붙일 수 있다.
+- [ ] MySQL 검증: H2 통합 테스트만 통과. `account_id IN (:accountIds)`는 표준 SQL이라 별도 실측하지 않았다.
+
+## S15P21D105-701 — [BE] 코치 칩 제안 개선 (맞춤 질문에 항목 카테고리·증가액)
+
+계약: [ai-coach.md](ai-coach.md) §13-5-2. FE 669 실기 확인 요청("칩이 항목과 겉돈다") 회신.
+
+- [x] 소비 영역 첫 칩을 맥락 카테고리·증가액으로 생성(`CoachChatService.categoryQuestion`), 도구 스키마 카테고리 설명에 '식비'·'마트·편의점'·'문화·여가' 매핑 추가. 서버만 변경, FE 배포 불필요.
+- [ ] 배포 후 U0003 식비 항목에서 첫 조언 칩이 "식비를 월 18만원 줄이면?"으로 나오고, 그 칩을 보내면 `simulate_spending_reduction`이 FOOD·180,000으로 호출되는지 실측(GMS 경유).
+- [ ] 금액을 증가액으로 두는 것은 초기 결정이다. 증가액이 크면(수십만 원) 칩이 과격해 보일 수 있어 기획이 상한을 원하면 `DEFAULT_REDUCTION_MAN_WON` 옆에 상한 상수를 둔다.
+- [ ] 추천 맥락(개선안에서 진입)은 근거 `categoryCode`만 있어 표시 이름을 서버 표(`SPENDING_CATEGORY_NAMES`)에서 만든다. V6 카테고리 이름이 바뀌면 같이 고친다.
+
+## S15P21D105-696 — [BE] 소비 증가 추천 목표 기여 계산 (advancedDays·후보 goalId)
+
+계약: [discovery-report-metrics-675.md](discovery-report-metrics-675.md) §3-1·§5, [recommendation-api.md](recommendation-api.md) §2. 675에서 분리한 후속 구현(607 요청 2). 브랜치는 675 위에 쌓였다.
+
+- [x] `REDUCE_CATEGORY_SPENDING` 생성기 `696.1`: 스냅샷 `goals[].forecast`로 현재·개선 달성일·`advancedDays`·`contributionAmount`, 대상 목표(요청 goalId, 없으면 가장 밀린 모으기 목표) → `Recommendation.goalId`, 근거 `GOAL_FORECAST_ADVANCE`. `RecommendationCandidate.goalId` 추가(9-arg 생성자 유지), 저장소 소유·일치 검증. 저축 늘리기·소비 줄이기 추천도 대상 목표를 싣는다.
+- [ ] **시연 서버**: 배포 뒤 U0001~U0004 `POST /diagnoses {forceRefresh:true}` → `POST /recommendations/generate`를 다시 실행해야 696.1 추천이 생긴다(기존 627.3 추천은 남고 FE 목록은 최신 진단 기준). U0003(내 집 마련 목표, 678)에서 `advancedDays`·`goal-impact` 실측.
+- [ ] FE 인계(114): `RecommendationEffectApiResponse`에 `currentForecastDate`·`improvedForecastDate`·`contributionAmount`(nullable) 추가 → 발견 상세 지연 배너를 `daysDifference`("지금 속도면")에서 추천 `advancedDays` + 근거 `goalName`(인과 문구)으로 전환 가능.
+- [ ] 서비스 초기값: 대상 목표 선택(가장 밀린 모으기 목표)과 "늘어난 금액 전부를 그 목표 저축에 돌린다" 가정. 기획이 다른 배분을 원하면 생성기 버전을 올린다.
+- [ ] 우선순위 점수에 `advancedDays`(30일당 5점)가 들어가 목표가 있는 사용자는 소비 증가 추천 순위가 올라간다. 시연 계정에서 대환·소비 추천 순서 변화 확인.
+
+## S15P21D105-675 — [BE] 발견·리포트 지표 계약 및 비효율 데이터 요건 정리
+
+계약 문서: [discovery-report-metrics-675.md](discovery-report-metrics-675.md)(비효율 항목표 §2, FE 114 공유표 §3, 후속 작업표 §5). FE 요청 원문 회신: [docs/discovery-backend-request.md](../../docs/discovery-backend-request.md) 각 절 `BE 회신`.
+
+- [x] 계약 보완 코드(추가 필드만): 진단 응답 `discoveryIssueCount`(= issueCount − GOAL 문제 수), `GET /recommendations/summary` `discovery`가 GOAL 문제·그 추천을 빼고 집계(`GOAL_ISSUES_EXCLUDED`).
+- [x] **GOAL 문제 생성은 유지** — 607 요청 1의 "만들지 말라"와 다른 결정. goal-impact·changes·코치·저축 프리셋·678 시연 seed가 입력으로 쓴다. 정현진 확인 필요(계약 문서 §2 GOAL 행).
+- [x] 비효율 항목 12종(활성 4·비노출 1·미구현 7·goal-impact 1) 대상·증상·필요 데이터·기간·기대 판정·적용/보류 판단 표. 정현진과 확정할 제안값은 표에 `제안` 표시.
+- [x] FE 114 공유표(지표별 비교군·단위·기준선·null 의미)와 발견 상세 스냅샷 키 확정.
+- [ ] 정현진 확인: §2 표의 `제안` 항목(적용/보류 판단, 임계값), GOAL 유지 결정. 확인되면 `제안` 표시를 지운다.
+- [ ] FE 114 공유: §3 표 전달. `DiagnosisApiResponse.discoveryIssueCount` 타입 추가는 선택(발견 홈 개수·요약을 서버 값으로 전환할 때).
+- [ ] 후속 구현(§5): **696** 소비 증가 추천 목표 기여(이 브랜치에 포함, 위 절), **697** 리포트 `metrics`(V43, 브랜치 `S15P21D105-697-report-metrics`).
+
+## S15P21D105-697 — [BE] 월간 리포트 주요 지표·금융 생활 패턴 서버 제공 (V44)
+
+계약: [improvement-report-contract.md](improvement-report-contract.md) §7. 675(지표 계약)에서 분리한 후속 구현.
+
+- [x] `MonthlyReport.metrics`(주요 지표 4 + 금융 생활 패턴 3) — `monthly_report.metrics_summary`(V44), `MonthlyReportMetricsAssembler`(`report-metrics-v1`). 697 이전 READY 리포트는 첫 월간 조회 때 보강(`supplementIfMissing` 확장). 효율 점수와 같은 입력이라 육각형 항목 `value`와 같은 수.
+- [ ] **시연 서버**: V44 적용(Flyway 자동. 김지우의 V43 `user_credit_score_int`가 먼저 들어와 번호를 옮겼다). 이미 생성된 8월 리포트는 다음 `GET /reports/monthly` 때 `metrics`가 채워진다. U0003 값(저축률·고정지출 비중이 효율 점수 항목 `value`와 같은지, SPENDING_INCREASE가 발견 화면 카테고리와 같은지) 확인.
+- [ ] FE 인계(114): `ReportKeyMetric`·`ReportFinancePattern`을 `metrics`로 전환하면 리포트 훅의 개별 API 9회 호출이 빠진다. `ReportPatternStatus`에 `unavailable` 추가.
+- [ ] 서비스 초기값: 저축률 양호 경계 20%(FE 임시값 이관), 소비 증가 판정을 진단 규칙(631)으로 통일(API 6 소비 급증과 다를 수 있음 — 627 절의 미해결 항목과 같은 줄기). 바꾸면 `report-metrics-v2`.
+- [ ] 대출 잔액 전월 비교는 월별 잔액 이력이 없어 `HISTORY_NOT_STORED`. 필요하면 대출 잔액 스냅샷(월말) 저장이 선행돼야 한다.
+- [ ] MySQL 검증: H2 통합 테스트(`ReportApiTest`)만 통과. JSON 컬럼 직렬화 경로는 V41과 같아 별도 실측하지 않았다. 서버 적용 후 `GET /reports/monthly` 1회로 확인.
+
+## S15P21D105-640 — [BE, AI] 대화형 시뮬레이션 에이전트 · 군집 이탈 진단 연결
+
+계획: [docs/ai-coach-agent-cluster-plan.md](../../docs/ai-coach-agent-cluster-plan.md). 하위: 641 C-1(군집 이탈 규칙), C-2, A-1~A-3(BE), A-4·C-3(FE), 시연 seed 실측.
+
+### S15P21D105-641 C-1 — 군집 이탈 진단 규칙 (구현 완료 2026-09-18, 브랜치 `S15P21D105-641-cluster-deviation-rule`)
+
+- [x] `ClusterDeviationRule`(특징 5종 방향 필터·`deviation ≥ 0.25`·HIGH ≥ 1.0·30일 stale·노출 조건 재확인), `DiagnosisIssue.attachClusterEvidence`(RULE → RULE_AND_CLUSTER 병합),
+  단독 `CLUSTER` 문제 5 type, coverage `CLUSTER` EVALUATED/UNAVAILABLE(사유), `DiagnosisRuleVersion` `v7-cluster-hybrid`, `DiagnosisRunner`가 진단 전 패턴 분석 보장. 계약: [diagnosis-api.md](diagnosis-api.md) §641.
+- [x] 테스트: `ClusterDeviationRuleTest` 7, `ClusterDeviationDiagnosisApiTest` 3(모집단 48명 인프로세스 학습), 기존 `DiagnosisApiTest` 사유 단언 갱신(`FEATURES_UNAVAILABLE`·`PATTERN_NOT_ANALYZED`).
+- [ ] **임계값 실측(09-23)**: 시연 계정 U0001~U0004(성향 4종)로 진단을 돌려 탐지 건수·라벨을 기록한다. 전부 0건이거나 전부 HIGH면 `FEATURE_DEVIATION_THRESHOLD 0.25`·HIGH 경계 1.0·30일을 조정하고 규칙 버전을 v8로 올린다. 시연 계정 1개는 반드시 `RULE_AND_CLUSTER` 1건이 나와야 한다(U0003은 식비·카페 증가 문제가 있어 재량 소비 비중이 군집 p95를 넘으면 병합된다).
+- [ ] 사용자 1명 패턴 분석 소요 시간 실측(진단 응답 지연에 그대로 더해진다). 서버는 아티팩트 v2를 쓰므로 학습은 없고 집계·배정만이다.
+- [ ] 진단 캐시는 규칙 버전별이라 배포 뒤 첫 진단은 새 행을 만든다. 632 이전 패턴 분석(peer_stats 없음)도 `cluster_stats_json`은 있어 규칙에는 영향 없다.
+- [x] C-2 (2026-09-18, 브랜치 `S15P21D105-640-c2-cluster-recommendation`, 641 위에 쌓음): `ClusterDeviationGenerator`(`<domain>/REVIEW_SPENDING_PATTERN`, 효과 없음, 근거 `CLUSTER_RANGE_DEVIATION`), `RecommendationPriorityPolicy.clusterPoints`(α=1, 최대 10), 프리셋(소득 대비 소비율·재량 소비 비중만 `/simulations/spending` + `REDUCTION_AMOUNT_REQUIRED_FROM_USER`), `CoachFactAssembler` 군집 notes. `RecommendationInput.Issue`에는 `clusterContext`가 이미 있어 리더 변경은 없었다. 테스트: `ClusterDeviationGeneratorTest` 4, `RecommendationPriorityPolicyClusterTest` 2, 프리셋 assembler +1. 계약: recommendation-api.md §2·§3·§5.1·§9.
+- [x] A-1 (2026-09-18, 브랜치 `S15P21D105-640-a1-chat-port`, develop 기준·독립): `CoachTextGenerator.chat(messages, tools, toolChoice) → ChatTurn` 포트와 `ChatMessage`/`ToolDefinition`/`ToolChoice`/`ToolCall` record, `OpenAiCoachTextGenerator.chat`(OpenAI tools 형식 직렬화·`tool_calls` 파싱·재시도 공통화). 기존 `generate`·3종 코치 영향 없음. `OpenAiCoachTextGeneratorTest` +4. 계약: ai-coach.md §13-1.
+- [x] A-2 (2026-09-18, 브랜치 `S15P21D105-640-a2-chat-tools`, A-1 위에 쌓음): `CoachToolRegistry`(7 도구 스키마·칩 3개)·`CoachToolArguments`·`CoachToolDispatcher`(3개 상한, 검증 실패 → 결과 error, 라벨 매칭, 대환 대상 = 진단 추정)·`CoachSimulationFactFormatter`·`CoachToolResult`. 단위 테스트 17. 계약: ai-coach.md §13-2. 실제 GMS·시연 seed 실측은 A-3 뒤 09-23.
+- [x] A-3 (2026-09-18, 브랜치 `S15P21D105-640-a3-chat-service`, A-2 위에 쌓음): `CoachChatService`·`POST /coach/chat`·`CoachTopic.CHAT`(프롬프트 640.1·템플릿·숫자 허용 목록에 사용자 입력·한국어 단위)·입력 문장 민감정보 검사·Redis 세션(`coach:chat:session:`, 6턴·30분·세션당 10턴)·별도 예산(`coach:chat:rl:` 20건/시간)·`RedisWindowCounter` 공유. 테스트 29. 계약: ai-coach.md §13-3.
+- [ ] A-3 후속: 09-23 실측(U0003 칩 3개 실제 GMS 호출, 1차 도구 선택 정확도, 응답 시간), 루트 API 명세 21에 `POST /coach/chat` 반영 요청, FE(A-4) 연동 — `toolResults[].simulationId` → 시뮬레이션 상세, `suggestedQuestions`는 자유 입력 경로.
+- [ ] FE(C-3 추가): `REVIEW_SPENDING_PATTERN` 추천은 `effect`가 전부 null이다 → 발견 목록의 "절약 예상" 자리에 "절감액 산정 전"을 표시하고, 프리셋 `monthlyReduction: null`은 사용자 입력을 받아 채운 뒤 POST한다.
+- [ ] FE(C-3): `detectionSource`가 CLUSTER·RULE_AND_CLUSTER면 "또래 비교" 배지, `clusterContext` 카드, `DOMAIN_LABELS`·`DOMAIN_ICONS`에 `SAVING` 추가(단독 저축률 문제의 도메인).
+
+## S15P21D105-635 — 리포트 금융 효율 점수·K-Means 또래 비교 연동 (FE 요청 회신)
+
+계약: [improvement-report-contract.md](improvement-report-contract.md) §6, [pattern.md](pattern.md) §peer-comparison "635 FE 회신". 브랜치 `S15P21D105-635-report-efficiency-peer`.
+
+### 구현 완료 (2026-09-18)
+
+- [x] 요청 1 금융 효율 점수: `MonthlyReport.efficiency`(전체 + 6개 항목, `efficiency-v1`), V41 `monthly_report.efficiency_summary`, 전월 차이, 635 이전 READY 리포트 조회 시 보강. `EfficiencyScorePolicyTest` 12 · `ReportApiTest` +3.
+- [x] 요청 2 또래 비교: `analyzedAt`·`analysisPeriod`·`features[].direction` 추가(조회 때 분석 행에서 채움), 단위·백분위·상태별 안내 회신. `PatternApiTest` 단언 추가.
+- [x] 요청 3 카드 사용액: `cardSpending`·`cardSpendingPreviousMonth`·`cardSpendingDifferenceFromPreviousMonth`(소비 정의 + `card_id` 또는 `payment_method = CARD`).
+
+### 남은 것
+
+- [ ] **산식 임계값은 서비스 초기값**(지출 0.5~1.0, 저축 0~0.3, 고정지출 0.3~0.7, 위험·문제 감점). 680에서 CREDIT을 예상 신용점수로 바꾸며 `efficiency-v2`로 올렸다. 서버 적재 후 U0003 결과를 확인하되 점수는 하드코딩하지 않는다.
+- [ ] 리포트 도메인(590)은 김지우 담당이었다. 635는 BE-A가 작업했으므로 MR 리뷰에서 리포트 담당자 확인을 받는다.
+- [ ] FE: 리포트 카드가 `POST /patterns/analyze` → `GET /patterns/me/peer-comparison` 순서로 호출해야 한다(분석은 호출 시에만 생성). 시연 계정은 632 이전 분석이라 `forceRefresh` 1회 필요(632 남은 것과 같음). 오각형은 `direction = LOWER_IS_BETTER` 축을 `100 − percentileInPeer`로 뒤집어야 "바깥이 좋음"이 된다.
+- [ ] 리포트 상세(`GET /reports/{id}`)는 보강하지 않는다. FE가 상세를 목록에서 바로 열 때 `efficiency = null`일 수 있으면 월간 조회를 먼저 거치게 하거나 상세에도 보강을 넣는다(현재는 readOnly 유지).
+- [ ] 신용점수·등급은 현재 값이라 과거 달 리포트에 조회 시점 값이 들어간다. 월별 원점수 이력이 필요하면 별도 이력 테이블이 필요하다(리포트 안의 효율 점수는 생성 시점 JSON으로 보존됨).
+- [ ] 서버 배포 시 Flyway V41 적용 확인. 배포 전 생성된 시연 계정 리포트는 첫 월간 조회 때 채워진다.
+
+## S15P21D105-633 — 시연 계정 데이터 수정 (U0003 고금리 대출·예적금 상품 추천)
+
+요청 원문: "3번 계정 — 고금리 대출을 보유한 상태로 데이터를 조정해 비효율 항목에 노출", "'발견' 화면의 추천에 예·적금 상품이 노출되도록 데이터를 조정".
+브랜치 `S15P21D105-633-demo-account-data`.
+
+### 1. 고금리 대출 — seed로 해결 (구현 완료, 서버 적용 대기)
+
+- [x] `backend/database/seeds/DODAM_DEMO_LOAN_SEED.sql`(13번) + `backend/scripts/make_demo_loan_fixture.py`. U0003에 `KB 국민ONE대출` 연 8.5%(잔액 12,998,492, 잔여 36회) 1건과 상환 8건. 627 규칙이 비교군 `CREDIT` 중앙값 5.229% 대비 +3.271%p → **HIGH**, 대환 추천(연 247,080원 절감)까지 로컬에서 끝까지 확인했다. 수치·절차는 [seeds/README.md](../database/seeds/README.md) §시연 계정 U0003 고금리 대출.
+- [x] **서버 적용**: 2026-09-18 인프라(김지우)가 13번 적재 완료(`docker compose exec -T` + `MYSQL_PWD`, preflight 1/1/1/1/1/1/0, 대출 1건·상환 8건). U0003 재진단에서 고금리 대출 HIGH(+3.271%p)·대환 추천(741,260원)까지 확인(`infra/todo/jiw/day-12.md`). README의 서버 적용 블록은 `.env` 키 이름(`MYSQL_USER`/`MYSQL_PASSWORD`, `DB_USERNAME` 아님)·컨테이너 경유·`MYSQL_PWD`로 고쳤다. 서버 seed 상태: 1~11·13번 적용, **12번(632 인구통계 backfill) 미적용**.
+- [ ] 다른 시연 계정은 그대로다. U0002는 주택담보 3.9%(비교군 MORTGAGE), U0004는 전세 3.2% + 보조 대출(523 변형 1: 신한 사잇돌 중금리)이라 고금리 판정 대상이 아닐 가능성이 크다(서버 진단 결과로 확인).
+
+### 1-2. S15P21D105-636 시연 계정 소비 변동 조정 — U0003 이름 `김싸피`·소비 스토리 (seed 14번, 서버 적용 대기)
+
+- [x] `DODAM_DEMO_U0003_STORY_SEED.sql`(14번): 이름 변경 + U0003 변동 소비 2026-03~09-27을 월별 스토리로 재생성(아웃라이어는 5월 제주 여행 한 달만 약 +65%, 나머지 여섯 달은 ±5%; 8월은 외식·카페 증가를 마트·쇼핑 감소로 상쇄해 총액 평이). 627 규칙에 FOOD(+51.5% HIGH)·CAFE(+45% MEDIUM) 두 개만 걸리도록 맞춤. 로컬 e2e(진단 3건·추천 3건·이름) 확인. 수치·절차는 seeds/README §시연 계정 U0003 소비 스토리.
+- [ ] **서버 적용**(인프라, fixture 불필요): 13번과 같은 `docker compose exec` 명령으로 14번 실행 → U0003 `POST /diagnoses {"forceRefresh":true}`로 재진단. 브랜치 `S15P21D105-636-demo-spending-story`.
+- [ ] 고정비가 U0003 소비의 70%대(491 `fixed_expense` 64%)라 총소비 그래프에는 5월 봉우리(5.3백만) 외에는 4.6~4.7백만으로 평이하다. 총액 변화도 더 키우려면 491의 고정비 비율(주거 2,371,200)을 손대야 하며 이는 4,000명 공통 식이라 별도 결정.
+
+### 2. 예·적금 상품 추천 — 데이터 조정으로는 불가 (BE 기능 필요, 결정 대기)
+
+- 발견 화면의 추천은 진단 문제(`diagnosis_issue`)에서 생성기가 만든 `recommendation`만 보여 준다. **예·적금과 관련된 진단 규칙·추천 생성기가 없다**(recommendation-api.md §"카드·계좌·예적금 추천 — 대응 진단 규칙 미구현"). FE 발견 화면도 상품 API(`/v1/products`)를 호출하지 않는다. 즉 어떤 seed 값을 바꿔도 예·적금 상품이 발견 화면에 나타나지 않는다.
+- 유일하게 가까운 기존 추천 `SAVING/INCREASE_MONTHLY_SAVING`(GOAL/SAVING_GOAL_RISK → 월 저축 증액)은 상품을 가리키지 않고, 607에서 FE가 GOAL 도메인을 발견 목록에서 숨기기로 해 화면에도 나오지 않는다.
+- 구현하려면(627 고금리 대출과 같은 구조, BE 하루 안팎):
+  1. 진단 규칙 `DEPOSIT/LOW_INTEREST_RATE`: 보유 정기예금 금리를 `DepositRateComparisonService`(API 12 예금 금리비교, 같은 기간·업권 기본금리 중앙값, `HIGHER_IS_BETTER`)로 판정. 기준 편차·심각도는 새로 정한다.
+  2. 추천 생성기 `DEPOSIT/SWITCH_DEPOSIT_PRODUCT`: 비교군에서 같은 기간 최고 기본금리 상품(`targetProductId`)과 만기까지 세후 이자 차액을 효과로. 시뮬레이션 프리셋은 585 예적금 가입 실행 API로 연결.
+  3. FE 발견 상세: 목표·대출·현금흐름처럼 `issue.title/description`만 갈아 끼우는 공용 화면으로도 표시는 되지만, 상품명·금리 비교 카드는 607 요청서 3번(도메인별 고유 수치 계약)과 함께 정해야 한다.
+- 데이터 측면: U0003의 보유 예금은 524 변형 1 `신한 쏠편한 정기예금` 3.05%·24개월·2,000만원(ACTIVE)이고, 상품 DB의 24개월 정기예금 기본금리 최고는 카카오뱅크 3.00%라 **지금 값으로는 "더 좋은 상품"이 없다**. 규칙을 만들면 U0003 예금 금리를 2%대로 낮추는 시연 seed(13번과 같은 방식, 524 fixture 불필요 — 기존 행 UPDATE)를 함께 넣어야 한다. 상품 DB에 적금(`SAVING`)은 0건이라 "적금 추천"은 상품 seed 보강도 필요하다.
+- [ ] 위 범위를 시연 전에 넣을지(어느 파트가 맡을지) 팀 결정. 결정되면 규칙·생성기·seed를 한 브랜치로 진행한다.
+
+## S15P21D105-632 — K-Means 군집 내 위치·동년배 비교 (V40)
+
+설계·결정: [pattern-peer-comparison-plan.md](pattern-peer-comparison-plan.md). 계약: [pattern.md](pattern.md) §clusterProfile(632)·§GET /patterns/me/peer-comparison. 아티팩트: [ml/pattern/README.md](../ml/pattern/README.md) §v2.
+
+### 구현 완료 (2026-09-17)
+
+- [x] seed 491 생년월일·성별 보강(성별·나이대가 군집 신호를 갖지 않게 배분), 아티팩트 `spending-kmeans-v2`(격자·집단 34개·모집단), `ClusterModel`/`ClusterModelArtifact` v2 파싱(v1 하위 호환), 인프로세스 학습도 같은 격자 생성.
+- [x] `clusterProfile`에 `percentileInCluster`·`rankBand`·`positionSummary`·`insights`, `GET /patterns/me/peer-comparison?dimension=` 4축 + 자동 확장, V40 `peer_stats_json` 저장, AI 코치 "또래 비교(서버 계산)" 섹션.
+- [x] 검증: H2 `PeerComparisonCalculatorTest` 4·`StatsPercentileRankTest` 2·`PatternApiTest` +1·`ClusterModelArtifactLoaderTest` v2 단언, MySQL 8.0 게이트 `PatternMySqlIntegrationTest`(V40 validate).
+
+### 남은 것
+
+- [ ] **시연 서버 적재**: 632 병합·배포(Flyway가 V40 적용) 뒤 서버 MySQL 컨테이너에서 `backend/database/seeds/DODAM_USER_DEMOGRAPHICS_BACKFILL.sql`(12번)을 실행한다 — fixture·491 재적재 불필요, 두 컬럼만 갱신, 0.3초. 491을 다시 돌리는 방식은 fixture 재생성과 492 재실행(`last_transaction_date` 복구)이 필요해 쓰지 않는다. 그 전까지 서버의 동년배 비교는 seed 사용자에게 `DEMOGRAPHICS_MISSING`이다(아티팩트 v2의 집단 통계는 이미 들어 있어 모델은 정상). 시연 계정 U0001~U0004는 여·남·여·남, 29·36·43·50세로 채워진다(629 남은 작업 해소). 적재 뒤 시연 계정으로 `POST /patterns/analyze {"forceRefresh":true}` → `GET /patterns/me/peer-comparison`으로 확인한다.
+- [ ] FE 연동: 패턴 API는 FE가 아직 하나도 호출하지 않는다(fe-be-api-integration-status §5). `positionSummary`·`insights`·`peer-comparison`을 발견/리포트 화면 어디에 붙일지 정한다. `insights[].code` 분기표를 FE에 전달.
+- [ ] 임계값(TOP 90 / UPPER 75 / LOWER 25 / BOTTOM 10, 문장 임계 90·75·50, 최소 표본 30·10)은 서비스 초기값. 기획과 확정하면 `app.pattern.*`·`RankBand`를 조정한다.
+- [ ] 632 이전 분석 행은 `peer_stats_json`이 NULL이라 `NOT_COMPUTED`다. 시연 계정은 배포 뒤 `forceRefresh` 분석을 한 번 돌려 채운다(`be-a-server-smoke.sh`에 추가 검토).
+- [ ] 신용등급(A~E)을 비교 축에 추가하는 것은 실회원 등급이 쌓인 뒤 재검토(seed 회원은 등급 없음). 재학습 주기·위치는 518 절과 같다.
+
+## S15P21D105-629 — User 생년월일·성별·신용등급 (V39)
+
+구현 계약: [user-profile.md](user-profile.md), [finance-data.md](finance-data.md) §신용등급 저장.
+
+### FE·명세 인계
+
+- [ ] FE: 회원가입·내 정보 수정 화면에 `birthDate`(yyyy-MM-dd)·`gender`(MALE/FEMALE) 입력을 붙이고, `GET /users/me` 응답 타입에 `birthDate, age, gender, creditRating, creditRatingUpdatedAt`(모두 null 가능)을 추가한다. 기존 회원·seed 계정은 전부 null이므로 빈 상태 표시가 필요하다.
+- [ ] API 명세서(Notion) 1 Auth 회원가입 Body와 2 User 조회·수정에 위 필드를 반영한다. 레포 CSV는 Notion 내보내기라 직접 고치지 않는다.
+
+### 신용등급 갱신 시점
+
+- [ ] 등급은 `GET /finance-data/credit-rating`·`POST /finance-data/sync`가 성공할 때만 갱신된다. FE가 둘 중 어느 것도 호출하지 않는 회원(현재 FE는 sync·credit-rating 모두 미호출)은 계속 null이다. 홈 진입 시 동기화를 호출할지, 서버 스케줄(알림 08:00 배치 등)에 등급 갱신을 붙일지 FE·팀과 정한다.
+- [x] 금융망 A~E를 숫자로 환산하지 않고, 680에서 별도 `DODAM_CREDIT_V1` 예상 신용점수를 추가했다. 실제 CB 조회값이 아니므로 화면 표기는 `도담 예상 신용점수`다.
+
+## S15P21D105-680 — 4,000명 예상 신용점수 (V42)
+
+- [x] `user.credit_score`와 출처·모델 버전·산정 시각 추가. 기존 SSAFY A~E 등급은 호환용으로 유지.
+- [x] KCB 공개 평가영역 비중을 적용한 `DODAM_CREDIT_V1` seed 및 검증 쿼리 작성.
+- [x] `GET /users/me`에 점수·`ESTIMATED/VERIFIED`·출처·버전·산정 시각 추가.
+- [x] 월간 리포트 CREDIT 항목을 점수 우선(`efficiency-v2`)으로 변경하고 등급 fallback 유지.
+- [ ] FE: `creditScoreType=ESTIMATED`이면 `도담 예상 신용점수`와 참고 지표 안내를 표시한다. KCB/NICE 점수로 표기하지 않는다.
+- [ ] 운영·시연 DB: V42 적용 후 모든 최종 demo seed 다음에 `DODAM_USER_CREDIT_SCORE_SEED.sql`을 실행하고 U0003 출력값을 확인한다.
+
+### 시연 데이터
+
+- [x] (632, 2026-09-17) seed 491이 전원의 생년월일·성별을 채우도록 보강했다(서버 재적재는 632 절). 원문: seed(491)는 컬럼을 명시한 INSERT라 V39 뒤에도 그대로 실행되지만 U0001~U0004의 생년월일·성별은 NULL이다. 시연 화면에서 나이·성별을 보이려면 seed 또는 서버 UPDATE로 4명 값을 채운다. 신용등급은 시연 서버에서 동기화 1회로 채워진다(금융망 키는 2026-09-15 교체 완료).
+
+### 정책 기본값
+
+- [ ] `gender`는 MALE/FEMALE 2종이다(DDL CHECK·enum). 제3 값이 필요하면 V40 이후에서 CHECK를 바꾼다.
+- [ ] `age`는 서비스 시간대(Asia/Seoul) 오늘 기준 만 나이다. 한국식 나이·연 나이가 필요하면 FE가 `birthDate`로 계산한다.
+- [ ] `@Past`라 오늘 날짜 생년월일은 거부된다(당일 출생 가입은 현실적으로 없음).
+
+### MySQL 검증
+
+- [x] (2026-09-17) 로컬 Docker `mysql:8.0`에 V1~V39 적용 후 `UserDemographicsMySqlIntegrationTest`로 `ddl-auto: validate` 통과, `chk_user_gender` CHECK 거부, DATE·DATETIME 왕복, 신용등급 기록 경로를 확인했다. 결과는 [user-profile.md](user-profile.md) §검증.
+
+## S15P21D105-627 — 발견 화면 진단 규칙 확장 (소비 증가·고금리 대출)
+
+구현 계약: [diagnosis-api.md](diagnosis-api.md) §규칙·근거(627 절), [recommendation-api.md](recommendation-api.md) §2·§5.1. 범위 결정: [diagnosis-627-plan.md](diagnosis-627-plan.md)
+
+### FE 요청 중 범위 밖으로 남긴 항목
+
+- [x] (S15P21D105-628, 2026-09-16) 추천 응답 `sourceIssueId` — `V36` 컬럼·Store 검증·응답 5곳. [recommendation-api.md](recommendation-api.md) §4, [recommendation.md](recommendation.md) §2·§6·§10. 남은 것: 루트 명세 16에 응답 필드 반영(사용자 요청 시), FE에 "628 이전 추천은 null" 전달.
+- [x] (2026-09-16, 브랜치 `S15P21D105-548-recommendation-summary-fields`) `GET /recommendations/summary`에 `discovery{diagnosisId, issueCount, openRecommendationCount, expectedAnnualCostSaving, expectedGoalAdvanceDays, notes[]}` 추가 — 최신 완료 진단 한 건 기준, 문제별 최대 대안 합산, 단축일은 최댓값(복합 미실행, note로 명시). FE에 형태 확인 필요. 원문: **발견 요약 통합 수치**(문제 수·전체 개선 시 연 절감액·목표 단축일): 현재 `GET /recommendations/summary`는 사용자 전체 PENDING·ACCEPTED 추천을 단순 합산한다. 같은 문제의 대안 추천 중복 제거와 Combined Simulation 기반 목표 단축일 계산이 필요하다. 계산 불가는 0이 아니라 null + 사유로 준다.
+- 미사용 구독(사용 기록 없음)·유휴자금(비상금·생활비 보존 기준 미정)은 2026-09-16 FE와 합의해 하지 않기로 했다. 다시 하려면 "정기결제 점검" 표현 또는 사용 기록 데이터 추가가 선행돼야 한다.
+
+### 대환 프리셋을 FE가 실행할 수 없다
+
+- [x] (2026-09-16, 브랜치 `S15P21D105-587-refinance-loan-id`) `POST /simulations/loan/refinance`·`/loan/prepayment` 본문에 `loanId?`를 추가하고(accountNo와 정확히 하나), 프리셋이 evidence의 `loanId`를 싣는다. `GET /loans` 목록·상세에도 `loanId`를 추가해 FE가 값을 얻을 수 있다. 원문: 명세 17 `POST /simulations/loan/refinance` 본문은 `accountNo`(원문)만 받는데 FE는 마스킹 값만 가진다. 대환 추천 프리셋은 `accountNo: null` + 가정 `ACCOUNT_NO_REQUIRED_BY_CLIENT`로 나가며 그대로 POST하면 400이다. 619가 저축 프리셋에 `goalId`를 추가한 것처럼 `loanId?`(accountNo와 동시 지정 불가, 타인·없는 대출 404)를 본문에 추가하고 프리셋이 근거 `REFINANCE_INTEREST_SAVING`의 `loanId`를 싣도록 바꾼다. 같은 이유로 `GET /loans/{accountNo}/*` 계열도 FE가 호출할 수 없다(533 절 참고).
+
+### 서비스 초기값으로 둔 기준
+
+- [ ] 소비 증가 심각도 경계(증가율 50% → HIGH), 고금리 심각도 경계(편차 2.0%p 또는 연체 → HIGH), 비교 기간(631부터 지난달 vs 직전 3개월 평균), 미분류 제외, 대환 후보의 같은 업권 한정은 팀 확정값이 아니다. 바뀌면 `DiagnosisRuleVersion`을 올린다.
+- [ ] 대환 절감액은 잔여 회차와 정확히 같은 `term` 옵션이 있는 상품만 대상이다(시뮬레이션과 같은 제약). 시연 seed의 대출 상품 옵션이 12·24·36·60개월 위주라 잔여 회차가 그 값과 다른 대출은 대부분 `NO_ELIGIBLE_PRODUCT`가 된다. seed 환경에서 실제 판정 건수를 확인하고, 필요하면 인접 기간 옵션 허용 여부를 시뮬레이션(585)과 함께 정한다.
+- [ ] 대출 판정은 API 11 `highInterest`를 재호출하므로 대출 상품 전량을 진단마다 읽는다(76개 상품·319 옵션 규모라 문제없음). 상품 수가 크게 늘면 재검토.
+
+### MySQL 검증
+
+- [ ] 스키마 변경은 없다. H2 통합 테스트만 통과했고 MySQL JSON 컬럼(`current_value`의 BigDecimal·LocalDate 직렬화)은 기존 규칙과 같은 경로라 별도 실측하지 않았다. seed 환경에서 `POST /diagnoses` 한 번으로 두 규칙의 실제 결과를 확인한다.
+
+### 소비 증가 기준 변경 (S15P21D105-631, 2026-09-17)
+
+결정·검토 표: [diagnosis-627-plan.md](diagnosis-627-plan.md) §소비 증가 기준 변경. 계약: [diagnosis-api.md](diagnosis-api.md) 627 절, [recommendation-api.md](recommendation-api.md) §2·§5.1.
+
+- [x] 지난달 vs 직전 3개월 평균으로 변경. `DiagnosisRuleVersion` `v6-last-month-vs-3m`, 생성기 `627.3`. 기존 v5 진단·추천은 보존된다.
+- [x] 프리셋 400 방지: 감소액을 시뮬레이션 기준선 상한으로 자름(`REDUCTION_CAPPED_TO_SIMULATION_BASELINE`), 기준선 소비 없으면 `SIMULATION_BASELINE_UNAVAILABLE`.
+- [ ] **임계값 재검토**: 단월 비교는 탐지 건수가 늘 수 있다. 시연 서버(9월 거래 seed 적재 완료, 625)에서 `POST /diagnoses {forceRefresh:true}` 뒤 `CATEGORY_SPENDING_INCREASE` 건수를 v5 결과와 비교해 월 1만 원·20% 유지 여부를 정한다.
+- [ ] **연 절감액 표기**: `annualCostSaving = 단월 증가 × 12` 유지 + evidence `annualizationBasis`. FE·기획이 "지속 시 연간" 표기 또는 미표시를 정하면 `627.4`로 올린다. 추천 요약 `discovery.expectedAnnualCostSaving`도 같은 값을 합산한다.
+- [ ] FE 인계: `description` 문구 변경("지난달 소비가 직전 3개월 평균보다 N% 높아요."), `currentValue.lastMonthAmount` 신규, `recentPeriod.months = 1`·`baselinePeriod.months = 3`, `evidence.monthly[]` 4개월, 프리셋 `assumptions`에 새 코드 2종. v5 진단은 `ruleVersion`으로 구분해 문구를 분기할 것.
+- [ ] 별도 협의(FE): 가맹점별 증가 원인(`topMerchants[]`, 가맹점명 정규화 선행), 3단계 절약 계획(서버 데이터 아님), 목표 달성일 단축(추천 goal-impact 연결). 계획서 표 아래 판단 참고.
+- [ ] API 6 `GET /spending/anomalies`는 여전히 N개월 평균 대 N개월 평균이다. 두 화면 판정이 갈라지는 것을 FE·기획에 알리고, 가계부 화면도 단월 기준으로 맞출지 정한다.
+
+## S15P21D105-589 — AI Coach (API 21)
+
+구현 계약: [ai-coach.md](ai-coach.md)
+
+### 응답 캐시
+
+- [x] (2026-09-16) Redis 캐시 적용. 키 `coach:<userId>:<topic>:<facts 해시>`, TTL 기본 1시간. 무효화는 facts 해시가 하므로 별도 코드가 없다. [ai-coach.md](ai-coach.md) §10.
+- [ ] **배포 후 Redis 연결을 확인한다.** 이 프로젝트에서 Redis를 쓰는 첫 코드라 비밀번호·연결 설정이 실제로 맞는지 여기서 처음 드러난다. 실패해도 코치는 정상 동작하므로(예외를 삼킨다) 겉으로는 티가 안 난다 — 로그에서 `Coach cache lookup failed`가 반복되는지 봐야 한다.
+
+### 사용자별 호출 레이트 리밋이 없다
+
+- [ ] 코치 3종에 사용자당 호출 제한을 건다. 외부 과금이 걸린 유일한 엔드포인트인데 nginx 레이트 리밋은 로그인 경로에만 걸려 있다.
+
+### 군집 근거가 아직 비어 있다
+
+- [ ] `diagnosis_issue.cluster_context_json`은 항상 null이다(`DiagnosisEvaluator`가 `CLUSTER: UNAVAILABLE/CLUSTER_NOT_CONNECTED`를 남긴다). 545가 군집 신호를 붙이면 코치의 "군집 근거" 구간이 코드 변경 없이 채워진다 — 붙은 뒤 실제로 실리는지 확인한다.
+- 요약(`/financial-summary`)의 군집 구간은 `pattern_analysis`의 완료 행을 읽으므로 이미 동작한다. 두 경로가 다르다.
+
+### 모델 교체 시 파라미터명
+
+- [x] (2026-09-16) 설정으로 뺐다 — `max-tokens-parameter`(기본 `max_tokens`)와 `temperature`(비우면 본문에서 제외). 모델 교체가 코드 변경이 아니다. [ai-coach.md](ai-coach.md) §8-1.
+- [ ] 추론형 모델로 바꾼다면 `read-timeout`(현재 PT12S)도 함께 올린다. 넘기면 `AI_UNAVAILABLE`로 조용히 템플릿에 내려가 "느려졌다"는 사실이 드러나지 않는다.
+
+### 완료 진단 판별이 두 곳에 있다
+
+- [ ] "완료된 진단만 본다"(`filter(Diagnosis::isCompleted)`)가 `DiagnosisQueryService:70`과 `CoachFactAssembler:369` 두 곳에 있다. 지금은 같지만 진단 쪽 조건이 바뀌면(예: 취소 상태 추가) 코치는 따라가지 않는다 — 조용히 갈라지는 종류의 중복이다.
+- 해법 제안: `DiagnosisRepository`에 `findCompletedByDiagnosisIdAndUserId` 같은 메서드를 두고 양쪽이 공유한다. 조회 서비스를 호출하는 방식은 코치가 DTO 변환·페이징을 거치게 되고 도메인 결합이 생겨 택하지 않았다(코치가 리포지토리를 직접 쓰는 이유는 [ai-coach.md](ai-coach.md) §3-1).
+- 담당 근거: `DiagnosisRepository`는 진단 도메인 소유라 589에서 임의로 고치지 않았다.
+
+### 명세서 진행상태
+
+- [ ] `docs/API명세서/21 AI Coach ....csv`가 아직 "시작 전"이다. Notion 내보내기 파일이라 레포에서 고치면 다음 내보내기에 덮인다 — Notion에서 갱신할 것.
+
+### FE 연동
+
+- [x] (2026-09-16) [ai-coach-fe-guide.md](ai-coach-fe-guide.md) 작성 — FE가 지금 바로 붙일 수 있다(응답 캐시·다음 배포·AI 연동 어느 것도 기다릴 필요 없음). 타입·api 모듈 예시는 FE 기존 컨벤션(`apiClient.post<T>`, `@/types/*.types.ts`)에 맞췄다.
+- [ ] 다음 배포 후 FE에 알린다 — 그 전까지는 `source`가 항상 `TEMPLATE`이라 AI 분기를 실동작으로 확인할 수 없다.
+
+### Day 11 선공유 계약
+
+- [ ] [improvement-report-contract.md](improvement-report-contract.md)를 FE에 전달하고 필드를 합의받는다. 구현 전 선공유본이라 계산식 세부는 Day 11에 확정된다.
+
+## S15P21D105-587 — Simulation 전체 통합·추천 연결
+
+구현 계약: [simulation.md](simulation.md) §11, [recommendation-api.md](recommendation-api.md) §5.1
+
+### 시연 seed 환경에서 10종 실행 확인
+
+- [x] (616, 2026-09-16) 시연 서버에서 시연 계정 4개로 10종 실행·goal-impact를 실측하고 simulation.md §7 "616 시연 seed 실측"에 기록했다. 9종 201, 대환은 seed 자료 한계로 400 `SIMULATION_PRODUCT_OPTION_UNAVAILABLE`. 계획·근거는 [simulation-616-plan.md](simulation-616-plan.md).
+- 남은 것(코드 아님, 자료 담당에 전달): 523 seed 대출의 `next_repayment_date`가 2026-09 고정값이라 09-21부터 시연 계정에 추가상환·대환 가능한 대출이 없다. 대환 201을 시연하려면 잔여 회차가 옵션 term(6/12/24/36)과 같은 대출을 시연 계정에 두어야 한다. U0001의 목표는 이미 달성 상태다.
+
+### 카드 목록 응답의 `cardId`
+
+- [x] (2026-09-16, 브랜치 `S15P21D105-527-card-list-card-id`) `GET /cards` 목록과 `GET /cards/{cardNo}` 상세에 `cardId`를 추가했다. 루트 명세 8 반영은 별도 요청 필요. 원문: 리볼빙 시뮬레이션(명세 17)과 `GET /installments?cardId=`가 `cardId`를 받는데 카드 목록은 마스킹 번호·이름·상태만 내려 FE가 값을 얻을 경로가 없다.
+- 근거: 616 실측에서 `GET /installments` 항목의 `cardId`로 역추적해야 했다(simulation.md §7). 카드 상세 경로는 `{cardNo}` 원문 기반이라 대안이 못 된다.
+- 담당 근거: 카드 API는 BE-B. 응답 필드 추가라 루트 명세(카드 목록) 변경 여부를 확인해야 한다.
+- 완료 조건: 카드 목록 항목에 `cardId`가 있고 card-basic-query.md와 FE 146에 공유된다.
+
+### 저축 프리셋의 목표 지정
+
+- [x] (619, 2026-09-16) 명세 17 `POST /simulations/saving` 본문에 `goalId?`를 추가했다(`accountNo`와 동시 지정 400, 타인·없는 목표 404, 본인 SPENDING·비ACTIVE 400, 지문·저장 파라미터 포함, 복합 SAVING 자식 동일). 저축 프리셋 `request.goalId`에 추천의 goalId가 실리고 가정 `TARGET_GOAL_NOT_SELECTABLE_WITHOUT_ACCOUNT`는 goalId 없는 방어 경로에만 남는다. `goalId` 없는 지문은 이전과 같아 기존 재사용이 유지되며 계산 버전은 올리지 않았다. 계약은 simulation.md §4·§11.1, recommendation-api.md §5.1, 계획은 [simulation-619-plan.md](simulation-619-plan.md).
+- 남은 것: 루트 [명세 17](../../docs/API명세서/17%20Simulation%203cdbb6ea356480a38af4c6f56a5280f2.csv) `POST /simulations/saving` Body에 `goalId?`와 "accountNo와 동시 지정 불가"를 반영해야 한다(루트 문서는 사용자 요청 시 수정). FE 146에는 프리셋 `request.goalId`와 응답 `request.goalId` 키 추가를 전달한다.
+- 관련: 입출금 계좌 다중 할당(S15P21D105-626)은 별도 기획 확인 후 진행한다.
+
+### 테스트 컨텍스트 캐시와 공유 H2
+
+- [ ] 공유 H2(`jdbc:h2:mem:dodam`)와 `create-drop`을 쓰는 기존 통합 테스트(User·Transaction·Spending·Subscription 등)가 Spring 컨텍스트 캐시 축출에 취약하다. `spring.test.context.cache.maxSize` 상향(`junit-platform.properties`) 또는 해당 테스트의 DB URL 분리를 검토한다.
+- 근거: 587에서 새 컨텍스트 2개를 더한 첫 전체 빌드에서 96건이 `Table "auth_session" not found`로 실패했다. 같은 커밋의 깨끗한 worktree는 통과했으므로 컨텍스트 수 증가가 원인이다. 587은 신규 테스트가 기존 컨텍스트(586 URL·같은 MockitoBean)를 공유하도록 바꿔 우회했다.
+- 선행 조건: 공용 테스트 설정 변경이라 팀 확인이 필요하다. 다음에 새 `@SpringBootTest` 컨텍스트를 추가하는 작업에서 같은 문제가 재발할 수 있다.
+- 담당 근거: BE-B 소관이 아니다. 깨지는 테스트는 BE-A 도메인이고 `application-test.yml`(과 새로 둘 `junit-platform.properties`)은 공용 설정이다. 587은 발견·기록만 했으며 담당은 팀에서 정한다(BE-A 113 인계 이슈에 전달).
+- 완료 조건: 컨텍스트를 추가해도 전체 빌드가 순서와 무관하게 통과한다.
+
+### MySQL 검증에서 빠진 항목
+
+- [x] (617, 2026-09-16) 세 항목을 `SimulationMySqlIntegrationTest`에 추가해 MySQL 8.0에서 7건 통과. 결과는 simulation.md §11.3, 계획·결정은 [simulation-617-plan.md](simulation-617-plan.md).
+- 기록만 한 것: `type` 없는 목록 조회는 JPQL `(? IS NULL OR type = ?)` 때문에 `idx_simulation_user_type_created`의 두 번째 컬럼을 못 쓰고 filesort한다(사용자·하루 단위 양이 작아 587 설계 유지). EXPLAIN 실제 선택(`key`)은 단언하지 않았다.
+
+### 계산 일관성 검증(계획 §4) 중 미고정 항목
+
+- [x] (618, 2026-09-16) 소비 추천 효과 = 프리셋 실행 가용자금 증가(`RecommendationApiTest`), 복합 자식 9종 전체(10개) 순서 교환 불변(`SimulationIntegrationApiTest`)을 고정했다. 결과는 simulation.md §11.1·§11.2, 계획·결정은 [simulation-618-plan.md](simulation-618-plan.md).
+- 기록만 한 것 1: 소비 프리셋의 `monthlyReduction`(이번 달 예산 초과분)이 시뮬레이션 기준선 평균 지출(직전 3개월)을 넘으면 실행이 400 `SIMULATION_REDUCTION_EXCEEDS_SPENDING`이다. 587 프리셋 설계의 알려진 제한이며 FE 146은 사용자가 값을 고쳐 실행한다. 프리셋 조립 시 상한을 잘라 넣을지는 팀 결정.
+- 기록만 한 것 2: 복합의 `goalImpacts[].reasons` 원소 순서가 자식 순서를 따른다(집합은 같음). `assumptions`처럼 알파벳순으로 고정하려면 `CombinedCalculator.childReasons`를 정렬하면 되지만 저장 JSON이 바뀌므로 계산 버전과 함께 결정한다.
+
+### Jira 원문 확인
+
+- [ ] Jira 587 원문은 미확인이다. 로컬 내보내기(`SPRINT/Jira (4).csv`)가 572까지라 스프린트 보조 자료 Issue ID 123으로 범위를 정했다(simulation-587-plan.md §1). 제목·완료 조건이 다르면 계획서 §1과 이 절 제목을 갱신한다.
+- 담당 근거: 본인 이슈다. Jira 티켓으로 올리지 않고 직접 확인한다.
+
+## S15P21D105-535 — 예·적금 ERD 제약 동기화
+
+구현 계약: [deposit-savings.md](deposit-savings.md)
+
+- [ ] 루트 ERD SQL의 `chk_deposit_saving_withdrawal_account`에 V15와 같은 `withdrawal_account_type IS NOT NULL` 조건을 반영한다.
+- 근거: MySQL CHECK는 UNKNOWN을 허용한다. 원본은 출금계좌 ID가 있어도 유형 NULL로 복합 FK를 우회할 수 있어 V15에서 보완했다.
+- 선행 조건: 루트 docs 수정은 사용자 명시 요청 범위가 아니므로 이번에는 변경하지 않았다.
+- 완료 조건: ERD와 V15가 같은 출금계좌 NULL 조합·유형·소유권 제약을 표현한다.
+
+## S15P21D105-536 — 예금 상세·금리비교·예상금액
+
+구현 계약: [deposit-detail.md](deposit-detail.md)
+
+### 중도해지이율 공시값 확보
+
+- [ ] 상품별 공시 중도해지이율을 확보해 `global/policy/EarlyTerminationRatePolicy`(2026-09-16 예·적금 통합)의 구간표를 대체한다.
+- 근거: 명세 11-1에 계산식이 없고 ERD `deposit_saving`에는 계약이율만 있어 중도해지이율 컬럼이 없다. 현재 값은 시중은행 관행으로 정한 **서비스 추정치**이며 응답의 `ratePolicy`·`rateTier`와 `ESTIMATED_EARLY_TERMINATION_RATE`로 드러낸다.
+- 선행 조건: `financial_product_option`에 중도해지이율을 담을 컬럼이 없다. ERD 변경과 상품 동기화 범위를 팀이 정해야 한다.
+- 완료 조건: 상품별 공시값으로 계산하고 추정 가정 코드를 응답에서 제거한다. 자료가 없는 상품은 추정치로 떨어진다는 사실을 응답에서 구분한다.
+
+### 과세 구분 반영
+
+- [ ] 비과세·세금우대·분리과세를 반영한다. 현재는 일반과세 15.4% 단일 세율이다.
+- 근거: 사용자별 과세 구분을 담은 테이블이 없어 `GENERAL_INTEREST_INCOME_TAX_15_4` 하나로 계산한다.
+- 선행 조건: 과세 구분 저장 위치(사용자 프로필 또는 계좌 단위)를 정해야 한다.
+- 완료 조건: 과세 구분별 세액이 계산되고 적용한 구분을 응답에 표시한다.
+
+### MySQL 검증
+
+- [ ] 예금 조회 4개 경로를 MySQL 8.0에서 실행해 `DepositAccountReader`의 조회와 `ddl-auto: validate` 통과를 확인한다. H2 통합 테스트만 수행했다.
+- 근거: 새 마이그레이션과 새 테이블이 없어 검증할 DDL 변경은 없다. 그래도 H2 통과가 MySQL 제약·타입 검증을 대신하지는 않는다.
+- 선행 조건: 없다. 전용 빈 `dodam_536_test` 스키마를 쓴다.
+- 완료 조건: 상품 카탈로그와 524 seed를 적재한 MySQL에서 4개 경로의 응답과 금액을 확인한다.
+
+### 시연 데이터 실측 확인
+
+- [ ] 금융상품 카탈로그를 적재한 환경에서 금리비교가 실제 시연 예금 4종(3.15·3.05·3.30·3.20%)에 대해 성립하는지 확인한다.
+- 근거: 금리비교 테스트는 fixture 상품으로 검증했다. 카탈로그가 없으면 `COMPARISON_GROUP_UNKNOWN`으로 떨어지고 상세의 상품 필드가 null이 된다.
+- 선행 조건: `DODAM_FINANCIAL_PRODUCTS_CUMULATIVE_B01_B05` seed 적재.
+- 완료 조건: 시연 예금 4종의 `referenceRate`·`rateDifference`·후보 목록을 실제 데이터로 확인하고 문서의 예시를 실측값으로 갱신한다.
+
+### 기존 테스트 실패 해소(536 범위 밖, 머지 전 확인 필요)
+
+- [x] 해소됨(2026-09-16 확인). `develop` `36be8a7`에서 전체 테스트가 통과한다. 아래는 당시 기록이다.
+- 근거: fixture의 `account` INSERT가 `currency`·`created_at`·`updated_at`을 채우지 않는데, H2가 `MinusAccountOwner` 매핑으로 `account`를 만들면 이 컬럼이 NOT NULL이 된다. `account`를 부분 매핑한 엔티티가 둘(`CardWithdrawalAccount`, `MinusAccountOwner`)이라 어느 쪽으로 DDL이 생성되는지에 따라 결과가 갈린다. `origin/develop`(`aff8056`)을 별도 worktree로 복사해 같은 실패를 재현했으므로 536이 만든 문제가 아니다.
+- 선행 조건: 535 담당이 fixture를 고칠지, `account` 부분 매핑을 하나로 합칠지 정한다.
+- 완료 조건: `gradlew clean build`가 통과한다. `CardQueryApiIntegrationTest.getsBenefitsAndEstimatedBenefitUsage` 1건도 같은 빌드에서 실패하며 535 문서에 기록된 날짜 의존 문제다.
+
+## S15P21D105-537 — 적금 상세·납입·예상금액·현금흐름
+
+구현 계약: [savings.md](savings.md)
+
+### 예금과 적금의 세금 처리 통일
+
+- [x] (2026-09-16, 브랜치 `S15P21D105-537-deposit-savings-tax-policy`) 적금 예상금액에 예금과 같은 15.4% 원천징수를 적용했다. `SavingsForecastResponse`에 `tax`·`expectedNetInterest`를 추가하고 `expectedAmount`를 세후 합계로 바꿨으며, 세율·절사는 `global/policy/InterestIncomeTaxPolicy`로 공유한다. 가정 코드는 `EXCLUDES_TAX_AND_FEES` → `GENERAL_INTEREST_INCOME_TAX_15_4` + `EXCLUDES_FEES`. FE는 적금 API를 아직 호출하지 않아 영향 없음.
+- 근거: 예금(536)은 15.4%를 원천징수한 세후 수령액을, 적금(537)은 세전 금액을 반환한다. 두 예상금액을 나란히 놓으면 적금이 유리해 보인다.
+- 선행 조건: 두 이슈가 모두 병합돼야 한다.
+- 완료 조건: 같은 원금·이율·기간에서 두 API의 세금 처리가 같고 문서의 가정 코드가 일치한다.
+
+### 중도해지이율 정책 통합과 공시값 확보
+
+- [x] (2026-09-16, 같은 브랜치) 두 클래스를 지우고 `global/policy/EarlyTerminationRatePolicy` 하나로 합쳤다. 응답·계산값 변화 없음.
+- [ ] 상품별 공시 중도해지이율을 확보해 두 표를 대체한다.
+- 근거: 같은 구간표를 두 도메인에 따로 두었다. 536과 537이 서로 다른 브랜치에서 병합될 수 있어 의존을 만들지 않았다. 현재 값은 시중은행 관행 기반 **서비스 추정치**다.
+- 선행 조건: 두 이슈 병합. 공시값은 `financial_product_option`에 담을 컬럼이 없어 ERD 변경 검토가 필요하다.
+- 완료 조건: 구간표가 한 곳에만 있고, 공시값이 있는 상품은 추정 가정 코드를 응답에서 제거한다.
+
+### 남은 대출 상환 일정 반영
+
+- [ ] 현금흐름 부담의 `remainingLoanRepaymentAmount`를 계산된 상환 일정으로 채운다.
+- 근거: 현재는 `loan_repayment`의 `SCHEDULED` 행만 더한다. 스키마 CHECK는 그 상태를 허용하지만 현재 seed에 예정 회차가 없다면 항상 0이 되어 월 중반의 부담이 실제보다 작게 나온다.
+- 선행 조건: 대출 도메인(532·533)의 `LoanRepaymentScheduleCalculator`를 적금에서 쓸지, 명세 15 Cashflow가 통합 계산을 소유할지 정해야 한다.
+- 완료 조건: 저장된 실적과 계산된 예정이 중복 없이 합산되고 그 근거가 응답에 표시된다.
+
+### MySQL 검증
+
+- [ ] 적금 9개 경로를 MySQL 8.0에서 실행해 조회와 `ddl-auto: validate` 통과를 확인한다. H2 통합 테스트만 수행했다.
+- 근거: 새 마이그레이션과 새 테이블이 없어 검증할 DDL 변경은 없다. `loan`·`loan_repayment`는 H2에 엔티티가 없어 테스트가 최소 테이블을 만들어 쓴다.
+- 선행 조건: 없다. 전용 빈 테스트 스키마를 쓴다.
+- 완료 조건: 상품 카탈로그와 524 seed를 적재한 MySQL에서 9개 경로의 응답과 금액을 확인한다.
+
+## 기록 방식
+
+- 이슈별로 남은 작업, 선행 조건, 담당 근거, 완료 조건을 기록한다.
+- 완료한 항목은 검증 결과를 해당 구현 문서에 반영한 뒤 이 목록에서 제거한다. 완료 이력은 이 파일에 누적하지 않는다.
+- API 계약·계산식은 해당 구현 문서를 기준으로 하고, 남은 작업의 진행 상태는 이 파일에서 갱신한다.
+- 담당자는 확인된 자료를 근거로 기록하며 새 담당 배정을 의미하지 않는다. 불명확하면 확인 필요로 남긴다.
+- 이 파일에 기록하는 것만으로 이슈 범위를 축소하거나 커밋·push·MR 생성·배포를 승인한 것으로 보지 않는다.
+
+## S15P21D105-499 — Finance Data 동기화
+
+구현 계약: [finance-data.md](finance-data.md)
+
+### 도메인별 동기화 구현
+
+- [ ] `FinanceSyncScopeHandler` 구현을 도메인별로 등록한다. ACCOUNT는 501에서 `AccountSyncHandler`로 등록했다(2026-09-11). CARD·LOAN·SAVING은 구현이 없어 SKIPPED로 보고된다.
+- 담당 근거: 테이블 소유 도메인이 구현한다. ACCOUNT는 BE-A(S15P21D105-501, `Account` 엔티티와 함께), CARD·LOAN·SAVING은 BE-B 영역이다. 새 담당 배정을 의미하지 않는다.
+- 선행 조건: 시연 데이터를 로컬 DB에서 읽는 현재 방식과 금융망 실시간 동기화의 역할 분담을 팀이 정한다. 금융망에서 받은 행은 `source_type = 'SSAFY'`, 시연 데이터는 `SEED`로 구분해 공존시키는 것을 전제로 한다.
+- 완료 조건: scope별 handler가 금융망 조회 → 로컬 upsert를 수행하고, 실행 응답의 `syncedCount`와 `last_synced_at` 갱신을 통합 테스트로 확인한다.
+
+### MySQL 검증
+
+- [x] V13까지 적용된 MySQL에 V4를 추가하면 `FlywayValidateException`이 나는 문제(MR 리뷰, 2026-09-09)를 `spring.flyway.out-of-order: true`(local/prod)로 해결했다. 번호 구간 분할 자체가 이 옵션을 전제로 한다. `FlywayOutOfOrderTest`로 재현·검증.
+- [x] `V4__create_finance_sync.sql`을 MySQL 8.0에 적용해 `ddl-auto: validate` 통과와 `FinanceSync` 엔티티 매핑(VARCHAR(30) enum, DATETIME)을 확인한다. 2026-09-11 확인: Docker `mysql:8.0`(8.0.46)에 V1~V17을 적용한 뒤 백엔드를 `local` 프로필(`ddl-auto: validate`, Flyway off)로 기동해 엔티티 32개 전부 통과, `Started DodamApplication`(6.2초). 오류·경고 없음. out-of-order 적용은 리뷰어가 기존 DB에서 재확인 예정.
+- [ ] `SELECT ... FOR UPDATE`(`findByUserIdForUpdate`) 기반 동시 실행 방지가 MySQL InnoDB에서 의도대로 직렬화되는지 동시 요청으로 확인한다.
+
+## S15P21D105-500 — Finance Data 통합 요약·신용등급
+
+구현 계약: [finance-data.md](finance-data.md)
+
+### 금융망 실호출 대조
+
+- [x] SSAFY 금융망 API 문서(2.3.1 공통 Header, 2.7.1 신용등급 기준 조회, 2.7.4 내 신용등급 조회)와 필드명·경로·Header 규칙을 대조해 수정했다(2026-09-09). 기준 조회는 `inquireAssetBasedCreditRatingList`(userKey 제외, REC `ratingUniqueNo/ratingName/minAssetValue/maxAssetValue`), 내 신용등급 REC에는 `creditScore`가 없다. 정상 코드는 `H0000` 하나이며 `H1000~H1010`은 오류다.
+- [x] 실제 금융망 호출로 200 응답을 확인했다(2026-09-15, 담당자가 개발센터에서 확인한 새 앱 API Key로 로컬 curl). 2026-09-09의 키는 `E4004`/`H1008`로 거절됐던 것으로, 키가 바뀐 것이 원인이었다. 결과는 finance-data.md "실호출 확인(2026-09-15)". 키는 레포·문서에 기록하지 않는다.
+- [ ] 시연 서버 `infra/.env`의 `SSAFY_FINANCE_API_KEY`를 새 키로 바꾸고 backend를 재기동한다(인프라). 바뀌기 전까지 서버의 회원가입·금융망 연결은 FAILED로 떨어진다.
+
+### 통합 요약 범위
+
+- [ ] `deposit_saving`, `installment`, `subscription` 테이블이 마이그레이션되면 요약 포함 여부를 정한다. 현재 예·적금은 `account`의 DEPOSIT·SAVINGS 행으로만 집계하고 할부·구독은 포함하지 않는다.
+- [ ] 집계 SQL(`JdbcFinanceSummaryReader`)을 MySQL 8.0에서 `PREPARE`로 확인한다. H2에서만 검증했다.
+
+## S15P21D105-530 — Installment API
+
+구현 계약: [installment-query.md](installment-query.md)
+
+완료 조건 파일 유실에 따라 API 명세·기획안·ERD와 구현 문서의 보완 계약으로 판단한다.
+2026-09-16 부담률 구현으로 530 범위 5개 API가 모두 갖춰졌다.
+
+### 월 예상 가용금액 제공 계약과 데이터
+
+- [x] 2026-09-16 사용자 결정으로 외부 계약 대기를 끝내고 기획안 정의(월 소득 − 고정지출 − 저축 − 대출상환)를 자체 계산한다. 계산식·출처·없을 때 처리는 [installment-query.md](installment-query.md) "부담률" 절에 있다.
+- 2026-09-08의 "분자·분모 기간 일치(현재 월은 기준일부터 월말)" 요구는 월 단위 값 사용으로 대체했다. 안분 근거가 기획안에 없다.
+
+### 할부 부담률 API와 테스트
+
+- [x] `GET /api/v1/installments/burden` 구현·검증 완료(2026-09-16). 단위 8 + 통합 +4, 전체 테스트 통과.
+- [ ] FE 연결. `frontend/src/api/assetApi.ts`에 호출이 없고 명세 9 화면 담당은 FE다. 연결되면 `docs/fe-be-api-integration-status.md`를 갱신한다.
+- H2 통합 테스트는 대출 없는 사용자만 다뤘다. 대출 상환액 반영은 reader 단위 테스트(mock)로만 검증했으므로 MySQL seed로 대출 있는 사용자를 한 번 확인하면 좋다.
+
+### 카드·할부 스키마 준비
+
+- [x] 누락된 카드·할부 및 참조 테이블의 마이그레이션을 작성한다. 529 브랜치에 `V10`(금융상품 3종), `V11`(`card`, `card_billing_statement`), 530 브랜치에 `V12`(`installment`)를 두고 `db/migration/README.md`에 버전 번호 할당 규칙(V1~V9 BE-A, V10~ BE-B)을 명시했다.
+- [x] `account` 마이그레이션을 529 브랜치에 `V3`로 선반영했다. 이미 병합된 카드 도메인이 이 테이블을 매핑해 develop이 `Schema-validation: missing table [account]`로 기동하지 못하는 상태였고, 담당자 부재로 대기할 수 없어 ERD 정의대로 스키마만 추가했다. 계좌 조회 API는 BE-A(S15P21D105-501)에 그대로 남으며 같은 테이블을 다시 만들지 않도록 인수인계가 필요하다.
+- [ ] 병합 순서를 529 -> 530으로 유지한다. `installment.card_id`가 `card`를 참조하므로 순서가 뒤집히면 V12가 실패한다.
+- 담당 근거: [마이그레이션 지침](../src/main/resources/db/migration/README.md)에 따라 도메인 테이블은 도메인 작업에서 준비한다. 카드·할부는 정현진 담당 영역이며, `account`는 BE-A 소관이다. 인프라 558은 "빈 DB와 계정"까지만 보장하는 범위로 이미 완료됐다.
+- 선행 조건: 시드 SQL을 실제 테이블 생성 마이그레이션으로 대체하지 않는다. 시드 적재 경로 확정은 별도 팀 결정 사항이다.
+- 완료 조건: `account` 반영 후 기존 데이터가 있는 DB의 적용 방법까지 확인한다.
+
+### MySQL 검증
+
+- [x] 스키마·제약조건·조회 SQL을 MySQL 8.0에서 확인했다(2026-09-09). 일회용 컨테이너에 `V1`, `V2`, `V10`~`V13`과 BE-A 참조 테이블(`account`, `transaction`, `transaction_category`, ERD DDL 임시 생성)을 순서대로 적용해 테이블 16개, CHECK 57개, 외래키 20개가 생성됐다. 카드·할부의 조회 SQL 12개를 MySQL `PREPARE`로 검증했고, 조각으로 조립되는 할부 목록·건수 쿼리는 조립된 형태로 확인했다. 앱을 이 DB에 붙여 `ddl-auto: validate` 통과와 정상 기동을 확인했다.
+- [ ] 데이터 기준 동작은 확인하지 못했다. 소유권 격리, 정상·빈 결과, 경계값은 검증용 데이터가 없어 H2 통합 테스트 범위에 머문다. 시드 적재 경로 확정과 암호화 픽스처 생성기가 선행 조건이다.
+- 담당 근거: 530 도메인 구현 담당. 검증은 로컬 Docker MySQL 8.0 컨테이너에서 수행했고 운영 DB와 인프라 구성을 건드리지 않았다.
+- 선행 조건: 안전한 검증용 데이터. 운영 자격증명을 문서에 기록하지 않는다.
+- 완료 조건: 목록·상세·월별 일정·예측의 소유권 격리와 정상·빈 결과를 실제 데이터로 확인하고, 부담률 구현 후에는 해당 API도 검증한다. H2 성공으로 MySQL 검증을 대체하지 않는다.
+
+검증 중 `card`의 `card_no_hash`, `expiry_month`가 ERD의 `CHAR`와 달리 엔티티에서 `varchar`로 기대돼 `validate`에 실패하는 문제를 확인하고 529 브랜치에서 수정했다(`columnDefinition` 명시). 530 브랜치의 `Card`에는 이 수정이 없으므로 529를 먼저 병합해야 한다.
+
+### Jira 연결 정리
+
+- [ ] 접근이 가능해지면 로컬 `S15P21D105-530-installment-api` 브랜치의 Jira 연결을 확인한다.
+- 선행 조건: 실제 프로젝트 Jira 접근. 현재 브랜치는 Jira Create branch가 아닌 로컬 생성 방식이다.
+- 완료 조건: 이슈와 브랜치의 연결을 확인한다. 유실된 완료 조건 파일 복구는 요구하지 않으며, 이 항목을 API 구현의 선행 조건으로 두지 않는다.
+- MR을 작성할 때 미완료 범위와 MySQL 검증 여부를 명시한다. MR 생성 자체는 별도 요청 시 진행한다.
+
+## S15P21D105-532 — Loan 부담·이자 계산
+
+구현 계약: [loan-analysis.md](loan-analysis.md)
+
+### 현재 월 전체 상환액과 부담률 수치 제공
+
+- [ ] 월별 일정·납부내역의 완전성과 회차 매칭 계약을 확보해 현재 월 전체 상환액을 계산한다.
+- **2026-09-16 결정: 보류.** 시연 seed에 예정 회차(`SCHEDULED`) 데이터가 없어 구현해도 항상 0원이라 우선순위를 낮춘다. seed에 회차 데이터가 생기면 다시 본다.
+- 현재 동작: 대출 행이 있는 사용자의 현재 월 전체 금액·부담률은 `MONTH_TOTAL_UNAVAILABLE`과 null이다.
+  남은 예정액과 미래 월 부담률은 제공한다. 이 제한은 검토한 532 계획의 보완 계약이다.
+- 선행 조건: 이미 납부한 금액·미납분·앞으로의 예정액을 중복 없이 판단할 데이터.
+  PAID 합계와 현재 잔액 기반 예측을 단순 합산하거나 남은 예정액을 월 전체 금액으로 대신하지 않는다.
+- 완료 조건: 납부 전·당일·후에도 동일 월 전체 기준이 유지되고, 종료 대출의 당월 납부와 누락 데이터가 검증된다.
+- 현재 월 수치 제공까지 완료한 것으로 보고하지 않는다. 과거 월 부담 추세의 이슈 포함 여부는 최신 Jira 확인 시 검토한다.
+
+### Jira 최신 완료 조건 대조
+
+- [ ] 실제 프로젝트 Jira 접근이 가능해지면 최신 532 완료 조건과 구현·남은 제한을 대조한다.
+- 현재 브랜치는 사용자가 생성한 `S15P21D105-532-api-10-loan`이며 최신 develop `22821fe` 기준이다.
+- 기존 계획·명세에 근거한 구현을 진행했으며 Jira 조회 실패를 기능 완료 조건 확인으로 대신하지 않는다.
+
+## S15P21D105-533 — Loan 금리비교·상환우선순위
+
+계획: [loan-rate-priority-plan.md](loan-rate-priority-plan.md), 구현 계약: [loan-rate-priority.md](loan-rate-priority.md)
+
+3개 API 모두 구현했다(금리비교·고금리 판정은 `2eb40bb`, 2026-09-16 확인). 아래 "시장금리 비교" 항목은 완료됐고 `goalId`·MySQL 항목만 남는다.
+
+### 시장금리 비교와 고금리 판정 API
+
+- [x] `GET /api/v1/loans/{accountNo}/rate-comparison`과 `GET /api/v1/loans/high-interest` 구현 완료(`LoanRateComparisonController`, 계약은 [loan-rate-priority.md](loan-rate-priority.md)). 아래는 착수 전 기록이다.
+- 선행 조건: 계획 8절 4단계의 공통 비교 계산기와 전용 테스트 fixture. 계획 5절의 비교군·상환방식 대응표와 기간 밴드, 최저금리 중앙값 기준은 확정 상태다.
+- 완료 조건: 계획 8절 5단계 게이트(시연 데이터에서 판정 1건 이상, 0건이면 기준 방식 재검토)를 통과하고 `rateSpreadThreshold`를 편차 분포 근거와 함께 확정한다. 확정값이 통계적 기준이 아니라 서비스 초기 임계값임을 응답과 문서에 남긴다.
+
+### goalId 미지원
+
+- [ ] 목표 기반 상환 우선순위 지원 여부를 최신 Jira 범위와 대조해 후속 이슈로 분리할지 정한다.
+- 현재 동작: 형식이 유효한 goalId도 `INVALID_REQUEST` 400이다. 존재 여부를 조회한 것처럼 404를 반환하지 않는다.
+- 선행 조건: `goal` 테이블 마이그레이션과 Goal 도메인(명세 12). 현재 저장소에 둘 다 없다. 533에 임시 테이블이나 대체 저장소를 만들지 않는다.
+- 제약: ERD `goal_account`의 `chk_goal_account_type`이 예금 계좌만 허용해 목표에 대출을 연결할 수 없고, 예산 항목은 소비목표 전용 `monthly_budget`뿐이다. 목표를 반영한 우선순위는 명세 16의 `GET /api/v1/recommendations/priorities`가 소유한다.
+
+### MySQL 검증과 미검증 분기
+
+- [ ] 기존 `LoanAnalysisMySqlIntegrationTest`와 같은 `@EnabledIfEnvironmentVariable` 조건부 테스트를 533에도 추가한다.
+- 현재 동작: 상환 우선순위는 H2로만 검증했다. MySQL 조회·매핑은 미검증이다.
+- 금리 무효(`INVALID_TERMS`) 분기는 테스트로 도달할 수 없다. `sql/loan-query-test-data.sql`이 ERD의 `interest_rate >= 0` CHECK를 복제해 H2에서도 음수를 넣을 수 없다. 서비스에는 방어 코드로만 남아 있다.
+
+### Jira 최신 완료 조건 대조
+
+- [ ] 실제 Jira 접근이 가능해지면 최신 533 완료 조건과 구현·남은 제한을 대조한다.
+- 현재 브랜치는 사용자가 생성한 `S15P21D105-533-api-10`이며 `1247b18` 기준이다. 이후 develop에 추가된 4커밋은 모두 Infra(473)로 백엔드 변경이 없다.
+- 로컬 `SPRINT/Jira (4).csv`의 제목·설명만 근거로 범위를 정했다. Jira 조회 실패를 완료 조건 확인으로 대신하지 않는다.
+
+## S15P21D105-534 — 마이너스통장 API
+
+구현 계약: [minus-account.md](minus-account.md), 계획과 결정 배경: [minus-account-plan.md](minus-account-plan.md)
+
+7개 엔드포인트를 모두 구현했고 전체 378건이 통과했다(H2 35건, MySQL 조건부 1건 포함).
+아래 항목이 남아 있는 동안 534 전체를 완료 처리하지 않는다. 남은 항목은 모두 다른 이슈의 합의나
+산출물을 선행 조건으로 하며 534에서 단독으로 끝낼 수 없다.
+
+### finance-data sync가 로컬 상환분을 덮어쓰는 문제
+
+- [ ] `source_type = 'SEED'` 계좌를 `POST /api/v1/finance-data/sync`(scope `ALL`/`ACCOUNT`) 대상에서 제외하는 합의를 받는다.
+- 현재 동작: 상환·이자납부가 우리 DB의 `minus_account`와 `account`만 바꾸는 로컬 상태 전이다(2026-09-09 사용자 결정). 동기화가 SSAFY 기준으로 계좌를 덮어쓰면 상환 결과가 사라진다.
+- 담당 근거: 동기화는 `4 Finance Data`(BE-A, dev_plan Day 3) 소관이다. 534에서 단독으로 정하거나 동기화 로직을 고치지 않는다.
+- 완료 조건: 제외 규칙이 합의되고 시연 계좌에서 상환 후 동기화를 실행해도 결과가 유지되는지 확인한다. 미해결 상태로 시연하면 상환 결과가 사라질 수 있으므로 MR 시 명시한다.
+
+### 알림 연결 규약과 실데이터 검증
+
+- [ ] `source_type = 'MINUS_ACCOUNT'`와 `source_id = account_id` 규약을 S15P21D105-458과 합의한다.
+- 현재 동작: `JdbcMinusAccountAlertReader`가 그 규약으로 `notification`을 읽기만 한다. 테이블이 없어 항상 빈 페이지다.
+- 선행 조건: 458의 `notification` 마이그레이션. dev_plan상 Day 9~10이라 534(Day 4)보다 늦다. 534에서 테이블이나 알림 생성 배치를 만들지 않는다.
+- 완료 조건: 규약 확정 후 실제 알림 데이터로 `unreadOnly`, 소프트 삭제 제외, 정렬을 확인한다. 규약이 바뀌면 리더의 상수만 고친다.
+
+### 중복 요청 방지
+
+- [x] (2026-09-16, 브랜치 `S15P21D105-534-minus-account-idempotency`) `Idempotency-Key` 헤더 + Redis(TTL 24h)로 구현. 계약은 [minus-account.md](minus-account.md) "재전송 방지". 헤더는 선택(하위 호환)이며 Redis 장애 시 보호 없이 처리한다. 원문:
+- 현재 동작: 행 잠금(`PESSIMISTIC_WRITE`)으로 동시 요청의 경쟁 조건만 막는다. 같은 요청을 두 번 보내면 두 번 처리된다. 명세 제한사항의 "중복 요청 방지"를 충족하지 못한다.
+- 선행 조건: `Idempotency-Key` 헤더와 처리 결과 저장(테이블 또는 Redis)의 계약. TTL과 응답 재생 방식이 정해지지 않았다. `(user, account, amount)` 시간창 차단은 정상적인 연속 상환을 막아 채택하지 않았다.
+- 완료 조건: 같은 키의 재요청이 잔액을 두 번 바꾸지 않고 첫 응답을 그대로 돌려주는지 확인한다.
+
+### 상환의 거래원장 반영
+
+- [ ] 상환·이자납부를 `transaction`에 기록할지 BE-A와 정한다.
+- 현재 동작: 기록하지 않아 상환 직후 거래내역 조회에 그 상환이 나타나지 않는다.
+- 선행 조건: 시스템 생성 거래의 `transaction_id` 규칙, `category_id`, `source_type` 계약. 명세의 유일한 거래 생성 경로인 `POST /api/v1/transactions`조차 Body에 계좌 지정 필드가 없어 규약 자체가 없다. 합의 전에 임의 규칙으로 남의 원장에 쓰지 않는다.
+- 완료 조건: 기록하기로 정하면 `account.last_transaction_date`도 같은 트랜잭션에서 갱신한다(ERD 계산 기준).
+
+### account 잔액 쓰기 방식 인수인계
+
+- [ ] `JdbcAccountBalanceWriter`의 존재를 S15P21D105-501 담당자에게 전달한다.
+- 현재 동작: `account`가 BE-A 소관이라 쓰기 엔티티를 만들지 않고 도메인 전용 JDBC writer로 UPDATE한다. 조건절에 `user_id`·`account_type`을 넣고 갱신 행 수가 1이 아니면 롤백한다.
+- 완료 조건: 501이 `Account` 엔티티를 만들면 이 어댑터를 교체한다. 같은 테이블에 쓰기 엔티티를 중복 매핑하지 않는다.
+
+### MySQL 검증
+
+- [x] 스키마와 상환 정합을 MySQL 8.0에서 확인했다(2026-09-09). `MinusAccountMySqlIntegrationTest`를 532와 같은 `@EnabledIfEnvironmentVariable` 방식으로 추가했고, 빈 `dodam_534_test` 스키마에 실제 Flyway가 `V1`~`V14`를 적용한 뒤 `ddl-auto: validate` 통과, CHECK 7개와 복합 외래키 3컬럼 생성, CHECK가 살아 있는 상태의 상환·이자납부 정합을 검증했다. 일회용 컨테이너에서 수행했고 운영 DB와 인프라 구성은 건드리지 않았다.
+- [ ] 데이터 기준 동작은 확인하지 못했다. seed 적재에 암호화 픽스처 임시 테이블 3개가 필요하며 530·532와 같은 선행 조건이다. 위 테스트는 테스트가 만든 최소 fixture 기준이다.
+
+### seed의 next_interest_date 고정
+
+- [ ] seed(S15P21D105-523)의 `next_interest_date`가 1,000행 모두 `2026-09-25`인 점을 보완한다.
+- 현재 동작: 그날이 지나면 이자 API의 `daysToNextInterestDate`와 `estimatedInterestUntilNextDate`가 시연 계좌 전체에서 `null`이 된다.
+- 담당 근거: 534 코드 문제가 아니라 seed 데이터 문제다. 발견 사항으로 보고한다.
+
+### API 5 거래내역과의 중복
+
+- [ ] `GET /api/v1/accounts/{accountNo}/transactions`(명세 5)와 응답 계약이 갈라지지 않게 501 구현과 대조한다.
+- 현재 동작: 두 명세 모두 승인된 문서라 10-1의 7개를 그대로 구현했다. 경로만 다르고 입력과 제한사항 문구가 동일하다.
+- 완료 조건: 응답 필드·정렬·기간 정책을 501과 맞추거나, 한쪽으로 통합할지 팀에서 정한다.
+
+### Jira 최신 완료 조건 대조
+
+- [ ] 실제 Jira 접근이 가능해지면 최신 534 완료 조건과 구현·남은 제한을 대조한다.
+- 현재 브랜치는 사용자가 지정한 `S15P21D105-534-api-10-1-minus-account-api`이며 develop `cf854be` 기준으로 로컬 생성했다. Jira `Create branch`가 아니므로 이슈 연결 확인이 남는다.
+- 로컬 `SPRINT/Jira (4).csv`의 제목·설명만 근거로 범위를 정했다.
+
+## S15P21D105-538 — Cashflow 저장 계층
+
+구현 계약: [cashflow.md](cashflow.md)
+
+### MySQL 검증
+
+- [x] `V16`을 MySQL 8.0에서 검증했다(2026-09-10). 빈 `dodam_538_test` 스키마에 Flyway가 `V1`~`V16`을 적용한 뒤 `ddl-auto: validate` 통과, CHECK 5개 생성, 유니크·금액·심각도·horizon 제약 동작, 조회 3종의 MySQL 방언 실행을 확인했다. 일회용 컨테이너에서 수행했고 운영 DB와 인프라 구성은 건드리지 않았다.
+- 검증 중 `dedupe_key`·`request_hash`의 `CHAR(64)` 매핑 누락을 발견해 고쳤다. 엔티티가 VARCHAR로 매핑돼 `validate`에 실패했다(529의 `card` CHAR 컬럼과 같은 사례).
+- [ ] 데이터 기준 동작은 확인하지 못했다. 위 테스트는 최소 fixture 기준이며 시연 seed를 적재한 상태는 검증하지 않았다.
+
+### 미확정 정책 반영
+
+- [ ] `calculation_version` 표기 규칙을 팀에서 정하고 `CashflowCalculationVersion.CURRENT`를 교체한다. 현재는 `"v1"` 상수다.
+- [ ] `cashflow_event.type`과 `cashflow_risk.type`의 값 집합을 ERD 주요 코드값 표에 추가한다. 539·542가 코드에서 확정했고(`cashflow_risk.type`은 `BALANCE_SHORTAGE` 하나) ERD 반영만 남았다.
+- [x] `request_hash` 생성 규칙(540)과 `available_today` 계산 정의(542, `max(0, minimumBalance)`)를 반영했다.
+
+### Jira 최신 완료 조건 대조
+
+- [ ] 실제 Jira 접근이 가능해지면 최신 538 완료 조건과 구현 범위를 대조한다. 로컬 `SPRINT/Jira (4).csv`의 제목·설명만 근거로 범위를 정했다.
+
+## S15P21D105-540 — 일별 잔액·캐시 정책
+
+구현 계약: [cashflow-daily-balance.md](cashflow-daily-balance.md)
+
+### 미확정 정책 반영
+
+- [ ] 540이 정한 기본값을 팀에서 확인한다. `horizonDays` 기본 90·상한 365, 완료 캐시 유효기간 당일,
+  시작 잔액 = 활성 `DEMAND_DEPOSIT` 합계, 과거 기준일 거부. 모두 명세에 값이 없어 정한 기본안이다.
+- [x] `request_hash` 생성 규칙은 540에서, `available_today`는 542에서 확정했다.
+
+### 계산 정확도 한계
+
+- [ ] 요일별 평균 변동지출을 반영하지 못한다. 입력이 될 `transaction` 테이블의 마이그레이션이 아직 없다
+  (현재 `V1`~`V4`, `V10`~`V16`). 그때까지 예상잔액은 실제보다 낙관적이다. 담당 이슈를 정해야 한다.
+- [ ] `AccountScheduledEventSource` 구현체가 없어 급여 등 예정 입금이 반영되지 않는다. 현재 예측은 확정
+  출금 위주다.
+- [ ] 수집 사유(`reasons`)를 저장할 컬럼이 ERD에 없다. 실행 응답에서만 노출되고 `latest` 조회와 캐시
+  재사용 응답에서는 사라진다. 컬럼 추가가 필요하면 ERD 변경을 먼저 논의한다.
+
+### 중복 요청 방지의 경합
+
+- [ ] 같은 요청이 동시에 들어오면 두 요청 모두 새 예측을 만들 수 있다. `(user_id, request_hash, status)`에
+  유니크 제약이 없고 조회와 생성이 한 트랜잭션이 아니다. 순차 재요청만 막는다.
+- [ ] 진행 중 인정 시간 10분은 임의값이다. 수집·계산의 실제 소요 시간을 측정한 뒤 조정한다.
+
+### 검증 범위
+
+- [x] H2 테스트로 기간 정책·지문·캐시 판정·잔액 계산·저장 경로를 검증했다(2026-09-10). 아래 H2 fixture
+  문제를 함께 고친 뒤 전체 `clean build`가 611건 전부 통과한다.
+- [ ] MySQL 검증은 하지 않았다. 스키마를 바꾸지 않고 538의 테이블만 읽고 쓴다. 새 SQL은
+  `CashflowBalanceReader`의 집계 한 건이다.
+
+### Jira 최신 완료 조건 대조
+
+- [ ] 실제 Jira 접근이 가능해지면 최신 540 완료 조건과 구현 범위를 대조한다. 로컬 `SPRINT/Jira (4).csv`의
+  제목·설명만 근거로 범위를 정했다.
+
+## S15P21D105-541 — 현금흐름 실행·조회 API
+
+구현 계약: [cashflow-query.md](cashflow-query.md)
+
+### 미확정 계약 반영
+
+- [ ] 조회 API가 **완료 시각 기준 최신 완료 예측 1건**을 대상으로 삼는 규칙은 이 작업에서 정한
+  기본안이다. 명세에 `forecastId` 파라미터가 없어 정했다. 팀 확인이 필요하다.
+- [x] 538이 정의한 기준일 내림차순 최신 조회를 완료 시각 기준으로 바꿨다(2026-09-10). 미래 기준일
+  예측이 계속 최신으로 남는 문제를 막는다. `CashflowForecastRepository`의 메서드 두 개를 이름까지
+  바꿨고 538 테스트의 호출부와 [cashflow.md](cashflow.md)의 계약 표를 함께 고쳤다.
+- [ ] 완료된 예측이 없을 때 404(`RESOURCE_NOT_FOUND`)로 응답한다. 빈 목록으로 바꿀지 확인이 필요하다.
+- [ ] `events`의 `type`은 형식만 검증하고 값 집합을 고정하지 않았다. 538의 남은 항목(`cashflow_event.type`
+  값 집합 확정)이 해소되면 허용값 검증으로 바꿀지 결정한다.
+- [ ] `availableToday`와 위험 목록은 응답에 없다. 542에서 계산이 정해지면 실행·최신 조회 응답에 추가한다.
+
+### 검증 범위
+
+- [x] H2 통합 테스트 7건으로 인증·소유권 격리·입력 검증·기본 기간·빈 결과·캐시 재실행·최신 판정을 검증했다
+  (2026-09-10). 전체 `test`도 통과한다.
+- [ ] MySQL 검증은 하지 않았다. 스키마를 바꾸지 않고 538의 테이블만 읽는다. 새 SQL은 없다.
+- [ ] 프론트엔드 연동은 확인하지 않았다. 응답 계약이 확정되면 `frontend/`의 API 타입 추가가 필요하다.
+
+### Jira 최신 완료 조건 대조
+
+- [ ] 실제 Jira 접근이 가능해지면 최신 541 완료 조건과 구현 범위를 대조한다. 로컬 `SPRINT/Jira (4).csv`의
+  제목·설명만 근거로 범위를 정했다.
+
+## 공통 — 테스트 소스 인코딩 (540 외부)
+
+- [ ] `build.gradle`에 `compileJava.options.encoding`이 없어 javac가 플랫폼 인코딩(MS949)으로 소스를 읽는다.
+  `gradle.properties`의 `-Dfile.encoding=UTF-8`은 Gradle 데몬 설정이라 컴파일 인코딩을 정하지 않는다.
+- 영향: 소스의 한글 문자열 리터럴이 깨진 채 컴파일된다. 테스트는 양쪽이 같이 깨져 비교가 통과하므로
+  드러나지 않지만, 이벤트 표시명처럼 응답·DB에 나가는 한글 상수도 같은 영향을 받는다.
+- 완료 조건: `compileJava`/`compileTestJava`에 `options.encoding = 'UTF-8'`을 추가하고 기존 한글 리터럴이
+  정상 출력되는지 확인한다. 빌드 설정 변경이라 540 범위 밖으로 두고 담당 이슈를 정해야 한다.
+
+## 공통 — develop의 H2 테스트 실패 (해결됨)
+
+- [x] 2026-09-10 해결했다. 원인이 하나가 아니라 둘이었다.
+  - `DepositSavingApiIntegrationTest` 29건: `deposit-saving-test-data.sql`의 `account` INSERT가
+    `currency`·`account_no_hash`·`created_at`·`updated_at`을 채우지 않아 NOT NULL 위반으로 실패했다.
+    `savings-test-data.sql`과 같은 방식으로 채웠다.
+  - `CardQueryApiIntegrationTest` 1건: `currency`와 무관했다. fixture가 자체 `CREATE TABLE`을 쓰므로
+    NOT NULL 문제가 없다. `TX-C1-003`을 `today.minusDays(40)`에 넣은 탓에 오늘 날짜에 따라 그 거래가
+    전월에 들어가고, 전월 실적이 0이라는 혜택 테스트의 전제가 매달 10일경부터 깨졌다.
+    `today.minusMonths(2)`로 바꿔 날짜 의존을 없앴다.
+- 아래 기록은 정정 전 내용이다. 30건을 모두 `currency` 문제로 본 것은 틀렸다.
+- 근거: `MinusAccountOwner`가 `account.currency`를 `nullable = false`로 매핑하는데, H2는 엔티티 기준으로 스키마를 만들어 `V3`의 `DEFAULT 'KRW'`가 없다. 두 테스트의 seed SQL은 `currency`를 넣지 않는다.
+- 영향: Jenkins의 Build & Test 단계가 `./gradlew clean build`를 돌리므로 어느 브랜치의 MR이든 이 실패를 함께 본다.
+- 완료 조건: `card-query-test-data.sql`과 `deposit-saving-test-data.sql`의 `account` INSERT에 `currency`를 채우거나, 엔티티 매핑에 기본값을 반영한다. 담당 이슈를 정해야 한다.
+
+## S15P21D105-501 — 계좌 목록·상세·잔액
+
+구현 계약: [account-query.md](account-query.md)
+
+### 금융망 잔액 실시간 조회
+
+- [ ] `GET /api/v1/accounts/{accountNo}/balance`가 금융망(2.4 계좌 잔액 조회)을 호출할지, 우리 DB 값만 돌려줄지 확정한다.
+- 현재 동작: `account.balance`와 `updated_at`(`balanceAsOf`)을 돌려준다. 명세는 "SSAFY"로 표기하지만 카드·대출·예적금이 모두 로컬 테이블을 읽는 방식과 맞췼다.
+- 근거: 2026-09-09 기준 전달받은 API Key가 거래 API에서 `H1008`로 거절돼 실호출 검증이 불가능했고, 마이너스통장 상환(534)이 로컬 잔액만 바꾸므로 금융망 값을 그대로 보이면 상환 결과가 사라진 것처럼 보인다.
+- 완료 조건: 실시간 조회로 정하면 `SsafyFinanceClient`에 잔액 조회를 추가하고 응답에 조회 시각을 싣는다. 로컬로 확정하면 명세의 "SSAFY" 표기를 고친다.
+
+### 금융망 계좌 목록 실호출 검증
+
+- [x] ACCOUNT 동기화 핸들러(`AccountSyncHandler`)를 구현했다(2026-09-11). 금융망 2.4 계좌 목록 → `account` upsert, SEED·MANUAL 보존, 목록에서 사라진 SSAFY 계좌 CLOSED 처리까지 Mock 기반 통합 테스트로 확인했다.
+- [ ] 실제 금융망 호출로 `inquireDemandDepositAccountList` 응답 필드명·형식(`accountBalance` 문자열, `lastTransactionDate` yyyyMMdd·빈 문자열)을 대조한다. 2026-09-09 기준 API Key가 거래 API에서 `H1008`로 거절돼 실호출 검증을 못 했고, 응답 계약은 금융망 문서 예시를 따랐다.
+- [ ] 계좌가 하나도 없는 사용자에게 금융망이 `REC`를 생략하는지 빈 배열로 주는지 확인한다. 구현은 둘 다 빈 목록으로 해석한다.
+- 완료 조건: 시연 계정으로 `POST /finance-data/sync`(ACCOUNT) 실행 후 목록·상세·잔액이 금융망 값과 일치한다.
+
+### 부분 매핑 엔티티 교체
+
+- [ ] `CardWithdrawalAccount`(card), `MinusAccountOwner`(minusaccount), `JdbcAccountBalanceWriter`(minusaccount)를 `Account` 엔티티로 교체할지 정한다.
+- 현재 동작: 세 엔티티가 `account`를 함께 매핑한다. 읽기는 문제없지만 쓰기 엔티티가 둘(`MinusAccountOwner`, `Account`)이 되면 같은 행을 다른 영속성 컨텍스트 상태로 들고 있을 수 있다. 501은 읽기만 하므로 지금은 충돌이 없다.
+- 담당 근거: 카드·마이너스통장은 BE-B 영역이라 501에서 고치지 않았다.
+- 완료 조건: 마이너스통장 상환이 `Account`로 잔액을 쓰거나, 쓰기 주체를 하나로 명시한다.
+
+### 엔티티 nullable 완화
+
+- [ ] `Account.accountNoEncrypted`·`sourceType`이 DDL은 NOT NULL인데 엔티티는 nullable이다.
+- 근거: H2 테스트는 엔티티로 스키마를 만드는데 `deposit-saving-test-data.sql`, `savings-test-data.sql`, `deposit-detail-test-data.sql`, `CashflowBalanceReaderTest`가 두 컬럼 없이 `account`를 적재한다. NOT NULL로 매핑하면 그 테스트가 깨진다. local/prod `validate`는 NULL 허용 여부를 검사하지 않는다.
+- 완료 조건: 네 fixture가 두 컬럼을 채우도록 고친 뒤 엔티티를 NOT NULL로 되돌린다. 담당 이슈를 정해야 한다.
+
+### MySQL 검증
+
+- [x] `Account` 엔티티가 V3 DDL과 `ddl-auto: validate`를 통과하는지 MySQL 8.0에서 확인한다. 2026-09-11 확인: Docker `mysql:8.0`(8.0.46)에 V1~V17을 적용한 뒤 백엔드를 `local` 프로필(`ddl-auto: validate`, Flyway off)로 기동해 엔티티 32개 전부 통과, `Started DodamApplication`(6.2초). 오류·경고 없음.
+- 근거: `account_no_encrypted`는 `VARBINARY(512)`↔`byte[]`, `account_no_hash`·`currency`는 CHAR 고정 길이 매핑이다. 카드·대출과 같은 `columnDefinition` 처리를 했지만 실검증은 남았다.
+- 완료 조건: 빈 스키마에 V1~V16 적용 후 기동, 목록·상세·잔액 SQL을 MySQL에서 실행.
+
+## S15P21D105-502 — 계좌 거래내역 Adapter
+
+구현 계약: [account-query.md](account-query.md) "계좌 거래내역·거래 단건", "거래내역 Adapter"
+
+### 거래내역 동기화 기간·증분 전략
+
+- [ ] 매 동기화마다 계좌별 최근 12개월 거래를 통째로 받아 없는 것만 넣는다. 거래가 많아지면 금융망 호출·응답이 커진다.
+- 선행 조건: 금융망 거래내역 API가 페이지네이션을 지원하는지(문서 예시에는 `totalCount`·`list`만 있다), 계좌별 마지막 동기화 시각을 어디에 둘지(`account` 컬럼 추가는 ERD 변경) 정한다.
+- 완료 조건: 두 번째 동기화부터는 마지막 적재 거래일 이후만 받거나, 페이지 단위로 받는다. 시연 규모(계좌 수 건, 거래 수백 건)에서는 현재 방식으로 충분하다.
+
+### 금융망 거래내역 실호출 검증
+
+- [ ] `inquireTransactionHistoryList` 요청 Body(`accountNo`, `startDate`, `endDate`, `transactionType = A`, `orderByType = DESC`)와 응답(`REC.totalCount`, `REC.list[].transactionType "1"/"2"`, 금액 문자열, 시각 HHmmss)을 실호출로 대조한다. API Key 문제(499 절)로 문서 예시만 따랐다.
+- [ ] 계좌에 거래가 없을 때 `REC`가 생략되는지 `list: []`로 오는지 확인한다. 구현은 둘 다 빈 목록으로 해석한다.
+
+### V6 마이그레이션과 504 브랜치 정리
+
+- [ ] `V6__create_transaction_category_and_transaction.sql`은 504 브랜치(`S15P21D105-504-api-6-transaction-query`)의 V5 커밋을 cherry-pick한 뒤 **V6으로 번호를 옮긴 것**이다. develop 병합 시 543이 `V5__create_goal.sql`로 V5를 먼저 써서 충돌했다(2026-09-11).
+- 완료 조건: 504 브랜치를 이어갈 때 develop을 병합하고 그쪽의 V5 마이그레이션 커밋을 걷어낸다(테이블은 이미 V6으로 develop에 있다). `Transaction` 엔티티·fixture의 "V5" 표기도 V6으로 고친다.
+
+### 빈 DB에서 Flyway가 V6에서 멈춤 (새 환경 기동 불가)
+
+- [ ] **빈 스키마에 Flyway를 돌리면 V6에서 실패한다.** V6의 `fk_transaction_card`가 V11이 만드는 `card`를 참조하는데, 빈 DB에서는 Flyway가 버전 순서로 V1→V6을 먼저 적용하므로 `Failed to open the referenced table 'card'`로 기동이 막힌다. 2026-09-11 Docker `mysql:8.0` 빈 스키마 + `local` 프로필로 재현했다(`Script V6__create_transaction_category_and_transaction.sql failed`). 운영 DB는 V11~V17이 먼저 적용된 뒤 V6이 out-of-order로 들어가 영향이 없었고, 534·538 절의 빈 스키마 검증(09-09·09-10)은 V6이 develop에 들어오기 전이라 통과했다.
+- 영향: 새 개발 PC, 재생성한 CI/테스트 DB, 볼륨을 지운 운영 DB에서 백엔드가 기동하지 않는다. 손으로 적용할 때는 V1~V5 → V10~V11 → V6~V9 → V12~V17 순서로 우회할 수 있다(`seeds/README.md` 검증 상태).
+- 수정 후보: (a) 새 마이그레이션(BE-B와 번호 협의)에서 `information_schema`로 존재 여부를 확인해 `fk_transaction_card`를 조건부로 추가하고, V6에서는 카드 외래키를 빼되 이미 적용된 운영 DB의 체크섬 불일치는 `flyway repair`로 맞춘다. (b) V6 파일은 그대로 두고 `card`만 만드는 최소 마이그레이션을 V6 앞 번호로 넣는 방법은 V1~V5 번호가 모두 찼으므로 불가. 팀에서 결정한다.
+
+### 카드·마이너스통장 거래내역과의 통합
+
+- [ ] `GET /accounts/{accountNo}/transactions`(5), `GET /cards/{cardNo}/transactions`(8), `GET /minus-accounts/{accountNo}/transactions`(10-1)가 같은 원장을 계좌·카드 축으로 따로 읽는다. 응답 필드는 맞췼지만 reader 구현은 세 개다.
+- 완료 조건: 공용 reader로 합치거나 세 구현을 그대로 두기로 팀에서 정한다(534 "API 5 거래내역과의 중복" 항목과 함께).
+
+## S15P21D105-503 — 계좌 집계·휴면 탐지
+
+구현 계약: [account-query.md](account-query.md) "계좌 집계·휴면 탐지"
+
+### 휴면 기준 기본값 확정
+
+- [ ] `inactiveMonths` 기본값 6개월, `maxBalance` 기본 없음(잔액 > 0만 요구)으로 구현했다. 기획안 예시는 "최근 8개월"을 쓰고 금융권 휴면 기준은 1년이라 팀 확정이 필요하다.
+- 완료 조건: FE 기본 호출 값과 진단(14 Diagnosis)의 "휴면성 소액계좌" 이슈 판정이 같은 기준을 쓴다.
+
+### 현금성 자산 정의
+
+- [ ] 현금성 자산 = 수시입출금 잔액(CLOSED 제외, INACTIVE 포함)으로 정의했다. Finance Data 통합 요약(500)의 `totals.cashAssets`는 예·적금까지 포함하므로 두 값이 다르다. 명칭을 맞추거나 500의 필드명을 바꿀지 정한다.
+- 근거: 기획안 9-2가 현금성 자산과 저축성 자산을 구분한다.
+
+### 거래 원장 기반 휴면 판정
+
+- [ ] 휴면 판정은 `account.last_transaction_date`만 본다. 동기화 전 seed 계좌는 seed가 넣은 값에, 수동 거래(API 6 등록)는 이 컬럼을 갱신하지 않으면 판정에 반영되지 않는다.
+- 완료 조건: 수동 거래 등록(505)이 `last_transaction_date`를 갱신하거나, 판정 시 `transaction`의 최근 거래일과 비교해 더 최신 값을 쓴다.
+
+### MySQL 검증
+
+- [ ] `JdbcAccountFlowReader`의 `YEAR()`/`MONTH()` GROUP BY와 `SUM(CASE …)`을 MySQL 8.0에서 실행한다. H2(MODE=MySQL)만 확인했다. `ONLY_FULL_GROUP_BY` 모드에서도 SELECT 항목이 모두 GROUP BY 식 또는 집계이므로 통과해야 한다.
+## S15P21D105-543 — Diagnosis 저장 구조·실행 골격
+
+구현 계약: [diagnosis.md](diagnosis.md)
+
+### V5 번호와 goal 테이블 확인(병합 전 필수)
+
+- [ ] `V5__create_goal.sql`의 번호와 선반영 자체를 BE-A와 확인한다.
+- 근거: `diagnosis.goal_id`가 ERD상 `goal(user_id, goal_id)`를 참조하는데 `goal` 마이그레이션이 없어
+  V17을 만들 수 없었다. V3의 `account` 선례대로 스키마만 먼저 추가했다. BE-A 구간(V1~V9)의 번호를
+  소비했으므로 `db/migration/README.md`의 "구간을 넘겨 써야 하면 담당자와 번호를 확인" 규칙이 걸린다.
+- 완료 조건: BE-A가 V5 번호를 확인하고, Goal API(508~511)가 `goal` 테이블을 다시 만들지 않는다는 것에
+  합의한다. 번호 충돌이 있으면 병합 전에 파일명을 바꾼다.
+
+### MySQL 검증
+
+- [x] `V5`·`V17`을 MySQL 8.0.46에서 적용하고 `DiagnosisMySqlIntegrationTest` 3건을 통과시켰다
+  (2026-09-10). `ddl-auto: validate`, `fk_diagnosis_goal`, JSON 컬럼 타입, CHECK 5개를 확인했다.
+- [x] 운영 배포 경로(V16까지 적용된 DB에 V5·V17이 뒤늦게 도착)를 실제 파일로 재현했다. V5가
+  `OUT_OF_ORDER`로 적용되고 FK가 정상 생성되며 재기동에도 문제가 없다.
+
+### 미확정 정책
+
+- [ ] `rule_version` 표기 규칙을 팀에서 정하고 `DiagnosisRuleVersion.CURRENT`를 교체한다. 현재는 `"v1"`
+  상수이며 cashflow의 `CashflowCalculationVersion`과 같은 상황이다. 두 값의 표기를 함께 정한다.
+- [ ] `diagnosis_issue.domain`과 `type`의 값 집합을 544·545에서 확정하고 ERD 주요 코드값 표에 추가한다.
+  ERD에 목록이 없어 `String`으로 두었다.
+- [ ] `input_snapshot`의 형식과 항목을 544에서 정한다.
+- [ ] 종합 상태(`overall_status`) 판정 규칙을 544에서 정한다. 현재는 호출자가 넘긴 값을 그대로 저장한다.
+- [ ] 544의 진단 실행에서 `goalId` 소유권을 애플리케이션 단계에서 검증한다. 복합 FK
+  `(user_id, goal_id)`가 남의 목표를 막아 주지만 DB까지 가서 막히므로 500이 된다. 400 또는
+  `RESOURCE_NOT_FOUND`로 바꿔야 한다. H2 테스트는 FK가 없어 이 경로를 재현하지 못한다.
+
+### 심각도 enum 통합 여부
+
+- [ ] `diagnosis`의 `IssueSeverity`와 `cashflow`의 `RiskSeverity`를 `global/`로 합칠지 정한다.
+- 근거: 값 집합(`LOW`/`MEDIUM`/`HIGH`/`CRITICAL`)이 같고 ERD 주요 코드값 표의 같은 항목을 가리킨다.
+  한쪽 도메인의 enum을 다른 도메인이 import하면 서로의 코드값 변경에 묶여 별도 enum을 두었다.
+- 선행 조건: cashflow 파일을 건드리면 병합 대기 중인 S15P21D105-542와 충돌한다. 542 병합 후에 판단한다.
+- 완료 조건: 합치기로 했다면 두 도메인이 같은 enum을 쓰고 ERD 코드값 표가 그 사실을 반영한다.
+
+### 실패 상태 표현
+
+- [ ] 진단 실행 실패를 어떻게 표현할지 정한다. ERD `diagnosis`에 상태 컬럼이 없어 실패한 진단이
+  접수된 채 `completed_at` NULL로 남고 진행 중인 진단과 구분되지 않는다.
+- 근거: cashflow는 `ForecastStatus`로 `FAILED`를 남기지만 diagnosis에는 대응 컬럼이 없다.
+- 선행 조건: 컬럼 추가가 필요하면 ERD 변경을 먼저 논의한다.
+- 완료 조건: 실패한 진단을 재시도 판단에서 진행 중인 진단과 구분할 수 있다.
+
+### Jira 최신 완료 조건 대조
+
+- [ ] 실제 Jira 접근이 가능해지면 최신 543 완료 조건과 구현 범위를 대조한다. 로컬
+  `SPRINT/Jira (4).csv`의 제목(`[API 14] Diagnosis 기반`)과 설명(`Diagnosis·Issue 관계와 실행 골격`)만
+  근거로 범위를 정했다.
+## S15P21D105-504 — 거래 조회·메모·카테고리·숨김
+
+구현 계약: [transaction-query.md](transaction-query.md)
+
+### 금융망 메모 API 반영
+
+- [ ] 명세 6은 거래 메모 수정을 "SSAFY" 연동으로 표기하지만 현재는 우리 DB `transaction.memo`만 갱신한다.
+- 근거: 금융망 거래 메모 API(2.4 거래내역 메모)에 넘길 `accountNo`·`transactionUniqueNo`와 우리 원장의 대응 규약이 501(계좌 동기화)에서 아직 정해지지 않았다. 2026-09-09 기준 전달받은 API Key가 거래 API에서 `H1008`로 거절돼 실호출 검증도 불가능했다.
+- 선행 조건: 501이 `transaction_id`를 금융망 `transactionUniqueNo`로 채우는지, 계좌 거래만 대상인지 확정.
+- 완료 조건: SSAFY 출처 계좌 거래의 메모 수정 시 금융망에도 반영되거나, 로컬 전용으로 확정해 명세의 "SSAFY" 표기를 고친다.
+
+### 거래 seed 데이터
+
+- [ ] `backend/database/seeds`에 `transaction` seed가 없다. 시연 계정으로 거래 목록·카드 사용내역·마이너스통장 거래·소비 기반 카드 추천을 보이려면 필요하다.
+- 근거: 카드·마이너스통장·상품 추천 도메인은 `transaction`을 JDBC로 읽지만 데이터 적재는 어느 티켓도 맡지 않았다. 카테고리 기준 행(V6)의 코드를 그대로 써야 한다.
+- 완료 조건: 시연 사용자별 3개월치 거래가 V6 카테고리 코드·`payment_method`(CARD/ACCOUNT) 규약으로 적재되고, 501 동기화가 `source_type = 'SEED'`를 덮어쓰지 않는 규칙(534에서 제기한 것과 같은 문제)이 정해진다.
+
+### MySQL 검증
+
+- [x] V6를 MySQL 8.0에서 적용해 `ddl-auto: validate` 통과와 복합 외래키(`account`, `card`) 생성을 확인한다. 2026-09-11 확인: Docker `mysql:8.0`(8.0.46)에 V1~V17을 적용한 뒤 백엔드를 `local` 프로필(`ddl-auto: validate`, Flyway off)로 기동해 엔티티 32개 전부 통과, `Started DodamApplication`(6.2초). 오류·경고 없음. 복합 외래키 `fk_transaction_account`·`fk_transaction_card`는 V11 뒤에 V6을 적용하는 순서에서 생성됐다.
+- 근거: `hidden`·`active`는 TINYINT(1)↔boolean, `transaction_time`은 TIME↔LocalTime 매핑이며 H2와 MySQL의 타입 검증 결과가 다를 수 있다. 기존 DB에는 V17 뒤에 V6이 들어가므로 out-of-order 적용도 함께 본다.
+- 완료 조건: 빈 스키마에 V1~V16 적용 후 기동, 목록·상세·PATCH 3종 SQL을 MySQL에서 실행.
+
+### 명세 외 추가 항목 확정
+
+- [ ] `GET /api/v1/transactions/categories`와 목록 파라미터 `hidden`을 API 명세 6에 반영할지 팀에서 정한다.
+- 근거: FE가 카테고리 수정 Body의 `categoryId`와 필터 코드를 알 방법이 명세에 없었고, 숨긴 거래를 다시 보이게 할 목록도 없었다. 구현은 문서에 "명세 외 추가"로 표시했다.
+- [ ] 목록에 `transactionType`(INCOME/EXPENSE/TRANSFER) 필터를 추가할지 정한다. 가계부 화면의 기본 필터이지만 명세에 없어 넣지 않았다.
+
+### 카드·마이너스통장 fixture와의 스키마 차이
+
+- [ ] `card-query-test-data.sql`, `minus-account-test-data.sql`, `product-comparison-recommendation-test-data.sql`이 만드는 `transaction`에는 `balance_after`·`created_at`·`updated_at`이 없다. 이 fixture가 남은 상태에서 `Transaction` 엔티티로 쓰기를 하면 실패한다.
+- 현재 동작: 504 테스트는 자기 fixture로 V6 컬럼 전체를 다시 만들어 영향이 없다. 다른 도메인 테스트는 읽기만 하므로 역시 영향이 없다.
+- 완료 조건: 공용 fixture 하나로 합치거나, 각 fixture가 V6 컬럼을 모두 갖도록 맞춘다. 담당 이슈를 정해야 한다.
+
+## S15P21D105-505 — 수동 거래 CRUD
+
+구현 계약: [transaction-query.md](transaction-query.md) "수동 거래 등록·수정·삭제"
+
+### 거래 시각 입력
+
+- [x] (2026-09-16) 등록·수정 Body에 `transactionTime?`(HH:mm / HH:mm:ss)을 추가했다. FE 현금거래 추가 화면이 "지출시간"으로 날짜·시각을 함께 고르는데 Body에 시각이 없어 수동 거래가 전부 시각 null로 저장되고, 같은 날 거래가 시간순으로 정렬되지 않았다. 시각을 생략하면 예전처럼 null이라 기존 호출은 그대로 동작한다.
+- [ ] API 명세서(Notion, 6 Transaction) 수동 거래 등록·수정 Body에 `transactionTime?`을 반영한다. 레포의 `docs/API명세서/6 Transaction Spending*.csv`는 Notion 내보내기라 직접 고치지 않았다.
+- [ ] FE 인계: (1) `ledgerMappers.ts`의 시각 변환이 `transactionTime.slice(0, 5)`를 null 확인 없이 호출해 시각 없는 거래(기존 수동 거래·시각 없는 금융망 거래)가 한 건이라도 있으면 목록 로드가 실패할 수 있다. (2) `ledgerApi.ts`에 등록·수정·삭제 호출이 없어 화면의 저장이 로컬 상태만 바꾼다. draft의 `transactionTime`을 Body에 함께 보내야 이 변경이 효과를 낸다.
+- 결정: 시각은 현재 시각과 비교하지 않는다(거래일만 "오늘 이후 불가"). 앱과 서버의 시계가 몇 분 어긋나면 방금 등록한 거래가 거절되기 때문이다. 시각을 지우는(null로 되돌리는) 경로는 두지 않았다. 필요해지면 FE와 빈 문자열 규약을 정한다.
+
+### 계좌 연결 여부
+
+- [ ] 수동 거래는 계좌·카드에 연결되지 않는다(`account_id` null). 명세 Body에 계좌 필드가 없어서다. 그래서 계좌 거래내역(5)·계좌 잔액·`last_transaction_date`·현금흐름 예측에는 잡히지 않고, 전체 거래 목록(6)과 소비 집계에만 나타난다.
+- 선행 조건: FE가 수동 거래 화면에서 계좌를 고르게 할지 팀에서 정한다. 넣기로 하면 Body에 `accountId?`를 추가하고 소유권·계좌 유형(DEMAND_DEPOSIT) 검증, `last_transaction_date` 갱신 여부를 함께 정한다(503 휴면 판정 항목과 연결).
+- 완료 조건: 명세 6의 Body 정의와 구현이 일치한다.
+
+### 소비유형 재계산
+
+- [ ] 등록 시 `spending_type`은 카테고리 기본값에서만 채운다. 카테고리 없이 등록하면 null이라 고정·변동지출 집계(`/spending/fixed`, `/spending/variable`)에서 빠진다.
+- 완료 조건: 3 Preference(자동 분류)가 미분류 거래의 카테고리·소비유형을 채우는 규칙을 정하거나, 등록 시 거래 유형별 기본값(EXPENSE → VARIABLE 등)을 두기로 결정한다.
+
+### 삭제 방식
+
+- [ ] 물리 삭제로 구현했다. 삭제 이력이 필요하면(진단·리포트가 과거 집계를 다시 계산할 때) soft delete 컬럼이 없어 ERD 변경이 필요하다. 현재 ERD에는 `deleted_at`이 없다.
+
+## S15P21D105-506 — 소비 기간·카테고리 집계
+
+구현 계약: [spending-aggregation.md](spending-aggregation.md)
+
+### 티켓 범위 확정
+
+- [ ] 506을 `/spending/**` 11개 중 집계 6개(월 소비 요약, 월 누적 소비, 일별 소비, 카테고리별 소비, 카테고리 소비 추이, 결제수단별 소비)로 잡았다. 소비·저축 비율, 소비 급증, 소비목표 비교, 고정·변동지출은 다음 하위 태스크로 남겼다. Jira 하위 태스크 설명과 다르면 재배치한다.
+
+### "소비" 정의 합의
+
+- [ ] EXPENSE이면서 `spending_type`이 NON_SPENDING이 아닌 거래(미분류 포함)를 소비로 정의했다. 진단(14)·리포트(20)·소비 기반 카드 추천(18)이 같은 정의를 쓰는지 대조한다. 카드 추천 reader(`JdbcCardRecommendationSpendingReader`)는 현재 카드 거래만 본다.
+- 완료 조건: 소비 정의를 공용 문서(ERD 「데이터 무결성 규칙」 또는 spending-aggregation.md)에 한 번만 두고 각 도메인이 참조한다.
+
+### 소비 거래 seed
+
+- [ ] `transaction` seed가 없어 시연 계정의 소비 집계가 전부 0이다(504 절 "거래 seed 데이터"와 같은 항목). 카테고리·결제수단·`spending_type`이 골고루 들어간 3개월치가 필요하다.
+
+### MySQL 검증
+
+- [ ] `JdbcSpendingReader`의 다섯 SQL(월·일·카테고리·월×카테고리·결제수단 GROUP BY)을 MySQL 8.0 `ONLY_FULL_GROUP_BY`에서 실행한다. H2만 확인했다. SELECT 항목이 모두 GROUP BY 식 또는 집계라 통과해야 한다.
+
+## S15P21D105-507 — 목표·이상소비·결제수단 분석
+
+구현 계약: [spending-aggregation.md](spending-aggregation.md) 507 절
+
+### 급증 판정 기준값 확정
+
+- [ ] 기준 증가율 20%, 소액 보정 10,000원은 기획안 예시(38% 증가)가 잡히도록 잡은 기본값이다. 기획안이 남긴 "소액·고액 보정계수 + 물가상승률" 논의가 끝나면 값을 바꾸고, 필요하면 `application.yml` 설정으로 뺀다.
+- 완료 조건: 진단(14)의 "변동지출 급증" 이슈가 같은 기준으로 판정된다.
+
+### 저축률 정의
+
+- [ ] 저축률을 `(소득 − 소비) / 소득`(잔여)으로 정의했다. 실제 저축 이체(`savingTransfer`)는 참고 수치로만 준다. 어느 카테고리·이체를 "저축"으로 볼지 규약이 정해지면 저축률 분자를 실제 저축액으로 바꿀지 결정한다.
+- 근거: 기획안은 "소비 : 저축 목표 비율"을 말하지만 저축 거래 식별 규칙이 없다.
+
+### 소득 출처
+
+- [ ] `financial_profile.monthly_income`이 있으면 그 값을, 없으면 그 달 INCOME 거래 합을 소득으로 쓴다. 급여가 두 번 들어온 달이나 환급 입금이 있는 달은 거래 합이 과대평가될 수 있다. 3 Preference(패턴 분석)가 "급여" 입금을 식별하면 그 값으로 바꾼다.
+
+### V7 goal 하위행 선반영
+
+- [ ] `saving_goal`, `spending_goal`을 V7로 만들었다. Goal API(508~511)는 같은 테이블을 다시 만들지 않고 `goal_account`, `goal_history`만 추가한다. 소비목표에 카테고리가 없어 `goal-comparison`은 월 전체 소비와 비교한다. 카테고리별 예산이 필요하면 ERD 변경이다.
+
+### MySQL 검증
+
+- [ ] V7 적용과 `JdbcSpendingAnalysisReader`의 SQL(spending_type별 월·카테고리 집계, goal JOIN spending_goal)을 MySQL 8.0에서 실행한다. H2만 확인했다.
+
+## S15P21D105-508 — Goal CRUD
+
+구현 계약: [goal.md](goal.md)
+
+### 줄이기 목표 1개 제한 (S15P21D105-630, 2026-09-17)
+
+- [x] 사용자당 진행 중(ACTIVE·PAUSED, 미삭제) 줄이기 목표가 있으면 생성은 409 `SPENDING_GOAL_ALREADY_EXISTS`. FE QA에서 여러 개가 만들어지는 문제로 추가했다([goal.md](goal.md) §생성).
+- [ ] FE: 줄이기 목표가 이미 있으면 생성 진입점을 숨기거나 409 메시지를 그대로 안내한다. 기존 시연 데이터에 사용자당 줄이기 목표가 2개 이상인 계정이 있으면 서버에서 하나만 남기고 CANCELED로 정리한다(seed 493은 사용자당 최대 1개).
+- [ ] DB UNIQUE 제약은 두지 않았다. 동시 요청으로 2개가 생길 수 있어 필요하면 V35 방식(생성 컬럼 + UNIQUE)으로 `goal`에 제약을 추가한다.
+
+### 명세 Body와 ERD의 불일치(줄이기 목표)
+
+- [ ] 명세 12 생성 Body는 `targetAmount`·`targetDate` 필수, `monthlyBudget` 선택인데 ERD `spending_goal`에는 `monthly_budget`만 있다. 줄이기(SPENDING) 목표에 목표 금액·목표일이 오면 400으로 거절하도록 구현했다. FE 목표 설정 화면(481·485)이 줄이기 목표에도 금액·기한을 받는다면 ERD에 컬럼을 추가하거나 명세를 고쳐야 한다.
+- 완료 조건: 명세 12 Body 정의와 ERD·구현이 일치한다.
+
+### 달성 자동 전이
+
+- [ ] 모인 금액이 목표 금액에 도달해도 상태는 ACTIVE로 남는다(510은 `paceStatus = ACHIEVED`, `riskLevel = NONE`으로만 알린다). 자동 ACHIEVED 전이를 넣을지, 사용자가 확인 후 PATCH로 바꾸게 둘지 팀 결정. 자유입출금 계좌는 잔액이 다시 줄 수 있어 자동 전이가 되돌아가는 문제가 있다.
+
+### 삭제 시 연결 해제
+
+- [x] 509에서 처리 방식을 정했다: 목표 soft delete 시 `goal_account` 행은 남기되, 다른 목표가 그 계좌를 연결하면 삭제된 목표의 연결을 해제하고 이어받는다(`GoalAccountService.replaceAccounts`). 삭제 시점에 바로 지우지 않은 이유는 삭제된 목표의 이력(511)이 연결 계좌를 참조할 수 있기 때문이다.
+
+### MySQL 검증
+
+- [x] `Goal`·`SavingGoal`·`SpendingGoal` 엔티티가 V5·V7 DDL과 `ddl-auto: validate`를 통과하는지 MySQL 8.0에서 확인한다. 2026-09-11 확인: Docker `mysql:8.0`(8.0.46)에 V1~V17을 적용한 뒤 백엔드를 `local` 프로필(`ddl-auto: validate`, Flyway off)로 기동해 엔티티 32개 전부 통과, `Started DodamApplication`(6.2초). 오류·경고 없음.
+
+## S15P21D105-509 — 목표 연결계좌
+
+구현 계약: [goal.md](goal.md) "연결계좌"
+
+### Body를 계좌 ID로 변경
+
+- [x] (2026-09-16) `PUT /goals/{goalId}/accounts` Body를 `accountNos[]`(계좌번호 원문)에서 `accountIds[]`(계좌 응답의 `accountId`)로 바꿨다. FE 요청: 계좌 목록·연결계좌 조회가 `accountId`와 마스킹 번호만 주고 원문은 응답에 없어 `accountNos`를 만들 수 없었다. 서비스는 계좌를 찾은 뒤부터 이미 ID로 동작하므로 조회 한 줄(`findByIdAndUserId`)만 바뀌었고 유형·상태·다른 목표 연결 검증, 이력, 응답은 그대로다. 이 API를 호출하던 클라이언트는 없었다(FE는 로컬 상태만 관리).
+- [ ] API 명세서(Notion, 12 Goal) "목표 연결계좌 변경" Body를 `accountIds[]`로 반영한다. 레포의 `docs/API명세서/12 Goal*.csv`는 Notion 내보내기라 직접 고치지 않았다.
+- [ ] 아래 "기여 금액" 항목의 Body 확장안도 `[{accountId, contributionAmount?}]`로 읽는다.
+
+### 계좌 잔액 변경 시 모인 금액 재계산
+
+- [x] 510에서 처리했다: progress·required-saving·forecast·risk가 조회 시점에 연결 계좌 잔액 합으로 다시 계산하고 `goal.current_amount`도 갱신한다. 목록·요약(508)은 저장값을 그대로 쓰므로 계산 API를 한 번 부른 뒤에 맞아진다.
+- [ ] 목록·요약도 실시간으로 맞추려면 ACCOUNT 동기화(502) 뒤에 사용자 목표를 갱신하는 훅이 필요하다. 동기화 응답 시간에 영향이 있어 팀 결정으로 남긴다.
+
+### 기여 금액(contribution_amount)
+
+- [ ] 명세 Body가 `accountIds[]`만 받아 계좌별 기여 금액을 지정할 수 없다. 급여통장처럼 잔액 일부만 목표에 쓰는 경우를 위해 ERD가 둔 컬럼이다. FE에 입력 UI가 생기면 Body를 `[{accountId, contributionAmount?}]`로 바꾸고 모인 금액 계산에 반영한다.
+
+### MySQL 검증
+
+- [x] V8 적용(복합 외래키 3개: goal, saving_goal, account)과 `GoalAccount` 엔티티(`@IdClass`)의 `ddl-auto: validate` 통과를 MySQL 8.0에서 확인한다. 2026-09-11 확인: Docker `mysql:8.0`(8.0.46)에 V1~V17을 적용한 뒤 백엔드를 `local` 프로필(`ddl-auto: validate`, Flyway off)로 기동해 엔티티 32개 전부 통과, `Started DodamApplication`(6.2초). 오류·경고 없음. 493 seed가 `goal_account` 4,750건을 외래키가 살아 있는 상태로 적재했다.
+
+## S15P21D105-510 — 목표 진행률·필요 저축액
+
+구현 계약: [goal.md](goal.md) "계산"
+
+### 저축속도 정의
+
+- [ ] 현재 저축속도를 "확보 금액 / 목표 생성 후 경과 개월(최소 1)"로 정의했다. 생성 전부터 있던 계좌 잔액이 첫 달 속도에 그대로 잡혀 과대평가된다(기획안 예시의 "현재 월평균 저축액"은 최근 저축 흐름을 뜻한다).
+- 완료 조건: 이력(511, `goal_history`)이 쌓이면 최근 3개월 `current_amount` 증분의 평균으로 바꾼다. 그 전까지는 현재 정의를 쓴다.
+
+### 위험 판정 기준값
+
+- [ ] 페이스 허용 ±5pt, 일정 지연 10pt, 속도 부족률 30%, 예산 경고 80%는 기본값이다. 진단(14 Diagnosis)의 "모으기 목표 달성 위험"·"줄이기 목표 초과 위험" 이슈가 같은 기준을 쓰도록 543 담당과 맞춘다. 543의 `diagnosis_issue` 심각도 enum과 `riskLevel`(LOW/MEDIUM/HIGH) 대응도 정한다.
+
+### 자유입출금 출금 경고
+
+- [ ] 기획안 "자유입출금통장의 경우 출금을 할 경우 경고메시지 출력"은 구현하지 않았다. 511 이력(`AMOUNT_UPDATED`의 `current_amount` 감소)으로 감지할 수 있게 됐으니, 위험 요인 `BALANCE_DECREASED`를 추가할지 정한다.
+
+### MySQL 검증
+
+- [ ] 계산 API는 새 SQL이 없다(엔티티 조회 + 507 reader 재사용). V8 검증(509 절)과 함께 확인한다.
+
+## S15P21D105-511 — 목표 예측·위험·이력
+
+구현 계약: [goal.md](goal.md) "변화 이력"
+
+### 티켓 범위
+
+- [ ] 511 제목의 "예측·위험"은 510(`forecast`, `risk`)에서 이미 구현했고 511에서는 `goal_history`(V9)와 이력 조회·기록만 추가했다. Jira 하위 태스크 설명과 다르면 재배치한다.
+
+### 주기적 스냅샷
+
+- [ ] 이력은 사용자 행동(생성·수정·연결·계산 API 호출)이 있을 때만 남는다. 아무 호출이 없는 달에는 행이 없어 "월별 진행 추이" 차트(FE `GoalHistoryPoint`)에 빈 달이 생긴다.
+- 완료 조건: 일 1회(또는 ACCOUNT 동기화 뒤) 모으기 목표의 `AMOUNT_UPDATED` 스냅샷을 남기는 스케줄러를 두거나, FE가 빈 달을 직전 값으로 채우기로 정한다.
+
+### 저축속도 재정의(510 절 후속)
+
+- [ ] 이력이 쌓이면 저축속도를 "최근 3개월 `current_amount` 증분 평균"으로 바꾼다(510 절 "저축속도 정의"). 지금은 생성 이후 평균이다.
+
+### MySQL 검증
+
+- [x] V9 적용과 `GoalHistory` 엔티티(`DECIMAL(10,4)`↔`BigDecimal`)의 `ddl-auto: validate` 통과를 MySQL 8.0에서 확인한다. 2026-09-11 확인: Docker `mysql:8.0`(8.0.46)에 V1~V17을 적용한 뒤 백엔드를 `local` 프로필(`ddl-auto: validate`, Flyway off)로 기동해 엔티티 32개 전부 통과, `Started DodamApplication`(6.2초). 오류·경고 없음.
+
+## S15P21D105-492 — Transaction·Spending·Subscription Fixture
+
+산출물: `database/seeds/DODAM_TRANSACTION_SEED.sql`, `database/seeds/DODAM_SUBSCRIPTION_SEED.sql`, `database/seeds/README.md`
+
+### MySQL 실행 검증
+
+- [x] 2026-09-11 Docker `mysql:8.0`(8.0.46)에 V1~V17을 적용하고 525→491→522→523→524→492→493 순으로 실행했다. 계좌·카드번호 fixture는 SHA2 기반 더미(형식만 충족)를 썼다. 아래 "임시 테이블 재참조 오류"를 고친 뒤 원본 파일 그대로 1~7번이 43초에 오류 없이 끝났다.
+- 결과: 거래 348,192건(INC 24,000 / FIX 72,000 / SUB 36,000 / SAV 24,000 / VAR 192,192), 계약 위반 0건, 주거래 계좌 `last_transaction_date` 4,000건·휴면 계좌 NULL. 실행 시간 약 14초(변동 슬롯 축소 불필요). 재실행 후 건수·금액 합이 같아 멱등을 확인했다.
+- 성향별 소득 대비 소비 / 저축 비율: BALANCED 75.3 / 15.0, SPENDING_FOCUSED 100.4 / 3.0, SAVING_FOCUSED 65.3 / 30.0, VOLATILE 90.4 / 8.0.
+- [ ] SPENDING_FOCUSED는 소비(고정 약 45% + 변동 55%)가 소득의 100%를 넘는다. 의도한 과소비 시연이 아니면 변동 비율을 낮춘다.
+
+### 임시 테이블 재참조 오류 (491·492·493·522·523·524·구독 seed 공통)
+
+- [x] MySQL은 한 문장에서 같은 TEMPORARY 테이블을 두 번 참조할 수 없다(`ERROR 1137 Can't reopen table`). 자릿수 테이블 4중 CROSS JOIN, preflight의 스칼라 서브쿼리 다중 참조, `ctx`와 서브쿼리 `c`의 동일 테이블 조인(492 4c·4e), `EXISTS(... preflight)` 게이트가 모두 해당해 491·492·493·522·구독 seed는 사용자 목록 생성에서 실패했다. 8.0.46에서 자기 조인·스칼라 서브쿼리 2개·조인+파생 테이블·EXISTS 네 패턴 모두 실패함을 확인했다. 523·524는 처음부터 파생 테이블·단일 참조 문장으로 작성돼 영향이 없다.
+- 조치(2026-09-11): 다섯 파일의 `tmp_dodam_*` 작업 테이블과 491·522의 fixture 테이블을 일반 테이블로 바꾸고 파일 끝 cleanup 절에서 DROP한다. 머리말의 fixture 계약도 `CREATE TABLE`로 바꿨으므로 fixture 빌더는 TEMPORARY가 아닌 일반 테이블을 만들어야 한다(523·524 fixture는 TEMPORARY도 가능).
+- [ ] 파일이 중간에 멈추면 작업 테이블이 스키마에 남는다(다음 실행의 `DROP TABLE IF EXISTS`가 정리). 운영 DB에 적재할 때 `tmp_dodam_%` 잔여 테이블을 확인한다.
+
+### 525 금융상품 seed의 `product_sync_history`
+
+- [x] `DODAM_FINANCIAL_PRODUCTS_*_COMPAT_FIXED.sql` 두 파일은 COMMIT 직전에 `product_sync_history`에 INSERT했는데, 이 테이블은 ERD에만 있고 V1~V17 마이그레이션과 엔티티에 없다. Flyway로 만든 DB에서는 여기서 멈추고 트랜잭션이 롤백돼 상품이 하나도 들어가지 않았다. 2026-09-11 INSERT와 그 전용 변수(`@dodam_existing_before`)를 제거했다. 결과: 상품 198건·옵션 456건, 위반 0건.
+- [ ] 상품 동기화 이력이 필요해지면 `product_sync_history` 마이그레이션(BE-B 구간)과 엔티티를 만든 뒤 seed에 이력 INSERT를 되살린다.
+
+### 구독 seed의 선행 마이그레이션
+
+- [x] `DODAM_SUBSCRIPTION_SEED.sql`은 V30(`subscription`·`subscription_payment_history`, 2026-09-11 S15P21D105-512)이 생긴 뒤 적재할 수 있다. 같은 날 Docker `mysql:8.0`에 V1~V17+V30 적용 → seed 1~7 → 8번 순으로 실행해 구독 6,000건(ACTIVE 5,840 / PAUSED 160), 결제 이력 36,000건, 카드 불일치 0, 거래 SUB 행과 불일치 0을 확인했다(약 1초). 거래 seed의 SUB 행(12일·25일, 9,900/12,400/14,900/4,900원)과 금액·날짜가 맞는다.
+
+### 시연 사용자 데이터 결
+
+- [ ] 거래는 seed 사용자(`seed.kmeans.u0001~u4000`)에만 생긴다. 실제 회원가입 계정으로 시연하려면 금융망 동기화(ACCOUNT scope)로 거래를 받아야 하는데 API Key 문제(499 절)가 남아 있다. 시연 계정을 seed 사용자 중 하나로 정하고 비밀번호를 애플리케이션으로 세팅하는 절차(491의 `password_hash NULL` 항목)가 필요하다.
+- [ ] `balance_after`는 NULL이다. 계좌 거래내역(5)·마이너스통장(10-1) 응답의 `balanceAfter`가 seed 데이터에서는 비어 보인다. 잔액 재생(replay)을 넣을지 정한다.
+
+## S15P21D105-493 — Goal·GoalAccount·GoalHistory Seed
+
+산출물: `database/seeds/DODAM_GOAL_SEED.sql`
+
+### MySQL 실행 검증
+
+- [x] 2026-09-11 MySQL 8.0.46에서 실행했다(492 절 "임시 테이블 재참조 오류" 조치 포함). 최초 규칙으로는 preflight가 `users_with_saving_account_count = 3000`으로 실패했다. 524가 예금 500·적금 500 계좌를 CLOSED로 만들어 사용자 1,000명(40명 주기의 25~32번째, 성향별 250명)은 열린 예·적금 계좌가 없고, Goal API는 CLOSED 계좌 연결을 400으로 막는다([goal.md](goal.md) 계좌 연결 표).
+- 조치: 열린 예·적금이 없는 사용자는 주거래 입출금 계좌를 대신 연결한다(`COALESCE(saving_account_id, primary_account_id)`, BALANCED는 주거래 중복 연결 방지). 기대 연결 수는 5,000 → 4,750.
+- 결과: 모으기 4,000(ACTIVE 3,900 / PAUSED 100), 줄이기 2,000, 연결 4,750(예금 1,500 / 적금 1,500 / 주거래 1,750, CLOSED 연결 0), 이력 30,000, `current_amount` 불일치 0, 연결 계약 위반 0, 진행률 범위 위반 0, 실행 약 2초. 재실행 후 건수·금액 합 동일.
+- 참고: 재실행은 목표를 지우고 다시 만들므로 `goal_id`가 바뀐다. 시연 스크립트에 goal_id를 고정하지 않는다. `goal_id`를 (user_id, type, created_at 마커)로 되찾는 방식은 사용자당 유형별 목표가 하나라는 seed 전제에 의존하며, 앱에서 `2026-03-01 09:00:00`에 목표를 만들 수는 없으므로 실무에서는 충돌하지 않는다.
+
+### 이력 스냅샷의 현실성
+
+- [ ] 월말 이력은 현재 연결 잔액을 6등분해 선형으로 채운 것이다(계좌 잔액 이력이 없어 실제 추이를 만들 수 없음). `forecast_date`는 NULL이고 API가 실시간 계산한다. 시연에서 "예상 달성일 변화"를 보이려면 이력에 `forecast_date`를 채우는 규칙을 정한다.
+
+### 줄이기 목표 예산 수준
+
+- [ ] SPENDING_FOCUSED·VOLATILE 사용자의 월 예산을 소득의 45%로 두어 대부분 WARNING/EXCEEDED가 나오게 했다(시연용). 진단(14)의 "줄이기 목표 초과 위험" 표본이 과다하면 비율을 조정한다.
+
+## S15P21D105-512 — Subscription 목록·상세·요약
+
+구현 계약: [subscription.md](subscription.md)
+
+### 금융망 동기화 부재
+
+- [ ] 정기결제 데이터는 시연 seed(`DODAM_SUBSCRIPTION_SEED.sql`)만 적재한다. 명세의 "SSAFY 연동"에 해당하는 동기화 핸들러(Finance Data `FinanceSyncScopeHandler`, 499 절)가 없어 실제 회원가입 계정에는 정기결제가 하나도 없다. 금융망에 정기결제 조회 API가 있는지 확인한 뒤 CARD 거래에서 파생하는 방식(513 후보 탐지 결과를 등록)으로 갈지 정한다.
+- 근거: SSAFY 금융망 문서에는 정기결제 도메인이 없다(카드 거래내역만 있음). 그래서 후보 탐지(513)를 "자체 탐지"로 뒀다.
+
+### EXPIRED 자동 전이
+
+- [ ] `end_date`가 지나도 상태는 ACTIVE로 남는다. EXPIRED는 seed·동기화가 넣는 값으로만 존재한다. 일 1회 배치(현금흐름 이벤트 수집과 함께)나 조회 시점 계산 중 하나를 정한다. 조회 시점 계산을 택하면 요약 금액에서 종료일 지난 건을 빼야 한다.
+
+### 목록 응답의 서비스 식별자 (2026-09-20, `docs/subscription-backend-request.md` P2)
+
+- [x] `SubscriptionResponse`에 `serviceCode`·`iconKey`(nullable)를 추가했다. `SubscriptionResponseAssembler`가 후보 탐지와 같은 `SubscriptionServiceCatalog.match(name)`으로 채운다.
+  FE(`frontend/src/constants/subscriptionServiceIcons.ts`)가 이름 키워드로 아이콘을 추측하던 것을 `iconKey`로 바꿀 수 있다. RN은 `require()`가 정적이라 FE 번들에 있는 아이콘에 한해 서버 카탈로그 확장이 그대로 따라온다.
+- [ ] 매칭은 `name`에 서비스명·키워드가 포함되는지만 본다. 금융망 가맹점명("NETFLIX.COM", "쿠팡(와우멤버십)")이 들어오면 카탈로그 키워드를 늘려야 한다(513 "탐지 임계값"의 정규화 항목과 같은 뿌리).
+
+### 시연 seed (2026-09-20, `docs/subscription-backend-request.md` P1)
+
+- [x] 시연 계정 U0003은 `seq ≡ 3 (mod 6)`라 8번 seed로는 구독이 `도담 뮤직` 1건이다. 15번 `DODAM_DEMO_SUBSCRIPTION_SEED.sql`이 U0001~U0004의 구독·구독 거래·이력을 카탈로그 서비스명으로 5~7건씩 다시 만든다
+  (`backend/database/seeds/README.md` "시연 계정 구독 목록"). 전체 4,000명은 바꾸지 않았다 — 구독 거래가 FIXED 소비라 K-Means 아티팩트·또래 비교 수치가 움직여 재학습이 필요해진다.
+- [x] 2026-09-20 일회용 Docker `mysql:8.0`에 V1~V41을 적용하고 최소 fixture(시연 사용자 4명 + 방관자 1명, 주거래 계좌·주카드, 8번 모양 구독 7건·거래 59건, U0004 MANUAL 거래 1건)를 넣은 뒤
+  15번을 두 번 실행했다. preflight `1 / 4 / 4 / 1 / 24 / 4 / 4`, 구독 U0001 5(54,590)·U0002 6(83,680)·U0003 7(94,490)·U0004 5(ACTIVE 4, 37,690), 거래 165·이력 158·이력-거래 불일치 0·계약 위반 0·카드 불일치 0,
+  방관자 사용자의 구독·SUB 거래 7건과 U0004 MANUAL 거래 유지, U0004 `유튜브 프리미엄` PAUSED(이력 4건·다음 결제일 NULL), U0003 미등록 `디즈니+` 7건(3/27~9/27). 두 번째 실행 결과 동일, 작업 테이블 잔존 없음.
+- [ ] 위 검증은 1~14번 전체 체인이 아니라 최소 fixture 위에서 한 것이다. 서버 적용 전 로컬에 1·2·3·6·8·10·11번을 적재한 DB에서 한 번 더 돌리고, 백엔드를 띄워 U0003 로그인 → `GET /subscriptions?status=ACTIVE`(7건, `serviceCode`·`iconKey`)
+  → `GET /subscriptions/candidates`(디즈니+ 1건) → 가계부 9월에 넷플릭스·유튜브 프리미엄 결제가 보이는지 확인한다. **서버 적용은 아직이다.**
+
+### 목록 처리 방식
+
+- [ ] 목록 필터·정렬·페이지를 메모리에서 한다(사용자당 수십 건 전제, Goal과 같음). 동기화로 건수가 수백 건이 되면 `Specification` 조회로 바꾼다.
+- [ ] `category` 필터는 저장 문자열과 대문자 비교다. 금융망이 우리 enum 밖의 카테고리를 넣으면 카테고리 목록(513)에는 `ETC`로 세지만 필터로는 원래 코드로만 잡힌다. 적재 시 정규화 규칙을 정한다.
+
+### MySQL 검증
+
+- [x] 2026-09-11 Docker `mysql:8.0`(8.0.46)에 V1~V17 + V30을 적용(빈 DB라 V6 문제 때문에 out-of-order 순서로 손 적용, 502 절)하고 `local` 프로필(`ddl-auto: validate`, Flyway off)로 기동해 엔티티 34개 통과. 시연 seed 8번 적재: 구독 6,000·이력 36,000·불일치 0. seed 사용자 `seed.kmeans.u0001`로 로그인해 목록(1건, 카드 `My WE:SH 카드` 조인)·요약·상세(이력 6건 집계)·이력(2026-03~08, 6건)이 기대값과 같았다.
+
+## S15P21D105-513 — Subscription 반복결제 후보·서비스
+
+구현 계약: [subscription.md](subscription.md) "513"
+
+### 후보를 정기결제로 등록하는 경로
+
+- [ ] 명세 7에는 등록(POST) API가 없어 후보 탐지 결과를 정기결제로 만들 방법이 없다. 후보 응답에 `merchantName`·`amount`·`estimatedBillingCycle`·`suggestedPaymentDay`·`cardId`·`suggestedCategory`를 넣어 등록 Body를 바로 만들 수 있게 해 두었다. `POST /api/v1/subscriptions`를 명세에 추가할지 팀에서 정한다.
+
+### 구독 성격 필터 (2026-09-20, `docs/subscription-backend-request.md` P3)
+
+- [x] 후보 판정에 "이게 구독인가"를 보는 단계가 없어 seed 고정비 `도담 보험`·`도담 주거 관리사무소`가 MONTHLY 후보로 잡혔다(아래 514 MySQL 검증 기록에도 그렇게 적혀 있다). FE가 이 오탐 때문에 후보 연동을 걷어냈다.
+  `SubscriptionDiscoveryService.isSubscriptionLike`: 거래 카테고리 `SUBSCRIPTION` 또는 카탈로그 매칭 중 하나를 만족해야 후보다. 제외 목록(INSURANCE·HOUSING) 방식은 쓰지 않았다.
+- [ ] 위 필터는 카테고리가 없고 카탈로그에도 없는 진짜 구독(소규모 서비스, 해외 결제 "APPLE.COM/BILL" 등)을 놓친다. 카탈로그 키워드를 늘리거나 사용자가 후보를 직접 등록하는 경로(POST)로 보완한다.
+
+### 탐지 임계값
+
+- [ ] 기본 3회·6개월, 주기 판정 범위(주 5~9일, 월 25~36일, 연 350~380일)는 seed 거래(매월 12일·25일 결제)가 잡히도록 잡은 값이다. 기획안 "정기결제 점검" 화면의 요구(예: 2회면 경고)에 맞춰 조정한다.
+  요청서 4절이 짚은 세 가지도 같은 항목이다: (1) 조회 창이 최대 12개월(365일)이라 기본 `minOccurrences=3`으로는 YEARLY(평균 350일 × 2 간격)에 도달할 수 없다,
+  (2) WEEKLY는 3회 × 5~9일이면 걸려 매주 같은 금액의 습관 소비가 잡힌다, (3) `totalGap` 누적은 `(마지막 - 첫 결제일)`과 같아 개별 간격의 규칙성을 보지 않는다(1/1·1/2·3/2가 평균 30일로 MONTHLY).
+  `suggestedPaymentDay`(최빈값)에서 벗어난 결제 수를 세는 규칙성 검사와 YEARLY·WEEKLY 처리 방침을 함께 정한다.
+- [ ] 가맹점명 정규화가 공백·대소문자 제거뿐이다. "넷플릭스"와 "NETFLIX.COM", "쿠팡와우"와 "쿠팡(와우멤버십)"은 다른 묶음이 된다. 카탈로그 키워드 매칭(`matchedServiceCode`)을 묶음 기준에도 쓸지 정한다.
+- [ ] 금액이 바뀐 요금제(예: 9,900 → 13,500)는 두 묶음으로 갈라져 각각 횟수가 줄어든다. 가맹점 단위로 묶고 금액 변동을 허용(±20%)하는 방식을 검토한다.
+
+### 서비스 카탈로그
+
+- [ ] `SubscriptionServiceCatalog`는 코드에 고정한 30개 정적 목록이다(2026-09-11 요금 기준). 서비스·요금이 바뀌면 코드 수정이 필요하다. 테이블(`subscription_service`)과 관리자 API로 옮길지, FE가 자체 목록을 갖는지 정한다. `iconKey`는 FE `assets/icons/payments`의 파일명과 맞춘 것이며 FE가 아이콘을 추가하면 같이 갱신한다.
+
+## S15P21D105-514 — Subscription 변경·정지·취소 + Goal 회귀
+
+구현 계약: [subscription.md](subscription.md) "514"
+
+### 금융망 반영 없음
+
+- [ ] 수정·정지/재개·취소는 우리 DB만 바꾼다. 금융망에 정기결제 변경 API가 없어 전달 경로가 없다. 실제 해지는 각 서비스에서 해야 하므로 FE 문구("도담 목록에서만 정리됩니다")를 맞춘다.
+
+### 다음 결제일 재계산
+
+- [ ] WEEKLY·YEARLY는 기존 다음 결제일(없으면 생성일)을 기준점으로 쓴다. seed는 MONTHLY만 만들어 WEEKLY·YEARLY 경로는 단위 규칙 수준으로만 검증했다(통합 테스트는 YEARLY 목록·요약만). 실데이터가 들어오면 기준점 규칙을 재확인한다.
+- [ ] 결제일이 바뀐 ACTIVE 정기결제만 다음 결제일을 다시 잡는다. PAUSED 상태에서 결제일을 바꾸면 재개 시점에 새 결제일로 계산된다(의도한 동작이지만 문서화만 했다).
+
+### 취소의 의미
+
+- [ ] DELETE는 soft(상태 CANCELED, `canceled_at`)라 목록·요약 건수에 계속 들어간다(금액 합계에는 빠짐). 사용자가 "목록에서 지우기"를 원하면 숨김 필드나 물리 삭제가 필요하다.
+
+### Goal 회귀 테스트
+
+- Goal 회귀는 별도 티켓 515 절에 기록한다(H2 전체 테스트 + MySQL seed 데이터 API 회귀).
+
+### MySQL 검증
+
+- [x] 2026-09-11 MySQL 8.0 seed 데이터(`SUB-U0001-01`, 다음 결제일 2026-09-12)로 확인: 정지(200, 다음 결제일 null) → 재개(200, 2026-09-12 재계산) → 종료일 2026-09-11 지정 400 `INVALID_REQUEST`(다음 결제일보다 앞, DB CHECK에 닿기 전에 막힘) → 종료일 2026-12-31·금액 13,900 수정 200 → 같은 금액 재요청 200(`updated_at` 유지) → 취소 200 → 재취소 409 `SUBSCRIPTION_NOT_EDITABLE` → 타인 건 404. 직접 UPDATE로 `chk_subscription_dates` 위반 시 MySQL이 3819로 막는 것도 확인했다. 후보 탐지는 seed 고정 지출 `도담 보험`(6회, 20일)·`도담 주거 관리사무소`(5회, 1일)를 MONTHLY로 잡고, 등록된 `도담 비디오`와 NON_SPENDING 저축 이체는 뺐다.
+
+## S15P21D105-515 — Goal 회귀 테스트 (D7 "12 Goal 완료")
+
+구현 계약: [goal.md](goal.md)
+
+### H2 전체 테스트
+
+- [x] 2026-09-11 Subscription(512~514) 추가 뒤 `./gradlew test` 전체 833개 통과(실패·오류 0). Goal 통합 테스트 4종(`GoalApiIntegrationTest`, `GoalAccountApiIntegrationTest`, `GoalCalculationApiIntegrationTest`, `GoalHistoryApiIntegrationTest`) 포함. Subscription fixture가 `card`·`transaction`을 DROP CASCADE로 다시 만들지만 Goal fixture(`goal-test-data.sql`)와 충돌하지 않았다.
+
+### MySQL seed 데이터 API 회귀
+
+- [x] 2026-09-11 Docker `mysql:8.0`(8.0.46)에 V1~V17+V30 적용, seed 1~8 적재(목표 6,000·연결 4,750·이력 30,000·거래 348,192) 후 `local` 프로필로 기동해 seed 사용자 u0001(BALANCED, 모으기 1개·연결 2건)·u0002(SPENDING_FOCUSED, 모으기+줄이기)로 Goal API 14개 중 13개를 호출했다. 앱 오류 로그 0건.
+- 조회 결과가 seed 기대값과 모두 일치했다.
+  - u0001 목표 1: `currentAmount` 29,160,000 = 연결 계좌(주거래 19,160,000 + KB 정기예금 10,000,000) 잔액 합, 목표 16,100,000 → 진행률 100%, `paceStatus = ACHIEVED`, 필요 월 저축액 0, 예상 달성일 = 기준일, 위험 NONE. 이력 7건(GOAL_CREATED + 월말 AMOUNT_UPDATED 6, 2026-03~08 선형 증가). 줄이기 전용 API 호출 시 400, 타인 목표 404.
+  - u0002 목표 2: 1,800,000 / 32,000,000 → 5.6%, 기대 진행률 45.5%, `BEHIND`, 위험 HIGH(`PACE_INSUFFICIENT`, `BEHIND_SCHEDULE`), 필요 월 저축액 3,775,000. 목표 3(줄이기 1,800,000): 9월 소비 0(거래 seed가 8월까지라 정상), `previousMonthSpending` 4,247,800 = 8월 EXPENSE·비 NON_SPENDING 합과 일치, 위험 LOW. 요약: 모으기 목표 합 32,000,000 / 1,800,000, 월 예산 합 1,800,000.
+- 쓰기 경로(MySQL CHECK·복합 외래키 살아 있는 상태): 모으기 생성 201 → 이름·목표 금액 수정 200 → PAUSED 200 → PAUSED→ACHIEVED 409 `GOAL_STATUS_TRANSITION_NOT_ALLOWED` → 모으기에 월 예산 400 → 이력에 GOAL_CREATED·GOAL_UPDATED·STATUS_CHANGED 기록 → 연결 계좌 0건·진행률·위험(`NO_LINKED_ACCOUNTS`) 200 → 삭제 200(soft, GOAL_DELETED 이력) → 조회 404. 줄이기 생성(예산 0은 400 `VALIDATION_ERROR`) → 소비 진행률 200 → 삭제 200. seed 목표 6,000건은 그대로다.
+- [ ] `PUT /goals/{goalId}/accounts`는 당시 호출하지 못했다. Body가 계좌번호 원문(`accountNos`)을 받아 서버가 해시로 찾는데, seed 계좌의 해시는 검증용 더미라 원문이 없었다. 2026-09-16에 Body를 `accountIds`로 바꿔(509 절) 이 제약은 사라졌다. seed 환경에서 계좌 ID로 한 번 호출해 MySQL 검증을 마무리한다. H2 통합 테스트(`GoalAccountApiIntegrationTest`)는 통과했다.
+- 참고: 계산 API(progress·required-saving·forecast·risk)는 금액이 바뀌지 않으면 `AMOUNT_UPDATED` 이력을 남기지 않아 seed 목표의 이력은 7건 그대로였다. 목표 1은 모인 금액이 목표를 넘었는데 상태는 ACTIVE로 남는다(508 절 "모인 금액 도달 시 상태" 미결 항목과 같음).
+- 검증 중 확인한 도구 문제: Windows Git Bash의 `curl -d '한글'`은 본문을 UTF-8이 아닌 코드페이지로 보내 서버가 400 `INVALID_REQUEST`(본문 해석 실패)를 돌려준다. 앱 문제가 아니며 `--data-binary @utf8파일`로 보내면 정상이다. 시연·수동 테스트 시 주의.
+## 544·545 진행 현황 (2026-09-13)
+
+- 진단 실행·이력·latest·상세·summary·문제 목록/상세 API 추가. 현재 계약: [diagnosis-api.md](diagnosis-api.md).
+- 목표/당일 저장 현금흐름 위험은 연결했으나 기획안 전체 규칙은 미완료. 미정 임계값·규칙은 coverage로 공개한다.
+- 군집 공급자·적격 조건 검사·동일 카테고리 근거 병합은 후속 구현이며 저장 군집 근거 조회만 지원한다.
+- **2026-09-16 결정: 군집 분석 엔진(모델 학습·실행·근거 병합)은 시연 범위에서 제외한다.** 발견 화면은 RULE 기반 진단(544·627)으로 동작하고, `clusterContext`는 저장된 값의 조회 형식만 유지한다. 코치의 "군집 근거" 구간과 위 "군집 근거가 아직 비어 있다" 항목도 같은 결정을 따른다.
+- MySQL에서 사용자 잠금·만료 경쟁 테스트 필요. 실행 실패는 미완료 접수만 삭제하며 실패 이력을 보존하지 않는다.
+- 과거 543 항목의 input_snapshot·종합 상태·goalId 검증은 현재 API 문서의 부분 구현 범위와 함께 해석한다.
+
+## 546 진행 현황 (2026-09-13)
+
+- goal-impact·changes 추가. 계약: [diagnosis-api.md](diagnosis-api.md), 계획: [diagnosis-goal-impact-plan.md](diagnosis-goal-impact-plan.md).
+- [ ] "금융비용으로 인한 목표 달성 지연"은 대출 이자·상환 규칙(`LOAN_INTEREST_BURDEN` 등) 정책 확정 후 계산한다. 현재 `unavailable`로 표시.
+- [ ] 이전 진단은 같은 goalId 완전 일치 기준이다. 전체 진단과 목표 지정 진단 사이 비교가 필요하면 FE 요구를 확인한 뒤 확장한다.
+- [ ] `DiagnosisRepository.findPreviousCompleted`(NULL goalId 비교 JPQL)는 H2만 확인했다. MySQL에서 실행 계획·결과를 확인한다.
+
+## S15P21D105-516 — Pattern 분석 실행
+
+구현 계약: [pattern.md](pattern.md)
+
+### 금융 데이터 연동 조건
+
+- [ ] 명세 "금융 데이터 연동 완료 필요"를 "분석 기간에 거래가 있음"으로 구현했다. seed 사용자는 `finance_connection` 행이 없어 연결 상태를 강제하면 시연 계정이 전부 막히기 때문이다. 거래가 없을 때만 연결 상태를 봐서 `FINANCE_NOT_CONNECTED`와 `PATTERN_INSUFFICIENT_DATA`를 나눈다. 실계정 흐름(회원가입 → 연결 → 동기화 → 분석)에서 연결 상태를 우선할지 팀에서 정한다.
+
+### 분석 기간과 진행 중인 달
+
+- [ ] 기간은 기준일이 속한 달을 뺀 완료된 달 6개다. 시연일(2026-09)에는 seed 창(2026-03~08)과 정확히 맞지만, 10월 이후 시연하면 9월이 빈 달(0)로 들어와 규칙성·안정성이 떨어진다. 시연 날짜가 정해지면 seed 창을 옮기거나 `lookback-months`를 조정한다.
+- [ ] 저축성 지출은 API 6과 같이 NON_SPENDING EXPENSE 전체(저축·투자 + 이체)다. 일반 이체(TRANSFER 카테고리)가 많은 사용자는 저축률이 과대 계산된다. SAVING 카테고리만으로 좁힐지 API 6과 함께 정한다.
+
+### 실행 정책
+
+- [ ] 동기 실행이다. seed 4,000명 모집단 학습은 첫 요청에서만 일어나고(TTL 1시간) 그 뒤는 사용자 집계 1회라 응답 시간 문제가 없다고 봤지만 MySQL 실측은 아래 항목과 함께 한다.
+- [ ] 결과 재사용 기준은 "오늘 완료·같은 기간·같은 요청 모드"다. 거래가 새로 동기화되면 같은 날이라도 `forceRefresh=true`로 다시 분석해야 한다. Finance Data 동기화(499) 완료 시 자동 무효화(또는 `analyzed_at` < `last_synced_at`이면 재계산)를 붙일지 정한다.
+- [ ] FAILED 행은 조회에 나오지 않고 정리 배치도 없다. 누적되면 사용자별 최근 N건만 남기는 정리를 붙인다.
+
+### MySQL 검증
+
+- [x] 2026-09-14 Docker `mysql:8.0`에 V1~V19·V30·V31을 README 순서로 손 적용(40개 테이블)하고 `PatternMySqlIntegrationTest`(Flyway off, `ddl-auto: validate`)로 전체 엔티티 validate 통과, 월별 집계 SQL(YEAR/MONTH·CASE·IN)·41명 모집단 K-Means 학습·"저축 중심형" 배정, `JSON_EXTRACT`로 `cluster_stats_json.clusterLabel`·`feature_summary_json.windowStart` 읽기, `debt_burden = 0.1000` 저장을 확인했다.
+- [ ] seed 4,000명 모집단 학습 시간과 seed 사용자(`seed.kmeans.u0001`) 분석 결과는 미측정이다. seed 적재에 암호 fixture 테이블이 필요해(seeds README 2~3번) 이번에는 생략했다. 시연 전 한 번 실측해 `model-ttl`·동기 실행 정책을 확인한다.
+
+## S15P21D105-517 — Pattern 결과·프로필 조회
+
+구현 계약: [pattern.md](pattern.md) "조회"
+
+### 우선순위 프로필 계약
+
+- [ ] 가중치·집중 영역 규칙(부채부담 0.30, 재량소비 0.40, 소비/소득 0.80, 저축률 0.20·0.30, 고정지출 0.30~0.70, α = 0.2 × 신뢰도)은 기획안에 수치가 없어 정한 서비스 기본안이다. 추천 엔진(API 16, BE-B)이 `weights`·`clusterDeviationAlpha`·`focusAreas` 중 무엇을 어떻게 쓸지 맞춘 뒤 수치를 조정한다. 현재 Recommendation 우선순위 계산은 이 API를 읽지 않는다.
+- [ ] 성향검사(기획안 "선택")가 들어오면 `source`에 `PREFERENCE_SURVEY`를 추가하고 패턴분석과의 우선 규칙을 정한다.
+
+### 소비·자금운용 패턴
+
+- [ ] 소비 패턴의 `clusterProfile`은 `months`와 무관하게 최근 완료 분석의 것이다. `months=3` 요청에 6개월 기준 군집이 붙는 것이 FE 표시에 맞는지 확인한다.
+- [ ] 카테고리 비중은 소비 정의(NON_SPENDING 제외) 기준이라 API 6 `/spending/categories`와 같은 값이다. FE가 둘을 함께 쓰면 하나로 줄일 수 있다.
+- [ ] `months` 밖 형식(예: `abc`)은 공통 처리로 400 `INVALID_REQUEST`다. 명세에 오류 코드가 없어 다른 조회 API와 같은 방식을 따랐다.
+
+## S15P21D105-518 — Pattern 군집 메타데이터·Fallback
+
+구현 계약: [pattern.md](pattern.md) "군집 메타데이터·Fallback"
+
+### 모델 학습·배포 (Python 아티팩트)
+
+- [x] 2026-09-14 로컬 Docker MySQL 8.0에 seed 491·522·492를 적재(암호 fixture는 SHA-256 더미, 4,000명·거래 348,192건)하고 `train_cluster_model.py --k 4`로 `src/main/resources/ml/spending-kmeans-v1.json`을 만들어 커밋했다. `application-prod.yml`에 `train-in-process: false`를 넣었다. 평가 결과는 pattern.md "모델 평가"와 `docs/pattern-evaluation/`.
+- [x] 2026-09-14 시연 서버(j15D105.p.ssafy.io) DB에 seed 8종을 README 순서로 적재했다(사용자 4,000·계좌 9,001·카드 6,000·할부 3,000·대출 3,000·예적금 4,000·거래 348,192·목표 6,000·구독 6,000·상품 198). 491·522·523·524 fixture는 서버 `.env` 키로 애플리케이션 코덱과 같은 형식(AES-256-GCM IV12+태그, HMAC-SHA-256 NUMBER_HASH_KEY, AccountNumberMasker 규칙)으로 만들었다. 같은 날 develop(`716e566`) 배포로 Flyway V18·V19·V31이 적용됐고, 서버 DB로 `evaluate_cluster_model.py --artifact`를 돌려 4,000명 전원 설계 성향 일치(ARI·purity 1.0), 노출 98.8%를 확인했다.
+- [ ] seed 사용자는 `password_hash`가 NULL이라 로그인할 수 없다(491 seed 계약). 시연 계정(U0001~U0004)으로 API를 시연하려면 비밀번호를 넣는 절차(또는 소셜 로그인 연결)를 팀에서 정한다. 그래서 서버에서 `POST /patterns/analyze`의 실제 호출·아티팩트 로딩 로그는 아직 확인하지 못했다(로더는 첫 분석 요청 때 읽는다).
+- [ ] 서버 DB에 523·524 fixture 테이블 6개(`tmp_dodam_523_*`, `tmp_dodam_524_*`)가 남아 있다. 두 seed는 `DROP TEMPORARY TABLE`로 정리해 일반 테이블 fixture를 지우지 못한다. `DROP TABLE`로 정리하고 seeds README에 기록한다.
+- [ ] k 선택은 실루엣만으로 자동화하지 않는다(seed에서 실루엣은 k=6, ARI는 k=4). 실사용자 데이터가 쌓이면 정답 라벨이 없으므로 실루엣·안정성·도메인 해석으로 k를 다시 정한다.
+- [ ] 재학습 주기(월 1회, 데이터 창이 바뀔 때)와 실행 위치(개발 PC vs Jenkins 단계 + 커밋)를 정한다. 스크립트는 DB 읽기 권한만 필요하다.
+- [ ] 두 구현의 특징 정의 일치는 Java·Python 단위 테스트가 같은 기대값을 공유하는 방식으로만 확인한다. 실 DB에서 `--export-features`로 뽑은 벡터와 Java `featureSummary.clusterFeatures`를 표본 몇 명에 대해 대조하는 절차를 seed 적재 시 함께 한다.
+- [ ] 임계값(군집 표본 10, 신뢰도 0.2)과 k 범위(2~6, 실루엣 최대)는 seed 성향 4종을 전제로 한 기본안이다. 실사용자 분포에서 재검토한다. 기획안 "군집 이탈 점수 ≥ 임계값"은 진단(API 14)이 적용할 조건으로 보고 여기서는 점수(`deviationScore`)만 제공한다.
+- [ ] 라벨은 중심값 순위로 정한다. 두 군집의 저축률 중심이 거의 같으면 학습마다 라벨이 뒤바뀔 수 있다. 아티팩트를 커밋해 배포 단위로 고정하는 것이 1차 대응이고, 필요하면 운영자 고정 라벨을 아티팩트에 직접 적는다.
+- [ ] 아티팩트를 테이블(예: `cluster_model`)에 두고 재배포 없이 교체하는 방식은 ERD 변경이 필요해 보류했다. 파일 교체는 `app.pattern.model-location: file:/opt/dodam/models/...`로 가능하다.
+
+### 진단·추천 연동
+
+- [ ] Diagnosis(545)의 "군집 범위 이탈" 규칙은 "Preference 공급 경로의 유효한 군집 집계"를 기다리고 있다. `PatternAnalysis.clusterStats`(features[].deviation·p5·p95·sampleSize·modelVersion)가 그 공급 경로다. BE-B와 `DiagnosisIssue.clusterContext` 형식(`feature`, `rangeMin`, `rangeMax`, `userValue`, `sampleSize`)으로의 변환 위치를 정한다.
+- [ ] 모집단 특징은 INCOME 거래만 소득으로 쓴다(금융 기본정보 미조회). 급여 이체가 없는 사용자는 학습에서 빠지고 본인 분석은 PROFILE 소득으로 특징을 만들어 배정된다. 분포 차이가 크면 모집단도 기본정보 소득을 쓰도록 집계 SQL에 조인을 추가한다.
+
+## S15P21D105-519 — Notification 목록·상세·미확인 수
+
+구현 계약: [notification.md](notification.md)
+
+### 알림 생성 경로
+
+- [x] 2026-09-14 D10(581) 이벤트 연동으로 결제·상환·연체·현금흐름 위험·목표·추천·월간 리포트·브리핑 8규칙이 스케줄(매일 08:00, 매 정시)과 직접 실행 API로 알림을 만든다. 시연 seed(`DODAM_NOTIFICATION_SEED.sql`)는 그대로 유지한다.
+- [ ] 알림 유형 11종은 기획안 14-6·7-4에서 뽑은 서비스 기본안이다. FE 알림함 화면(아이콘·라우팅)이 정해지면 유형과 `source_type` 목록을 함께 확정한다. FE 알림 화면(`2d525f9`)이 머지됐으니 응답 필드·라우팅 키를 맞춘다.
+
+### 조회 정책
+
+- [ ] 날짜 필터는 `created_at`의 날짜(서비스 시간대 Asia/Seoul) 기준 양끝 포함이다. FE가 UTC로 보내면 하루가 어긋난다. 요청 시간대 규약을 FE와 맞춘다.
+- [ ] `type`은 VARCHAR로 저장하고 필터만 enum으로 검증한다. 다른 도메인이 SQL로 미지 유형을 넣으면 목록에는 나오지만 그 유형으로 필터할 수 없다. 유형 추가는 `NotificationType`에 한다.
+- [ ] `user_setting.notification_enabled`는 조회에 영향을 주지 않는다(알림함 항상 유지). 설정이 꺼진 사용자의 푸시만 D10에서 막는다. 설정 off일 때 알림함도 비울지는 기획 확인이 필요하다.
+
+### MySQL 검증
+
+- [x] 2026-09-14 로컬 Docker MySQL 8.0(V1~V19·V30~V32)에서 `NotificationMySqlIntegrationTest`로 `validate` 통과(`TEXT`·`CHAR(64)`·`TINYINT(1)` 매핑), `(user_id, dedupe_key)` 유일 제약, 벌크 전체 읽음 건수, 소프트 삭제를 확인했다. seed 8종 적재 후 `DODAM_NOTIFICATION_SEED.sql`을 두 번 실행해 22건(U0001 5·U0002 6·U0003 5·U0004 6, 미확인 10)이 멱등으로 유지됨을 확인했다.
+
+## S15P21D105-520 — Notification 읽음·전체읽음·삭제
+
+구현 계약: [notification.md](notification.md) "520"
+
+- [ ] 삭제는 소프트 삭제이며 물리 삭제·보관 기간 정책이 없다. 알림이 누적되면 `deleted_at`이 오래된 행을 지우는 배치(또는 사용자당 최근 N건 유지)를 정한다.
+- [ ] 전체 읽음은 한 번의 UPDATE로 처리하고 갱신 건수만 돌려준다. FE가 목록을 다시 불러야 개별 `readAt`이 보인다. 응답에 목록을 포함할지 FE와 맞춘다.
+- [ ] 읽음 처리 응답이 200 + 알림 본문이다. 명세는 상태 코드를 정하지 않았고 정기결제 변경 API와 같은 방식을 따랐다. FE가 204를 기대하면 조정한다.
+- [ ] 삭제 API가 `dedupe_key`를 남겨 두므로 같은 이벤트는 다시 만들어지지 않는다(의도). 사용자가 "다시 받기"를 원하는 유형이 있으면 그 유형은 dedupe 키에 발생 시각을 넣도록 D10에서 정한다.
+
+## S15P21D105-580 — Notification 기본 API (푸시 기기·FCM 발송)
+
+구현 계약: [notification.md](notification.md) "푸시(580)"
+
+- [ ] **실기기 FCM 발송은 아직 확인하지 않았다.** 서버 prod는 `push.enabled=true`·키 마운트가 되어 있지만 등록된 기기가 없다. FE가 `expo-notifications`로 받은 토큰을 `POST /notifications/devices`에 보내는 흐름을 붙인 뒤(Expo 토큰이면 Expo Push API, FCM 기기 토큰이면 FCM — 어느 토큰을 보낼지 FE와 확정) 실기기에서 수신을 확인한다. FCM Admin SDK는 **FCM 등록 토큰**만 받으므로 FE가 `getDevicePushTokenAsync()`의 토큰을 보내야 한다.
+- [ ] 기기 API는 명세 22 외 추가다. API 명세서(Notion)에 3개 엔드포인트를 등록한다.
+- [ ] 발송은 커밋 후 동기 호출이다(기기당 FCM 왕복). 사용자당 기기 1~2대 전제라 두었고, 대량 발송(스케줄 4,000명)은 서버가 순차 처리한다. 지연이 문제면 `@Async` 큐로 바꾼다.
+- [ ] FCM 응답 UNREGISTERED·INVALID_ARGUMENT만 기기 해제로 처리한다. SENDER_ID_MISMATCH·THIRD_PARTY_AUTH_ERROR 등은 로그로만 남으니 배포 후 로그를 확인한다.
+- [x] MySQL 검증: 2026-09-14 로컬 Docker MySQL 8.0(V1~V33)에서 `user_device` validate 통과(NotificationMySqlIntegrationTest 컨텍스트).
+
+## S15P21D105-581 — Notification 이벤트 연동
+
+구현 계약: [notification.md](notification.md) "이벤트 연동(581)"
+
+- [ ] 임계값(D+3, D+7, 추천 7일, 목표 25/50/75%)과 브리핑 기본 08:00은 서비스 기본안이다. 기획안 "결제일 D-3" 등 수치가 없어 정했다. FE·기획 확인 후 `app.notification.events.*`로 조정한다.
+- [ ] 목표 진행률은 `goal.current_amount / saving_goal.target_amount`(저장값)를 쓴다. Goal 계산 API가 갱신하기 전에는 오래된 값일 수 있다. 목표 계산 API 호출 시 이벤트 서비스의 목표 규칙을 함께 부르는 훅을 검토한다.
+- [ ] 월간 리포트 알림은 리포트 본문(API 20, 김지우 D11~12)이 없는 상태에서 `REPORT/yyyy-MM`만 가리킨다. 리포트 생성 시점에 맞춰 알림을 만들도록 리포트 구현 시 이 규칙을 그쪽 트리거로 옮긴다.
+- [ ] 브리핑의 "오늘 사용 가능 금액"은 줄이기 목표의 월 예산 합 기준이다. 예산이 없으면 문장을 생략한다. 기획안의 "전날 소비 급증 특이사항"은 아직 넣지 않았다(API 6 소비 급증 결과 연결 필요).
+- [ ] 스케줄은 단일 서버 전제로 매일 08:00 전체 사용자 순회다. 4,000명 seed 기준 규칙 8종 조회는 수 초 이내(로컬 MySQL). 사용자 수가 크게 늘면 배치 분할이 필요하다.
+- [x] MySQL 검증: 2026-09-14 로컬 MySQL(seed 4,000명·알림 seed)에서 `NotificationEventReaderMySqlTest`로 리더 SQL 8종 실행과 U0002 규칙 직접 실행·멱등을 확인했다(결과 건수는 seed 날짜에 따라 다름).
+
+## S15P21D105-611 — 소셜 로그인 백엔드 지원 (카카오·구글)
+
+구현 계약: [auth-social.md](auth-social.md). 2026-09-15 백엔드(V34 `user_oauth_account`, `POST /api/v1/auth/social/{provider}`, 카카오·구글 토큰 검증기, H2 테스트 27개 + MySQL 게이트 2개)만 먼저 구현했다.
+API 명세 1 Auth에 없는 확장이다. 시연 범위 포함 여부는 FE 연동 일정과 함께 팀이 정한다.
+
+### FE·인프라 연동 (백엔드 외)
+
+- [ ] FE: 로그인 화면 카카오·구글 버튼을 SDK 로그인 → `POST /auth/social/{provider}` 호출로 연결한다(현재 두 버튼은 약관 화면으로만 이동). 구글은 **ID token**을 보낸다. 네이버 버튼은 백엔드 미지원이므로 숨기거나 이월한다.
+- [ ] 인프라: 카카오 개발자 콘솔·구글 클라우드 콘솔 앱 등록(`infra/docs/external-integrations.md` 4절) 후 `GOOGLE_CLIENT_ID`(필수)·`KAKAO_APP_ID`(선택)를 서버 `.env`에 넣고 backend를 재기동한다. 구글 클라이언트 ID가 비어 있으면 구글 로그인은 503이다.
+- 선행 조건: FE EAS 빌드 설정(SHA-1·키 해시 추출)이 아직 없다(외부 연동 문서 2026-09-11 상태).
+
+### 실토큰 검증
+
+- [ ] 실제 카카오 access token·구글 ID token으로 서버 `POST /auth/social/{provider}`가 200/201을 돌려주는지 확인하고 결과를 auth-social.md에 기록한다. 현재는 공급자 응답을 Mock·MockRestServiceServer·디코더 대체로만 검증했다.
+- [x] MySQL 8.0에서 V34 적용과 `ddl-auto: validate` 통과를 확인했다(2026-09-15, `SocialLoginMySqlIntegrationTest`, 결과는 auth-social.md "테스트").
+
+### 기능 보완
+
+- [ ] 연결된 소셜 계정 조회·해제 API(`GET/DELETE /api/v1/users/me/social-accounts`). 해제는 비밀번호가 있거나 다른 공급자가 남아 있을 때만 허용해야 로그인 수단이 사라지지 않는다.
+- [ ] 대체 이메일(`*@social.dodam.invalid`) 회원의 실제 이메일 등록 흐름. 금융망 회원 등록에 이메일이 필요하므로 이 회원은 Finance Data 연결(498)도 실제 이메일을 받은 뒤에야 가능하다. User API(2)의 이메일 변경 또는 온보딩 입력 중 어디서 받을지 정한다.
+- [ ] 회원 탈퇴(`DELETE /users/me`) 시 `user_oauth_account` 행 처리. 현재는 행이 남고 로그인 시 403 `USER_WITHDRAWN`이다(이메일 UNIQUE라 재가입도 불가한 기존 정책과 같음). 행을 지워 같은 소셜 계정의 재가입을 허용할지 정한다.
+- [ ] 소셜 전용 회원의 비밀번호 설정(이메일 로그인 전환) 여부. 현재 `hasPassword() == false`면 `/auth/login`은 401이다.
+- [ ] API 명세서(docs/API명세서 1 Auth)에 소셜 로그인 엔드포인트를 반영한다.
+
+## S15P21D105-521 — BE-A 담당 도메인 통합 테스트
+
+결과 기록: [notification.md](notification.md) "BE-A 통합 테스트"
+
+- [x] 시연 계정 비밀번호 설정 절차를 정했다(2026-09-15). `database/seeds/DODAM_DEMO_PASSWORD_SEED.sql`(10번)이 U0001~U0004에만 BCrypt 해시를 넣고, 비밀번호는 `seeds/README.md` "시연 계정 로그인" 절에 있다. 나머지 seed 사용자는 NULL 유지.
+- [x] 서버 스모크 스크립트 `scripts/be-a-server-smoke.sh`를 만들었다(2026-09-15). 공개 API만 사용해 로그인 → 계좌·거래·소비·목표·정기결제·패턴·알림 순으로 호출하고 상태 코드를 표로 남긴다. 비밀번호 미적용 상태의 서버에서 로그인 401을 받아 실패 메시지로 멈추는 경로까지 확인했다.
+- [x] 서버 DB에 10번 seed를 적용(2026-09-15, 담당자 실행)한 뒤 U0001로 스모크 15개 호출 전부 기대 상태 코드, U0002~U0004 로그인·계좌 요약 200. 결과 표는 notification.md "서버 스모크 (2026-09-15)".
+- [x] U0002~U0004 패턴 분석 이력을 서버에 만들었다(2026-09-15 14:52, 스모크 `--analyze`, analysisId 2·3·4 COMPLETED/HYBRID, 스모크 15호출 전부 정상). 시연 계정 4명 모두 `GET /patterns/me`가 200이다. 재분석이 필요하면 같은 명령을 다시 실행한다(같은 달이면 200 cached).
+- [x] Goal·Subscription·Account·Transaction·Auth의 MySQL 검증은 위 서버 스모크(seed 적재된 서버 DB, prod 프로필)로 대신했다(2026-09-15). Finance Data·User는 스모크 대상 8개 API 밖이라 H2 회귀만 있다.

@@ -1,0 +1,625 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { LayoutChangeEvent } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
+import { SymbolView } from 'expo-symbols';
+
+import { AppHeader } from '@/components/appHeader/AppHeader';
+import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
+import type { BouncyScrollViewHandle } from '@/components/bouncyScrollView/BouncyScrollView';
+import { colors } from '@/styles';
+import type {
+  LedgerCategory,
+  LedgerCategorySummary,
+  LedgerDailyTotal,
+  LedgerMonthlySummary,
+  LedgerTransaction,
+} from '@/types/ledger.types';
+import { formatCurrency, formatNumber } from '@/utils/currency';
+import { dateKeyDaysAgo, toDateKeyFromParts } from '@/utils/date';
+
+import { styles } from '../LedgerScreen.styles';
+import {
+  MonthSelector,
+  TransactionRow,
+} from './LedgerShared';
+import { SpendingTrendSparkline } from './SpendingTrendSparkline';
+import { YearMonthPickerBottomSheet } from './YearMonthPickerBottomSheet';
+
+/** 헤더 우측 액션 아이콘은 같은 크기로 그려야 광학 중심이 맞는다. */
+const HEADER_ICON_SIZE = 20;
+
+interface LedgerOverviewProps {
+  year: number;
+  month: number;
+  summary: LedgerMonthlySummary;
+  dailyTotals: readonly LedgerDailyTotal[];
+  previousDailyTotals: readonly LedgerDailyTotal[];
+  categorySummaries: readonly LedgerCategorySummary[];
+  categories: readonly LedgerCategory[];
+  transactions: readonly LedgerTransaction[];
+  hiddenTransactions: readonly LedgerTransaction[];
+  onBackPress: () => void;
+  onPreviousMonth: () => void;
+  onNextMonth: () => void;
+  onCreateTransaction: () => void;
+  onOpenTrend: () => void;
+  onSelectMonth: (year: number, month: number) => void;
+  onOpenTransaction: (transactionId: string) => void;
+  onRefresh: () => void;
+  refreshing: boolean;
+}
+
+function getSpendingComparisonText(difference: number) {
+  if (difference > 0) {
+    return `지난달보다 ${formatCurrency(difference)} 더 썼어요`;
+  }
+
+  if (difference < 0) {
+    return `지난달보다 ${formatCurrency(Math.abs(difference))} 덜 썼어요`;
+  }
+
+  return '지난달과 같은 금액을 썼어요';
+}
+
+function getRecentDateLabel(dateKey: string) {
+  if (dateKey === dateKeyDaysAgo(0)) return '오늘';
+  if (dateKey === dateKeyDaysAgo(1)) return '어제';
+
+  const [, month, day] = dateKey.split('-').map(Number);
+  return `${month}월 ${day}일`;
+}
+
+function getOverviewCalendarDays(year: number, month: number) {
+  const firstWeekday = new Date(year, month - 1, 1).getDay();
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(year, month - 1, index - firstWeekday + 1);
+    return {
+      dateKey: toDateKeyFromParts(date.getFullYear(), date.getMonth() + 1, date.getDate()),
+      day: date.getDate(),
+      isCurrentMonth: date.getMonth() === month - 1,
+    };
+  });
+}
+
+export function LedgerOverview({
+  year,
+  month,
+  summary,
+  dailyTotals,
+  previousDailyTotals,
+  categorySummaries,
+  categories,
+  transactions,
+  hiddenTransactions,
+  onBackPress,
+  onPreviousMonth,
+  onNextMonth,
+  onCreateTransaction,
+  onOpenTrend,
+  onSelectMonth,
+  onOpenTransaction,
+  onRefresh,
+  refreshing,
+}: LedgerOverviewProps) {
+  const scrollRef = useRef<BouncyScrollViewHandle>(null);
+  const [groupOffsets, setGroupOffsets] = useState<Map<string, number>>(
+    () => new Map(),
+  );
+  const [pendingScrollDate, setPendingScrollDate] = useState<string | null>(null);
+  const [isMonthPickerVisible, setIsMonthPickerVisible] = useState(false);
+  const [isActionsMenuVisible, setIsActionsMenuVisible] = useState(false);
+  const [isCalendarExpanded, setIsCalendarExpanded] = useState(false);
+  const [isSearchVisible, setIsSearchVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+  const [showHiddenTransactions, setShowHiddenTransactions] = useState(false);
+  const [visibleDateCount, setVisibleDateCount] = useState(7);
+  const [calendarY, setCalendarY] = useState(0);
+  const [feedY, setFeedY] = useState(0);
+  const [transactionListY, setTransactionListY] = useState(0);
+  const [collapsedStickyCalendarHeight, setCollapsedStickyCalendarHeight] = useState(0);
+  const [scrollOffset, setScrollOffset] = useState(0);
+  /*
+   * 아래 파생값은 스크롤 위치(`scrollOffset`)가 바뀔 때마다 다시 계산되고 있었다. 스크롤 한 프레임마다
+   * 거래를 정렬하고 날짜별로 묶는 일이 반복돼 목록이 길수록 눈에 띄게 끊긴다. 실제로 값이 바뀌는
+   * 입력에만 묶어 둔다.
+   */
+  const categoryById = useMemo(
+    () => new Map(categories.map((category) => [category.id, category])),
+    [categories],
+  );
+  const visibleTransactions = useMemo(
+    () =>
+      (showHiddenTransactions ? hiddenTransactions : transactions).filter(
+        (transaction) => showHiddenTransactions || !transaction.hidden,
+      ),
+    [hiddenTransactions, showHiddenTransactions, transactions],
+  );
+  /** 달력 점 표시용. 날짜마다 거래 목록을 훑으면 날짜 수 × 거래 수가 되어 미리 한 번만 모은다. */
+  const datesWithTransactions = useMemo(
+    () => new Set(visibleTransactions.map((transaction) => transaction.transactionDate)),
+    [visibleTransactions],
+  );
+  const displayCategorySummaries = useMemo(() => {
+    // 거래에 실제로 쓰인 카테고리만 남긴다. 매번 `some`으로 훑지 않도록 한 번만 모은다.
+    const usedCategoryIds = new Set(transactions.map((transaction) => transaction.categoryId));
+    return categorySummaries
+      .filter((summaryItem) => usedCategoryIds.has(summaryItem.categoryId))
+      .slice(0, 3);
+  }, [categorySummaries, transactions]);
+  const totalsByDate = useMemo(
+    () => new Map(dailyTotals.map((total) => [total.date, total])),
+    [dailyTotals],
+  );
+  const calendarDays = useMemo(() => getOverviewCalendarDays(year, month), [year, month]);
+  /* 이번 달이면 오늘, 지난달이면 말일을 처음 선택 날짜로 둔다. 첫 렌더에만 쓰인다. */
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const now = new Date();
+    const focusDay =
+      year === now.getFullYear() && month === now.getMonth() + 1
+        ? now.getDate()
+        : new Date(year, month, 0).getDate();
+    return toDateKeyFromParts(year, month, focusDay);
+  });
+  const activeSelectedDate = selectedDate.startsWith(`${year}-${String(month).padStart(2, '0')}-`)
+    ? selectedDate
+    : toDateKeyFromParts(year, month,
+        year === new Date().getFullYear() && month === new Date().getMonth() + 1
+          ? new Date().getDate()
+          : new Date(year, month, 0).getDate());
+  const displayedCalendarDays = useMemo(() => {
+    if (isCalendarExpanded) return calendarDays;
+
+    const selectedIndex = calendarDays.findIndex((day) => day.dateKey === activeSelectedDate);
+    const weekStart = Math.max(0, Math.floor(selectedIndex / 7) * 7);
+    return calendarDays.slice(weekStart, weekStart + 7);
+  }, [activeSelectedDate, calendarDays, isCalendarExpanded]);
+  /** 날짜별로 묶은 전체 거래. 정렬과 그룹핑이 이 화면에서 가장 무거워 한 번만 돈다. */
+  const allGroups = useMemo(() => {
+    const query = searchQuery.trim().toLocaleLowerCase('ko-KR');
+    const filteredTransactions = visibleTransactions.filter((transaction) => {
+      if (selectedCategoryId && transaction.categoryId !== selectedCategoryId) return false;
+      if (!query) return true;
+
+      const categoryLabel = categoryById.get(transaction.categoryId)?.label ?? '';
+      return `${transaction.merchantName} ${categoryLabel}`
+        .toLocaleLowerCase('ko-KR')
+        .includes(query);
+    });
+
+    const sorted = [...filteredTransactions].sort((left, right) =>
+      `${right.transactionDate} ${right.transactionTime}`.localeCompare(
+        `${left.transactionDate} ${left.transactionTime}`,
+      ),
+    );
+
+    return Array.from(
+      sorted.reduce<Map<string, LedgerTransaction[]>>((groups, transaction) => {
+        const group = groups.get(transaction.transactionDate) ?? [];
+        group.push(transaction);
+        groups.set(transaction.transactionDate, group);
+        return groups;
+      }, new Map()),
+    );
+  }, [categoryById, searchQuery, selectedCategoryId, visibleTransactions]);
+  const recentGroups = useMemo(
+    () => allGroups.slice(0, visibleDateCount),
+    [allGroups, visibleDateCount],
+  );
+  const hasMoreGroups = allGroups.length > visibleDateCount;
+  const showStickyCalendar = calendarY > 0 && scrollOffset >= calendarY;
+  const selectCalendarDate = (dateKey: string) => {
+    const groupIndex = allGroups.findIndex(([date]) => date === dateKey);
+    if (groupIndex < 0) return;
+
+    setSelectedDate(dateKey);
+    setVisibleDateCount((count) => Math.max(count, groupIndex + 1));
+    setIsCalendarExpanded(false);
+    setPendingScrollDate(dateKey);
+  };
+  const handleGroupLayout = (date: string, event: LayoutChangeEvent) => {
+    const groupOffset = event.nativeEvent.layout.y;
+    setGroupOffsets((current) => {
+      const next = new Map(current);
+      next.set(date, groupOffset);
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (!pendingScrollDate) return;
+    const groupOffset = groupOffsets.get(pendingScrollDate);
+    if (groupOffset === undefined) return;
+
+    const frame = requestAnimationFrame(() => {
+      scrollRef.current?.scrollToOffset(
+        Math.max(
+          0,
+          calendarY +
+            feedY +
+            transactionListY +
+            groupOffset -
+            collapsedStickyCalendarHeight,
+        ),
+      );
+      setPendingScrollDate(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [
+    calendarY,
+    collapsedStickyCalendarHeight,
+    feedY,
+    groupOffsets,
+    pendingScrollDate,
+    transactionListY,
+  ]);
+  return (
+    <View style={styles.fill}>
+      <AppHeader
+        onBackPress={onBackPress}
+        right={
+          <View style={styles.headerActions}>
+            <Pressable
+              accessibilityLabel="거래 검색"
+              accessibilityRole="button"
+              onPress={() => setIsSearchVisible((visible) => !visible)}
+              hitSlop={6}
+              style={styles.headerIconAction}>
+              <SymbolView
+                name={{ android: 'search', ios: 'magnifyingglass', web: 'search' }}
+                size={HEADER_ICON_SIZE}
+                tintColor={colors.textPrimary}
+              />
+            </Pressable>
+            <Pressable
+              accessibilityLabel="가계부 메뉴"
+              accessibilityRole="button"
+              hitSlop={6}
+              onPress={() => setIsActionsMenuVisible((visible) => !visible)}
+              style={styles.headerIconAction}>
+              {/* 문자 `•••` 대신 심볼을 쓴다. 글자로 그리면 옆 검색 아이콘과 광학 크기가 안 맞는다. */}
+              <SymbolView
+                name={{ android: 'more_horiz', ios: 'ellipsis', web: 'more_horiz' }}
+                size={HEADER_ICON_SIZE}
+                tintColor={colors.textPrimary}
+              />
+            </Pressable>
+          </View>
+        }
+        sideWidth={84}
+        showBackButton
+        title="가계부"
+      />
+      {isActionsMenuVisible ? (
+        <View style={styles.headerMenu}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              setIsActionsMenuVisible(false);
+              onCreateTransaction();
+            }}
+              style={styles.headerMenuItem}>
+            <Text style={styles.headerMenuIcon}>＋</Text>
+              <Text style={styles.headerMenuLabel}>거래 추가</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                setIsActionsMenuVisible(false);
+                setShowHiddenTransactions((current) => !current);
+                setSelectedCategoryId(null);
+                setVisibleDateCount(7);
+              }}
+              style={styles.headerMenuItem}>
+              <Text style={styles.headerMenuIcon}>◉</Text>
+              <Text style={styles.headerMenuLabel}>
+                {showHiddenTransactions ? '전체 거래 보기' : '숨긴 거래 내역 보기'}
+              </Text>
+            </Pressable>
+        </View>
+      ) : null}
+
+      <View style={styles.fixedMonthSelector}>
+        <MonthSelector
+          month={month}
+          onNext={onNextMonth}
+          onPressLabel={() => setIsMonthPickerVisible(true)}
+          onPrevious={onPreviousMonth}
+          year={year}
+        />
+      </View>
+
+      <RefreshableBouncyScrollView
+        contentContainerStyle={styles.scrollContent}
+        onEndReached={() => {
+          if (hasMoreGroups) setVisibleDateCount((count) => count + 7);
+        }}
+        onRefresh={onRefresh}
+        onScrollOffsetChange={(offset) => {
+          setScrollOffset(offset);
+          if (offset > 72 && isCalendarExpanded) setIsCalendarExpanded(false);
+        }}
+        ref={scrollRef}
+        refreshing={refreshing}>
+        {isSearchVisible ? (
+          <View style={styles.searchBox}>
+            <TextInput
+              autoFocus
+              onChangeText={setSearchQuery}
+              placeholder="지출·수입 검색"
+              placeholderTextColor={colors.textTertiary}
+              style={styles.searchInput}
+              value={searchQuery}
+            />
+            <Pressable onPress={() => {
+              setSearchQuery('');
+              setIsSearchVisible(false);
+            }}>
+              <Text style={styles.searchClearIcon}>×</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        <Pressable
+          accessibilityHint="월 소비 흐름 상세 화면으로 이동합니다"
+          accessibilityRole="button"
+          onPress={onOpenTrend}
+          style={({ pressed }) => [
+            styles.card,
+            styles.expenseSummaryCard,
+            pressed && styles.rowPressed,
+          ]}>
+          <View style={styles.expenseSummaryContent}>
+            <View style={styles.expenseSummaryCopy}>
+              <Text style={styles.cardEyebrow}>{`${month}월 쓴 돈`}</Text>
+              <Text adjustsFontSizeToFit numberOfLines={1} style={styles.expenseAmount}>
+                {formatNumber(summary.expense)}
+                <Text style={styles.expenseAmountUnit}>원</Text>
+              </Text>
+              <Text numberOfLines={2} style={styles.expenseComparison}>
+                {getSpendingComparisonText(summary.previousMonthDifference)}
+              </Text>
+            </View>
+            <SpendingTrendSparkline
+              dailyTotals={dailyTotals}
+              month={month}
+              previousDailyTotals={previousDailyTotals}
+              year={year}
+            />
+          </View>
+        </Pressable>
+
+        <View style={[styles.card, styles.sectionCard]}>
+          <Text style={styles.categorySectionTitle}>{`${month}월 소비 TOP 3`}</Text>
+          {displayCategorySummaries.length > 0 ? (
+            <View style={styles.categorySummaryList}>
+              {displayCategorySummaries.map((item) => (
+                <Pressable
+                  accessibilityRole="button"
+                  key={item.categoryId}
+                  onPress={() => {
+                    setSelectedCategoryId((current) =>
+                      current === item.categoryId ? null : item.categoryId,
+                    );
+                    setVisibleDateCount(7);
+                  }}
+                  style={({ pressed }) => [
+                    styles.categoryItem,
+                    pressed && styles.rowPressed,
+                  ]}>
+                  <View style={styles.categoryItemHeader}>
+                    <View style={styles.categoryNameRow}>
+                      <Text style={styles.categoryLegendLabel}>
+                        {categoryById.get(item.categoryId)?.label ?? '기타'}
+                      </Text>
+                      <Text style={styles.categoryLegendRatio}>{`${item.ratio}%`}</Text>
+                    </View>
+                    <Text style={styles.categoryLegendAmount}>
+                      {formatCurrency(item.amount)}
+                    </Text>
+                  </View>
+                  <View style={styles.categoryProgressTrack}>
+                    <View
+                      style={[
+                        styles.categoryProgressFill,
+                        { backgroundColor: item.color, flex: Math.max(item.ratio, 0) },
+                      ]}
+                    />
+                    <View style={{ flex: Math.max(100 - item.ratio, 0) }} />
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+          ) : (
+            <View style={styles.sectionEmptyState}>
+              <Text style={styles.emptyStateText}>{`${month}월 소비 내역이 없어요.`}</Text>
+            </View>
+          )}
+        </View>
+
+        <View
+          onLayout={(event) => setCalendarY(event.nativeEvent.layout.y)}
+          style={[styles.card, styles.activityCard]}>
+          <View
+            style={styles.overviewCalendar}>
+            <View style={styles.weekdayRow}>
+              {['일', '월', '화', '수', '목', '금', '토'].map((weekday) => (
+                <Text key={weekday} style={styles.weekdayLabel}>{weekday}</Text>
+              ))}
+            </View>
+            <View style={styles.calendarGrid}>
+              {displayedCalendarDays.map((day) => {
+                const total = totalsByDate.get(day.dateKey);
+                const isSelected = day.dateKey === activeSelectedDate;
+                const hasTransactions = datesWithTransactions.has(day.dateKey);
+                return (
+                  <View key={day.dateKey} style={styles.overviewCalendarCell}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityState={{ disabled: !day.isCurrentMonth || !hasTransactions }}
+                      disabled={!day.isCurrentMonth || !hasTransactions}
+                      onPress={() => selectCalendarDate(day.dateKey)}
+                      style={[
+                        styles.calendarDayButton,
+                        isSelected && styles.calendarDaySelected,
+                      ]}>
+                      <Text style={[
+                        styles.calendarDay,
+                        isSelected && styles.calendarDaySelectedText,
+                        !hasTransactions && styles.calendarDayDisabled,
+                        !day.isCurrentMonth && styles.calendarDayOutside,
+                      ]}>{day.day}</Text>
+                    </Pressable>
+                    {day.isCurrentMonth && total?.income ? (
+                      <Text numberOfLines={1} style={[styles.calendarTotal, styles.calendarIncome]}>
+                        {`+${formatNumber(total.income)}`}
+                      </Text>
+                    ) : null}
+                    {day.isCurrentMonth && total?.expense ? (
+                      <Text numberOfLines={1} style={[styles.calendarTotal, styles.calendarNeutral]}>
+                        {`-${formatNumber(total.expense)}`}
+                      </Text>
+                    ) : null}
+                  </View>
+                );
+              })}
+            </View>
+            <Pressable
+              accessibilityLabel={isCalendarExpanded ? '달력 접기' : '달력 펼치기'}
+              accessibilityRole="button"
+              onPress={() => setIsCalendarExpanded((expanded) => !expanded)}
+              style={styles.calendarToggle}>
+              <SymbolView
+                name={{
+                  android: isCalendarExpanded ? 'expand_less' : 'expand_more',
+                  ios: isCalendarExpanded ? 'chevron.up' : 'chevron.down',
+                  web: isCalendarExpanded ? 'expand_less' : 'expand_more',
+                }}
+                size={18}
+                tintColor={colors.textSecondary}
+              />
+            </Pressable>
+            <View style={styles.calendarDivider} />
+          </View>
+          <View
+            onLayout={(event) => setFeedY(event.nativeEvent.layout.y)}
+            style={styles.recentSection}>
+            <View
+              onLayout={(event) => setTransactionListY(event.nativeEvent.layout.y)}
+              style={styles.transactionList}>
+              {recentGroups.length > 0 ? (
+                recentGroups.map(([date, groupTransactions], index) => (
+                  <View
+                    key={date}
+                    onLayout={(event) => handleGroupLayout(date, event)}
+                    style={[
+                      styles.recentGroup,
+                      index > 0 && styles.recentGroupSeparated,
+                    ]}>
+                    <Text style={styles.groupLabel}>{getRecentDateLabel(date)}</Text>
+                    {groupTransactions.map((transaction) => (
+                      <TransactionRow
+                        amount={transaction.amount}
+                        categoryCode={transaction.categoryId}
+                        categoryLabel={categoryById.get(transaction.categoryId)?.label}
+                        compact
+                        key={transaction.id}
+                        merchantName={transaction.merchantName}
+                        onPress={() => onOpenTransaction(transaction.id)}
+                        transactionType={transaction.transactionType}
+                      />
+                    ))}
+                  </View>
+                ))
+              ) : (
+                <View style={styles.sectionEmptyState}>
+                  <Text style={styles.emptyStateText}>{`${month}월 거래 내역이 없어요.`}</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        </View>
+      </RefreshableBouncyScrollView>
+
+      {showStickyCalendar ? (
+        <View
+          onLayout={(event) => {
+            if (!isCalendarExpanded) {
+              setCollapsedStickyCalendarHeight(event.nativeEvent.layout.height);
+            }
+          }}
+          style={styles.stickyCalendar}>
+          <View style={styles.weekdayRow}>
+            {['일', '월', '화', '수', '목', '금', '토'].map((weekday) => (
+              <Text key={weekday} style={styles.weekdayLabel}>{weekday}</Text>
+            ))}
+          </View>
+          <View style={styles.calendarGrid}>
+            {displayedCalendarDays.map((day) => {
+              const total = totalsByDate.get(day.dateKey);
+              const isSelected = day.dateKey === activeSelectedDate;
+              const hasTransactions = datesWithTransactions.has(day.dateKey);
+              return (
+                <View key={day.dateKey} style={styles.overviewCalendarCell}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ disabled: !day.isCurrentMonth || !hasTransactions }}
+                    disabled={!day.isCurrentMonth || !hasTransactions}
+                    onPress={() => selectCalendarDate(day.dateKey)}
+                    style={[
+                      styles.calendarDayButton,
+                      isSelected && styles.calendarDaySelected,
+                    ]}>
+                    <Text style={[
+                      styles.calendarDay,
+                      isSelected && styles.calendarDaySelectedText,
+                      !hasTransactions && styles.calendarDayDisabled,
+                      !day.isCurrentMonth && styles.calendarDayOutside,
+                    ]}>{day.day}</Text>
+                  </Pressable>
+                  {day.isCurrentMonth && total?.income ? (
+                    <Text numberOfLines={1} style={[styles.calendarTotal, styles.calendarIncome]}>
+                      {`+${formatNumber(total.income)}`}
+                    </Text>
+                  ) : null}
+                  {day.isCurrentMonth && total?.expense ? (
+                    <Text numberOfLines={1} style={[styles.calendarTotal, styles.calendarNeutral]}>
+                      {`-${formatNumber(total.expense)}`}
+                    </Text>
+                  ) : null}
+                </View>
+              );
+            })}
+          </View>
+          <Pressable
+            accessibilityLabel={isCalendarExpanded ? '달력 접기' : '달력 펼치기'}
+            accessibilityRole="button"
+            onPress={() => setIsCalendarExpanded((expanded) => !expanded)}
+            style={styles.calendarToggle}>
+            <SymbolView
+              name={{
+                android: isCalendarExpanded ? 'expand_less' : 'expand_more',
+                ios: isCalendarExpanded ? 'chevron.up' : 'chevron.down',
+                web: isCalendarExpanded ? 'expand_less' : 'expand_more',
+              }}
+              size={18}
+              tintColor={colors.textSecondary}
+            />
+          </Pressable>
+          <View style={styles.calendarDivider} />
+        </View>
+      ) : null}
+
+      <YearMonthPickerBottomSheet
+        month={month}
+        onClose={() => setIsMonthPickerVisible(false)}
+        onConfirm={(nextYear, nextMonth) => {
+          setIsMonthPickerVisible(false);
+          onSelectMonth(nextYear, nextMonth);
+        }}
+        visible={isMonthPickerVisible}
+        year={year}
+      />
+    </View>
+  );
+}

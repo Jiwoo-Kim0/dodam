@@ -1,0 +1,175 @@
+# Transaction API — 거래 조회·메모·카테고리·숨김·수동 거래
+
+JIRA `S15P21D105-454` (D5 Transaction·Spending API 구현)의 하위 티켓 `S15P21D105-504`(API 6 거래 조회·메모·카테고리·숨김),
+`S15P21D105-505`(API 6 수동 거래 CRUD) 구현 기준이다. API 명세 6 Transaction / Spending 중 `/api/v1/transactions/**` 9개를
+다룬다. `/api/v1/spending/**`는 [spending-aggregation.md](spending-aggregation.md)(506 집계)를 본다.
+
+## API
+
+모든 API는 인증이 필요하고 본인 거래만 다룬다. 타인 거래·없는 거래는 구분하지 않고 404다.
+
+| 기능 | Method | Endpoint | 상태 코드 |
+| --- | --- | --- | --- |
+| 전체 거래 조회 | GET | `/api/v1/transactions` | 200 |
+| 소비 카테고리 목록 (명세 외 추가) | GET | `/api/v1/transactions/categories` | 200 |
+| 거래 상세 | GET | `/api/v1/transactions/{transactionId}` | 200 |
+| 소비 카테고리 수정 | PATCH | `/api/v1/transactions/{transactionId}/category` | 200 |
+| 거래 메모 수정 | PATCH | `/api/v1/transactions/{transactionId}/memo` | 200 |
+| 거래내역 숨김 상태 변경 | PATCH | `/api/v1/transactions/{transactionId}/visibility` | 200 |
+| 수동 거래 등록 (505) | POST | `/api/v1/transactions` | 201 |
+| 수동 거래 수정 (505) | PUT | `/api/v1/transactions/{transactionId}` | 200 |
+| 수동 거래 삭제 (505) | DELETE | `/api/v1/transactions/{transactionId}` | 200 (`data: null`) |
+
+### 오류 코드
+
+| 코드 | HTTP | 발생 조건 |
+| --- | --- | --- |
+| `VALIDATION_ERROR` | 400 | page < 0, size가 1~100 밖, 거래 ID·코드 형식 위반, Body 필수값(`categoryId`, `hidden`, 등록 시 `transactionDate`·`transactionType`·`amount`) 누락, `amount` ≤ 0, 가맹점명 255자 초과, 결제수단 형식 위반 |
+| `INVALID_REQUEST` | 400 | 시작일 > 종료일, 종료일이 오늘 이후, 조회 기간 12개월 초과, 없는 카테고리 코드/ID, 비활성 카테고리, 메모 500자 초과·금칙문자, 거래일이 오늘 이후, 알 수 없는 거래 유형 |
+| `NO_FIELDS_TO_UPDATE` | 400 | 수동 거래 수정 Body에 바꿀 필드가 하나도 없음 |
+| `TRANSACTION_NOT_MANUAL` | 400 | 금융망(SSAFY)·seed 출처 거래를 수정·삭제하려 함 |
+| `RESOURCE_NOT_FOUND` | 404 | 본인 소유가 아니거나 존재하지 않는 거래 |
+| `UNAUTHORIZED` | 401 | 토큰 없음·만료 |
+
+## 전체 거래 조회
+
+`GET /api/v1/transactions?startDate&endDate&category&paymentMethod&hidden&page&size`
+
+| 파라미터 | 기본값 | 규칙 |
+| --- | --- | --- |
+| `startDate`, `endDate` | 종료일 = 오늘, 시작일 = 종료일 − 3개월 + 1일 | `QueryPeriodPolicy`(카드·마이너스통장 거래내역과 동일). 최대 12개월, 종료일은 오늘까지 |
+| `category` | 전체 | `transaction_category.code`. 대소문자 무시. 없는 코드는 400 |
+| `paymentMethod` | 전체 | `transaction.payment_method`와 대문자 기준 정확히 일치 (`CARD`, `ACCOUNT` 등) |
+| `hidden` | 생략 → 숨기지 않은 거래만 | `true`면 숨긴 거래만, `false`면 숨기지 않은 거래만. **명세에 없는 추가 파라미터**로 숨김 해제 화면용 |
+| `page`, `size` | 0, 20 | page ≥ 0, size 1~100 (도담 정책) |
+
+- 정렬은 거래일 → 거래시각 → 거래 ID 내림차순으로 고정한다. 시각이 없는 거래(수동 등록 등)는 같은 날짜 안에서 뒤로 간다.
+- 응답은 공통 `PageResponse` (`content`, `page`, `size`, `totalElements`, `totalPages`, `last`)다.
+- 원장은 우리 DB `transaction`만 읽는다. 명세의 "SSAFY 데이터 통합"은 금융망 거래를 원장에 적재하는 Finance Data 동기화 ACCOUNT scope(S15P21D105-501)가 맡고, 이 API는 그 결과를 조회한다.
+
+### 거래 응답 필드
+
+목록·상세·수정 응답이 모두 같은 `TransactionResponse`다. 카드(8)·마이너스통장(10-1) 거래내역과 공통 필드 이름을 맞췼다.
+
+| 필드 | 설명 |
+| --- | --- |
+| `transactionId` | 거래 ID. 금융망 `transactionUniqueNo`, seed(`TX-...`), 수동 등록 ID |
+| `accountId`, `cardId` | 출처 계좌·카드 ID. 번호·이름은 계좌(5)·카드(8) API에서 조회 |
+| `categoryId`, `categoryCode`, `categoryName` | 소비 카테고리. 미분류면 모두 null |
+| `transactionDate`, `transactionTime` | 거래일(필수), 거래시각(없을 수 있음) |
+| `transactionType` | `INCOME` / `EXPENSE` / `TRANSFER` |
+| `amount` | 항상 양수. 방향은 `transactionType` |
+| `balanceAfter` | 거래 후 잔액. 카드·수동 거래는 null |
+| `merchantName`, `paymentMethod`, `summary`, `memo` | 저장값 그대로 |
+| `spendingType` | `FIXED` / `VARIABLE` / `NON_SPENDING` / null. 고정·변동지출 분류 기준 |
+| `hidden` | 숨김 여부 |
+| `sourceType` | `SSAFY` / `MANUAL` / `SEED`. 수동 거래 수정·삭제 가능 여부의 기준 |
+| `createdAt`, `updatedAt` | 적재 시각, 마지막 사용자 편집 시각(편집 전이면 null) |
+
+## 소비 카테고리 목록
+
+`GET /api/v1/transactions/categories` → `[{ categoryId, code, name, defaultSpendingType }]`
+
+명세 6에는 없지만 카테고리 수정 Body의 `categoryId`와 목록 필터 `category`(코드)의 선택지를 FE가 알아야 해서 추가했다.
+`active = 1`인 행만 ID 순으로 준다. 기준 행은 V6 마이그레이션이 넣는다(FOOD, CAFE, GROCERY, PUBLIC_TRANSPORT, TAXI,
+SHOPPING, BEAUTY, CULTURE, TRAVEL, MEDICAL, EDUCATION, HOUSING, UTILITIES, INSURANCE, SUBSCRIPTION, LOAN_REPAYMENT,
+SAVING, TRANSFER, INCOME, ETC).
+
+## 편집 3종의 공통 규칙
+
+- 거래는 `transaction_id + user_id`로 찾는다. 타인 거래는 없는 것과 같게 404다.
+- **중복 요청 방지**: 요청 값이 현재 값과 같으면 아무것도 갱신하지 않고(`updated_at` 유지) 현재 상태를 200으로 돌려준다.
+  PATCH를 재시도해도 결과가 같도록 한 것이며, 409로 막지 않는다.
+- 값이 바뀌면 `updated_at`을 서비스 시각(`Asia/Seoul`)으로 찍는다. `TransactionClock`으로 주입해 테스트에서 고정할 수 있다.
+- 수정은 우리 DB에만 반영한다. 아래 "남은 작업" 참고.
+
+### 소비 카테고리 수정
+
+`PATCH /transactions/{id}/category` Body `{ "categoryId": 12 }`
+
+- `categoryId`는 필수, `active = 1`인 카테고리만 허용. 없는 ID·비활성은 400 `INVALID_REQUEST`("존재하지 않는 카테고리입니다.").
+- 카테고리에 `default_spending_type`이 있으면 거래의 `spending_type`도 그 값으로 바뀐다(예: HOUSING → FIXED).
+  기본 소비유형이 없는 카테고리면 기존 `spending_type`을 유지한다.
+- 거래 유형(INCOME/EXPENSE/TRANSFER)에 따른 제한은 두지 않았다. 수입 거래에 INCOME, 이체에 TRANSFER를 붙이는 용도도 같은 API다.
+
+### 거래 메모 수정
+
+`PATCH /transactions/{id}/memo` Body `{ "memo": "팀 회식" }`
+
+- `memo`는 선택이다. null·빈 문자열·공백만이면 메모를 지운다(null 저장). Body 자체는 있어야 한다(`{}` 허용).
+- 앞뒤 공백을 제거한 뒤 500자(ERD `VARCHAR(500)`)를 넘으면 400.
+- 줄바꿈(`\n`, `\r`)·탭을 제외한 제어문자(NUL, ESC 등)와 유니코드 포맷 문자(제로폭 공백, BOM)는 400. 이모지·기호는 허용.
+  규칙은 `TransactionMemoPolicy`에 있다.
+
+### 거래내역 숨김 상태 변경
+
+`PATCH /transactions/{id}/visibility` Body `{ "hidden": true }`
+
+- `hidden`은 필수(boolean). 누락은 400 `VALIDATION_ERROR`.
+- 숨긴 거래는 목록 기본 조회에서 빠지고, 상세 조회와 `hidden=true` 목록에서는 보인다. 카드(8)·마이너스통장(10-1) 거래내역·집계도
+  `hidden = FALSE`만 읽으므로 숨김은 원장 전체에 걸쳐 일관된다.
+
+## 수동 거래 등록·수정·삭제 (505)
+
+수동 거래는 계좌·카드에 연결되지 않은 사용자 입력 원장이다. `source_type = MANUAL`, `account_id`·`card_id`·`balance_after`는 null,
+`payment_method`는 사용자가 준 코드(CASH/CARD/ACCOUNT 등, 대문자 저장)다. 명세 Body에 계좌 지정 필드가
+없으므로 계좌 잔액·`last_transaction_date`·현금흐름에는 영향을 주지 않는다(534가 남긴 "원장 쓰기 규약 없음" 문제를 그대로 따른 것).
+
+`transaction_time`은 선택 입력이다(2026-09-16 추가). FE 현금거래 추가 화면의 "지출시간"이 날짜와 시각을 함께 고르는데 Body에 시각이 없어
+수동 거래가 전부 시각 null로 저장되고, 목록 정렬(`transaction_date DESC, transaction_time DESC, transaction_id DESC`)에서 같은 날
+거래의 맨 뒤로 몰려 시간순 정렬이 되지 않았다. 시각을 생략하면 예전처럼 null이다.
+
+### 등록 `POST /transactions` → 201
+
+| 필드 | 규칙 |
+| --- | --- |
+| `transactionDate` | 필수. 오늘 이후면 400 |
+| `transactionTime` | 선택. `HH:mm` 또는 `HH:mm:ss`. 파싱 불가(예: `25:00`)면 400 `INVALID_REQUEST`. 현재 시각과 비교하지 않는다(앱·서버 시계 차이로 방금 등록한 거래가 거절되지 않게). 응답은 `HH:mm:ss` |
+| `transactionType` | 필수. INCOME / EXPENSE / TRANSFER, 대소문자 무시 |
+| `amount` | 필수. 1 이상 |
+| `merchantName` | 선택. 255자 이하, 앞뒤 공백 제거, 빈 값은 null |
+| `categoryId` | 선택. 활성 카테고리만. 지정하면 카테고리의 기본 소비유형이 `spendingType`으로 들어간다 |
+| `paymentMethod` | 선택. 영숫자·밑줄 30자 이하, 대문자로 저장 |
+| `memo` | 선택. 504와 같은 `TransactionMemoPolicy` |
+
+거래 ID는 `MN-<UUID>`(39자)로 서버가 만든다. 금융망 `transactionUniqueNo`(숫자)·seed(`TX-…`)와 겹치지 않는다.
+응답은 504와 같은 `TransactionResponse`다.
+
+### 수정 `PUT /transactions/{transactionId}` → 200
+
+- **MANUAL 거래만.** SSAFY·seed 거래는 400 `TRANSACTION_NOT_MANUAL`(그 거래의 메모·카테고리·숨김은 504 PATCH로).
+- 입력된 필드만 바꾼다. null(생략)은 변경 없음. 모든 필드가 비어 있으면 400 `NO_FIELDS_TO_UPDATE`.
+- `merchantName`·`paymentMethod`·`memo`는 빈 문자열을 보내면 값을 지운다. `categoryId`·`transactionTime`은 이 API로 지울 수 없다(다른 값으로 바꾸는 것만).
+  시각이 없던 거래에 `transactionTime`만 보내 채울 수 있다.
+- 검증(미래 거래일, 알 수 없는 유형, 없는 카테고리 등)에 하나라도 걸리면 어떤 필드도 바뀌지 않는다.
+- 값이 전부 같으면 `updated_at`을 건드리지 않고 현재 상태를 200으로 돌려준다(중복 요청 방지, 504와 같은 규칙).
+
+### 삭제 `DELETE /transactions/{transactionId}` → 200
+
+- MANUAL 거래만 물리 삭제한다. 응답은 `{ success: true, data: null }`(회원 탈퇴 API와 같은 형태).
+- 타인 거래·없는 거래는 404, SSAFY·seed 거래는 400 `TRANSACTION_NOT_MANUAL`.
+
+## 스키마 (V6)
+
+`transaction_category`, `transaction`을 ERD 정의 그대로 만들고 카테고리 기준 행 20개를 넣는다.
+두 테이블은 카드·마이너스통장·상품 추천 도메인이 이미 JDBC로 읽고 있었으나 마이그레이션이 없어 MySQL에서는 조회가 실패하던
+상태였다. BE-A 구간(V1~V9)의 V6으로 그 공백을 메운다(V5는 543의 `goal`이 먼저 썼다). 기존 DB에는 V17 이후에 적용되므로 `out-of-order`가 켜져 있어야 한다.
+
+`Transaction` 엔티티는 `account`·`card`·`transaction_category`를 ID 컬럼으로만 들고 연관관계를 걸지 않는다. 다른 티켓이
+소유한 테이블을 여러 엔티티가 매핑하면 H2 테스트 스키마가 매핑 순서에 따라 갈리는 문제가 이미 보고돼 있기 때문이다.
+복합 외래키는 DDL이 보장한다.
+
+## 테스트
+
+- `TransactionApiIntegrationTest`: 회원가입·로그인으로 실제 토큰을 발급받아 6개 API를 호출한다. fixture
+  `sql/transaction-test-data.sql`이 V6 컬럼 전체로 두 테이블을 다시 만든다(다른 도메인 fixture는 `created_at` 등이 빠진 축소
+  스키마를 만들기 때문).
+- `TransactionMemoPolicyTest`: 메모 정규화·길이·금칙문자 규칙.
+- `ManualTransactionApiIntegrationTest`(505): 등록(전체·최소 필드, 카테고리 기본 소비유형), 검증 실패(필수값·금액·미래 거래일·유형·카테고리·결제수단·메모),
+  부분 수정·빈 문자열로 지우기·중복 요청·빈 Body, SSAFY 거래 수정·삭제 거절, 타인 거래 404, 삭제 후 404.
+  거래 시각: `HH:mm`·`HH:mm:ss` 등록, `25:00` 400, 같은 날 목록이 시각 내림차순이고 시각 null이 맨 뒤, 시각만 수정, 같은 시각 재전송은 `updated_at` 유지.
+
+## 남은 작업
+
+[remaining-work.md](remaining-work.md)의 "S15P21D105-504" 절에 기록한다. 요약하면 금융망 메모 API 반영, MySQL 실검증,
+거래 seed 데이터, `transactionType` 필터 추가 여부다.
