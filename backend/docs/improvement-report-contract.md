@@ -695,6 +695,18 @@ FE가 지금 쓰는 `/spending/payment-methods`의 `CARD` 묶음과 같은 기�
 - `MonthlyReport.diagnosisId`·`overallStatus`와 §7 패턴(소비 증가·현금흐름 위험)은 그대로 진단·예측을 본다. 효율 점수만 바뀌었다.
 - **이미 굳힌 리포트는 v3 그대로다**(6개 항목, 현금흐름·비효율 포함). 새 산식을 보려면 §6-4 끝의 절차대로 해당 월간 리포트 행을 지우고 다시 조회한다. 시연 계정은 `DODAM_DEMO_U0003_DERIVED_RESET_699.sql`로 2026-03~08 리포트를 지울 수 있다. 전월 점수는 같은 버전 저장본만 재사용하므로 v3 전월 옆의 v4 리포트는 전월을 v4로 즉시 계산한다.
 
+### 6-6. 712 시연 QA — 현금흐름·비효율 복원 (2026-09-28, `efficiency-v5`)
+
+시연에서 두 항목을 다시 보여 주기로 해 v3 산식(§6-1 표의 CASHFLOW·INEFFICIENCY 행) 그대로 되살리고 부채 상환은 유지했다. 항목은 7개이며
+순서는 SPENDING, SAVING, FIXED_EXPENSE, CREDIT, CASHFLOW, INEFFICIENCY, DEBT_REPAYMENT다. FE는 이미 두 키의 라벨이 있어 앱 변경이 없다.
+
+| v3의 문제 | v5 조치 |
+| --- | --- |
+| 예측·발견 분석 전에 처음 연 리포트는 두 항목이 "계산 불가"로 영원히 굳었다 | **현재 버전(v5)으로 저장됐고** 두 항목 중 하나라도 `FORECAST_NOT_FOUND`·`DIAGNOSIS_NOT_FOUND`면 다음 월간 조회 때 효율 점수·주요 지표를 다시 계산한다(`EfficiencyScorePolicy.needsRecalculation`, 보강 경로와 같다). 합계·`generatedAt`은 그대로다. 입력이 채워지면 그 뒤로는 고정이다 |
+
+- v3·v4 저장본은 다시 계산하지 않는다(과거 점수 유지). v4로 굳은 달을 v5로 보려면 §6-4 끝의 절차대로 그 달 리포트 행을 지우고 다시 조회한다.
+- 현금흐름 예측은 FE가 만들지 않는다(`POST /cashflow/forecasts`). 시연 계정은 리포트를 열기 전이든 뒤든 예측 1회·발견 분석 1회를 실행해 두면 두 항목이 채워진다.
+
 ## 7. 697 — 주요 지표·금융 생활 패턴 (`MonthlyReport.metrics`, 2026-09-22)
 
 605 협의안의 "금융 생활 패턴"·"주요 지표" 카드를 서버 값으로 내린다. FE `useReportData`가 개별 API 12개(저축률·고정지출·결제수단·대출 요약·현금흐름 위험·소비 급증 ×

@@ -5,12 +5,12 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.List;
 
 /**
- * 월간 리포트 금융 효율 점수(S15P21D105-635, {@code MonthlyReport.efficiency}). 5개 항목과 전체 점수.
+ * 월간 리포트 금융 효율 점수(S15P21D105-635, {@code MonthlyReport.efficiency}). 7개 항목(v5)과 전체 점수.
  *
  * <p>리포트 생성 시점에 한 번 계산해 {@code monthly_report.efficiency_summary}에 굳힌다. 산식은
  * {@code EfficiencyScorePolicy}(버전 {@code calculationVersion})이며 <b>서비스 초기값</b>이다 — 기획·FE와 임계값을
- * 확정하면 버전을 올린다. 현재 버전은 {@code efficiency-v4}이며 과거 리포트의 점수는 저장본 그대로라 바뀌지 않는다.
- * v3 이하로 굳힌 리포트는 CASHFLOW·INEFFICIENCY를 포함한 6개 항목을 그대로 돌려준다.
+ * 확정하면 버전을 올린다. 현재 버전은 {@code efficiency-v5}이며 과거 리포트의 점수는 저장본 그대로라 바뀌지 않는다.
+ * v3 이하로 굳힌 리포트는 6개(DEBT_REPAYMENT 없음), v4는 5개(CASHFLOW·INEFFICIENCY 없음) 항목을 그대로 돌려준다.
  *
  * <ul>
  *   <li>항목 점수는 모두 0~100 정수다. 계산할 수 없는 항목은 {@code score = null} + {@code unavailableReason}이며
@@ -29,7 +29,8 @@ import java.util.List;
  * @param calculationVersion      산식 버전(예: {@code efficiency-v4})
  * @param availableDimensionCount 점수가 계산된 항목 수
  * @param unavailableReason       전체 점수가 없는 이유({@code INSUFFICIENT_DIMENSIONS}). 있으면 null
- * @param dimensions              항목 목록. v4는 SPENDING, SAVING, FIXED_EXPENSE, CREDIT, DEBT_REPAYMENT 순서로 고정
+ * @param dimensions              항목 목록. v5는 SPENDING, SAVING, FIXED_EXPENSE, CREDIT, CASHFLOW, INEFFICIENCY,
+ *                                DEBT_REPAYMENT 순서로 고정
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record EfficiencyScoreResponse(
@@ -56,17 +57,16 @@ public record EfficiencyScoreResponse(
     }
 
     /**
-     * @param key               SPENDING / SAVING / FIXED_EXPENSE / CREDIT / DEBT_REPAYMENT(v4). v3 이하 저장본은 CASHFLOW /
-     *                          INEFFICIENCY
+     * @param key               SPENDING / SAVING / FIXED_EXPENSE / CREDIT / CASHFLOW / INEFFICIENCY / DEBT_REPAYMENT(v4~)
      * @param label             표시 이름
      * @param score             0~100. 계산 불가면 null
      * @param status            GOOD(≥70) / NORMAL(40~69) / CHECK(<40) / UNAVAILABLE
      * @param description       근거 문장(숫자 포함). 계산 불가면 그 이유 문장
-     * @param value             근거 수치. 비율은 0~1, 신용점수는 1~1,000, 등급 입력이면 null(v3 이하 건수 항목은 건수)
-     * @param valueType         RATIO / SCORE / GRADE(v3 이하 저장본은 COUNT도 있다)
+     * @param value             근거 수치. 비율은 0~1, 신용점수는 1~1,000, 현금흐름·비효율은 위험·문제 건수, 등급 입력이면 null
+     * @param valueType         RATIO / SCORE / GRADE / COUNT
      * @param grade             호환 입력으로 쓴 금융망 신용등급(A~E). 신용점수가 있으면 null
-     * @param unavailableReason 계산 불가 사유. INCOME_MISSING, NO_SPENDING, CREDIT_SCORE_MISSING(v3 이하 저장본은
-     *                          FORECAST_NOT_FOUND, DIAGNOSIS_NOT_FOUND도 있다)
+     * @param unavailableReason 계산 불가 사유. INCOME_MISSING, NO_SPENDING, CREDIT_SCORE_MISSING, FORECAST_NOT_FOUND,
+     *                          DIAGNOSIS_NOT_FOUND
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Dimension(
