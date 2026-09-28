@@ -56,7 +56,7 @@ S15P21D105/
 │  └─ database/     시연용 seed SQL
 ├─ infra/           Docker Compose, Nginx, Jenkins, 모니터링, 운영 스크립트 → infra/README.md
 ├─ docs/            기획안, API 명세서, ERD
-├─ exec/            산출물 (빌드 가이드, 외부 서비스 정보, DB 덤프, 시연 시나리오)
+├─ exec/            산출물 (포팅 매뉴얼, 빌드 가이드, 외부 서비스 정보, DB 덤프, 시연 시나리오)
 ├─ qa_report/       QA 기록
 └─ Jenkinsfile      배포 파이프라인
 ```
@@ -79,6 +79,7 @@ S15P21D105/
 
 | 파일 | 내용 |
 | --- | --- |
+| [exec/포팅매뉴얼.md](exec/포팅매뉴얼.md) | 클론 이후 빌드·배포 절차, 제품 버전과 설정값, 환경 변수, 배포 특이사항, 주요 계정 |
 | [exec/안드로이드빌드가이드.md](exec/안드로이드빌드가이드.md) | 안드로이드 APK 빌드·설치 절차 (EAS, 로컬) |
 | [exec/외부서비스.md](exec/외부서비스.md) | 외부 서비스 가입·발급 절차와 설정 키 |
 | [exec/dodam_dump.sql.gz](exec/dodam_dump.sql.gz) | DB 덤프 (MySQL 8.0, 합성 시연 데이터) |
