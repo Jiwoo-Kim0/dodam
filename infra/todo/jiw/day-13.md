@@ -2693,3 +2693,51 @@ SafeboxDemoBootstrap : Demo safebox bootstrap ready for user 3
 #### 산출물
 
 - `infra/README.md` (297줄, 전면 재작성)
+
+### 2026-09-28 · `exec/포팅매뉴얼.md` 작성
+
+#### 무엇을 했는지
+
+산출물 요구사항(① 사용한 JVM·웹서버·WAS 종류와 설정값·버전, ② 빌드 환경 변수 상세,
+③ 배포 특이사항, ④ DB 접속 정보 등 주요 계정·프로퍼티 파일 목록)에 맞춰 `exec/포팅매뉴얼.md`를 만들었다.
+`exec/`에는 `외부서비스.md`·`시연시나리오.md`·`dodam_dump.sql.gz`가 이미 있었고, 빌드·배포 문서만 없었다.
+
+기재한 값은 전부 저장소 파일에서 확인한 것이다. 근거 파일을 함께 적어 둔다.
+
+| 절 | 내용 | 출처 |
+| --- | --- | --- |
+| 1 | 제품·버전 (JDK 21 Temurin, Spring Boot 3.5.16, Gradle 8.14.3, Nginx 1.27, MySQL 8.0, Redis 7, Expo SDK 57, 모니터링 6종 태그) | `build.gradle`, `gradle-wrapper.properties`, `backend/Dockerfile`, `docker-compose.yml`, `package.json`, `eas.json` |
+| 1-1 | EC2 4vCPU/16GB/309GB, Docker Compose v5.5.1 (09-04), Docker 29.8.0 (09-16) | `jiw/day-01.md`, `jiw/day-08.md` |
+| 2 | JVM 옵션, Tomcat, HikariCP, Nginx, MySQL, Redis 설정값 | `Dockerfile` ENTRYPOINT, `application.yml`, `nginx/conf.d/default.conf`, `docker-compose.yml` |
+| 3 | 백엔드 14개 + 인프라 6개 + 앱 3개 환경 변수 | `.env.example`, `application-*.yml`, `frontend/.env.example`, `eas.json` |
+| 4 | 빌드·배포 절차 | `Jenkinsfile`, `scripts/deploy.sh`, 각 README |
+| 5 | 배포 특이사항 11건 | `jiw/day-XX.md`의 실제 사고 기록 |
+| 6~7 | 계정 종류와 값 위치, 프로퍼티 파일 21개(커밋) + 5개(비커밋) | `.gitignore`, `docs/monitoring.md`, `secrets/README.md` |
+
+#### 다른 방안
+
+| 안 | 내용 | 판단 |
+| --- | --- | --- |
+| **`infra/README.md`로 대신하기** | 이미 배포·TLS·백업·모니터링이 정리돼 있으니 링크만 건다 | 기각 — 독자가 다르다. `infra/README.md`는 "이 서버를 운영하는 사람"용이라 EC2에 이미 스택이 떠 있는 것을 전제한다. 포팅 매뉴얼은 "클론만 한 사람"이 대상이라 버전·환경 변수·프로퍼티 파일 목록이 필요한데 그건 운영 문서에 넣을 내용이 아니다 |
+| **README들을 짜깁기** | backend/frontend/infra README의 해당 절을 모아 붙인다 | 기각 — 요구 항목 ①(제품·버전 일람)과 ④(프로퍼티 파일 목록)가 어느 README에도 통째로는 없다. 특히 ④는 커밋되는 파일과 직접 준비해야 하는 파일의 구분이 핵심인데 이건 `.gitignore`를 봐야 나온다 |
+| **새로 쓰되 근거를 원본에서 재확인** | 값을 하나씩 파일에서 대조해 기재 | **채택** |
+
+#### 선택 이유
+
+포팅 매뉴얼의 실패 방식은 "틀린 값이 적혀 있는 것"이다. 읽는 쪽은 그 값을 그대로 쓰므로,
+README에 적힌 요약을 옮기지 않고 **정의 파일을 직접 열어 대조**했다. 표마다 "정의 위치" 열을 둔 것도
+같은 이유다 — 값이 바뀌면 어디를 고쳐야 하는지가 문서 안에 있어야 다음 사람이 문서를 신뢰할 수 있다.
+
+5절(배포 특이사항)은 일반적인 주의사항을 쓰지 않고 **실제로 난 사고만** 날짜와 함께 적었다.
+`down -v`·jenkins 자기 재시작·롤백 태그 오염·Flyway V6 FK·Prometheus 단일 파일 마운트는
+전부 이 저장소의 로그에 경위가 남아 있는 건들이다.
+
+#### 남은 것 — IDE 버전 (사용자 확인 필요)
+
+요구사항 ①이 "IDE 버전 포함"을 명시하는데, **저장소 어디에도 IDE 정보가 없다.**
+`frontend/README.md`가 Android Studio를 언급하지만 버전은 없다. 지어내지 않고 1-5절에 빈 표를 두었다.
+Backend·Frontend·Infra 담당자가 실제 사용 버전을 채워야 한다.
+
+#### 산출물
+
+- `exec/포팅매뉴얼.md` (498줄)
