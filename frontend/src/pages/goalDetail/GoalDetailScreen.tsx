@@ -1,9 +1,10 @@
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Alert, Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import { assetApi, goalApi, safeboxApi } from '@/api';
+import { appDialog } from '@/components/appDialog/appDialog';
 import { AppHeader } from '@/components/appHeader/AppHeader';
 import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import { ScreenState } from '@/components/screenState/ScreenState';
@@ -115,7 +116,7 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
 
       setTransfer(null);
       await refetch();
-      Alert.alert(
+      appDialog.alert(
         direction === 'send' ? '보냈어요' : '되가져왔어요',
         `${formatCurrency(amount)}을 옮겼어요.`,
       );
@@ -123,7 +124,7 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
       // 금융망이 끊겨 있으면 금액을 고쳐도 안 되므로 연결 화면으로 보낸다.
       if (isFinanceNotConnected(transferFailure)) {
         setTransfer(null);
-        Alert.alert(
+        appDialog.alert(
           '금융 정보 연결이 필요해요',
           '연결을 먼저 진행해주세요.',
           [
@@ -160,7 +161,7 @@ export function GoalDetailScreen({ goalId }: GoalDetailScreenProps) {
       goal.targetAmount,
     );
 
-    Alert.alert(
+    appDialog.alert(
       direction === 'send'
         ? `${goalAccount.accountName}으로
 ${formatCurrency(amount)}을 보낼까요?`
@@ -195,7 +196,7 @@ ${formatCurrency(amount)}을 되가져올까요?`,
       accountIds.length > 50 ||
       accountIds.some((accountId) => !Number.isSafeInteger(accountId) || accountId <= 0)
     ) {
-      Alert.alert('계좌를 저장하지 못했어요', '계좌 정보를 다시 확인해주세요.');
+      appDialog.alert('계좌를 저장하지 못했어요', '계좌 정보를 다시 확인해주세요.');
       return;
     }
 
@@ -206,7 +207,7 @@ ${formatCurrency(amount)}을 되가져올까요?`,
       setIsAccountManagementVisible(false);
       await refetch();
     } catch (saveError) {
-      Alert.alert(
+      appDialog.alert(
         '계좌를 저장하지 못했어요',
         saveError instanceof Error
           ? saveError.message
@@ -232,7 +233,7 @@ ${formatCurrency(amount)}을 되가져올까요?`,
   const confirmDelete = () => {
     if (isDeletingRef.current || !hasValidGoalId) return;
 
-    Alert.alert('목표를 삭제할까요?', '삭제한 목표는 되돌릴 수 없어요.', [
+    appDialog.alert('목표를 삭제할까요?', '삭제한 목표는 되돌릴 수 없어요.', [
       { text: '취소', style: 'cancel' },
       {
         text: '삭제',
@@ -247,7 +248,7 @@ ${formatCurrency(amount)}을 되가져올까요?`,
               await goalApi.deleteGoal(parsedGoalId);
               router.replace(routes.home);
             } catch (deleteError) {
-              Alert.alert(
+              appDialog.alert(
                 '목표를 삭제하지 못했어요',
                 deleteError instanceof Error
                   ? deleteError.message
@@ -530,7 +531,7 @@ ${formatCurrency(amount)}을 되가져올까요?`,
             return;
           }
           if (draftAccountIds.length >= 50) {
-            Alert.alert(
+            appDialog.alert(
               '계좌를 더 연결할 수 없어요',
               '계좌는 최대 50개까지 연결할 수 있어요.',
             );

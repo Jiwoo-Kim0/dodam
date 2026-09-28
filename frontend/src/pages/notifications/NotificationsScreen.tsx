@@ -1,8 +1,9 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
 import { isApiError, notificationApi, recommendationApi } from '@/api';
+import { appDialog } from '@/components/appDialog/appDialog';
 import { AppHeader } from '@/components/appHeader/AppHeader';
 import { RefreshableBouncyScrollView } from '@/components/bouncyScrollView/RefreshableBouncyScrollView';
 import { routes } from '@/constants/routes';
@@ -108,7 +109,7 @@ export function NotificationsScreen() {
             setDetail(response);
           } catch (readError) {
             if (requestId !== detailRequestIdRef.current) return;
-            Alert.alert(
+            appDialog.alert(
               '읽음 처리에 실패했어요',
               getErrorMessage(readError, '네트워크 상태를 확인한 뒤 다시 시도해주세요.'),
             );
@@ -155,7 +156,7 @@ export function NotificationsScreen() {
     try {
       await markAllRead();
     } catch (markError) {
-      Alert.alert(
+      appDialog.alert(
         '알림을 읽음 처리하지 못했어요',
         getErrorMessage(markError, '네트워크 상태를 확인한 뒤 다시 시도해주세요.'),
       );
@@ -172,7 +173,7 @@ export function NotificationsScreen() {
     ) return;
 
     deleteConfirmationIdRef.current = notificationId;
-    Alert.alert('알림을 삭제할까요?', '삭제한 알림은 다시 확인할 수 없어요.', [
+    appDialog.alert('알림을 삭제할까요?', '삭제한 알림은 다시 확인할 수 없어요.', [
       {
         text: '취소',
         style: 'cancel',
@@ -201,7 +202,7 @@ export function NotificationsScreen() {
               }
             })
             .catch((deleteError: unknown) => {
-              Alert.alert(
+              appDialog.alert(
                 '알림을 삭제하지 못했어요',
                 getErrorMessage(
                   deleteError,

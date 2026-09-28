@@ -7,6 +7,7 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { initialWindowMetrics, SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { AppDialogHost } from '@/components/appDialog/AppDialogHost';
 import { useAuthSessionBoundary } from '@/hooks/useAuthSessionBoundary';
 import { colors } from '@/styles';
 
@@ -45,6 +46,7 @@ export default function RootLayout() {
             headerShown: false,
           }}
         />
+        <AppDialogHost />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

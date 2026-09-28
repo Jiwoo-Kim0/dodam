@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Alert, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { SafeboxAccountResponse, SafeboxAllocationResponse } from '@/api/safeboxApi';
+import { appDialog } from '@/components/appDialog/appDialog';
 import { colors, fontFamily, radius, spacing, typography } from '@/styles';
 import type { GoalAccountApiResponse } from '@/types/goalApi.types';
 import { formatCurrency } from '@/utils/currency';
@@ -44,7 +45,7 @@ export function SafeboxCard({
       ? allocation.allocatedAmount + amount
       : allocation.allocatedAmount - amount;
     const label = direction === 'add' ? '담기' : '꺼내기';
-    Alert.alert(
+    appDialog.alert(
       `${formatCurrency(amount)}을 ${label} 할까요?`,
       direction === 'remove' ? '목표에 모인 금액과 진행률이 내려가요.' : undefined,
       [
@@ -55,7 +56,7 @@ export function SafeboxCard({
             setIsSubmitting(true);
             void onSetAmount(nextAmount)
               .then(() => setDirection(null))
-              .catch((error: unknown) => Alert.alert(
+              .catch((error: unknown) => appDialog.alert(
                 `${label}에 실패했어요`,
                 error instanceof Error ? error.message : '잠시 후 다시 시도해 주세요.',
               ))

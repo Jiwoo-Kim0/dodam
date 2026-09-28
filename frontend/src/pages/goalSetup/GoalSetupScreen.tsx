@@ -1,8 +1,9 @@
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, View } from 'react-native';
+import { View } from 'react-native';
 
 import { goalApi, safeboxApi } from '@/api';
+import { appDialog } from '@/components/appDialog/appDialog';
 import { BottomActionButton } from '@/components/bottomActionButton/BottomActionButton';
 import { ScreenState } from '@/components/screenState/ScreenState';
 import { routes } from '@/constants/routes';
@@ -134,7 +135,7 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
   const createSpendingGoal = async () => {
     if (submissionInFlightRef.current) return;
     if (!isValidAmount(reductionAmount)) {
-      Alert.alert('금액을 확인해주세요', '목표 소비 금액은 1원 이상이어야 해요.');
+      appDialog.alert('금액을 확인해주세요', '목표 소비 금액은 1원 이상이어야 해요.');
       return;
     }
 
@@ -143,7 +144,7 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
     try {
       if (isEditing) {
         if (!hasValidEditGoalId) {
-          Alert.alert('목표를 수정하지 못했어요', '올바르지 않은 목표입니다.');
+          appDialog.alert('목표를 수정하지 못했어요', '올바르지 않은 목표입니다.');
           return;
         }
         await goalApi.updateGoal(parsedEditGoalId, {
@@ -167,7 +168,7 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
       await goalApi.createGoal({ name: '월 지출 줄이기', type: 'SPENDING', monthlyBudget: reductionAmount });
       setStep('reductionComplete');
     } catch (error) {
-      Alert.alert(
+      appDialog.alert(
         '목표를 만들지 못했어요',
         error instanceof Error
           ? error.message
@@ -187,7 +188,7 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
       !isValidAmount(savingAmount)
     ) {
       if (!submissionInFlightRef.current) {
-        Alert.alert(
+        appDialog.alert(
           '목표 정보를 확인해주세요',
           !isFutureDate(savingDeadline)
             ? '목표 날짜는 내일 이후로 선택해주세요.'
@@ -240,7 +241,7 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
         }
       }
 
-      Alert.alert(
+      appDialog.alert(
         isLinkingAccounts
           ? '세이프박스를 준비하지 못했어요'
           : '목표를 만들지 못했어요',
@@ -262,7 +263,7 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
       goalName.trim().length === 0 ||
       !isValidAmount(savingAmount)
     ) {
-      Alert.alert(
+      appDialog.alert(
         '목표 정보를 확인해주세요',
         !isFutureDate(savingDeadline)
           ? '목표 날짜는 내일 이후로 선택해주세요.'
@@ -281,7 +282,7 @@ export function GoalSetupScreen({ editGoalId }: GoalSetupScreenProps) {
       });
       router.replace(routes.goalDetail(String(parsedEditGoalId)));
     } catch (error) {
-      Alert.alert(
+      appDialog.alert(
         '목표를 수정하지 못했어요',
         error instanceof Error ? error.message : '잠시 후 다시 시도해주세요.',
       );

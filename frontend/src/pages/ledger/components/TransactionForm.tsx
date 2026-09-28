@@ -1,12 +1,13 @@
 import { SymbolView } from 'expo-symbols';
 import { useEffect, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, Pressable, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, Text, TextInput, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
 
+import { appDialog } from '@/components/appDialog/appDialog';
 import { BouncyScrollView } from '@/components/bouncyScrollView/BouncyScrollView';
 import { colors, spacing } from '@/styles';
 import type { LedgerTransactionDraft, LedgerTransactionType } from '@/types/ledger.types';
@@ -99,7 +100,7 @@ export function TransactionForm({
   const confirmDelete = () => {
     if (!onDelete) return;
 
-    Alert.alert('거래 내역을 삭제할까요?', '삭제한 거래는 되돌릴 수 없어요.', [
+    appDialog.alert('거래 내역을 삭제할까요?', '삭제한 거래는 되돌릴 수 없어요.', [
       { text: '취소', style: 'cancel' },
       { text: '삭제', style: 'destructive', onPress: onDelete },
     ]);
