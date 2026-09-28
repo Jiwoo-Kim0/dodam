@@ -25,6 +25,8 @@ secrets-export/
 
 # DB 백업 덤프 (실수로 레포에 받아오는 경우 대비)
 *.sql.gz
+# 산출물 제출용 덤프는 예외 (합성 시연 데이터, 운영 백업 아님)
+!exec/dodam_dump.sql.gz
 
 # OS
 .DS_Store
