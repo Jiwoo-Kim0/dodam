@@ -36,10 +36,11 @@ export const styles = StyleSheet.create({
     gap: spacing[2],
     marginLeft: 72,
     marginTop: spacing[3],
-    paddingRight: spacing[8],
+    paddingRight: spacing[6],
   },
   spendingSummary: {
     alignItems: 'center',
+    flexShrink: 0,
   },
   label: {
     color: colors.white,
@@ -60,17 +61,18 @@ export const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     gap: spacing[2],
-    maxWidth: '62%',
     minHeight: 28,
-    paddingHorizontal: spacing[3],
+    minWidth: 0,
+    paddingHorizontal: spacing[2],
     paddingVertical: spacing[2],
   },
   calendarIcon: {
-    height: 18,
-    width: 18,
+    height: 16,
+    width: 16,
   },
   outflowContent: {
     flex: 1,
+    minWidth: 0,
   },
   outflowLabel: {
     color: colors.textSecondary,
