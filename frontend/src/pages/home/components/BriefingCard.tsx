@@ -50,12 +50,14 @@ export function BriefingCard({
             </View>
 
             <View style={styles.messageBubble}>
-              <Image
-                contentFit="contain"
-                source={require('@/assets/icons/common/calendar.svg')}
-                style={styles.calendarIcon}
-                tintColor={colors.primary.brown}
-              />
+              <View style={styles.calendarIconContainer}>
+                <Image
+                  contentFit="contain"
+                  source={require('@/assets/icons/common/calendar.svg')}
+                  style={styles.calendarIcon}
+                  tintColor={colors.primary.brown}
+                />
+              </View>
               {briefing.nextOutflow ? (
                 <View style={styles.outflowContent}>
                   <Text
