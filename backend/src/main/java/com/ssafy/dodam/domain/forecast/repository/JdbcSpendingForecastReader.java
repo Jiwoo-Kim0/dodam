@@ -34,6 +34,7 @@ public class JdbcSpendingForecastReader {
             WHERE entry.user_id = :userId
               AND entry.transaction_date BETWEEN :startDate AND :endDate
               AND entry.transaction_type = 'EXPENSE'
+              AND entry.internal_transfer = FALSE
               AND COALESCE(entry.spending_type, category.default_spending_type, 'VARIABLE') = 'VARIABLE'
             GROUP BY y, m
             ORDER BY y, m

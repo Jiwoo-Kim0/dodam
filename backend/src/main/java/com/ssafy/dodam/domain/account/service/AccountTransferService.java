@@ -307,7 +307,7 @@ public class AccountTransferService {
     private static NewTransaction categorize(NewTransaction entry, long balance, Long categoryId) {
         return new NewTransaction(entry.transactionId(), entry.transactionDate(), entry.transactionTime(),
                 entry.transactionType(), entry.amount(), balance, entry.summary(), null,
-                categoryId, "NON_SPENDING");
+                categoryId, "NON_SPENDING", true);
     }
 
     private List<NewTransaction> parseEntries(List<SsafyTransferEntry> entries, long amount, LocalDateTime now) {

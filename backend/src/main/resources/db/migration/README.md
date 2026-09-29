@@ -38,6 +38,7 @@
 | V44 | `monthly_report.metrics_summary` 추가 (주요 지표·금융 생활 패턴 JSON) | S15P21D105-697 |
 | V45 | 사용자당 전용 계좌(`safebox_account`), 개설 시도(`safebox_open_attempt`), 목표별 이동 원장(`safebox_movement`) | S15P21D105-705 |
 | V46 | 도담 전용 계좌 이름을 '도담 계좌'로 정정(`safebox_account`가 가리키는 계좌만) | S15P21D105-705 |
+| V47 | 거래에 본인 계좌 간 이체 여부를 추가하고 기존 도담 로컬 이체를 표시 | S15P21D105-717 |
 
 ## 버전 번호 할당
 

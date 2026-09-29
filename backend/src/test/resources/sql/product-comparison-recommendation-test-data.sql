@@ -46,6 +46,7 @@ CREATE TABLE `transaction` (
     payment_method VARCHAR(30),
     spending_type VARCHAR(20),
     hidden BOOLEAN NOT NULL DEFAULT FALSE,
+    internal_transfer BOOLEAN NOT NULL DEFAULT FALSE,
     CONSTRAINT fk_test_transaction_category
         FOREIGN KEY (category_id) REFERENCES transaction_category (category_id)
 );

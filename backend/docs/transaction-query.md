@@ -46,6 +46,8 @@ JIRA `S15P21D105-454` (D5 Transaction·Spending API 구현)의 하위 티켓 `S1
 - 정렬은 거래일 → 거래시각 → 거래 ID 내림차순으로 고정한다. 시각이 없는 거래(수동 등록 등)는 같은 날짜 안에서 뒤로 간다.
 - 응답은 공통 `PageResponse` (`content`, `page`, `size`, `totalElements`, `totalPages`, `last`)다.
 - 원장은 우리 DB `transaction`만 읽는다. 명세의 "SSAFY 데이터 통합"은 금융망 거래를 원장에 적재하는 Finance Data 동기화 ACCOUNT scope(S15P21D105-501)가 맡고, 이 API는 그 결과를 조회한다.
+- 본인 계좌 간 이체(`internal_transfer = 1`)는 `hidden` 값과 무관하게 이 목록·상세·가계부 달력에서 제외한다. 거래 상세는 일반적인 없는 거래와 같은 404를 반환한다. 통장별 `/api/v1/accounts/{accountNo}/transactions` 목록·상세에는 남고, 가계부 페이지 총 건수에는 포함하지 않는다.
+- 앱 이체 두 건은 저장 시 표시하고, 외부 이체는 ACCOUNT 동기화의 상대 계좌번호를 본인 계좌의 HMAC 해시와 비교해 표시한다. 상대 계좌번호가 없거나 본인 계좌 목록에 없으면 일반 거래로 둔다. 원문 번호는 원장·응답·로그에 남기지 않는다. 이미 저장된 금융망 거래도 재동기화 시 식별되면 표시하며, 조회 기간 밖 거래는 재동기화 전까지 기존 상태다.
 
 ### 거래 응답 필드
 

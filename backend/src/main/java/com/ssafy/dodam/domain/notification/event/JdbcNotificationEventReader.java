@@ -153,7 +153,8 @@ public class JdbcNotificationEventReader {
     public long spending(Long userId, LocalDate from, LocalDate to) {
         Long value = jdbc.queryForObject("""
                 SELECT COALESCE(SUM(entry.amount), 0) FROM `transaction` entry
-                WHERE entry.user_id = :userId AND entry.hidden = FALSE AND entry.transaction_type = 'EXPENSE'
+                WHERE entry.user_id = :userId AND entry.hidden = FALSE AND entry.internal_transfer = FALSE
+                  AND entry.transaction_type = 'EXPENSE'
                   AND (entry.spending_type IS NULL OR entry.spending_type <> 'NON_SPENDING')
                   AND entry.transaction_date BETWEEN :from AND :to
                 """, window(userId, from, to), Long.class);

@@ -23,6 +23,7 @@ public class JdbcCardRecommendationSpendingReader implements CardRecommendationS
               AND spend.transaction_date >= :startDate
               AND spend.transaction_date < :endDate
               AND spend.transaction_type = 'EXPENSE'
+              AND spend.internal_transfer = FALSE
               AND spend.hidden = 0
               AND COALESCE(
                     spend.spending_type,

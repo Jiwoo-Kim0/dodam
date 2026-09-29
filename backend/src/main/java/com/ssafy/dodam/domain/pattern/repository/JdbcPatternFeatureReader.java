@@ -57,6 +57,7 @@ public class JdbcPatternFeatureReader {
             LEFT JOIN transaction_category category ON category.category_id = entry.category_id
             WHERE entry.user_id = :userId
               AND entry.hidden = FALSE
+              AND entry.internal_transfer = FALSE
               AND entry.transaction_date BETWEEN :startDate AND :endDate
             GROUP BY YEAR(entry.transaction_date), MONTH(entry.transaction_date)
             ORDER BY y, m
@@ -68,6 +69,7 @@ public class JdbcPatternFeatureReader {
             JOIN `user` owner ON owner.user_id = entry.user_id AND owner.deleted_at IS NULL
             LEFT JOIN transaction_category category ON category.category_id = entry.category_id
             WHERE entry.hidden = FALSE
+              AND entry.internal_transfer = FALSE
               AND entry.transaction_date BETWEEN :startDate AND :endDate
             GROUP BY entry.user_id, YEAR(entry.transaction_date), MONTH(entry.transaction_date)
             ORDER BY uid, y, m
@@ -79,6 +81,7 @@ public class JdbcPatternFeatureReader {
             LEFT JOIN transaction_category category ON category.category_id = entry.category_id
             WHERE entry.user_id = :userId
               AND entry.hidden = FALSE
+              AND entry.internal_transfer = FALSE
               AND """ + IS_SPENDING + """
               AND entry.transaction_date BETWEEN :startDate AND :endDate
             GROUP BY category.code, category.name
@@ -91,6 +94,7 @@ public class JdbcPatternFeatureReader {
                    MAX(created_at) AS last_created_at, MAX(updated_at) AS last_updated_at
             FROM `transaction`
             WHERE user_id = :userId
+              AND internal_transfer = FALSE
               AND transaction_date BETWEEN :startDate AND :endDate
             """;
 

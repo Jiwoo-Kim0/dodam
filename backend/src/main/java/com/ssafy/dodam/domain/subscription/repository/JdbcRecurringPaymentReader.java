@@ -32,6 +32,7 @@ public class JdbcRecurringPaymentReader {
             WHERE entry.user_id = :userId
               AND entry.transaction_type = 'EXPENSE'
               AND entry.hidden = FALSE
+              AND entry.internal_transfer = FALSE
               AND (entry.spending_type IS NULL OR entry.spending_type <> 'NON_SPENDING')
               AND entry.merchant_name IS NOT NULL
               AND entry.transaction_date BETWEEN :startDate AND :endDate

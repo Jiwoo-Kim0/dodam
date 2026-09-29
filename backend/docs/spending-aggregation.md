@@ -21,7 +21,10 @@ JIRA `S15P21D105-454` (D5 Transaction·Spending API 구현)의 하위 티켓 `S1
 | `transaction_type = 'EXPENSE'` | 수입(INCOME)과 계좌 간 이체(TRANSFER)는 소비가 아니다 |
 | `spending_type IS NULL OR spending_type <> 'NON_SPENDING'` | 저축·투자, 이체 성격 카테고리(SAVING, TRANSFER, INCOME)의 지출은 소비에서 뺀다. 미분류(NULL)는 소비로 본다 |
 | `hidden = 0` | 숨긴 거래 제외. 카드(8)·계좌(5) 집계와 같은 규칙 |
+| `internal_transfer = 0` | 본인 계좌 사이의 출금·입금은 소비·수입·저축 이체가 아니다. 통장 거래내역만 유지한다 |
 | 사용자 원장 전체 | 계좌·카드·수동 거래를 가리지 않는다 |
+
+기존 `READY` 일·월 리포트는 생성 시점 수치를 고정하는 별도 저장본이다. 이번 조회 조건은 새로 생성하거나 재생성되는 리포트에 적용되며, 과거 `READY` 저장본의 숫자는 자동으로 다시 계산하지 않는다.
 
 기획안 9-1의 "고정지출·변동지출"은 `spending_type`으로 나눈다(아래 507 절).
 

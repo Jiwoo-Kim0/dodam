@@ -24,6 +24,7 @@ public class JdbcSpendingReader {
     static final String SPENDING_WHERE = """
             WHERE entry.user_id = :userId
               AND entry.hidden = FALSE
+              AND entry.internal_transfer = FALSE
               AND entry.transaction_type = 'EXPENSE'
               AND (entry.spending_type IS NULL OR entry.spending_type <> 'NON_SPENDING')
               AND entry.transaction_date BETWEEN :startDate AND :endDate

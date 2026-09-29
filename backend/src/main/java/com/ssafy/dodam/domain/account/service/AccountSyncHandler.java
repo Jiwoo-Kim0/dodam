@@ -179,11 +179,11 @@ public class AccountSyncHandler implements FinanceSyncScopeHandler {
         );
     }
 
-    private static List<NewTransaction> toTransactions(SsafyTransactionHistory history, Long userId) {
+    private static List<SyncedTransaction> toTransactions(SsafyTransactionHistory history, Long userId) {
         if (history == null || history.list() == null) {
             return List.of();
         }
-        List<NewTransaction> transactions = new ArrayList<>();
+        List<SyncedTransaction> transactions = new ArrayList<>();
         Set<String> seenIds = new HashSet<>();
         for (SsafyAccountTransaction entry : history.list()) {
             String transactionId = requireText(entry.transactionUniqueNo(), "transactionUniqueNo");
@@ -196,7 +196,7 @@ public class AccountSyncHandler implements FinanceSyncScopeHandler {
                 log.warn("SSAFY transaction {} for user {} has non-positive amount; skipped", transactionId, userId);
                 continue;
             }
-            transactions.add(new NewTransaction(
+            transactions.add(new SyncedTransaction(new NewTransaction(
                     transactionId,
                     Objects.requireNonNull(parseDate(requireText(entry.transactionDate(), "transactionDate"))),
                     parseTime(entry.transactionTime()),
@@ -205,7 +205,7 @@ public class AccountSyncHandler implements FinanceSyncScopeHandler {
                     entry.transactionAfterBalance(),
                     blankToNull(entry.transactionSummary()),
                     blankToNull(entry.transactionMemo())
-            ));
+            ), blankToNull(entry.transactionAccountNo())));
         }
         return transactions;
     }
@@ -321,7 +321,19 @@ public class AccountSyncHandler implements FinanceSyncScopeHandler {
         accountRepository.flush();
         for (FinanceAccount target : transactionTargets) {
             Account account = accountsByHash.get(sensitiveNumberHasher.hash(target.accountNo()));
-            transactionInserts += transactionWriter.insertMissing(userId, account.getId(), target.transactions(), now);
+            List<NewTransaction> transactions = target.transactions().stream()
+                    .map(entry -> {
+                        String counterparty = entry.counterpartyAccountNo();
+                        if (counterparty == null) {
+                            return entry.transaction();
+                        }
+                        String counterpartyHash = sensitiveNumberHasher.hash(counterparty);
+                        return accountsByHash.containsKey(counterpartyHash)
+                                && !counterpartyHash.equals(account.getAccountNoHash())
+                                ? entry.transaction().asInternalTransfer() : entry.transaction();
+                    })
+                    .toList();
+            transactionInserts += transactionWriter.insertMissing(userId, account.getId(), transactions, now);
         }
         return new SyncCounts(accountChanges, transactionInserts);
     }
@@ -329,7 +341,11 @@ public class AccountSyncHandler implements FinanceSyncScopeHandler {
     /**
      * 해석이 끝난 금융망 계좌 1건과 그 거래내역. 계좌번호 원문은 암호화·해시·마스킹 입력으로만 쓴다.
      */
-    private record FinanceAccount(String accountNo, FinanceSnapshot snapshot, List<NewTransaction> transactions) {
+    private record FinanceAccount(String accountNo, FinanceSnapshot snapshot, List<SyncedTransaction> transactions) {
+    }
+
+    // 상대 계좌번호는 동기화 중 HMAC 비교에만 사용하며 원장·로그에 남기지 않는다.
+    private record SyncedTransaction(NewTransaction transaction, String counterpartyAccountNo) {
     }
 
     private record SyncCounts(int accounts, int transactions) {

@@ -47,6 +47,7 @@ public class JdbcSpendingAnalysisReader {
             FROM `transaction` entry
             WHERE entry.user_id = :userId
               AND entry.hidden = FALSE
+              AND entry.internal_transfer = FALSE
               AND entry.transaction_type = 'INCOME'
               AND entry.transaction_date BETWEEN :startDate AND :endDate
             """;
@@ -57,6 +58,7 @@ public class JdbcSpendingAnalysisReader {
             FROM `transaction` entry
             WHERE entry.user_id = :userId
               AND entry.hidden = FALSE
+              AND entry.internal_transfer = FALSE
               AND entry.transaction_type = 'EXPENSE'
               AND entry.spending_type = 'NON_SPENDING'
               AND entry.transaction_date BETWEEN :startDate AND :endDate

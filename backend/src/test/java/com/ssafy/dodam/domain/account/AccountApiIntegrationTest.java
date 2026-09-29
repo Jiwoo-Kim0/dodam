@@ -609,6 +609,13 @@ class AccountApiIntegrationTest {
         org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM `transaction` WHERE account_id = 16 AND transaction_id LIKE 'LOCAL-%'",
                 Integer.class)).isEqualTo(2);
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM `transaction` WHERE user_id = ? AND internal_transfer = TRUE",
+                Integer.class, userId)).isEqualTo(4);
+        mockMvc.perform(get("/api/v1/transactions").header(HttpHeaders.AUTHORIZATION, bearer)
+                        .param("startDate", "2026-09-01").param("endDate", "2026-09-29"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(0));
         // 계좌 조회의 대조가 seed 계좌를 금융망에 묻지 않는다.
         mockMvc.perform(get("/api/v1/accounts").header(HttpHeaders.AUTHORIZATION, bearer)).andExpect(status().isOk());
     }

@@ -87,6 +87,7 @@ CREATE TABLE `transaction` (
     summary VARCHAR(255),
     memo VARCHAR(500),
     hidden BOOLEAN NOT NULL DEFAULT FALSE,
+    internal_transfer BOOLEAN NOT NULL DEFAULT FALSE,
     source_type VARCHAR(20) NOT NULL DEFAULT 'SEED',
     CONSTRAINT fk_test_minus_transaction_category
         FOREIGN KEY (category_id) REFERENCES transaction_category (category_id)

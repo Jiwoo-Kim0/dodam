@@ -22,6 +22,7 @@ public class JdbcReportReader {
             FROM `transaction` entry
             WHERE entry.user_id = :userId
               AND entry.hidden = FALSE
+              AND entry.internal_transfer = FALSE
               AND entry.transaction_type IN ('INCOME', 'EXPENSE')
               AND entry.transaction_date BETWEEN :startDate AND :endDate
             """;
@@ -31,6 +32,7 @@ public class JdbcReportReader {
             FROM `transaction` entry
             WHERE entry.user_id = :userId
               AND entry.hidden = FALSE
+              AND entry.internal_transfer = FALSE
             """;
 
     // 그날 가장 큰 단일 소비 1건. 소비 정의는 506과 같다(NON_SPENDING·숨긴 거래 제외).
@@ -39,6 +41,7 @@ public class JdbcReportReader {
             FROM `transaction` entry
             WHERE entry.user_id = :userId
               AND entry.hidden = FALSE
+              AND entry.internal_transfer = FALSE
               AND entry.transaction_type = 'EXPENSE'
               AND (entry.spending_type IS NULL OR entry.spending_type <> 'NON_SPENDING')
               AND entry.transaction_date = :date
@@ -63,6 +66,7 @@ public class JdbcReportReader {
             FROM `transaction` entry
             WHERE entry.user_id = :userId
               AND entry.hidden = FALSE
+              AND entry.internal_transfer = FALSE
               AND entry.transaction_type = 'EXPENSE'
               AND (entry.spending_type IS NULL OR entry.spending_type <> 'NON_SPENDING')
               AND entry.transaction_date BETWEEN :startDate AND :endDate

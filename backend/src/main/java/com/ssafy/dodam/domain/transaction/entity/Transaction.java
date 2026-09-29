@@ -10,6 +10,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.Objects;
+import org.hibernate.annotations.ColumnDefault;
 
 /**
  * ERD `transaction`. 계좌·카드 거래와 수동 등록 거래를 한 원장에 담는다.
@@ -77,6 +78,10 @@ public class Transaction {
     @Column(name = "hidden", nullable = false)
     private boolean hidden;
 
+    @ColumnDefault("false")
+    @Column(name = "internal_transfer", nullable = false)
+    private boolean internalTransfer;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "source_type", nullable = false, length = 20)
     private TransactionSourceType sourceType;
@@ -116,6 +121,7 @@ public class Transaction {
         this.paymentMethod = paymentMethod;
         this.memo = memo;
         this.hidden = false;
+        this.internalTransfer = false;
         this.sourceType = TransactionSourceType.MANUAL;
         this.createdAt = now;
     }

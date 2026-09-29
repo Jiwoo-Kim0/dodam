@@ -32,16 +32,24 @@ public class JdbcAccountTransactionWriter {
                 transaction_id, user_id, account_id, card_id, category_id,
                 transaction_date, transaction_time, transaction_type, amount, balance_after,
                 merchant_name, payment_method, spending_type, summary, memo,
-                hidden, source_type, created_at, updated_at
+                hidden, internal_transfer, source_type, created_at, updated_at
             ) VALUES (
                 :transactionId, :userId, :accountId, NULL, :categoryId,
                 :transactionDate, :transactionTime, :transactionType, :amount, :balanceAfter,
                 NULL, 'ACCOUNT', :spendingType, :summary, :memo,
-                FALSE, 'SSAFY', :createdAt, NULL
+                FALSE, :internalTransfer, 'SSAFY', :createdAt, NULL
             )
             """;
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
+
+    private static final String MARK_INTERNAL_TRANSFER_SQL = """
+            UPDATE `transaction`
+            SET internal_transfer = TRUE
+            WHERE user_id = :userId
+              AND transaction_id IN (:transactionIds)
+              AND internal_transfer = FALSE
+            """;
 
     public JdbcAccountTransactionWriter(NamedParameterJdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
@@ -62,6 +70,17 @@ public class JdbcAccountTransactionWriter {
                 String.class
         ));
 
+        List<String> confirmedTransfers = transactions.stream()
+                .filter(NewTransaction::internalTransfer)
+                .map(NewTransaction::transactionId)
+                .toList();
+        if (!confirmedTransfers.isEmpty()) {
+            // 재동기화는 사용자가 편집한 필드를 보존하면서 식별 결과만 보강한다.
+            jdbcTemplate.update(MARK_INTERNAL_TRANSFER_SQL,
+                    new MapSqlParameterSource("userId", userId)
+                            .addValue("transactionIds", confirmedTransfers));
+        }
+
         List<MapSqlParameterSource> batch = transactions.stream()
                 .filter(transaction -> !existing.contains(transaction.transactionId()))
                 .map(transaction -> new MapSqlParameterSource()
@@ -77,6 +96,7 @@ public class JdbcAccountTransactionWriter {
                         .addValue("spendingType", transaction.spendingType())
                         .addValue("summary", transaction.summary())
                         .addValue("memo", transaction.memo())
+                        .addValue("internalTransfer", transaction.internalTransfer())
                         .addValue("createdAt", now))
                 .toList();
         if (batch.isEmpty()) {
@@ -101,12 +121,25 @@ public class JdbcAccountTransactionWriter {
             String summary,
             String memo,
             Long categoryId,
-            String spendingType
+            String spendingType,
+            boolean internalTransfer
     ) {
+        public NewTransaction(String transactionId, LocalDate transactionDate, LocalTime transactionTime,
+                String transactionType, long amount, Long balanceAfter, String summary, String memo,
+                Long categoryId, String spendingType) {
+            this(transactionId, transactionDate, transactionTime, transactionType, amount, balanceAfter,
+                    summary, memo, categoryId, spendingType, false);
+        }
+
         public NewTransaction(String transactionId, LocalDate transactionDate, LocalTime transactionTime,
                 String transactionType, long amount, Long balanceAfter, String summary, String memo) {
             this(transactionId, transactionDate, transactionTime, transactionType, amount, balanceAfter,
-                    summary, memo, null, null);
+                    summary, memo, null, null, false);
+        }
+
+        public NewTransaction asInternalTransfer() {
+            return new NewTransaction(transactionId, transactionDate, transactionTime, transactionType, amount,
+                    balanceAfter, summary, memo, categoryId, spendingType, true);
         }
     }
 }

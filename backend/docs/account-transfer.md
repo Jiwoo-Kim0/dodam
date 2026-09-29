@@ -15,6 +15,7 @@
 
 금융망 호출을 끝낸 뒤 사용자 행 쓰기 잠금과 DB 트랜잭션으로 두 잔액 및 거래 두 건을 저장한다.
 출금은 `EXPENSE`, 입금은 `INCOME`이며 양쪽 모두 `SAVING` 카테고리와 `NON_SPENDING`을 쓴다.
+양쪽 원장 행에 `internal_transfer = 1`을 기록하므로 통장 거래내역에는 보이지만 가계부 목록·수입·소비 분석에는 포함되지 않는다(717).
 동기화 경로의 카테고리와 소비 유형 기본값은 기존처럼 NULL이다. 거래 ID는 금융망의 서로 다른
 `transactionUniqueNo`를 그대로 사용한다. `last_transaction_date`는 저장 시점의 서비스 날짜로 갱신한다.
 

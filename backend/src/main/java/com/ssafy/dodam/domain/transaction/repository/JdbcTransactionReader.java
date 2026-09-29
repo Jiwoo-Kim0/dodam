@@ -74,6 +74,7 @@ public class JdbcTransactionReader implements TransactionReader {
                 .addValue("endDate", filter.period().endDate());
         StringBuilder where = new StringBuilder("""
                 WHERE entry.user_id = :userId
+                  AND entry.internal_transfer = FALSE
                   AND entry.transaction_date BETWEEN :startDate AND :endDate
                 """);
         if (filter.hidden() != null) {
@@ -119,6 +120,7 @@ public class JdbcTransactionReader implements TransactionReader {
                 SELECT_SQL + """
                         WHERE entry.user_id = :userId
                           AND entry.transaction_id = :transactionId
+                          AND entry.internal_transfer = FALSE
                         """,
                 new MapSqlParameterSource()
                         .addValue("userId", userId)

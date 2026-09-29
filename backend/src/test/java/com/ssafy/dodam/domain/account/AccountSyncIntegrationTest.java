@@ -352,6 +352,84 @@ class AccountSyncIntegrationTest {
     }
 
     @Test
+    void ownAccountTransfersRemainInAccountHistoryButDisappearFromLedgerAndSpending() throws Exception {
+        given(ssafyFinanceClient.inquireDemandDepositAccountList(USER_KEY)).willReturn(List.of(
+                financeAccount("001", "한국은행", MAIN_ACCOUNT_NO, "주거래", 900_000L, "20260910"),
+                financeAccount("004", "국민은행", SECOND_ACCOUNT_NO, "저축", 100_000L, "20260910")
+        ));
+        given(ssafyFinanceClient.inquireTransactionHistoryList(eq(USER_KEY), eq(MAIN_ACCOUNT_NO), any(), any()))
+                .willReturn(new SsafyTransactionHistory(2L, List.of(
+                        financeTransaction("own-out", "20260910", "100000", "2", 100_000L, 900_000L,
+                                "이체", "", SECOND_ACCOUNT_NO),
+                        financeTransaction("external-out", "20260910", "110000", "2", 20_000L, 880_000L,
+                                "송금", "", "9999999999999999")
+                )));
+        given(ssafyFinanceClient.inquireTransactionHistoryList(eq(USER_KEY), eq(SECOND_ACCOUNT_NO), any(), any()))
+                .willReturn(new SsafyTransactionHistory(1L, List.of(
+                        financeTransaction("own-in", "20260910", "100001", "1", 100_000L, 100_000L,
+                                "이체 입금", "", MAIN_ACCOUNT_NO)
+                )));
+
+        syncAccounts().andExpect(jsonPath("$.data.results[0].status").value("COMPLETED"));
+
+        mockMvc.perform(get("/api/v1/accounts/" + MAIN_ACCOUNT_NO + "/transactions")
+                        .header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(jsonPath("$.data.totalElements").value(2));
+        mockMvc.perform(get("/api/v1/accounts/" + SECOND_ACCOUNT_NO + "/transactions")
+                        .header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(jsonPath("$.data.totalElements").value(1));
+        mockMvc.perform(get("/api/v1/transactions")
+                        .param("startDate", "2026-09-01").param("endDate", "2026-09-10")
+                        .header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].transactionId").value("external-out"));
+        mockMvc.perform(get("/api/v1/transactions/own-out")
+                        .header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/v1/spending/monthly-summary")
+                        .param("yearMonth", "2026-09").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(jsonPath("$.data.totalSpending").value(20_000));
+        mockMvc.perform(get("/api/v1/spending/saving-ratio")
+                        .param("yearMonth", "2026-09").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(jsonPath("$.data.income").value(0))
+                .andExpect(jsonPath("$.data.savingTransfer").value(0));
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM `transaction` WHERE user_id = ? AND internal_transfer = TRUE",
+                Long.class, userId)).isEqualTo(2L);
+    }
+
+    @Test
+    void laterDiscoveryOfOwnedCounterpartyReclassifiesExistingTransactionWithoutOverwritingEdits() throws Exception {
+        SsafyAccountTransaction transfer = financeTransaction("late-own", "20260910", "100000", "2",
+                100_000L, 900_000L, "이체", "금융망 메모", SECOND_ACCOUNT_NO);
+        given(ssafyFinanceClient.inquireDemandDepositAccountList(USER_KEY)).willReturn(List.of(
+                financeAccount("001", "한국은행", MAIN_ACCOUNT_NO, "주거래", 900_000L, "20260910")
+        ));
+        given(ssafyFinanceClient.inquireTransactionHistoryList(eq(USER_KEY), eq(MAIN_ACCOUNT_NO), any(), any()))
+                .willReturn(new SsafyTransactionHistory(1L, List.of(transfer)));
+        syncAccounts();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT internal_transfer FROM `transaction` WHERE transaction_id = 'late-own'", Boolean.class))
+                .isFalse();
+        jdbcTemplate.update("UPDATE `transaction` SET memo = '사용자 메모' WHERE transaction_id = 'late-own'");
+
+        given(ssafyFinanceClient.inquireDemandDepositAccountList(USER_KEY)).willReturn(List.of(
+                financeAccount("001", "한국은행", MAIN_ACCOUNT_NO, "주거래", 900_000L, "20260910"),
+                financeAccount("004", "국민은행", SECOND_ACCOUNT_NO, "저축", 100_000L, "20260910")
+        ));
+        syncAccounts();
+
+        assertThat(jdbcTemplate.queryForMap(
+                "SELECT internal_transfer, memo FROM `transaction` WHERE transaction_id = 'late-own'"))
+                .containsEntry("INTERNAL_TRANSFER", true)
+                .containsEntry("MEMO", "사용자 메모");
+        mockMvc.perform(get("/api/v1/transactions")
+                        .param("startDate", "2026-09-01").param("endDate", "2026-09-10")
+                        .header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(jsonPath("$.data.totalElements").value(0));
+    }
+
+    @Test
     void neverOverwritesExistingTransactionsAndOnlyInsertsNewOnes() throws Exception {
         given(ssafyFinanceClient.inquireDemandDepositAccountList(USER_KEY)).willReturn(List.of(
                 financeAccount("001", "한국은행", MAIN_ACCOUNT_NO, "한국은행 수시입출금", 1_488_000L, "20260910")
@@ -413,7 +491,15 @@ class AccountSyncIntegrationTest {
             String uniqueNo, String date, String time, String type, long amount, long afterBalance,
             String summary, String memo
     ) {
-        return new SsafyAccountTransaction(uniqueNo, date, time, type, type.equals("1") ? "입금" : "출금", "",
+        return financeTransaction(uniqueNo, date, time, type, amount, afterBalance, summary, memo, "");
+    }
+
+    private static SsafyAccountTransaction financeTransaction(
+            String uniqueNo, String date, String time, String type, long amount, long afterBalance,
+            String summary, String memo, String counterpartyAccountNo
+    ) {
+        return new SsafyAccountTransaction(uniqueNo, date, time, type, type.equals("1") ? "입금" : "출금",
+                counterpartyAccountNo,
                 amount, afterBalance, summary, memo);
     }
 
