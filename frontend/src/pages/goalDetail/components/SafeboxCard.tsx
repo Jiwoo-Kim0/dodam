@@ -1,5 +1,14 @@
 import { useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import type { SafeboxAccountResponse, SafeboxAllocationResponse } from '@/api/safeboxApi';
@@ -120,22 +129,27 @@ export function SafeboxCard({
           <Text style={styles.withdrawText}>담지 않은 돈을 주거래 계좌로 되가져오기</Text>
         </Pressable>
       </View>
-      <Modal animationType="fade" transparent visible={direction !== null}
+      <Modal animationType="fade" statusBarTranslucent transparent visible={direction !== null}
         onRequestClose={() => { if (!isSubmitting) setDirection(null); }}>
         <View style={styles.overlay}>
           <Pressable style={styles.backdrop} onPress={() => { if (!isSubmitting) setDirection(null); }} />
-          <SafeAreaView edges={['bottom']} style={styles.sheet}>
-            <Text style={styles.title}>목표에 {direction === 'add' ? '담기' : '꺼내기'}</Text>
-            <Text style={styles.label}>가능한 금액 {formatCurrency(maxAmount)}</Text>
-            <TextInput accessibilityLabel="세이프박스 금액" keyboardType="number-pad"
-              editable={!isSubmitting} placeholder="금액을 입력해 주세요"
-              onChangeText={(value) => setAmountText(value.replace(/\D/g, ''))}
-              style={styles.input} value={amountText} />
-            <Pressable accessibilityRole="button" disabled={!valid || isSubmitting}
-              onPress={submit} style={[styles.submit, (!valid || isSubmitting) && styles.disabled]}>
-              <Text style={styles.submitText}>{isSubmitting ? '처리 중...' : direction === 'add' ? '담기' : '꺼내기'}</Text>
-            </Pressable>
-          </SafeAreaView>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            pointerEvents="box-none"
+            style={styles.keyboardContainer}>
+            <SafeAreaView edges={['bottom']} style={styles.sheet}>
+              <Text style={styles.title}>목표에 {direction === 'add' ? '담기' : '꺼내기'}</Text>
+              <Text style={styles.label}>가능한 금액 {formatCurrency(maxAmount)}</Text>
+              <TextInput accessibilityLabel="세이프박스 금액" keyboardType="number-pad"
+                editable={!isSubmitting} placeholder="금액을 입력해 주세요"
+                onChangeText={(value) => setAmountText(value.replace(/\D/g, ''))}
+                style={styles.input} value={amountText} />
+              <Pressable accessibilityRole="button" disabled={!valid || isSubmitting}
+                onPress={submit} style={[styles.submit, (!valid || isSubmitting) && styles.disabled]}>
+                <Text style={styles.submitText}>{isSubmitting ? '처리 중...' : direction === 'add' ? '담기' : '꺼내기'}</Text>
+              </Pressable>
+            </SafeAreaView>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </>
@@ -158,8 +172,9 @@ const styles = StyleSheet.create({
   actionText: { ...typography.caption, color: colors.primary.green, fontFamily: fontFamily.semiBold },
   withdrawButton: { alignItems: 'center', paddingVertical: spacing[2] },
   withdrawText: { ...typography.caption, color: colors.textSecondary },
-  overlay: { flex: 1, justifyContent: 'flex-end' },
+  overlay: { flex: 1 },
   backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.45)' },
+  keyboardContainer: { flex: 1, justifyContent: 'flex-end' },
   sheet: { backgroundColor: colors.white, borderTopLeftRadius: radius.card, borderTopRightRadius: radius.card, padding: spacing[5], gap: spacing[4] },
   input: { ...typography.body1, borderWidth: 1, borderColor: colors.divider, borderRadius: radius.default, padding: spacing[3], color: colors.textPrimary },
   submit: { backgroundColor: colors.primary.green, borderRadius: radius.default, alignItems: 'center', padding: spacing[4] },
