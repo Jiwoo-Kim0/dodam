@@ -50,20 +50,30 @@ export function BriefingCard({
             </View>
 
             <View style={styles.messageBubble}>
-              <Image
-                contentFit="contain"
-                source={require('@/assets/icons/common/calendar.svg')}
-                style={styles.calendarIcon}
-                tintColor={colors.primary.brown}
-              />
+              <View style={styles.calendarIconContainer}>
+                <Image
+                  contentFit="contain"
+                  source={require('@/assets/icons/common/calendar.svg')}
+                  style={styles.calendarIcon}
+                  tintColor={colors.primary.brown}
+                />
+              </View>
               {briefing.nextOutflow ? (
                 <View style={styles.outflowContent}>
-                  <Text numberOfLines={1} style={styles.outflowLabel}>
+                  <Text
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.75}
+                    numberOfLines={1}
+                    style={styles.outflowLabel}>
                     {briefing.nextOutflow.daysLeft === 0 ? '오늘' : `D-${briefing.nextOutflow.daysLeft}`}
                     {' · '}
                     {briefing.nextOutflow.name}
                   </Text>
-                  <Text adjustsFontSizeToFit minimumFontScale={0.8} numberOfLines={1} style={styles.outflowAmount}>
+                  <Text
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.75}
+                    numberOfLines={1}
+                    style={styles.outflowAmount}>
                     {formatCurrency(briefing.nextOutflow.amount)}
                   </Text>
                 </View>

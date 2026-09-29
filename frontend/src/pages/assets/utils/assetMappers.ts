@@ -9,7 +9,6 @@ import type {
   LoanSummaryApiResponse,
 } from '@/types/assetApi.types';
 import type { SafeboxAccountResponse } from '@/api/safeboxApi';
-import { formatCurrency } from '@/utils/currency';
 import { getInstitutionId, SAFEBOX_INSTITUTION_ID } from '@/utils/institution';
 import type {
   AssetItem,
@@ -110,7 +109,7 @@ function mapSafeboxAccount(
   return {
     ...mapCheckingAccount(account),
     institutionId: SAFEBOX_INSTITUTION_ID,
-    description: `${safebox.accountNoMasked} · 목표에 담은 돈 ${formatCurrency(safebox.allocatedAmount)}`,
+    description: safebox.accountNoMasked,
   };
 }
 
