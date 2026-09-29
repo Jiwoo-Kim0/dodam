@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react';
 import {
-  Alert,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
@@ -13,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { appDialog } from '@/components/appDialog/appDialog';
 import { colors } from '@/styles';
 
 import type { Carrier } from './CarrierBottomSheet';
@@ -48,7 +48,7 @@ export function VerificationCodeBottomSheet({
   };
 
   const showApiNotice = () => {
-    Alert.alert(
+    appDialog.alert(
       'UI 미리보기',
       '문자 발송과 본인인증은 API 연결 후 사용할 수 있어요.',
     );

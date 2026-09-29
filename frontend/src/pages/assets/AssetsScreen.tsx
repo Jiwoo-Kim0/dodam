@@ -1,8 +1,9 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
-import { Alert, View } from 'react-native';
+import { View } from 'react-native';
 
 import { assetApi } from '@/api';
+import { appDialog } from '@/components/appDialog/appDialog';
 import type { AccountApiResponse } from '@/types/assetApi.types';
 import { formatCurrency } from '@/utils/currency';
 import { getAccountTransferErrorMessage, isFinanceNotConnected } from '@/utils/accountTransferError';
@@ -63,11 +64,11 @@ export function AssetsScreen() {
       });
       setTransfer(null);
       await refetch();
-      Alert.alert('옮겼어요', `${accountLabel(deposit)}(으)로 ${formatCurrency(amount)}을 옮겼어요.`);
+      appDialog.alert('옮겼어요', `${accountLabel(deposit)}(으)로 ${formatCurrency(amount)}을 옮겼어요.`);
     } catch (failure) {
       if (isFinanceNotConnected(failure)) {
         setTransfer(null);
-        Alert.alert('금융 정보 연결이 필요해요', '연결을 먼저 진행해주세요.', [
+        appDialog.alert('금융 정보 연결이 필요해요', '연결을 먼저 진행해주세요.', [
           { text: '나중에', style: 'cancel' },
           { text: '연결하기', onPress: () => router.push(routes.financeConnection) },
         ]);
@@ -81,7 +82,7 @@ export function AssetsScreen() {
   };
 
   const confirmTransfer = (withdrawal: AccountApiResponse, deposit: AccountApiResponse, amount: number) => {
-    Alert.alert(
+    appDialog.alert(
       `${formatCurrency(amount)}을 보낼까요?`,
       `${accountLabel(withdrawal)} → ${accountLabel(deposit)}`,
       [

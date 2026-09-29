@@ -1,8 +1,9 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Pressable, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { authApi, isApiError } from '@/api';
+import { appDialog } from '@/components/appDialog/appDialog';
 import { routes } from '@/constants/routes';
 import { useGoogleLogin } from '@/hooks/useGoogleLogin';
 import { AuthScreenLayout } from '@/layout/authScreenLayout/AuthScreenLayout';
@@ -88,7 +89,7 @@ export function LoginScreen() {
   };
 
   const showNaverComingSoon = () => {
-    Alert.alert('준비 중', '네이버 로그인은 아직 준비 중이에요.');
+    appDialog.alert('준비 중', '네이버 로그인은 아직 준비 중이에요.');
   };
 
   return (

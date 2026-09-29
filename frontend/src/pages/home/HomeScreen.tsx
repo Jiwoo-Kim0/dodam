@@ -3,13 +3,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SymbolView } from 'expo-symbols';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import { authApi, financeDataApi } from '@/api';
 import {
   BouncyScrollView,
   type BouncyScrollViewHandle,
 } from '@/components/bouncyScrollView/BouncyScrollView';
+import { appDialog } from '@/components/appDialog/appDialog';
 import { subscribeHomeTabReselect } from '@/components/bottomNavigation/homeTabReselectEvents';
 import { routes } from '@/constants/routes';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
@@ -90,19 +91,19 @@ export function HomeScreen() {
     try {
       await financeDataApi.disconnect();
       reloadUser();
-      Alert.alert(
+      appDialog.alert(
         '금융 연결을 해제했어요',
         '다시 연결하면 금융 정보를 새로 가져올 수 있어요.',
       );
     } catch (error) {
-      Alert.alert('연결을 해제하지 못했어요', getFinanceErrorMessage(error));
+      appDialog.alert('연결을 해제하지 못했어요', getFinanceErrorMessage(error));
     } finally {
       setIsDisconnecting(false);
     }
   };
 
   const confirmDisconnect = () => {
-    Alert.alert(
+    appDialog.alert(
       '금융 연결을 해제할까요?',
       '해제하면 새로운 금융 정보를 가져오지 않아요.',
       [

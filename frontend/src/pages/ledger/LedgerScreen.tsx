@@ -1,7 +1,7 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert } from 'react-native';
 
+import { appDialog } from '@/components/appDialog/appDialog';
 import { AppHeader } from '@/components/appHeader/AppHeader';
 import { ScreenState } from '@/components/screenState/ScreenState';
 import { routes } from '@/constants/routes';
@@ -127,7 +127,7 @@ export function LedgerScreen() {
 
   useEffect(() => {
     if (mutationError) {
-      Alert.alert('거래 내역을 변경하지 못했어요', mutationError.message);
+      appDialog.alert('거래 내역을 변경하지 못했어요', mutationError.message);
     }
   }, [mutationError]);
 
@@ -205,7 +205,7 @@ export function LedgerScreen() {
       (category) => category.id === categoryId,
     )?.apiId;
     if (!apiCategoryId) {
-      Alert.alert('카테고리를 변경하지 못했어요', '카테고리 정보를 다시 불러와주세요.');
+      appDialog.alert('카테고리를 변경하지 못했어요', '카테고리 정보를 다시 불러와주세요.');
       return;
     }
 
@@ -221,15 +221,15 @@ export function LedgerScreen() {
 
     const amountError = getTransactionAmountError(draft.amountText);
     if (amountError) {
-      Alert.alert('금액을 확인해 주세요', amountError);
+      appDialog.alert('금액을 확인해 주세요', amountError);
       return;
     }
     if (!isValidTransactionDate(draft.transactionDate)) {
-      Alert.alert('날짜를 확인해 주세요', '거래일은 오늘까지 선택할 수 있어요.');
+      appDialog.alert('날짜를 확인해 주세요', '거래일은 오늘까지 선택할 수 있어요.');
       return;
     }
     if (!isValidTransactionTime(draft.transactionTime)) {
-      Alert.alert('시간을 확인해 주세요', '올바른 거래 시간을 선택해 주세요.');
+      appDialog.alert('시간을 확인해 주세요', '올바른 거래 시간을 선택해 주세요.');
       return;
     }
 

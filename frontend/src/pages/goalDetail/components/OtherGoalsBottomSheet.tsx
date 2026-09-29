@@ -2,7 +2,6 @@ import { Image } from 'expo-image';
 import { useRef } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -12,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { goalApi } from '@/api';
+import { appDialog } from '@/components/appDialog/appDialog';
 import { colors } from '@/styles';
 import { formatCurrency } from '@/utils/currency';
 import { calculateProgressPercent } from '@/utils/goal';
@@ -40,7 +40,7 @@ export function OtherGoalsBottomSheet({
   const longPressedGoalIdRef = useRef<string | null>(null);
 
   const confirmDeleteGoal = (goalId: string, goalTitle: string) => {
-    Alert.alert(
+    appDialog.alert(
       '목표를 삭제할까요?',
       `${goalTitle} 목표는 삭제 후 되돌릴 수 없어요.`,
       [
@@ -59,7 +59,7 @@ export function OtherGoalsBottomSheet({
                 }
                 await refetch();
               } catch (deleteError) {
-                Alert.alert(
+                appDialog.alert(
                   '목표를 삭제하지 못했어요',
                   deleteError instanceof Error
                     ? deleteError.message
