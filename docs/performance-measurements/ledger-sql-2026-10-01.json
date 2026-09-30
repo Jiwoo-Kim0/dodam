@@ -1,0 +1,20 @@
+{
+  "date": "2026-10-01",
+  "database": "MySQL 8.0 Docker, exec/dodam_dump.sql.gz, 1394125 transaction rows",
+  "conditions": "One persistent mysql client; 20 warmup pairs; 200 randomized before/after pairs per user; SQL execution, result transfer, and a common sentinel query included; HTTP excluded",
+  "command": "python infra/scripts/benchmark-transaction-page.py --user-id <id> --month 2026-08 --repeats 200",
+  "measurements": [
+    {
+      "user_id": 3,
+      "visible_rows": 92,
+      "before_count_and_select_ms": {"median": 2.026, "p95": 2.243, "mean": 2.043},
+      "after_select_only_ms": {"median": 1.645, "p95": 1.9, "mean": 1.673}
+    },
+    {
+      "user_id": 2,
+      "visible_rows": 27,
+      "before_count_and_select_ms": {"median": 1.622, "p95": 1.824, "mean": 1.64},
+      "after_select_only_ms": {"median": 1.328, "p95": 1.467, "mean": 1.347}
+    }
+  ]
+}

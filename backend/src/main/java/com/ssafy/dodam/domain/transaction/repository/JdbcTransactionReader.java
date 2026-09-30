@@ -89,26 +89,26 @@ public class JdbcTransactionReader implements TransactionReader {
             parameters.addValue("paymentMethod", filter.paymentMethod());
         }
 
-        String countSql = """
-                SELECT COUNT(*)
-                FROM `transaction` entry
-                LEFT JOIN transaction_category category
-                    ON category.category_id = entry.category_id
-                """ + where;
-        long total = Objects.requireNonNullElse(
-                jdbcTemplate.queryForObject(countSql, parameters, Long.class),
-                0L
-        );
-        if (total == 0) {
-            return new PageImpl<>(List.of(), pageable, 0);
-        }
-
         parameters.addValue("limit", pageable.getPageSize());
         parameters.addValue("offset", pageable.getOffset());
         List<TransactionRow> rows = jdbcTemplate.query(
                 SELECT_SQL + where + ORDER_AND_PAGE_SQL,
                 parameters,
                 ROW_MAPPER
+        );
+        // 마지막 페이지가 꽉 차지 않았다면 조회 결과만으로 정확한 총건수를 알 수 있다.
+        // 첫 페이지의 빈 결과도 COUNT가 필요 없다. 빈 후속 페이지와 꽉 찬 페이지에서만 센다.
+        if (rows.size() < pageable.getPageSize() && (!rows.isEmpty() || pageable.getOffset() == 0)) {
+            return new PageImpl<>(rows, pageable, pageable.getOffset() + rows.size());
+        }
+        String countSql = "SELECT COUNT(*) FROM `transaction` entry\n"
+                + (filter.categoryCode() == null ? "" : """
+                LEFT JOIN transaction_category category
+                    ON category.category_id = entry.category_id
+                """) + where;
+        long total = Objects.requireNonNullElse(
+                jdbcTemplate.queryForObject(countSql, parameters, Long.class),
+                0L
         );
         return new PageImpl<>(rows, pageable, total);
     }

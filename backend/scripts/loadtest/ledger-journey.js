@@ -14,8 +14,9 @@ import { Counter, Rate, Trend } from 'k6/metrics';
  * `user-journey.js`의 8개 API는 파생·요약 테이블만 읽어서 데이터 증가에 둔감했다(#9).
  *
  * 프런트엔드의 실제 호출 패턴을 그대로 따랐다(2026-09-25 `frontend/src/` 확인).
- *   - 가계부 화면(useLedgerData): 7개 요청을 Promise.all로 **동시** 발사,
- *     그중 거래 목록 2개는 `fetchAllPages`로 **전체 페이지 순회**(size=100)
+ *   - 가계부 화면(useLedgerData): 기존에는 숨긴 거래까지 7개 논리 요청,
+ *     개선 후 일반 진입은 숨긴 거래를 제외한 6개 논리 요청. 거래 목록은
+ *     `fetchAllPages`로 **전체 페이지 순회**(size=100)
  *   - 일일 브리핑(useDailyBriefing): 하루치 거래(startDate=endDate)
  *   - 발견 화면(useCategoryMonthlySpending): 카테고리별 월간 거래
  *   - 조회 범위는 **월 단위**(`YYYY-MM-01` ~ 월말)
@@ -66,6 +67,11 @@ const HTTP_TIMEOUT = __ENV.HTTP_TIMEOUT || '10s';
 const THINK_TIME_DEFAULT = PROFILE === 'probe' ? '0' : '1';
 const THINK_TIME = Math.max(0, parseFloat(__ENV.THINK_TIME ?? THINK_TIME_DEFAULT) || 0);
 const VERBOSE = (__ENV.VERBOSE || 'false').toLowerCase() === 'true';
+// eager: 기존 화면 진입 시 숨긴 거래까지 조회. lazy: 개선 후 일반 화면 진입만 재현.
+const HIDDEN_FETCH_MODE = (__ENV.HIDDEN_FETCH_MODE || 'eager').toLowerCase();
+if (HIDDEN_FETCH_MODE !== 'eager' && HIDDEN_FETCH_MODE !== 'lazy') {
+    throw new Error('HIDDEN_FETCH_MODE는 eager 또는 lazy여야 합니다.');
+}
 
 // load 프로필의 최대 VU. Nginx를 거치는 실행에서는 20r/s 제한 때문에 50 전후가 의미 있는 상한이다.
 const LOAD_VUS = parseInt(__ENV.LOAD_VUS || '50', 10);
@@ -542,8 +548,7 @@ export function ledgerJourney(data) {
     const month = monthRange(TARGET_MONTHS[exec.vu.iterationInInstance % TARGET_MONTHS.length]);
 
     group('01. 가계부 화면 — 월간 전체', function () {
-        // FE는 이 7개를 Promise.all로 동시에 던진다. 순차로 부르면 서버가 받는
-        // 동시 요청 수가 달라져 실제보다 가벼운 부하가 된다.
+        // 집계 요청은 batch로 보낸다. 거래 목록 페이지 순회는 아래에서 실행한다.
         const q = `startDate=${month.startDate}&endDate=${month.endDate}`;
         http.batch([
             authRequest(token, `/v1/transactions/categories`, 'tx_categories'),
@@ -556,9 +561,11 @@ export function ledgerJourney(data) {
             checkResponse(response, names[index]);
         });
 
-        // 거래 목록은 페이지를 끝까지 넘긴다(표시용 + 숨김 처리분).
+        // 일반 거래는 항상 읽고, 숨긴 거래는 기존 흐름(eager)에서만 화면 진입 시 읽는다.
         fetchAllPages(token, (p) => `/v1/transactions?${q}&page=${p}&size=100`, 'transactions');
-        fetchAllPages(token, (p) => `/v1/transactions?${q}&hidden=true&page=${p}&size=100`, 'transactions_hidden');
+        if (HIDDEN_FETCH_MODE === 'eager') {
+            fetchAllPages(token, (p) => `/v1/transactions?${q}&hidden=true&page=${p}&size=100`, 'transactions_hidden');
+        }
     });
     randomSleep(1, 2);
 

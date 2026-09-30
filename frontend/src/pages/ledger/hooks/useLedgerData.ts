@@ -50,10 +50,13 @@ export function useLedgerData(currentMonth: Date) {
   const [data, setData] = useState<LedgerData>(EMPTY_LEDGER_DATA);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLoadingHiddenTransactions, setIsLoadingHiddenTransactions] = useState(false);
+  const [hiddenTransactionsError, setHiddenTransactionsError] = useState<Error | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [mutationError, setMutationError] = useState<Error | null>(null);
   const [isMutating, setIsMutating] = useState(false);
   const requestIdRef = useRef(0);
+  const hiddenRequestedMonthRef = useRef<string | null>(null);
   const mutationRequestIdRef = useRef(0);
   const mutationInFlightRef = useRef(false);
   const isMountedRef = useRef(true);
@@ -99,6 +102,7 @@ export function useLedgerData(currentMonth: Date) {
       setError(null);
 
       try {
+        const includeHidden = hiddenRequestedMonthRef.current === dateParams.yearMonth;
         const [
           transactionResponses,
           hiddenTransactionResponses,
@@ -116,15 +120,17 @@ export function useLedgerData(currentMonth: Date) {
               size,
             }),
           ),
-          fetchAllPages((page, size) =>
-            ledgerApi.getTransactions({
-              startDate: dateParams.startDate,
-              endDate: dateParams.endDate,
-              hidden: true,
-              page,
-              size,
-            }),
-          ),
+          includeHidden
+            ? fetchAllPages((page, size) =>
+                ledgerApi.getTransactions({
+                  startDate: dateParams.startDate,
+                  endDate: dateParams.endDate,
+                  hidden: true,
+                  page,
+                  size,
+                }),
+              )
+            : Promise.resolve([]),
           ledgerApi.getTransactionCategories(),
           ledgerApi.getMonthlySummary(dateParams.yearMonth),
           ledgerApi.getDailySpending({
@@ -159,9 +165,13 @@ export function useLedgerData(currentMonth: Date) {
           0,
         );
 
-        setData({
+        setData((current) => ({
           categories: mapTransactionCategories(transactionCategoryResponses),
-          hiddenTransactions: mapTransactions(hiddenTransactionResponses),
+          hiddenTransactions: includeHidden
+            ? mapTransactions(hiddenTransactionResponses)
+            : hiddenRequestedMonthRef.current === dateParams.yearMonth
+              ? current.hiddenTransactions
+              : [],
           transactions: mapTransactions(transactionResponses),
           monthlySummary: mapMonthlySummary(monthlySummaryResponse, income),
           dailyTotals: mapDailySpending(dailySpendingResponse, incomeByDate),
@@ -169,7 +179,7 @@ export function useLedgerData(currentMonth: Date) {
             ? mapDailySpending(previousDailySpendingResponse)
             : [],
           categorySummaries: mapCategorySpending(categorySpendingResponse),
-        });
+        }));
       } catch (loadError) {
         if (requestId !== requestIdRef.current) return;
 
@@ -187,6 +197,33 @@ export function useLedgerData(currentMonth: Date) {
     },
     [dateParams],
   );
+
+  const loadHiddenTransactions = useCallback(async () => {
+    if (hiddenRequestedMonthRef.current === dateParams.yearMonth) return;
+    const requestId = requestIdRef.current;
+    setIsLoadingHiddenTransactions(true);
+    setHiddenTransactionsError(null);
+    try {
+      const hidden = await fetchAllPages((page, size) =>
+        ledgerApi.getTransactions({
+          startDate: dateParams.startDate,
+          endDate: dateParams.endDate,
+          hidden: true,
+          page,
+          size,
+        }),
+      );
+      if (requestId !== requestIdRef.current) return;
+      hiddenRequestedMonthRef.current = dateParams.yearMonth;
+      setData((current) => ({ ...current, hiddenTransactions: mapTransactions(hidden) }));
+    } catch (loadError) {
+      if (requestId === requestIdRef.current) {
+        setHiddenTransactionsError(loadError instanceof Error ? loadError : new Error('숨긴 거래를 불러오지 못했어요.'));
+      }
+    } finally {
+      if (requestId === requestIdRef.current) setIsLoadingHiddenTransactions(false);
+    }
+  }, [dateParams]);
 
   useEffect(() => {
     const loadTimeout = setTimeout(() => {
@@ -307,9 +344,12 @@ export function useLedgerData(currentMonth: Date) {
     ...data,
     isLoading,
     isRefreshing,
+    isLoadingHiddenTransactions,
+    hiddenTransactionsError,
     error,
     mutationError,
     refetch,
+    loadHiddenTransactions,
     isMutating,
     updateTransactionCategory,
     updateTransactionMemo,

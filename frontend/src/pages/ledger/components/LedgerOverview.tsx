@@ -38,6 +38,9 @@ interface LedgerOverviewProps {
   categories: readonly LedgerCategory[];
   transactions: readonly LedgerTransaction[];
   hiddenTransactions: readonly LedgerTransaction[];
+  isLoadingHiddenTransactions: boolean;
+  hiddenTransactionsError: Error | null;
+  onLoadHiddenTransactions: () => Promise<void>;
   onBackPress: () => void;
   onPreviousMonth: () => void;
   onNextMonth: () => void;
@@ -45,7 +48,7 @@ interface LedgerOverviewProps {
   onOpenTrend: () => void;
   onSelectMonth: (year: number, month: number) => void;
   onOpenTransaction: (transactionId: string) => void;
-  onRefresh: () => void;
+  onRefresh: () => Promise<void>;
   refreshing: boolean;
 }
 
@@ -91,6 +94,9 @@ export function LedgerOverview({
   categories,
   transactions,
   hiddenTransactions,
+  isLoadingHiddenTransactions,
+  hiddenTransactionsError,
+  onLoadHiddenTransactions,
   onBackPress,
   onPreviousMonth,
   onNextMonth,
@@ -306,6 +312,7 @@ export function LedgerOverview({
               accessibilityRole="button"
               onPress={() => {
                 setIsActionsMenuVisible(false);
+                if (!showHiddenTransactions) void onLoadHiddenTransactions();
                 setShowHiddenTransactions((current) => !current);
                 setSelectedCategoryId(null);
                 setVisibleDateCount(7);
@@ -334,7 +341,12 @@ export function LedgerOverview({
         onEndReached={() => {
           if (hasMoreGroups) setVisibleDateCount((count) => count + 7);
         }}
-        onRefresh={onRefresh}
+        onRefresh={() => {
+          void (async () => {
+            await onRefresh();
+            if (showHiddenTransactions) await onLoadHiddenTransactions();
+          })();
+        }}
         onScrollOffsetChange={(offset) => {
           setScrollOffset(offset);
           if (offset > 72 && isCalendarExpanded) setIsCalendarExpanded(false);
@@ -533,7 +545,18 @@ export function LedgerOverview({
                 ))
               ) : (
                 <View style={styles.sectionEmptyState}>
-                  <Text style={styles.emptyStateText}>{`${month}월 거래 내역이 없어요.`}</Text>
+                  <Text style={styles.emptyStateText}>
+                    {showHiddenTransactions && isLoadingHiddenTransactions
+                      ? '숨긴 거래를 불러오는 중이에요.'
+                      : showHiddenTransactions && hiddenTransactionsError
+                        ? '숨긴 거래를 불러오지 못했어요.'
+                        : `${month}월 거래 내역이 없어요.`}
+                  </Text>
+                  {showHiddenTransactions && hiddenTransactionsError ? (
+                    <Pressable onPress={() => void onLoadHiddenTransactions()}>
+                      <Text style={styles.emptyStateText}>다시 시도</Text>
+                    </Pressable>
+                  ) : null}
                 </View>
               )}
             </View>

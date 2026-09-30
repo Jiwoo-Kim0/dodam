@@ -1,6 +1,7 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { ledgerApi } from '@/api';
 import { appDialog } from '@/components/appDialog/appDialog';
 import { AppHeader } from '@/components/appHeader/AppHeader';
 import { ScreenState } from '@/components/screenState/ScreenState';
@@ -20,6 +21,7 @@ import { SpendingTrendDetail } from './components/SpendingTrendDetail';
 import { TransactionDetail } from './components/TransactionDetail';
 import { TransactionForm } from './components/TransactionForm';
 import { useLedgerData } from './hooks/useLedgerData';
+import { mapTransaction } from './utils/ledgerMappers';
 import {
   getTransactionAmountError,
   isValidTransactionDate,
@@ -77,6 +79,8 @@ export function LedgerScreen() {
   const {
     categories,
     hiddenTransactions,
+    isLoadingHiddenTransactions,
+    hiddenTransactionsError,
     transactions,
     monthlySummary,
     dailyTotals,
@@ -87,6 +91,7 @@ export function LedgerScreen() {
     error,
     mutationError,
     refetch,
+    loadHiddenTransactions,
     isMutating,
     updateTransactionCategory,
     updateTransactionMemo,
@@ -96,11 +101,14 @@ export function LedgerScreen() {
     deleteManualTransaction,
   } = useLedgerData(visibleMonth);
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
+  const [linkedTransaction, setLinkedTransaction] = useState<LedgerTransaction | null>(null);
+  const [isLoadingLinkedTransaction, setIsLoadingLinkedTransaction] = useState(false);
+  const linkedRequestIdRef = useRef(0);
   const [draft, setDraft] = useState<LedgerTransactionDraft>({ ...EMPTY_LEDGER_DRAFT });
 
   const selectedTransaction = [...transactions, ...hiddenTransactions].find(
     (transaction) => transaction.id === selectedTransactionId,
-  );
+  ) ?? (linkedTransaction?.id === selectedTransactionId ? linkedTransaction : undefined);
   const needsSelectedTransaction =
     view === 'detail' ||
     view === 'category' ||
@@ -109,6 +117,7 @@ export function LedgerScreen() {
     needsSelectedTransaction &&
     !selectedTransaction &&
     !isLoading &&
+    !isLoadingLinkedTransaction &&
     !isRefreshing &&
     !isMutating
       ? previousListView
@@ -183,6 +192,18 @@ export function LedgerScreen() {
     setPreviousListView('overview');
     setSelectedTransactionId(deepLinkTransactionId);
     setView('detail');
+    const requestId = ++linkedRequestIdRef.current;
+    setIsLoadingLinkedTransaction(true);
+    void ledgerApi.getTransaction(deepLinkTransactionId)
+      .then((transaction) => {
+        if (requestId === linkedRequestIdRef.current) setLinkedTransaction(mapTransaction(transaction));
+      })
+      .catch(() => {
+        if (requestId === linkedRequestIdRef.current) setLinkedTransaction(null);
+      })
+      .finally(() => {
+        if (requestId === linkedRequestIdRef.current) setIsLoadingLinkedTransaction(false);
+      });
     router.setParams({ transactionId: '', date: '' });
   }, [deepLinkDate, deepLinkTransactionId, router]));
 
@@ -213,7 +234,10 @@ export function LedgerScreen() {
       selectedTransactionId,
       apiCategoryId,
     );
-    if (response) setView('detail');
+    if (response) {
+      if (linkedTransaction?.id === response.transactionId) setLinkedTransaction(mapTransaction(response));
+      setView('detail');
+    }
   };
 
   const saveTransaction = async () => {
@@ -252,7 +276,10 @@ export function LedgerScreen() {
 
     if (formMode === 'edit' && selectedTransactionId) {
       const response = await updateManualTransaction(selectedTransactionId, request);
-      if (response) setView('detail');
+      if (response) {
+        if (linkedTransaction?.id === response.transactionId) setLinkedTransaction(mapTransaction(response));
+        setView('detail');
+      }
       return;
     }
 
@@ -288,7 +315,10 @@ export function LedgerScreen() {
 
   const updateMemo = async (memo: string) => {
     if (!selectedTransactionId) return;
-    await updateTransactionMemo(selectedTransactionId, memo);
+    const response = await updateTransactionMemo(selectedTransactionId, memo);
+    if (response && linkedTransaction?.id === response.transactionId) {
+      setLinkedTransaction(mapTransaction(response));
+    }
   };
 
   const closeForm = () => {
@@ -388,6 +418,9 @@ export function LedgerScreen() {
         categorySummaries={categorySummaries}
         dailyTotals={dailyTotals}
         hiddenTransactions={hiddenTransactions}
+        isLoadingHiddenTransactions={isLoadingHiddenTransactions}
+        hiddenTransactionsError={hiddenTransactionsError}
+        onLoadHiddenTransactions={loadHiddenTransactions}
         month={month}
         onBackPress={() => router.replace(routes.home)}
         onNextMonth={() => changeMonth(1)}
@@ -397,7 +430,7 @@ export function LedgerScreen() {
         onPreviousMonth={() => changeMonth(-1)}
         onSelectMonth={selectMonth}
         previousDailyTotals={previousDailyTotals}
-        onRefresh={() => void refetch()}
+        onRefresh={refetch}
         refreshing={isRefreshing}
         summary={monthlySummary}
         transactions={transactions}

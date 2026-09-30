@@ -199,6 +199,22 @@ class TransactionApiIntegrationTest {
     }
 
     @Test
+    void keepsExactTotalsOnPartialAndOutOfRangePages() throws Exception {
+        for (int page : new int[] {2, 3}) {
+            mockMvc.perform(get("/api/v1/transactions")
+                            .param("startDate", today.minusMonths(6).toString())
+                            .param("endDate", today.toString())
+                            .param("page", String.valueOf(page))
+                            .param("size", "2")
+                            .header(HttpHeaders.AUTHORIZATION, bearer))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.totalElements").value(5))
+                    .andExpect(jsonPath("$.data.totalPages").value(3))
+                    .andExpect(jsonPath("$.data.content", hasSize(page == 2 ? 1 : 0)));
+        }
+    }
+
+    @Test
     void rejectsUnknownCategoryCode() throws Exception {
         mockMvc.perform(get("/api/v1/transactions").param("category", "NOPE")
                         .header(HttpHeaders.AUTHORIZATION, bearer))
