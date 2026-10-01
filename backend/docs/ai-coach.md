@@ -596,12 +596,12 @@ notes: "달성일·절감액은 서버 시뮬레이션 엔진이 계산한 값�
 | 숫자 검증 | `CoachNumberGuard.findUnverifiedNumber(text, facts, extraSources)` — 허용 = facts + **사용자 문장** + 화면 맥락 facts + 앞선 턴의 문장·facts. `5만원`·`100만`·`1.5억`·`3천원`은 단위를 곱한 값(50,000 …)도 허용한다(사용자가 "5만원"이라 말한 것을 모델이 "50,000원"으로 되풀이하는 것은 지어낸 숫자가 아니다) |
 | 민감정보 | (673: 외부 송신 직전 메시지 전체 재검사는 §13-4-3) `CoachSensitiveDataGuard.scan(사용자 문장)` — 계좌·카드번호가 있으면 외부 호출 없이 `SENSITIVE_DATA_BLOCKED` + "계좌번호·카드번호처럼 긴 숫자는 채팅에 적지 말아 주세요…". 이 문장은 세션에도 남기지 않는다. 칩 문구는 서버 문자열이라 검사하지 않는다 |
 | 세션 (`CoachChatSessionStore`, Redis `coach:chat:session:{userId}:{conversationId}`) | 사용자 문장 + facts 줄(≤8)만. **모델 응답 전문·프롬프트는 저장하지 않는다**(§6). 재생은 user/assistant 쌍이며 assistant 자리는 "(앞선 답변의 서버 계산값) 라벨: 값 · …". 최근 6턴, TTL 30분(저장마다 갱신), 세션당 10턴(`SESSION_TURN_LIMIT`, 이 응답은 세션을 늘리지 않는다). 없는/만료된 id는 같은 id로 새 대화 — FE가 id를 바꿀 필요 없다. 저장소 장애는 새 대화와 같다 |
-| 예산 (`CoachChatRateLimiter`, Redis `coach:chat:rl:`) | 3종 코치와 **별도 키·별도 한도** `app.coach.chat.rate-limit` 기본 20건/시간. 외부 호출 1회마다 1건(자유 입력 턴 = 2건, 칩 = 1건). 알고리즘은 `RedisWindowCounter`로 §12와 공유(장애 시 인프로세스 계수) |
+| 예산 (`CoachChatRateLimiter`, Redis `coach:chat:rl:`) | 3종 코치와 **별도 키·별도 한도** `app.coach.chat.rate-limit` 기본 20건/시간. 외부 호출 1회마다 1건(자유 입력 턴 = 2건, 칩 = 1건). 알고리즘은 `RedisWindowCounter`로 §12와 공유(장애 시 인프로세스 계수). `exempt-user-ids`에 적은 사용자(시연 계정, 2026-10-01 `[3]`)는 세지 않고 Redis도 건드리지 않는다 — 운영 사용자에게는 쓰지 않는다 |
 | 캐시 | 없다. 같은 문장도 대화 맥락이 다르고, 도구 실행(시뮬레이션 행)은 `SimulationRunner`의 같은 날 지문 재사용이 이미 막는다 |
 | `degradedReason` | 기존 6종 + `TOOL_LOOP_EXCEEDED`, `SESSION_TURN_LIMIT` |
 | 로그 | 도구 이름·인자 키·simulationId·위반 종류·숫자 토큰만. 사용자 문장·모델 응답 전문은 남기지 않는다 |
 
-설정(`application.yml` `app.coach.chat`): `session-ttl PT30M`, `history-turns 6`, `max-turns-per-session 10`, `max-message-length 300`, `rate-limit {enabled, permits 20, window PT1H}`. 테스트 프로필은 예산을 끄고 세션당 3턴이다.
+설정(`application.yml` `app.coach.chat`): `session-ttl PT30M`, `history-turns 6`, `max-turns-per-session 10`, `max-message-length 300`, `rate-limit {enabled, permits 20, window PT1H, exempt-user-ids [3]}`. 테스트 프로필은 예산을 끄고 세션당 3턴이다.
 
 검증: `CoachChatApiTest` 14(401·400 5종, 칩 → 도구 → 2차 NONE 1회·메시지 순서·세션 저장 내용, AI 꺼짐에도 칩 실행·템플릿 문장, 자유 입력 1왕복·예산 2회,
 도구 없는 답, 검증 실패 전달(`실행하지 못한 요청` 섹션·`toolResults[].error`), 사용자 번호 차단(세션 저장 없음), 지어낸 숫자 → 템플릿 + facts 유지, 2차 tool_calls → `TOOL_LOOP_EXCEEDED`,

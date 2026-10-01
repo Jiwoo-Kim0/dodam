@@ -70,10 +70,14 @@ class CardQueryApiIntegrationTest {
                         + "updated_at = TIMESTAMP '2026-09-01 10:00:00' WHERE card_id = 1"
         );
 
+        // 당월 합계(13,500원 2건) 전제를 지키려면 이 거래가 오늘과 같은 달에 있어야 한다. 월초 1~3일에는
+        // today-3이 전월로 넘어가 월별 요약·혜택 사용량 2건이 깨졌다(2026-10-01 Jenkins #259~#261).
+        // 같은 날이 되더라도 정렬은 날짜 DESC → 시각 DESC라 09:05가 12:30 뒤에 와 순서 전제도 유지된다.
+        LocalDate recentInMonth = today.getDayOfMonth() > 3 ? today.minusDays(3) : today.withDayOfMonth(1);
         jdbcTemplate.update("DELETE FROM `transaction`");
         insertTransaction("TX-C1-001", 1L, 1L, 1L, today, LocalTime.of(12, 30),
                 12000, "스타벅스 강남", "카페 결제", false);
-        insertTransaction("TX-C1-002", 1L, 1L, 2L, today.minusDays(3), LocalTime.of(9, 5),
+        insertTransaction("TX-C1-002", 1L, 1L, 2L, recentInMonth, LocalTime.of(9, 5),
                 1500, "서울교통공사", "지하철", false);
         // 2개월 전으로 둔다. 40일 전은 오늘 날짜에 따라 전월에 들어가고, 그러면 실적 기준월 소비가
         // 0이라는 혜택 테스트의 전제가 매달 10일경부터 깨진다.
