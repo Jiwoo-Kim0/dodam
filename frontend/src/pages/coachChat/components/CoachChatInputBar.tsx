@@ -1,9 +1,10 @@
 import { SymbolView } from 'expo-symbols';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { colors } from '@/styles';
 
+import { useVoiceInput } from '../hooks/useVoiceInput';
 import { styles } from './CoachChatInputBar.styles';
 
 /** 서버 상한과 같다(`app.coach.chat.max-message-length`). 넘겨 보내면 400이라 여기서 먼저 막는다. */
@@ -24,11 +25,31 @@ export function CoachChatInputBar({ disabled, onSend, placeholder }: CoachChatIn
   const isTooLong = text.length > MAX_MESSAGE_LENGTH;
   const canSend = trimmed.length > 0 && !isTooLong && !disabled;
 
+  /** 말하기 시작할 때 이미 쳐 둔 글. 들은 문장은 그 뒤에 이어 붙인다. */
+  const textBeforeVoiceRef = useRef('');
+  const voice = useVoiceInput({
+    onTranscript: (transcript) => {
+      const base = textBeforeVoiceRef.current;
+      setText(base && transcript ? `${base} ${transcript}` : base || transcript);
+    },
+  });
+
   const handleSend = () => {
     if (!canSend) return;
 
+    voice.abort();
     onSend(trimmed);
     setText('');
+  };
+
+  const handleVoicePress = () => {
+    if (voice.isListening) {
+      voice.stop();
+      return;
+    }
+
+    textBeforeVoiceRef.current = text.trimEnd();
+    void voice.start();
   };
 
   return (
@@ -46,7 +67,7 @@ export function CoachChatInputBar({ disabled, onSend, placeholder }: CoachChatIn
           multiline
           onChangeText={setText}
           onSubmitEditing={handleSend}
-          placeholder={placeholder}
+          placeholder={voice.isListening ? '듣고 있어요. 말씀해 주세요' : placeholder}
           placeholderTextColor={colors.textTertiary}
           returnKeyType="send"
           style={styles.input}
@@ -57,6 +78,32 @@ export function CoachChatInputBar({ disabled, onSend, placeholder }: CoachChatIn
           submitBehavior="submit"
           value={text}
         />
+
+        {voice.isAvailable ? (
+          <Pressable
+            accessibilityLabel={voice.isListening ? '음성 입력 멈추기' : '음성으로 입력하기'}
+            accessibilityRole="button"
+            accessibilityState={{ disabled }}
+            disabled={disabled}
+            onPress={handleVoicePress}
+            style={({ pressed }) => [
+              styles.voiceButton,
+              voice.isListening && styles.voiceButtonListening,
+              pressed && !disabled && styles.pressed,
+            ]}>
+            <SymbolView
+              name={
+                voice.isListening
+                  ? { android: 'stop', ios: 'stop.fill', web: 'stop' }
+                  : { android: 'mic', ios: 'mic.fill', web: 'mic' }
+              }
+              size={18}
+              tintColor={
+                voice.isListening ? colors.white : disabled ? colors.textTertiary : colors.textSecondary
+              }
+            />
+          </Pressable>
+        ) : null}
 
         <Pressable
           accessibilityLabel="보내기"

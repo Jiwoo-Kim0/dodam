@@ -67,6 +67,21 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     width: SEND_BUTTON_SIZE,
   },
+  /** 보내기와 크기를 맞추되, 주 동작이 아니라 테두리만 둔다. 듣는 중에는 색을 채워 켜진 걸 알린다. */
+  voiceButton: {
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderColor: colors.divider,
+    borderRadius: radius.round,
+    borderWidth: 1,
+    height: SEND_BUTTON_SIZE,
+    justifyContent: 'center',
+    width: SEND_BUTTON_SIZE,
+  },
+  voiceButtonListening: {
+    backgroundColor: colors.primary.orange,
+    borderColor: colors.primary.orange,
+  },
   sendButtonDisabled: {
     backgroundColor: colors.ledger.softSurface,
   },
