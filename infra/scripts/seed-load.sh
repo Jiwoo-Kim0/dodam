@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 시연 서버 seed 적재기 (backend/database/seeds/README.md "적재 순서" 1~18번).
+# 시연 서버 seed 적재기 (backend/database/seeds/README.md "적재 순서" 1~18번 + 20번).
 #
 # 사용:
 #   ./seed-load.sh bootstrap <덤프.sql.gz>   # 운영 DB를 비우고 "마이그레이션이 끝난 빈 스키마"로 만든다
@@ -187,6 +187,8 @@ cmd_load() {
     python3 "$BE_SCRIPT_DIR/make_demo_deposit_savings_fixture.py" > "$WORK_DIR/fixture_678.sql"
     run_sql "$WORK_DIR/fixture_678.sql"; run_sql DODAM_DEMO_DEPOSIT_SAVING_678_SEED.sql
     log "[17] 679 U0003 가계부";      run_sql DODAM_DEMO_U0003_LEDGER_679_SEED.sql
+    # 20번: 시연 4명의 10월 1일자 거래(README 20번). @as_of 는 파일 머리의 SET 으로 바꾼다(최대 10-09).
+    log "[20] 10월 1일 거래";         run_sql DODAM_DEMO_OCTOBER_SEED.sql
     # 15번이 시연 4명 구독을 다시 만들었으므로 알림을 한 번 더 돌린다(README 15번 규약).
     log "[9 재실행] 알림";            run_sql DODAM_NOTIFICATION_SEED.sql
     # 680은 모든 시연 보정이 끝난 뒤 마지막에 실행한다(U0003 점수를 하드코딩하지 않는다).
