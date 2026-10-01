@@ -249,7 +249,8 @@ class CoachChatApiTest {
         given(generator.chat(anyList(), anyList(), any()))
                 .willReturn(toolCalls(call))
                 .willReturn(text("카페를 월 50,000원 줄이면 비상금 500만 원 목표가 121일 빨라져요."));
-        given(dispatcher.dispatch(eq(owner), eq(List.of(call)))).willReturn(List.of(combinedOk("call_1")));
+        given(dispatcher.dispatch(eq(owner), eq(List.of(call)), eq("카페 5만원 줄이면 목표 언제 돼?")))
+                .willReturn(List.of(combinedOk("call_1")));
 
         mvc.perform(post(CHAT).with(user(owner.toString())).contentType(JSON)
                         .content("{\"message\":\"카페 5만원 줄이면 목표 언제 돼?\"}"))
@@ -268,6 +269,7 @@ class CoachChatApiTest {
         ArgumentCaptor<ToolChoice> choice = ArgumentCaptor.forClass(ToolChoice.class);
         verify(generator, times(2)).chat(anyList(), anyList(), choice.capture());
         assertThat(choice.getAllValues()).extracting(ToolChoice::mode).containsExactly(ToolChoice.Mode.AUTO, ToolChoice.Mode.NONE);
+        verify(dispatcher).dispatch(eq(owner), eq(List.of(call)), eq("카페 5만원 줄이면 목표 언제 돼?"));
         // 외부 호출 2회 = 예산 2회
         verify(budget, times(2)).tryAcquire(owner);
     }
@@ -291,7 +293,7 @@ class CoachChatApiTest {
         given(generator.chat(anyList(), anyList(), any()))
                 .willReturn(toolCalls(call))
                 .willReturn(text("카페 월평균 소비보다 큰 금액이라 계산할 수 없었어요. 줄일 금액을 다시 알려 주세요."));
-        given(dispatcher.dispatch(eq(owner), anyList())).willReturn(List.of(
+        given(dispatcher.dispatch(eq(owner), anyList(), eq("카페 90만원 줄이면?"))).willReturn(List.of(
                 CoachToolResult.error("call_1", "simulate_spending_reduction", "카페 월평균 소비(115,000원)보다 큰 금액이에요.")));
 
         MvcResult result = chat(owner, "{\"message\":\"카페 90만원 줄이면?\"}");
@@ -404,7 +406,7 @@ class CoachChatApiTest {
         given(generator.chat(anyList(), anyList(), any()))
                 .willReturn(toolCalls(call))
                 .willReturn(toolCalls(new ToolCall("call_2", "get_goal_forecast", "{}")));
-        given(dispatcher.dispatch(eq(owner), anyList())).willReturn(List.of(combinedOk("call_1")));
+        given(dispatcher.dispatch(eq(owner), anyList(), eq("둘 다 하면?"))).willReturn(List.of(combinedOk("call_1")));
 
         mvc.perform(post(CHAT).with(user(owner.toString())).contentType(JSON).content("{\"message\":\"둘 다 하면?\"}"))
                 .andExpect(status().isOk())
@@ -412,7 +414,7 @@ class CoachChatApiTest {
                 .andExpect(jsonPath("$.data.degradedReason").value("TOOL_LOOP_EXCEEDED"))
                 .andExpect(jsonPath("$.data.toolResults.length()").value(1));
         // 두 번째 tool_calls는 실행하지 않는다
-        verify(dispatcher, times(1)).dispatch(any(), anyList());
+        verify(dispatcher, times(1)).dispatch(any(), anyList(), eq("둘 다 하면?"));
         verify(generator, times(2)).chat(anyList(), anyList(), any());
     }
 

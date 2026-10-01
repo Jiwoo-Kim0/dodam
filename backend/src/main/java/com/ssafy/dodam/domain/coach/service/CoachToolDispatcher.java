@@ -106,6 +106,10 @@ public class CoachToolDispatcher {
     }
 
     public List<CoachToolResult> dispatch(Long userId, List<ToolCall> calls) {
+        return dispatch(userId, calls, null);
+    }
+
+    public List<CoachToolResult> dispatch(Long userId, List<ToolCall> calls, String userText) {
         List<CoachToolResult> results = new ArrayList<>();
         for (int i = 0; i < calls.size(); i++) {
             ToolCall call = calls.get(i);
@@ -113,12 +117,16 @@ public class CoachToolDispatcher {
                 results.add(CoachToolResult.error(call.id(), call.name(), TOO_MANY_TOOLS));
                 continue;
             }
-            results.add(dispatchOne(userId, call));
+            results.add(dispatchOne(userId, call, userText));
         }
         return results;
     }
 
     CoachToolResult dispatchOne(Long userId, ToolCall call) {
+        return dispatchOne(userId, call, null);
+    }
+
+    CoachToolResult dispatchOne(Long userId, ToolCall call, String userText) {
         if (!registry.supports(call.name())) {
             return CoachToolResult.error(call.id(), call.name(), UNKNOWN_TOOL);
         }
@@ -128,10 +136,10 @@ public class CoachToolDispatcher {
                     ? String.join(",", iterableToList(arguments.raw().fieldNames())) : "-");
             return switch (call.name()) {
                 case CoachToolRegistry.SIMULATE_SPENDING_REDUCTION -> simulate(userId, call, resolver.resolve(spendingRequest(arguments)));
-                case CoachToolRegistry.SIMULATE_SAVING_CHANGE -> simulate(userId, call, resolver.resolve(userId, savingRequest(userId, arguments)));
+                case CoachToolRegistry.SIMULATE_SAVING_CHANGE -> simulate(userId, call, resolver.resolve(userId, savingRequest(userId, arguments, userText)));
                 case CoachToolRegistry.SIMULATE_LOAN_PREPAYMENT -> simulate(userId, call, resolver.resolve(userId, prepaymentRequest(userId, arguments)));
                 case CoachToolRegistry.SIMULATE_LOAN_REFINANCE -> simulate(userId, call, resolver.resolve(userId, refinanceRequest(userId, arguments)));
-                case CoachToolRegistry.SIMULATE_COMBINED -> simulate(userId, call, resolver.resolve(userId, combinedRequest(userId, arguments)));
+                case CoachToolRegistry.SIMULATE_COMBINED -> simulate(userId, call, resolver.resolve(userId, combinedRequest(userId, arguments, userText)));
                 case CoachToolRegistry.GET_GOAL_FORECAST -> goalForecast(userId, call, arguments);
                 case CoachToolRegistry.GET_LATEST_DIAGNOSIS -> latestDiagnosis(userId, call);
                 case CoachToolRegistry.GET_SPENDING_FORECAST -> spendingForecast(userId, call);
@@ -165,8 +173,35 @@ public class CoachToolDispatcher {
     }
 
     SavingSimulationRequest savingRequest(Long userId, CoachToolArguments arguments) {
+        return savingRequest(userId, arguments, null);
+    }
+
+    SavingSimulationRequest savingRequest(Long userId, CoachToolArguments arguments, String userText) {
         long amount = arguments.requiredAmount("monthlySavingAmount", "변경 후 월 저축액");
         Long goalId = savingGoalId(userId, arguments.text("goalName"), true);
+        CoachSavingIntent.Parsed intent = CoachSavingIntent.parse(userText);
+        if (intent != null) {
+            amount = intent.amount();
+            if (intent.increase()) {
+                if (goalId == null) {
+                    throw new CoachToolArgumentException("어느 목표의 저축액을 늘릴지 알려 주세요.");
+                }
+                long current = goalCalculation.getForecast(userId, goalId, clock.now().toLocalDate()).averageMonthlySaving();
+                if (current > CoachToolArguments.MAX_AMOUNT - amount) {
+                    throw new CoachToolArgumentException("변경 후 월 저축액은 1억 원 이하여야 해요.");
+                }
+                amount += current;
+            } else if (CoachSavingIntent.expectsIncrease(userText)) {
+                if (goalId == null) {
+                    throw new CoachToolArgumentException("어느 목표의 저축액을 늘릴지 알려 주세요.");
+                }
+                long current = goalCalculation.getForecast(userId, goalId, clock.now().toLocalDate()).averageMonthlySaving();
+                Long statedIncrease = CoachSavingIntent.increaseAmount(userText);
+                if (amount <= current || (statedIncrease != null && amount - current != statedIncrease)) {
+                    throw new CoachToolArgumentException("말씀하신 증가분과 변경 후 월 저축액이 현재 저축 속도와 맞지 않아요.");
+                }
+            }
+        }
         return new SavingSimulationRequest(null, goalId, amount, arguments.months("durationMonths"));
     }
 
@@ -184,6 +219,10 @@ public class CoachToolDispatcher {
 
     /** 자식 인자를 단독 도구와 같은 규칙으로 해석해 명세 17 복합 본문({@code type}·{@code parameters})으로 만든다. */
     CombinedSimulationRequest combinedRequest(Long userId, CoachToolArguments arguments) {
+        return combinedRequest(userId, arguments, null);
+    }
+
+    CombinedSimulationRequest combinedRequest(Long userId, CoachToolArguments arguments, String userText) {
         List<CoachToolArguments> scenarios = arguments.items("scenarios");
         if (scenarios.size() < 2) {
             throw new CoachToolArgumentException("함께 실행할 행동을 두 개 이상 알려 주세요.");
@@ -191,6 +230,11 @@ public class CoachToolDispatcher {
         if (scenarios.size() > 10) {
             throw new CoachToolArgumentException("함께 실행할 행동은 10개까지예요.");
         }
+        long savingCount = scenarios.stream().filter(item -> "SAVING".equalsIgnoreCase(item.text("type"))).count();
+        if (savingCount > 1 && CoachSavingIntent.increaseAmount(userText) != null) {
+            throw new CoachToolArgumentException("여러 목표의 저축 증가액은 한 번에 계산할 수 없어요. 목표별로 물어봐 주세요.");
+        }
+        String savingText = savingCount == 1 ? userText : null;
         List<JsonNode> nodes = new ArrayList<>();
         for (CoachToolArguments scenario : scenarios) {
             String type = scenario.code("type", CoachToolRegistry.COMBINED_SCENARIO_TYPE_SET, "행동 유형");
@@ -212,7 +256,7 @@ public class CoachToolDispatcher {
                     }
                 }
                 case "SAVING" -> {
-                    SavingSimulationRequest request = savingRequest(userId, scenario);
+                    SavingSimulationRequest request = savingRequest(userId, scenario, savingText);
                     if (request.goalId() != null) {
                         parameters.put("goalId", request.goalId());
                     }

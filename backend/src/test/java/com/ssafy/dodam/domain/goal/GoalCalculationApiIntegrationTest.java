@@ -283,6 +283,39 @@ class GoalCalculationApiIntegrationTest {
     }
 
     @Test
+    void puttingExistingSafeboxMoneyAdvancesForecastWithoutIncreasingMonthlyPace() throws Exception {
+        insertAccount(13L, "5555555566666666", "DEMAND_DEPOSIT", 1_000_000);
+        jdbcTemplate.update("INSERT INTO safebox_account (user_id, account_id, account_type, created_at) "
+                + "VALUES (?, 13, 'DEMAND_DEPOSIT', ?)", userId, SEEDED_AT);
+        long goalId = createSaving(3_000_000, today.plusMonths(12));
+        link(goalId, List.of(SAVINGS_ID));
+        insertMonthlyPayments(SAVINGS_ID, 300_000);
+
+        MvcResult before = mockMvc.perform(get("/api/v1/goals/" + goalId + "/forecast")
+                        .header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.currentAmount").value(1_500_000))
+                .andExpect(jsonPath("$.data.averageMonthlySaving").value(300_000))
+                .andReturn();
+        LocalDate beforeDate = LocalDate.parse(objectMapper.readTree(before.getResponse().getContentAsString())
+                .path("data").path("expectedAchievementDate").asText());
+
+        mockMvc.perform(put("/api/v1/safebox/goals/" + goalId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer)
+                        .contentType(MediaType.APPLICATION_JSON).content(json(Map.of("amount", 500_000))))
+                .andExpect(status().isOk());
+        MvcResult after = mockMvc.perform(get("/api/v1/goals/" + goalId + "/forecast")
+                        .header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.currentAmount").value(2_000_000))
+                .andExpect(jsonPath("$.data.averageMonthlySaving").value(300_000))
+                .andReturn();
+        LocalDate afterDate = LocalDate.parse(objectMapper.readTree(after.getResponse().getContentAsString())
+                .path("data").path("expectedAchievementDate").asText());
+        assertThat(afterDate).isBefore(beforeDate);
+    }
+
+    @Test
     void forecastWithoutPaceHasNoExpectedDateAndValidatesParams() throws Exception {
         long goalId = createSaving(10_000_000, today.plusMonths(6));
         mockMvc.perform(get("/api/v1/goals/" + goalId + "/forecast").header(HttpHeaders.AUTHORIZATION, bearer))

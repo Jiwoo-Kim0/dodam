@@ -184,7 +184,8 @@ public class CoachChatService {
             }
         }
 
-        List<CoachToolResult> results = calls.isEmpty() ? List.of() : dispatcher.dispatch(userId, calls);
+        List<CoachToolResult> results = calls.isEmpty() ? List.of()
+                : chipId == null ? dispatcher.dispatch(userId, calls, userText) : dispatcher.dispatch(userId, calls);
         CoachFacts facts = facts(results);
 
         String answer;
@@ -393,7 +394,7 @@ public class CoachChatService {
     static final String CATEGORY_CODE_KEY = "categoryCode";
     static final String INCREASE_AMOUNT_KEY = "increaseAmount";
     static final long DEFAULT_REDUCTION_MAN_WON = 5;
-    public static final String SUGGESTED_SAVING = "저축을 월 30만원으로 올리면?";
+    public static final String SUGGESTED_SAVING = "월 10만원 더 저축하면?";
     public static final String SUGGESTED_GOAL_DATE = "목표는 언제 달성해?";
     public static final List<String> SUGGESTED_FOR_SPENDING = List.of("카페를 월 5만원 줄이면?", SUGGESTED_SAVING, SUGGESTED_GOAL_DATE);
     public static final List<String> SUGGESTED_FOR_LOAN = List.of("대출 100만원 더 갚으면?", "대환하면 이자를 얼마나 아껴?", "둘 다 하면?");

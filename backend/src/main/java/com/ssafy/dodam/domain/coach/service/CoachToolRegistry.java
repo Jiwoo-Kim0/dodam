@@ -137,7 +137,7 @@ public class CoachToolRegistry {
     private ToolDefinition savingChange() {
         ObjectNode schema = object();
         ObjectNode properties = schema.putObject("properties");
-        integerProperty(properties, "monthlySavingAmount", "변경 후 한 달 저축액(원). 늘리는 금액이 아니라 변경 후 총액. '월 30만원으로 올리면'은 300000");
+        integerProperty(properties, "monthlySavingAmount", "사용자가 말한 금액(원). '월 10만원 더'는 100000, '월 50만원으로'는 500000. 더하기는 서버가 한다");
         stringProperty(properties, "goalName", "대상 모으기 목표 이름의 일부(예: 비상금). 사용자가 목표를 말하지 않았으면 생략");
         integerProperty(properties, "durationMonths", "몇 개월 동안 유지할지(1~120). 말하지 않았으면 생략");
         required(schema, "monthlySavingAmount");
@@ -176,7 +176,7 @@ public class CoachToolRegistry {
         enumProperty(itemProperties, "type", "행동 유형", COMBINED_SCENARIO_TYPES);
         enumProperty(itemProperties, "category", "SPENDING: 줄일 카테고리 코드(전체면 생략)", SPENDING_CATEGORY_CODES);
         integerProperty(itemProperties, "monthlyReduction", "SPENDING: 한 달에 줄일 금액(원)");
-        integerProperty(itemProperties, "monthlySavingAmount", "SAVING: 변경 후 한 달 저축액(원)");
+        integerProperty(itemProperties, "monthlySavingAmount", "SAVING: 사용자가 말한 금액(원). '10만원 더'는 100000, 서버가 더한다");
         stringProperty(itemProperties, "goalName", "SAVING: 대상 목표 이름의 일부(생략 가능)");
         integerProperty(itemProperties, "prepaymentAmount", "LOAN_PREPAYMENT: 추가 상환액(원)");
         stringProperty(itemProperties, "loanLabel", "LOAN_PREPAYMENT·LOAN_REFINANCE: 대상 대출 이름의 일부(대출이 하나면 생략)");

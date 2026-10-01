@@ -1,6 +1,7 @@
 package com.ssafy.dodam.domain.coach.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -163,6 +164,57 @@ class CoachToolDispatcherTest {
         assertThat(result.created()).isTrue();
         assertThat(result.sections().get(0).facts()).contains(new Fact("단축(비상금)", "121일"));
         assertThat(result.notes()).contains(CoachSimulationFactFormatter.NOTE_SERVER_NUMBERS);
+    }
+
+    @Test
+    void savingIncreaseUsesServerPaceEvenWhenModelSendsIncreaseAsTotal() {
+        Goal goal = Goal.create(USER, "여행 자금 모으기", GoalType.SAVING, NOW);
+        ReflectionTestUtils.setField(goal, "id", 5L);
+        given(goals.findAllByUserIdAndDeletedAtIsNull(USER)).willReturn(List.of(goal));
+        given(goalCalculation.getForecast(USER, 5L, NOW.toLocalDate())).willReturn(new GoalForecastResponse(
+                5L, 6_000_000L, 3_300_000L, 2_700_000L, NOW.toLocalDate(), LocalDate.of(2027, 9, 28),
+                400_000L, 7, LocalDate.of(2027, 4, 10), -171L, true, List.of()));
+
+        SavingSimulationRequest request = dispatcher.savingRequest(USER,
+                CoachToolArguments.parse(json, "{\"monthlySavingAmount\":100000}"),
+                "그럼 월 10만원 더 저축하면 목표변화?");
+
+        assertThat(request.monthlySavingAmount()).isEqualTo(500_000L);
+        SavingSimulationRequest explicit = dispatcher.savingRequest(USER,
+                CoachToolArguments.parse(json, "{\"monthlySavingAmount\":100000}"),
+                "월 10만원 더 저축해서 월 50만원을 저축하게 되면?");
+        assertThat(explicit.monthlySavingAmount()).isEqualTo(500_000L);
+    }
+
+    @Test
+    void statedFinalAmountMustAgreeWithIncreaseAndCurrentPace() {
+        Goal goal = Goal.create(USER, "여행 자금 모으기", GoalType.SAVING, NOW);
+        ReflectionTestUtils.setField(goal, "id", 5L);
+        given(goals.findAllByUserIdAndDeletedAtIsNull(USER)).willReturn(List.of(goal));
+        given(goalCalculation.getForecast(USER, 5L, NOW.toLocalDate())).willReturn(new GoalForecastResponse(
+                5L, 6_000_000L, 3_300_000L, 2_700_000L, NOW.toLocalDate(), LocalDate.of(2027, 9, 28),
+                800_000L, 4, LocalDate.of(2027, 1, 13), -258L, true, List.of()));
+
+        assertThatThrownBy(() -> dispatcher.savingRequest(USER,
+                CoachToolArguments.parse(json, "{\"monthlySavingAmount\":500000}"),
+                "월 10만원 더 저축해서 월 50만원을 저축하게 되면?"))
+                .isInstanceOf(CoachToolArgumentException.class)
+                .hasMessageContaining("현재 저축 속도와 맞지");
+        assertThatThrownBy(() -> dispatcher.savingRequest(USER,
+                CoachToolArguments.parse(json, "{\"monthlySavingAmount\":500000}"),
+                "저축을 월 50만원으로 올리면?"))
+                .isInstanceOf(CoachToolArgumentException.class);
+    }
+
+    @Test
+    void multipleSavingIncreasesAreNotAppliedToTheWrongScenario() {
+        CoachToolArguments arguments = CoachToolArguments.parse(json,
+                "{\"scenarios\":[{\"type\":\"SAVING\",\"monthlySavingAmount\":100000},"
+                        + "{\"type\":\"SAVING\",\"monthlySavingAmount\":200000}]}");
+
+        assertThatThrownBy(() -> dispatcher.combinedRequest(USER, arguments,
+                "여행 목표 월 10만원 더 저축하고 비상금 목표 월 20만원 더 저축하면?"))
+                .isInstanceOf(CoachToolArgumentException.class);
     }
 
     @Test
