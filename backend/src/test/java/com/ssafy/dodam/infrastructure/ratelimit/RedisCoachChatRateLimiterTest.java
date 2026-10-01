@@ -30,7 +30,12 @@ class RedisCoachChatRateLimiterTest {
 
     private RedisCoachChatRateLimiter limiter(boolean enabled, int permits) {
         return new RedisCoachChatRateLimiter(redis, new CoachChatProperties(null, null, null, null,
-                new CoachChatProperties.RateLimit(enabled, permits, Duration.ofHours(1))));
+                new CoachChatProperties.RateLimit(enabled, permits, Duration.ofHours(1), null)));
+    }
+
+    private RedisCoachChatRateLimiter limiterExempting(Long... userIds) {
+        return new RedisCoachChatRateLimiter(redis, new CoachChatProperties(null, null, null, null,
+                new CoachChatProperties.RateLimit(true, 1, Duration.ofHours(1), java.util.Set.of(userIds))));
     }
 
     @Test
@@ -45,6 +50,17 @@ class RedisCoachChatRateLimiterTest {
 
         given(redis.execute(any(RedisScript.class), anyList(), any())).willReturn(4L);
         assertThat(limiter(true, 3).tryAcquire(USER)).isFalse();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void exemptUsersSkipTheBudgetButOthersAreStillCounted() {
+        assertThat(limiterExempting(USER).tryAcquire(USER)).isTrue();
+        verifyNoInteractions(redis);
+
+        given(redis.execute(any(RedisScript.class), anyList(), any())).willReturn(2L);
+        assertThat(limiterExempting(USER).tryAcquire(7L)).isFalse();
+        verify(redis).execute(any(RedisScript.class), anyList(), any());
     }
 
     @Test

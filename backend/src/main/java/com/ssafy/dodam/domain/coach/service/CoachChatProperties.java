@@ -1,6 +1,7 @@
 package com.ssafy.dodam.domain.coach.service;
 
 import java.time.Duration;
+import java.util.Set;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -13,7 +14,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param historyTurns       모델에 재생하는 최근 턴 수. 기본 6
  * @param maxTurnsPerSession 한 대화(conversationId)에서 받는 턴 상한. 기본 10 — 넘으면 새 대화를 시작하게 한다
  * @param maxMessageLength   사용자 문장 길이 상한(자). 기본 300
- * @param rateLimit          채팅 전용 호출 예산. 기본 20건/시간(자유 입력 10턴 분량)
+ * @param rateLimit          채팅 전용 호출 예산. 기본 20건/시간(자유 입력 10턴 분량). {@code exempt-user-ids}에 적은
+ *                           사용자는 예산을 세지 않는다(시연 계정용. 운영 사용자에게 쓰지 않는다)
  */
 @ConfigurationProperties(prefix = "app.coach.chat")
 public record CoachChatProperties(Duration sessionTtl, Integer historyTurns, Integer maxTurnsPerSession,
@@ -24,14 +26,15 @@ public record CoachChatProperties(Duration sessionTtl, Integer historyTurns, Int
         historyTurns = historyTurns == null || historyTurns <= 0 ? 6 : historyTurns;
         maxTurnsPerSession = maxTurnsPerSession == null || maxTurnsPerSession <= 0 ? 10 : maxTurnsPerSession;
         maxMessageLength = maxMessageLength == null || maxMessageLength <= 0 ? 300 : maxMessageLength;
-        rateLimit = rateLimit == null ? new RateLimit(null, null, null) : rateLimit;
+        rateLimit = rateLimit == null ? new RateLimit(null, null, null, null) : rateLimit;
     }
 
-    public record RateLimit(Boolean enabled, Integer permits, Duration window) {
+    public record RateLimit(Boolean enabled, Integer permits, Duration window, Set<Long> exemptUserIds) {
         public RateLimit {
             enabled = enabled == null || enabled;
             permits = permits == null || permits <= 0 ? 20 : permits;
             window = window == null || window.isZero() || window.isNegative() ? Duration.ofHours(1) : window;
+            exemptUserIds = exemptUserIds == null ? Set.of() : Set.copyOf(exemptUserIds);
         }
     }
 }

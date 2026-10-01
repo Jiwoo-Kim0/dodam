@@ -25,7 +25,8 @@ public class RedisCoachChatRateLimiter implements CoachChatRateLimiter {
     @Override
     public boolean tryAcquire(Long userId) {
         CoachChatProperties.RateLimit limit = properties.rateLimit();
-        if (!limit.enabled() || userId == null) {
+        if (!limit.enabled() || userId == null || limit.exemptUserIds().contains(userId)) {
+            // 예외 사용자(시연 계정)는 Redis를 건드리지 않는다 — 세지 않으므로 창이 바뀌어도 상태가 없다
             return true;
         }
         return counter.tryAcquire(userId, limit.permits(), limit.window());
